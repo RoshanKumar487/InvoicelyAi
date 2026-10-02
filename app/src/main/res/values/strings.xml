@@ -1,0 +1,9 @@
+<resources>
+    <string name="app_name">Invoicely</string>
+    <string name="dashboard_title">Dashboard</string>
+    <string name="invoices_title">Invoices</string>
+    <string name="clients_title">Clients</string>
+    <string name="templates_title">Templates</string>
+    <string name="tools_title">Tax &amp; Currency</string>
+    <string name="settings_title">Business &amp; Branding</string>
+</resources>

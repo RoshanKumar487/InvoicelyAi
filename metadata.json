@@ -1,0 +1,6 @@
+{
+  "name": "Invoicely",
+  "description": "Professional invoice generator & management tool with editable DOCX templates, analytics dashboard, client tracking, branding, and multi-currency tax calculation.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
