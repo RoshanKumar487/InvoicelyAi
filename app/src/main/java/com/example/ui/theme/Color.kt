@@ -39,3 +39,28 @@ val DarkSecondary = Color(0xFF2DD4BF)
 val DarkBackground = Color(0xFF0B1120)
 val DarkSurface = Color(0xFF151F33)
 val DarkSurfaceVariant = Color(0xFF1E293B)
+
+// Modern Glassmorphism Design Tokens
+val GlassLightSurface = Color(0xF2FFFFFF) // 95% opacity white for pristine readability
+val GlassLightSurfaceSubtle = Color(0xD9FFFFFF) // 85% opacity
+val GlassLightBorder = Color(0x99FFFFFF) // Specular highlight border
+val GlassLightBorderSubtle = Color(0x3394A3B8) // Subtle border
+val GlassDarkSurface = Color(0xCC1E293B) // 80% opacity dark glass
+val GlassDarkSurfaceSubtle = Color(0xA60F172A) // 65% opacity
+val GlassDarkBorder = Color(0x40CBD5E1) // Specular highlight dark
+
+// Ambient Gradient Glow Highlights (for atmospheric mesh backdrops)
+val GlassGlowSapphire = Color(0xFF2563EB)
+val GlassGlowIndigo = Color(0xFF4F46E5)
+val GlassGlowPurple = Color(0xFF7C3AED)
+val GlassGlowCyan = Color(0xFF06B6D4)
+val GlassGlowTeal = Color(0xFF0D9488)
+val GlassGlowEmerald = Color(0xFF10B981)
+
+// Field & Content Visibility Tokens
+val GlassInputBackground = Color(0xF7FFFFFF) // 97% opacity for 100% crisp field visibility
+val GlassInputBackgroundDark = Color(0xEE0F172A)
+val GlassInputText = Color(0xFF0F172A)
+val GlassInputPlaceholder = Color(0xFF64748B)
+val GlassInputBorder = Color(0x33475569)
+val GlassInputFocusedBorder = Color(0xFF2563EB)

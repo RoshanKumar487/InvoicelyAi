@@ -427,7 +427,7 @@ object PdfInvoiceGenerator {
 
         // Left Side: Payment instructions & Notes
         var noteY = totalsStartY + 4f
-        if (profile.showBankingSection && invoice.paymentInstructions.isNotBlank()) {
+        if (profile.showPaymentInstructions && invoice.paymentInstructions.isNotBlank()) {
             textPaint.textSize = 8f
             textPaint.typeface = Typeface.create(Typeface.SANS_SERIF, Typeface.BOLD)
             textPaint.color = primaryColorInt
@@ -446,7 +446,7 @@ object PdfInvoiceGenerator {
             noteY += 4f
         }
 
-        if (profile.showNotesSection && invoice.notes.isNotBlank()) {
+        if (profile.showNotes && invoice.notes.isNotBlank()) {
             textPaint.textSize = 8f
             textPaint.typeface = Typeface.create(Typeface.SANS_SERIF, Typeface.BOLD)
             textPaint.color = primaryColorInt
@@ -525,7 +525,7 @@ object PdfInvoiceGenerator {
         textPaint.typeface = Typeface.create(Typeface.SANS_SERIF, Typeface.NORMAL)
         textPaint.color = Color.parseColor("#64748B")
 
-        val footerText = if (profile.showTermsSection && invoice.terms.isNotBlank()) {
+        val footerText = if (profile.showTerms && invoice.terms.isNotBlank()) {
             "Terms: ${invoice.terms.split("\n").firstOrNull()?.take(65) ?: ""}"
         } else {
             "This is a verified computer generated invoice. Payment is appreciated."
@@ -533,7 +533,7 @@ object PdfInvoiceGenerator {
         canvas.drawText(footerText, MARGIN_X, footerY + 16f, textPaint)
 
         // Signatory Box
-        if (profile.showSignatureSection && profile.signeeName.isNotBlank()) {
+        if (profile.showSignature && profile.signeeName.isNotBlank()) {
             val signRight = MARGIN_RIGHT
             val signName = profile.signeeName
             val signTitle = profile.signeeTitle.ifBlank { "Authorized Signatory" }

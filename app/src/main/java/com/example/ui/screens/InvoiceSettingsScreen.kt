@@ -4,6 +4,7 @@ import android.widget.Toast
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -28,6 +29,7 @@ import androidx.compose.material.icons.filled.Draw
 import androidx.compose.material.icons.filled.FactCheck
 import androidx.compose.material.icons.filled.Info
 import androidx.compose.material.icons.filled.LocalShipping
+import androidx.compose.material.icons.filled.Menu
 import androidx.compose.material.icons.filled.Notes
 import androidx.compose.material.icons.filled.Person
 import androidx.compose.material.icons.filled.Receipt
@@ -70,6 +72,8 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.example.data.model.BusinessProfile
+import com.example.ui.components.AdaptiveContainer
+import com.example.ui.components.rememberWindowAdaptiveInfo
 import com.example.ui.theme.PrimaryNavy
 import com.example.ui.viewmodel.InvoiceViewModel
 
@@ -83,18 +87,30 @@ import com.example.ui.viewmodel.InvoiceViewModel
 fun InvoiceSettingsScreen(
     viewModel: InvoiceViewModel,
     onBack: () -> Unit,
+    onOpenMenu: () -> Unit = {},
     modifier: Modifier = Modifier
 ) {
     val context = LocalContext.current
     val profile by viewModel.businessProfile.collectAsStateWithLifecycle()
+    val adaptiveInfo = rememberWindowAdaptiveInfo()
 
     // Local mutable state initialized from business profile
     var showShippingSection by remember(profile.showShippingSection) { mutableStateOf(profile.showShippingSection) }
+    var showNotesSection by remember(profile.showNotesSection) { mutableStateOf(profile.showNotesSection) }
     var showPaymentInstructions by remember(profile.showPaymentInstructions) { mutableStateOf(profile.showPaymentInstructions) }
     var showTerms by remember(profile.showTerms) { mutableStateOf(profile.showTerms) }
     var showNotes by remember(profile.showNotes) { mutableStateOf(profile.showNotes) }
     var showSignature by remember(profile.showSignature) { mutableStateOf(profile.showSignature) }
     var showStamp by remember(profile.showStamp) { mutableStateOf(profile.showStamp) }
+
+    // Tax & Totals Settings
+    var isTaxApplicable by remember(profile.isTaxApplicable) { mutableStateOf(profile.isTaxApplicable) }
+    var defaultTaxRate by remember(profile.defaultTaxRate) { mutableStateOf(profile.defaultTaxRate) }
+    var defaultTaxLabel by remember(profile.defaultTaxLabel) { mutableStateOf(profile.defaultTaxLabel) }
+    var defaultDiscountType by remember(profile.defaultDiscountType) { mutableStateOf(profile.defaultDiscountType) }
+    var defaultDiscountValue by remember(profile.defaultDiscountValue) { mutableStateOf(profile.defaultDiscountValue) }
+    var additionalChargeLabel by remember(profile.additionalChargeLabel) { mutableStateOf(profile.additionalChargeLabel) }
+    var defaultAdditionalCharge by remember(profile.defaultAdditionalCharge) { mutableStateOf(profile.defaultAdditionalCharge) }
 
     // Client fields
     var showClientCompany by remember(profile.showClientCompany) { mutableStateOf(profile.showClientCompany) }
@@ -133,6 +149,14 @@ fun InvoiceSettingsScreen(
     fun saveAll(notify: Boolean = true) {
         val updated = profile.copy(
             showShippingSection = showShippingSection,
+            showNotesSection = showNotesSection,
+            isTaxApplicable = isTaxApplicable,
+            defaultTaxRate = defaultTaxRate,
+            defaultTaxLabel = defaultTaxLabel,
+            defaultDiscountType = defaultDiscountType,
+            defaultDiscountValue = defaultDiscountValue,
+            additionalChargeLabel = additionalChargeLabel,
+            defaultAdditionalCharge = defaultAdditionalCharge,
             showPaymentInstructions = showPaymentInstructions,
             showTerms = showTerms,
             showNotes = showNotes,
@@ -161,7 +185,7 @@ fun InvoiceSettingsScreen(
             signeeName = signeeName,
             signeeTitle = signeeTitle
         )
-        viewModel.updateBusinessProfile(updated)
+        viewModel.saveBusinessProfile(updated)
         if (notify) {
             Toast.makeText(context, "Invoice section controls saved!", Toast.LENGTH_SHORT).show()
         }
@@ -205,25 +229,31 @@ fun InvoiceSettingsScreen(
                         colors = ButtonDefaults.buttonColors(containerColor = PrimaryNavy),
                         shape = RoundedCornerShape(8.dp),
                         modifier = Modifier
-                            .padding(end = 12.dp)
                             .testTag("invoice_settings_save_btn")
                     ) {
                         Text("Save", fontSize = 12.sp, fontWeight = FontWeight.Bold)
+                    }
+                    IconButton(
+                        onClick = onOpenMenu,
+                        modifier = Modifier.testTag("invoice_settings_menu_btn")
+                    ) {
+                        Icon(imageVector = Icons.Default.Menu, contentDescription = "Menu", tint = PrimaryNavy)
                     }
                 },
                 colors = TopAppBarDefaults.topAppBarColors(containerColor = Color.White)
             )
         }
     ) { innerPadding ->
-        Column(
-            modifier = Modifier
-                .fillMaxSize()
-                .padding(innerPadding)
-                .background(Color(0xFFF8FAFC))
-                .verticalScroll(rememberScrollState())
-                .padding(16.dp),
-            verticalArrangement = Arrangement.spacedBy(16.dp)
-        ) {
+        AdaptiveContainer(maxWidth = adaptiveInfo.formMaxWidth) {
+            Column(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .padding(innerPadding)
+                    .background(Color(0xFFF8FAFC))
+                    .verticalScroll(rememberScrollState())
+                    .padding(horizontal = adaptiveInfo.horizontalPadding, vertical = 16.dp),
+                verticalArrangement = Arrangement.spacedBy(16.dp)
+            ) {
             // Intro Information Card
             Card(
                 modifier = Modifier.fillMaxWidth(),
@@ -261,11 +291,45 @@ fun InvoiceSettingsScreen(
             }
 
             // =================================================================
-            // BLOCK 1: SHIPPING & LOGISTICS SECTION
+            // 4-SECTION DEFAULT WORKFLOW INFO
+            // =================================================================
+            Surface(
+                color = Color(0xFFEFF6FF),
+                shape = RoundedCornerShape(12.dp),
+                border = androidx.compose.foundation.BorderStroke(1.dp, Color(0xFFBFDBFE)),
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                Column(modifier = Modifier.padding(14.dp)) {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Icon(Icons.Default.FactCheck, contentDescription = null, tint = Color(0xFF1D4ED8), modifier = Modifier.size(18.dp))
+                        Spacer(modifier = Modifier.width(8.dp))
+                        Text(
+                            text = "4 Core Sections Displayed by Default",
+                            fontWeight = FontWeight.Bold,
+                            fontSize = 13.sp,
+                            color = Color(0xFF1E3A8A)
+                        )
+                    }
+                    Spacer(modifier = Modifier.height(6.dp))
+                    Text(
+                        text = "1. Invoice Details (Number, Status, Issue & Due Dates)\n" +
+                            "2. Client Information (Name, Company, Address, Tax ID)\n" +
+                            "3. Items & Services (Descriptions, Quantities, Rates, Totals)\n" +
+                            "4. Totals & Summary (Subtotal, Discount, Tax, Grand Total)\n\n" +
+                            "Optional sections (Delivery Details, Notes & Signatures) only appear on the edit screen when toggled ON below or added manually.",
+                        fontSize = 11.5.sp,
+                        color = Color(0xFF1E293B),
+                        lineHeight = 17.sp
+                    )
+                }
+            }
+
+            // =================================================================
+            // BLOCK 1: SHIPPING & LOGISTICS SECTION (OPTIONAL)
             // =================================================================
             SectionControlBlock(
-                title = "Shipping & Logistics Details",
-                description = "Enable delivery addresses, carrier/courier, tracking numbers, and shipping charges on invoices.",
+                title = "Shipping & Delivery Details Section",
+                description = "Enable delivery addresses, carrier/courier, tracking numbers, and dispatch details on the invoice edit page.",
                 icon = Icons.Default.LocalShipping,
                 iconColor = Color(0xFF0284C7),
                 iconBg = Color(0xFFE0F2FE),
@@ -291,7 +355,7 @@ fun InvoiceSettingsScreen(
                             Icon(Icons.Default.Info, contentDescription = null, tint = Color(0xFF0284C7), modifier = Modifier.size(16.dp))
                             Spacer(modifier = Modifier.width(8.dp))
                             Text(
-                                text = "When turned ON, Section 2 (Shipping Details) will be shown in the invoice editor.",
+                                text = if (showShippingSection) "Enabled: Delivery Details accordion will appear in the invoice editor." else "Disabled: Delivery Details section is hidden from the edit page.",
                                 fontSize = 11.sp,
                                 color = Color(0xFF475569)
                             )
@@ -301,29 +365,37 @@ fun InvoiceSettingsScreen(
             }
 
             // =================================================================
-            // BLOCK 2: BANKING & PAYMENT INSTRUCTIONS SECTION
+            // BLOCK 2: NOTES, TERMS & SIGNATURES SECTION (OPTIONAL)
             // =================================================================
             SectionControlBlock(
-                title = "Banking & Payment Instructions",
-                description = "Dedicated block for bank accounts, wire routing, IFSC, SWIFT, UPI IDs and online payment links.",
-                icon = Icons.Default.AccountBalance,
-                iconColor = Color(0xFF059669),
-                iconBg = Color(0xFFD1FAE5),
-                isEnabled = showPaymentInstructions,
+                title = "Notes, Terms & Signatures Section",
+                description = "Include customer remarks, terms & conditions, bank account wire instructions, and signature block on invoice edit page.",
+                icon = Icons.Default.FactCheck,
+                iconColor = Color(0xFF7C3AED),
+                iconBg = Color(0xFFEDE9FE),
+                isEnabled = showNotesSection,
                 onToggle = {
-                    showPaymentInstructions = it
+                    showNotesSection = it
                     saveAll(notify = false)
                 },
-                badgeText = if (showPaymentInstructions) "Active on Edit Page" else "Hidden",
-                badgeActive = showPaymentInstructions,
-                testTag = "toggle_banking_section"
+                badgeText = if (showNotesSection) "Visible on Edit Page" else "Hidden by Default",
+                badgeActive = showNotesSection,
+                testTag = "toggle_notes_section"
             ) {
                 Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
                     OutlinedTextField(
-                        value = bankName,
-                        onValueChange = { bankName = it; saveAll(notify = false) },
-                        label = { Text("Default Bank Name") },
-                        singleLine = true,
+                        value = defaultTerms,
+                        onValueChange = { defaultTerms = it; saveAll(notify = false) },
+                        label = { Text("Default Terms & Conditions Text") },
+                        maxLines = 3,
+                        modifier = Modifier.fillMaxWidth()
+                    )
+
+                    OutlinedTextField(
+                        value = defaultNotes,
+                        onValueChange = { defaultNotes = it; saveAll(notify = false) },
+                        label = { Text("Default Notes & Remarks") },
+                        maxLines = 3,
                         modifier = Modifier.fillMaxWidth()
                     )
 
@@ -331,6 +403,13 @@ fun InvoiceSettingsScreen(
                         modifier = Modifier.fillMaxWidth(),
                         horizontalArrangement = Arrangement.spacedBy(10.dp)
                     ) {
+                        OutlinedTextField(
+                            value = bankName,
+                            onValueChange = { bankName = it; saveAll(notify = false) },
+                            label = { Text("Bank Name") },
+                            singleLine = true,
+                            modifier = Modifier.weight(1f)
+                        )
                         OutlinedTextField(
                             value = accountNumber,
                             onValueChange = { accountNumber = it; saveAll(notify = false) },
@@ -338,114 +417,8 @@ fun InvoiceSettingsScreen(
                             singleLine = true,
                             modifier = Modifier.weight(1f)
                         )
-                        OutlinedTextField(
-                            value = routingNumber,
-                            onValueChange = { routingNumber = it; saveAll(notify = false) },
-                            label = { Text("Routing / IFSC") },
-                            singleLine = true,
-                            modifier = Modifier.weight(1f)
-                        )
                     }
 
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.spacedBy(10.dp)
-                    ) {
-                        OutlinedTextField(
-                            value = upiId,
-                            onValueChange = { upiId = it; saveAll(notify = false) },
-                            label = { Text("UPI ID (India)") },
-                            singleLine = true,
-                            modifier = Modifier.weight(1f)
-                        )
-                        OutlinedTextField(
-                            value = paymentLink,
-                            onValueChange = { paymentLink = it; saveAll(notify = false) },
-                            label = { Text("Online Pay URL") },
-                            singleLine = true,
-                            modifier = Modifier.weight(1f)
-                        )
-                    }
-                }
-            }
-
-            // =================================================================
-            // BLOCK 3: TERMS & CONDITIONS SECTION
-            // =================================================================
-            SectionControlBlock(
-                title = "Terms & Conditions Section",
-                description = "Custom payment terms, return policies, warranty clauses, and late payment fee agreements.",
-                icon = Icons.Default.FactCheck,
-                iconColor = Color(0xFF7C3AED),
-                iconBg = Color(0xFFEDE9FE),
-                isEnabled = showTerms,
-                onToggle = {
-                    showTerms = it
-                    saveAll(notify = false)
-                },
-                badgeText = if (showTerms) "Active on Edit Page" else "Hidden",
-                badgeActive = showTerms,
-                testTag = "toggle_terms_section"
-            ) {
-                Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                    OutlinedTextField(
-                        value = defaultTerms,
-                        onValueChange = { defaultTerms = it; saveAll(notify = false) },
-                        label = { Text("Default Terms & Conditions Text") },
-                        maxLines = 4,
-                        modifier = Modifier.fillMaxWidth()
-                    )
-                }
-            }
-
-            // =================================================================
-            // BLOCK 4: NOTES & REMARKS SECTION
-            // =================================================================
-            SectionControlBlock(
-                title = "Notes & Customer Message Section",
-                description = "Personal appreciation notes, payment instructions remarks, and project notes.",
-                icon = Icons.Default.Notes,
-                iconColor = Color(0xFFEA580C),
-                iconBg = Color(0xFFFFEDD5),
-                isEnabled = showNotes,
-                onToggle = {
-                    showNotes = it
-                    saveAll(notify = false)
-                },
-                badgeText = if (showNotes) "Active on Edit Page" else "Hidden",
-                badgeActive = showNotes,
-                testTag = "toggle_notes_section"
-            ) {
-                Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                    OutlinedTextField(
-                        value = defaultNotes,
-                        onValueChange = { defaultNotes = it; saveAll(notify = false) },
-                        label = { Text("Default Notes & Remarks") },
-                        maxLines = 4,
-                        modifier = Modifier.fillMaxWidth()
-                    )
-                }
-            }
-
-            // =================================================================
-            // BLOCK 5: SIGNATURE & OFFICIAL SEAL SECTION
-            // =================================================================
-            SectionControlBlock(
-                title = "Authorized Signatory & Stamp",
-                description = "Digital signature block, signatory designation, and verified company stamp seal.",
-                icon = Icons.Default.Draw,
-                iconColor = Color(0xFF2563EB),
-                iconBg = Color(0xFFEFF6FF),
-                isEnabled = showSignature,
-                onToggle = {
-                    showSignature = it
-                    saveAll(notify = false)
-                },
-                badgeText = if (showSignature) "Active on Edit Page" else "Hidden",
-                badgeActive = showSignature,
-                testTag = "toggle_signature_section"
-            ) {
-                Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
                     Row(
                         modifier = Modifier.fillMaxWidth(),
                         horizontalArrangement = Arrangement.spacedBy(10.dp)
@@ -453,36 +426,192 @@ fun InvoiceSettingsScreen(
                         OutlinedTextField(
                             value = signeeName,
                             onValueChange = { signeeName = it; saveAll(notify = false) },
-                            label = { Text("Signee Full Name") },
+                            label = { Text("Signee Name") },
                             singleLine = true,
                             modifier = Modifier.weight(1f)
                         )
                         OutlinedTextField(
                             value = signeeTitle,
                             onValueChange = { signeeTitle = it; saveAll(notify = false) },
-                            label = { Text("Designation / Title") },
+                            label = { Text("Signee Title") },
                             singleLine = true,
                             modifier = Modifier.weight(1f)
                         )
                     }
+                }
+            }
 
+            // =================================================================
+            // BLOCK 3: TOTALS, TAXES & DISCOUNT CONFIGURATION
+            // =================================================================
+            Card(
+                modifier = Modifier.fillMaxWidth(),
+                shape = RoundedCornerShape(14.dp),
+                colors = CardDefaults.cardColors(containerColor = Color.White),
+                border = androidx.compose.foundation.BorderStroke(1.dp, Color(0xFFE2E8F0))
+            ) {
+                Column(modifier = Modifier.padding(16.dp)) {
+                    Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                        Box(
+                            modifier = Modifier
+                                .size(38.dp)
+                                .clip(RoundedCornerShape(8.dp))
+                                .background(Color(0xFFFEF3C7)),
+                            contentAlignment = Alignment.Center
+                        ) {
+                            Icon(Icons.Default.Receipt, contentDescription = null, tint = Color(0xFFD97706), modifier = Modifier.size(20.dp))
+                        }
+                        Column {
+                            Text("Totals, Taxes & Discount Defaults", fontSize = 15.sp, fontWeight = FontWeight.Bold, color = PrimaryNavy)
+                            Text("Configure tax applicability, default discounts & charges", fontSize = 11.sp, color = Color.Gray)
+                        }
+                    }
+
+                    Spacer(modifier = Modifier.height(14.dp))
+                    HorizontalDivider(color = Color(0xFFF1F5F9))
+                    Spacer(modifier = Modifier.height(10.dp))
+
+                    // Tax Applicable Toggle
                     Row(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .clip(RoundedCornerShape(8.dp))
-                            .background(Color(0xFFF8FAFC))
-                            .padding(horizontal = 12.dp, vertical = 8.dp),
+                        modifier = Modifier.fillMaxWidth(),
                         horizontalArrangement = Arrangement.SpaceBetween,
                         verticalAlignment = Alignment.CenterVertically
                     ) {
-                        Column {
-                            Text("Official Company Stamp / Seal", fontSize = 13.sp, fontWeight = FontWeight.SemiBold, color = PrimaryNavy)
-                            Text("Renders verified circular seal on invoices", fontSize = 11.sp, color = Color.Gray)
+                        Column(modifier = Modifier.weight(1f)) {
+                            Text("Tax Applicable", fontSize = 13.sp, fontWeight = FontWeight.SemiBold, color = PrimaryNavy)
+                            Text(
+                                "Disable if your invoices are tax-exempt, zero-rated, or you do not charge taxes. When disabled, tax is completely hidden from the totals section on the edit page.",
+                                fontSize = 11.sp,
+                                color = Color.Gray,
+                                lineHeight = 15.sp
+                            )
                         }
+                        Spacer(modifier = Modifier.width(12.dp))
                         Switch(
-                            checked = showStamp,
-                            onCheckedChange = { showStamp = it; saveAll(notify = false) },
+                            checked = isTaxApplicable,
+                            onCheckedChange = {
+                                isTaxApplicable = it
+                                saveAll(notify = false)
+                            },
                             colors = SwitchDefaults.colors(checkedThumbColor = Color.White, checkedTrackColor = Color(0xFF2563EB))
+                        )
+                    }
+
+                    if (isTaxApplicable) {
+                        Spacer(modifier = Modifier.height(10.dp))
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.spacedBy(10.dp)
+                        ) {
+                            OutlinedTextField(
+                                value = defaultTaxLabel,
+                                onValueChange = { defaultTaxLabel = it; saveAll(notify = false) },
+                                label = { Text("Tax Label (e.g. GST, VAT, Sales Tax)") },
+                                singleLine = true,
+                                modifier = Modifier.weight(1.2f)
+                            )
+                            OutlinedTextField(
+                                value = if (defaultTaxRate > 0) defaultTaxRate.toString() else "",
+                                onValueChange = {
+                                    defaultTaxRate = it.toDoubleOrNull() ?: 0.0
+                                    saveAll(notify = false)
+                                },
+                                label = { Text("Default Tax Rate (%)") },
+                                keyboardOptions = androidx.compose.foundation.text.KeyboardOptions(keyboardType = androidx.compose.ui.text.input.KeyboardType.Decimal),
+                                singleLine = true,
+                                modifier = Modifier.weight(0.8f)
+                            )
+                        }
+                    }
+
+                    Spacer(modifier = Modifier.height(14.dp))
+                    HorizontalDivider(color = Color(0xFFF1F5F9))
+                    Spacer(modifier = Modifier.height(10.dp))
+
+                    // Default Discount Mode & Value
+                    Text("Default Discount Settings:", fontSize = 12.sp, fontWeight = FontWeight.SemiBold, color = Color(0xFF475569))
+                    Spacer(modifier = Modifier.height(6.dp))
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(10.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Row(
+                            modifier = Modifier.weight(1.1f),
+                            horizontalArrangement = Arrangement.spacedBy(6.dp)
+                        ) {
+                            val isPercent = defaultDiscountType == "percentage"
+                            Surface(
+                                color = if (isPercent) Color(0xFF2563EB) else Color(0xFFF1F5F9),
+                                shape = RoundedCornerShape(8.dp),
+                                modifier = Modifier
+                                    .weight(1f)
+                                    .clickable {
+                                        defaultDiscountType = "percentage"
+                                        saveAll(notify = false)
+                                    }
+                            ) {
+                                Box(modifier = Modifier.padding(vertical = 10.dp), contentAlignment = Alignment.Center) {
+                                    Text("% Percentage", fontSize = 11.sp, fontWeight = FontWeight.Bold, color = if (isPercent) Color.White else PrimaryNavy)
+                                }
+                            }
+                            Surface(
+                                color = if (!isPercent) Color(0xFF2563EB) else Color(0xFFF1F5F9),
+                                shape = RoundedCornerShape(8.dp),
+                                modifier = Modifier
+                                    .weight(1f)
+                                    .clickable {
+                                        defaultDiscountType = "flat"
+                                        saveAll(notify = false)
+                                    }
+                            ) {
+                                Box(modifier = Modifier.padding(vertical = 10.dp), contentAlignment = Alignment.Center) {
+                                    Text("$ Flat Amount", fontSize = 11.sp, fontWeight = FontWeight.Bold, color = if (!isPercent) Color.White else PrimaryNavy)
+                                }
+                            }
+                        }
+
+                        OutlinedTextField(
+                            value = if (defaultDiscountValue > 0) defaultDiscountValue.toString() else "",
+                            onValueChange = {
+                                defaultDiscountValue = it.toDoubleOrNull() ?: 0.0
+                                saveAll(notify = false)
+                            },
+                            label = { Text("Default Value") },
+                            keyboardOptions = androidx.compose.foundation.text.KeyboardOptions(keyboardType = androidx.compose.ui.text.input.KeyboardType.Decimal),
+                            singleLine = true,
+                            modifier = Modifier.weight(0.9f)
+                        )
+                    }
+
+                    Spacer(modifier = Modifier.height(14.dp))
+                    HorizontalDivider(color = Color(0xFFF1F5F9))
+                    Spacer(modifier = Modifier.height(10.dp))
+
+                    // Additional Charges / Custom Field
+                    Text("Additional Charge / Surcharge Field Name:", fontSize = 12.sp, fontWeight = FontWeight.SemiBold, color = Color(0xFF475569))
+                    Spacer(modifier = Modifier.height(6.dp))
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(10.dp)
+                    ) {
+                        OutlinedTextField(
+                            value = additionalChargeLabel,
+                            onValueChange = { additionalChargeLabel = it; saveAll(notify = false) },
+                            label = { Text("Field Label (e.g. Shipping Fee, Service Charge)") },
+                            singleLine = true,
+                            modifier = Modifier.weight(1.3f)
+                        )
+                        OutlinedTextField(
+                            value = if (defaultAdditionalCharge > 0) defaultAdditionalCharge.toString() else "",
+                            onValueChange = {
+                                defaultAdditionalCharge = it.toDoubleOrNull() ?: 0.0
+                                saveAll(notify = false)
+                            },
+                            label = { Text("Default ($)") },
+                            keyboardOptions = androidx.compose.foundation.text.KeyboardOptions(keyboardType = androidx.compose.ui.text.input.KeyboardType.Decimal),
+                            singleLine = true,
+                            modifier = Modifier.weight(0.7f)
                         )
                     }
                 }
@@ -703,6 +832,7 @@ fun InvoiceSettingsScreen(
         }
     }
 }
+}
 
 /**
  * Reusable Card Block for a top-level section toggle & controls.
@@ -816,7 +946,7 @@ fun SectionControlBlock(
 }
 
 @Composable
-fun FieldToggleRow(
+private fun FieldToggleRow(
     label: String,
     description: String,
     checked: Boolean,

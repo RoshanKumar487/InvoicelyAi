@@ -26,7 +26,7 @@ import java.util.Locale
         BusinessProfile::class,
         ExpenseEntity::class
     ],
-    version = 7,
+    version = 8,
     exportSchema = false
 )
 abstract class AppDatabase : RoomDatabase() {

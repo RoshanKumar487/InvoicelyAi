@@ -2,6 +2,8 @@ package com.example.ui.components
 
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
+import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -14,8 +16,6 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.material3.Card
-import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -25,13 +25,13 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.geometry.CornerRadius
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
+import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.nativeCanvas
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import com.example.ui.theme.PrimaryNavy
 import com.example.ui.theme.StatusPaidGreen
 import com.example.ui.viewmodel.MonthlyRevenueItem
 
@@ -41,17 +41,16 @@ fun RevenueChart(
     currencySymbol: String = "$",
     modifier: Modifier = Modifier
 ) {
-    Card(
+    val isDark = isSystemInDarkTheme()
+
+    GlassCard(
         modifier = modifier
             .testTag("revenue_chart_card")
             .fillMaxWidth(),
-        colors = CardDefaults.cardColors(
-            containerColor = MaterialTheme.colorScheme.surface
-        ),
-        shape = RoundedCornerShape(16.dp),
-        elevation = CardDefaults.cardElevation(defaultElevation = 2.dp)
+        shape = RoundedCornerShape(20.dp),
+        elevation = 6.dp
     ) {
-        Column(modifier = Modifier.padding(16.dp)) {
+        Column(modifier = Modifier.padding(18.dp)) {
             Row(
                 modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.SpaceBetween,
@@ -62,28 +61,31 @@ fun RevenueChart(
                         text = "Revenue & Billing Trends",
                         style = MaterialTheme.typography.titleMedium,
                         fontWeight = FontWeight.Bold,
-                        color = MaterialTheme.colorScheme.onSurface
+                        color = if (isDark) Color.White else Color(0xFF0F172A),
+                        fontSize = 16.sp
                     )
                     Text(
                         text = "Invoiced vs Collected payments",
                         style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                        color = if (isDark) Color(0xFF94A3B8) else Color(0xFF64748B),
+                        fontSize = 12.sp
                     )
                 }
 
-                // Legend
+                // Legend Pills
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     Box(
                         modifier = Modifier
                             .size(10.dp)
                             .clip(CircleShape)
-                            .background(PrimaryNavy)
+                            .background(Color(0xFF2563EB))
                     )
                     Spacer(modifier = Modifier.width(4.dp))
                     Text(
                         text = "Billed",
-                        fontSize = 11.sp,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                        fontSize = 11.5.sp,
+                        fontWeight = FontWeight.Medium,
+                        color = if (isDark) Color(0xFF94A3B8) else Color(0xFF475569)
                     )
                     Spacer(modifier = Modifier.width(12.dp))
                     Box(
@@ -95,8 +97,9 @@ fun RevenueChart(
                     Spacer(modifier = Modifier.width(4.dp))
                     Text(
                         text = "Paid",
-                        fontSize = 11.sp,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                        fontSize = 11.5.sp,
+                        fontWeight = FontWeight.Medium,
+                        color = if (isDark) Color(0xFF94A3B8) else Color(0xFF475569)
                     )
                 }
             }
@@ -118,10 +121,11 @@ fun RevenueChart(
 
                 // Draw subtle horizontal grid lines
                 val gridLines = 3
+                val gridColor = if (isDark) Color(0x33475569) else Color(0x3394A3B8)
                 for (g in 0..gridLines) {
                     val y = availableHeight * (g.toFloat() / gridLines)
                     drawLine(
-                        color = Color(0xFFE2E8F0),
+                        color = gridColor,
                         start = Offset(0f, y),
                         end = Offset(canvasWidth, y),
                         strokeWidth = 1f
@@ -131,30 +135,37 @@ fun RevenueChart(
                 if (items.isNotEmpty()) {
                     val groupWidth = canvasWidth / items.size
                     val barWidth = groupWidth * 0.28f
-                    val barSpacing = 4f
+                    val barSpacing = 5f
+
+                    val billedGradient = Brush.verticalGradient(
+                        colors = listOf(Color(0xFF3B82F6), Color(0xFF1D4ED8))
+                    )
+                    val paidGradient = Brush.verticalGradient(
+                        colors = listOf(Color(0xFF10B981), Color(0xFF059669))
+                    )
 
                     items.forEachIndexed { index, item ->
                         val groupCenterX = (index * groupWidth) + (groupWidth / 2)
 
                         // Invoiced Bar
-                        val invoicedHeight = ((item.totalAmount / maxVal) * availableHeight).toFloat().coerceAtLeast(6f)
+                        val invoicedHeight = ((item.totalAmount / maxVal) * availableHeight).toFloat().coerceAtLeast(8f)
                         val invoicedLeft = groupCenterX - barWidth - (barSpacing / 2)
                         val invoicedTop = availableHeight - invoicedHeight
 
                         drawRoundRect(
-                            color = PrimaryNavy,
+                            brush = billedGradient,
                             topLeft = Offset(invoicedLeft, invoicedTop),
                             size = Size(barWidth, invoicedHeight),
                             cornerRadius = CornerRadius(6f, 6f)
                         )
 
                         // Paid Bar
-                        val paidHeight = ((item.paidAmount / maxVal) * availableHeight).toFloat().coerceAtLeast(6f)
+                        val paidHeight = ((item.paidAmount / maxVal) * availableHeight).toFloat().coerceAtLeast(8f)
                         val paidLeft = groupCenterX + (barSpacing / 2)
                         val paidTop = availableHeight - paidHeight
 
                         drawRoundRect(
-                            color = StatusPaidGreen,
+                            brush = paidGradient,
                             topLeft = Offset(paidLeft, paidTop),
                             size = Size(barWidth, paidHeight),
                             cornerRadius = CornerRadius(6f, 6f)
@@ -163,10 +174,11 @@ fun RevenueChart(
                         // Draw Month Label
                         drawContext.canvas.nativeCanvas.apply {
                             val paint = android.graphics.Paint().apply {
-                                color = android.graphics.Color.parseColor("#64748B")
-                                textSize = 26f
+                                color = if (isDark) android.graphics.Color.parseColor("#94A3B8") else android.graphics.Color.parseColor("#475569")
+                                textSize = 28f
                                 textAlign = android.graphics.Paint.Align.CENTER
                                 isAntiAlias = true
+                                typeface = android.graphics.Typeface.create(android.graphics.Typeface.DEFAULT, android.graphics.Typeface.BOLD)
                             }
                             drawText(
                                 item.monthName,
@@ -181,3 +193,4 @@ fun RevenueChart(
         }
     }
 }
+

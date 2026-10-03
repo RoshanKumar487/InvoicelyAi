@@ -13,32 +13,32 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
-import androidx.compose.foundation.lazy.grid.GridCells
-import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
-import androidx.compose.foundation.lazy.grid.items
+import androidx.compose.foundation.layout.widthIn
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Assessment
 import androidx.compose.material.icons.filled.AutoAwesome
 import androidx.compose.material.icons.filled.Calculate
 import androidx.compose.material.icons.filled.Close
+import androidx.compose.material.icons.filled.DarkMode
 import androidx.compose.material.icons.filled.Description
+import androidx.compose.material.icons.filled.LightMode
 import androidx.compose.material.icons.filled.People
 import androidx.compose.material.icons.filled.ReceiptLong
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material.icons.filled.Tune
-import androidx.compose.material3.Card
-import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.SheetState
-import androidx.compose.material3.Surface
+import androidx.compose.material3.Switch
+import androidx.compose.material3.SwitchDefaults
 import androidx.compose.material3.Text
-import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -47,9 +47,12 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.unit.Dp
+import androidx.compose.ui.unit.TextUnit
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.example.ui.theme.PrimaryNavy
+import androidx.compose.foundation.isSystemInDarkTheme
 
 data class MenuItemData(
     val id: String,
@@ -74,8 +77,14 @@ fun AppMenuModalSheet(
     onNavigateToExpenses: () -> Unit,
     onNavigateToAiAgent: () -> Unit,
     onNavigateToInvoiceSettings: () -> Unit = {},
+    isDarkTheme: Boolean = isSystemInDarkTheme(),
+    onToggleDarkTheme: ((Boolean) -> Unit)? = null,
     modifier: Modifier = Modifier
 ) {
+    val adaptiveInfo = rememberWindowAdaptiveInfo()
+    val isTablet = adaptiveInfo.isTablet
+    val columns = adaptiveInfo.menuColumns
+
     val menuItems = listOf(
         MenuItemData(
             id = "menu_invoice_settings",
@@ -151,105 +160,211 @@ fun AppMenuModalSheet(
         )
     )
 
+    val isDark = isSystemInDarkTheme()
+
     ModalBottomSheet(
         onDismissRequest = onDismiss,
         sheetState = sheetState,
-        containerColor = Color.White,
-        shape = RoundedCornerShape(topStart = 24.dp, topEnd = 24.dp)
+        containerColor = if (isDark) Color(0xF00F172A) else Color(0xF8FFFFFF),
+        shape = RoundedCornerShape(topStart = 28.dp, topEnd = 28.dp)
     ) {
-        Column(
-            modifier = modifier
-                .fillMaxWidth()
-                .padding(horizontal = 20.dp, vertical = 8.dp)
+        // Centered container with max width on tablets so it looks like a refined sheet
+        Box(
+            modifier = Modifier.fillMaxWidth(),
+            contentAlignment = Alignment.TopCenter
         ) {
-            // Header Row
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.SpaceBetween,
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                Column {
-                    Text(
-                        text = "App Navigation Menu",
-                        fontSize = 18.sp,
-                        fontWeight = FontWeight.Bold,
-                        color = PrimaryNavy
-                    )
-                    Text(
-                        text = "Quick access to all features & tools",
-                        fontSize = 12.sp,
-                        color = Color.Gray
-                    )
-                }
-                IconButton(onClick = onDismiss) {
-                    Icon(
-                        imageVector = Icons.Default.Close,
-                        contentDescription = "Close Menu",
-                        tint = Color.Gray
-                    )
-                }
-            }
-
-            Spacer(modifier = Modifier.height(14.dp))
-            HorizontalDivider(color = Color(0xFFE2E8F0))
-            Spacer(modifier = Modifier.height(14.dp))
-
-            // Icon-based Sections List / Grid
             Column(
-                verticalArrangement = Arrangement.spacedBy(10.dp),
-                modifier = Modifier
+                modifier = modifier
                     .fillMaxWidth()
-                    .padding(bottom = 24.dp)
+                    .widthIn(max = if (isTablet) 720.dp else 540.dp)
+                    .padding(horizontal = if (isTablet) 24.dp else 16.dp, vertical = 6.dp)
+                    .verticalScroll(rememberScrollState())
             ) {
-                menuItems.forEach { item ->
-                    Card(
+                // Header Row
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Column {
+                        Text(
+                            text = "App Navigation Menu",
+                            fontSize = if (isTablet) 20.sp else 18.sp,
+                            fontWeight = FontWeight.Bold,
+                            color = if (isDark) Color.White else PrimaryNavy
+                        )
+                        Text(
+                            text = "Quick access to all features & tools",
+                            fontSize = if (isTablet) 13.sp else 12.sp,
+                            color = if (isDark) Color(0xFF94A3B8) else Color.Gray
+                        )
+                    }
+                    IconButton(onClick = onDismiss) {
+                        Icon(
+                            imageVector = Icons.Default.Close,
+                            contentDescription = "Close Menu",
+                            tint = Color.Gray
+                        )
+                    }
+                }
+
+                Spacer(modifier = Modifier.height(12.dp))
+                HorizontalDivider(color = if (isDark) Color(0xFF334155) else Color(0xFFE2E8F0))
+                Spacer(modifier = Modifier.height(12.dp))
+
+                // =================================================================
+                // GLASSMORPHISM THEME MODE SWITCH (Directly in Menu)
+                // =================================================================
+                GlassCard(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .testTag("menu_theme_toggle_card"),
+                    shape = RoundedCornerShape(16.dp),
+                    elevation = 2.dp
+                ) {
+                    Row(
                         modifier = Modifier
                             .fillMaxWidth()
-                            .clickable { item.onClick() }
-                            .testTag(item.id),
-                        shape = RoundedCornerShape(12.dp),
-                        colors = CardDefaults.cardColors(containerColor = Color(0xFFF8FAFC)),
-                        border = androidx.compose.foundation.BorderStroke(1.dp, Color(0xFFE2E8F0))
+                            .padding(horizontal = if (isTablet) 16.dp else 12.dp, vertical = 10.dp),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
                     ) {
                         Row(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .padding(12.dp),
-                            verticalAlignment = Alignment.CenterVertically
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(12.dp)
                         ) {
                             Box(
                                 modifier = Modifier
-                                    .size(42.dp)
+                                    .size(if (isTablet) 46.dp else 40.dp)
                                     .clip(CircleShape)
-                                    .background(item.iconBgColor),
+                                    .background(if (isDark) Color(0xFF312E81) else Color(0xFFFEF3C7)),
                                 contentAlignment = Alignment.Center
                             ) {
                                 Icon(
-                                    imageVector = item.icon,
-                                    contentDescription = item.title,
-                                    tint = item.iconColor,
-                                    modifier = Modifier.size(22.dp)
+                                    imageVector = if (isDark) Icons.Default.DarkMode else Icons.Default.LightMode,
+                                    contentDescription = "Theme Mode",
+                                    tint = if (isDark) Color(0xFFA5B4FC) else Color(0xFFD97706),
+                                    modifier = Modifier.size(if (isTablet) 24.dp else 20.dp)
                                 )
                             }
-
-                            Spacer(modifier = Modifier.width(14.dp))
-
-                            Column(modifier = Modifier.weight(1f)) {
+                            Column {
                                 Text(
-                                    text = item.title,
-                                    fontSize = 15.sp,
+                                    text = if (isDark) "Dark Glass Theme" else "Light Glass Theme",
+                                    fontSize = if (isTablet) 15.5.sp else 14.sp,
                                     fontWeight = FontWeight.Bold,
-                                    color = Color(0xFF1E293B)
+                                    color = if (isDark) Color.White else PrimaryNavy
                                 )
                                 Text(
-                                    text = item.subtitle,
-                                    fontSize = 12.sp,
-                                    color = Color(0xFF64748B)
+                                    text = if (isDark) "Obsidian Glass & Neon Glow Orbs" else "Sapphire Frost & Crisp Translucency",
+                                    fontSize = if (isTablet) 12.sp else 11.sp,
+                                    color = if (isDark) Color(0xFF94A3B8) else Color(0xFF64748B)
                                 )
+                            }
+                        }
+
+                        Switch(
+                            checked = isDark,
+                            onCheckedChange = { onToggleDarkTheme?.invoke(it) },
+                            colors = SwitchDefaults.colors(
+                                checkedThumbColor = Color.White,
+                                checkedTrackColor = Color(0xFF4F46E5),
+                                uncheckedThumbColor = Color.White,
+                                uncheckedTrackColor = Color(0xFFCBD5E1)
+                            )
+                        )
+                    }
+                }
+
+                Spacer(modifier = Modifier.height(14.dp))
+
+                // Responsive Icon-based Sections List / Grid
+                val chunkedItems = menuItems.chunked(columns)
+                Column(
+                    verticalArrangement = Arrangement.spacedBy(10.dp),
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(bottom = 28.dp)
+                ) {
+                    chunkedItems.forEach { rowItems ->
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.spacedBy(10.dp)
+                        ) {
+                            rowItems.forEach { item ->
+                                Box(modifier = Modifier.weight(1f)) {
+                                    MenuItemCard(
+                                        item = item,
+                                        isDark = isDark,
+                                        iconSize = if (isTablet) 44.dp else 38.dp,
+                                        titleSize = if (isTablet) 15.sp else 14.sp,
+                                        subtitleSize = if (isTablet) 12.sp else 11.sp
+                                    )
+                                }
+                            }
+                            if (rowItems.size < columns) {
+                                repeat(columns - rowItems.size) {
+                                    Spacer(modifier = Modifier.weight(1f))
+                                }
                             }
                         }
                     }
                 }
+            }
+        }
+    }
+}
+
+@Composable
+private fun MenuItemCard(
+    item: MenuItemData,
+    isDark: Boolean,
+    iconSize: Dp,
+    titleSize: TextUnit,
+    subtitleSize: TextUnit
+) {
+    GlassCard(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clickable { item.onClick() }
+            .testTag(item.id),
+        shape = RoundedCornerShape(16.dp),
+        elevation = 1.dp
+    ) {
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(12.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Box(
+                modifier = Modifier
+                    .size(iconSize)
+                    .clip(CircleShape)
+                    .background(item.iconBgColor),
+                contentAlignment = Alignment.Center
+            ) {
+                Icon(
+                    imageVector = item.icon,
+                    contentDescription = item.title,
+                    tint = item.iconColor,
+                    modifier = Modifier.size(iconSize * 0.52f)
+                )
+            }
+
+            Spacer(modifier = Modifier.width(12.dp))
+
+            Column(modifier = Modifier.weight(1f)) {
+                Text(
+                    text = item.title,
+                    fontSize = titleSize,
+                    fontWeight = FontWeight.Bold,
+                    color = if (isDark) Color.White else Color(0xFF1E293B)
+                )
+                Text(
+                    text = item.subtitle,
+                    fontSize = subtitleSize,
+                    color = if (isDark) Color(0xFF94A3B8) else Color(0xFF64748B)
+                )
             }
         }
     }

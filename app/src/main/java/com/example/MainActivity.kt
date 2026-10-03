@@ -1,5 +1,6 @@
 package com.example
 
+import android.content.res.Configuration
 import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.BackHandler
@@ -7,11 +8,16 @@ import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
 import androidx.activity.viewModels
 import androidx.compose.foundation.background
+import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
@@ -36,6 +42,7 @@ import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableLongStateOf
 import androidx.compose.runtime.mutableStateOf
@@ -47,12 +54,16 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.example.data.model.ClientEntity
+import com.example.ui.components.AmbientGlassBackdrop
 import com.example.ui.components.AppMenuModalSheet
+import com.example.ui.components.GlassCard
+import com.example.ui.components.rememberWindowAdaptiveInfo
 import com.example.ui.screens.AiChatScreen
 import com.example.ui.screens.ClientsScreen
 import com.example.ui.screens.DashboardScreen
@@ -97,8 +108,29 @@ class MainActivity : ComponentActivity() {
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
         setContent {
-            MyApplicationTheme {
-                MainAppContainer(viewModel = viewModel)
+            val systemDark = isSystemInDarkTheme()
+            var darkThemeChoice by remember { mutableStateOf<Boolean?>(null) }
+            val isDark = darkThemeChoice ?: systemDark
+
+            val currentConfig = LocalConfiguration.current
+            val updatedConfig = remember(isDark, currentConfig) {
+                Configuration(currentConfig).apply {
+                    uiMode = if (isDark) {
+                        (uiMode and Configuration.UI_MODE_NIGHT_MASK.inv()) or Configuration.UI_MODE_NIGHT_YES
+                    } else {
+                        (uiMode and Configuration.UI_MODE_NIGHT_MASK.inv()) or Configuration.UI_MODE_NIGHT_NO
+                    }
+                }
+            }
+
+            CompositionLocalProvider(LocalConfiguration provides updatedConfig) {
+                MyApplicationTheme(darkTheme = isDark) {
+                    MainAppContainer(
+                        viewModel = viewModel,
+                        isDarkTheme = isDark,
+                        onToggleDarkTheme = { darkThemeChoice = it }
+                    )
+                }
             }
         }
     }
@@ -106,7 +138,11 @@ class MainActivity : ComponentActivity() {
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun MainAppContainer(viewModel: InvoiceViewModel) {
+fun MainAppContainer(
+    viewModel: InvoiceViewModel,
+    isDarkTheme: Boolean = isSystemInDarkTheme(),
+    onToggleDarkTheme: ((Boolean) -> Unit)? = null
+) {
     var currentScreen by remember { mutableStateOf<AppScreen>(AppScreen.TabScreen(MainTab.DASHBOARD)) }
     var currentTab by remember { mutableStateOf(MainTab.DASHBOARD) }
     var showMenuSheet by remember { mutableStateOf(false) }
@@ -154,82 +190,102 @@ fun MainAppContainer(viewModel: InvoiceViewModel) {
 
     val isTopLevelTab = currentScreen is AppScreen.TabScreen
 
-    Scaffold(
-        modifier = Modifier.fillMaxSize(),
-        contentWindowInsets = WindowInsets(0, 0, 0, 0),
-        bottomBar = {
-            if (isTopLevelTab) {
-                Surface(
-                    color = MaterialTheme.colorScheme.surface,
-                    shadowElevation = 8.dp
-                ) {
-                    NavigationBar(
-                        containerColor = MaterialTheme.colorScheme.surface,
-                        contentColor = PrimaryNavy,
-                        tonalElevation = 0.dp
+    AmbientGlassBackdrop {
+        Scaffold(
+            modifier = Modifier.fillMaxSize(),
+            containerColor = Color.Transparent,
+            contentWindowInsets = WindowInsets(0, 0, 0, 0),
+            bottomBar = {
+                if (isTopLevelTab) {
+                    val adaptiveInfo = rememberWindowAdaptiveInfo()
+                    Box(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .navigationBarsPadding()
+                            .padding(
+                                horizontal = if (adaptiveInfo.isTablet) 32.dp else 14.dp,
+                                vertical = 6.dp
+                            ),
+                        contentAlignment = Alignment.BottomCenter
                     ) {
-                        MainTab.values().forEach { tab ->
-                            val selected = if (tab == MainTab.MENU) showMenuSheet else currentTab == tab
-                            NavigationBarItem(
-                                selected = selected,
-                                onClick = {
-                                    if (tab == MainTab.MENU) {
-                                        showMenuSheet = true
-                                    } else {
-                                        currentTab = tab
-                                        currentScreen = AppScreen.TabScreen(tab)
-                                    }
-                                },
-                                icon = {
-                                    if (tab == MainTab.AI_AGENT) {
-                                        Box(
-                                            modifier = Modifier
-                                                .size(if (selected) 38.dp else 34.dp)
-                                                .clip(CircleShape)
-                                                .background(
-                                                    Brush.linearGradient(
-                                                        colors = if (selected) listOf(Color(0xFF1D4ED8), Color(0xFF7C3AED))
-                                                        else listOf(Color(0xFF3B82F6), Color(0xFF8B5CF6))
+                        GlassCard(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .widthIn(max = 640.dp),
+                            shape = RoundedCornerShape(26.dp),
+                            elevation = 8.dp
+                        ) {
+                            NavigationBar(
+                                containerColor = Color.Transparent,
+                                contentColor = PrimaryNavy,
+                                tonalElevation = 0.dp,
+                                windowInsets = WindowInsets(0, 0, 0, 0),
+                                modifier = Modifier.height(68.dp)
+                            ) {
+                                MainTab.values().forEach { tab ->
+                                    val selected = if (tab == MainTab.MENU) showMenuSheet else currentTab == tab
+                                    NavigationBarItem(
+                                        selected = selected,
+                                        onClick = {
+                                            if (tab == MainTab.MENU) {
+                                                showMenuSheet = true
+                                            } else {
+                                                currentTab = tab
+                                                currentScreen = AppScreen.TabScreen(tab)
+                                            }
+                                        },
+                                        icon = {
+                                            if (tab == MainTab.AI_AGENT) {
+                                                Box(
+                                                    modifier = Modifier
+                                                        .size(if (selected) 38.dp else 34.dp)
+                                                        .clip(CircleShape)
+                                                        .background(
+                                                            Brush.linearGradient(
+                                                                colors = if (selected) listOf(Color(0xFF1D4ED8), Color(0xFF7C3AED))
+                                                                else listOf(Color(0xFF3B82F6), Color(0xFF8B5CF6))
+                                                            )
+                                                        ),
+                                                    contentAlignment = Alignment.Center
+                                                ) {
+                                                    Icon(
+                                                        imageVector = Icons.Default.AutoAwesome,
+                                                        contentDescription = tab.title,
+                                                        tint = Color.White,
+                                                        modifier = Modifier.size(if (selected) 20.dp else 18.dp)
                                                     )
-                                                ),
-                                            contentAlignment = Alignment.Center
-                                        ) {
-                                            Icon(
-                                                imageVector = Icons.Default.AutoAwesome,
-                                                contentDescription = tab.title,
-                                                tint = Color.White,
-                                                modifier = Modifier.size(if (selected) 20.dp else 18.dp)
+                                                }
+                                            } else {
+                                                Icon(
+                                                    imageVector = tab.icon,
+                                                    contentDescription = tab.title,
+                                                    modifier = Modifier.size(22.dp)
+                                                )
+                                            }
+                                        },
+                                        label = {
+                                            Text(
+                                                text = tab.title,
+                                                fontSize = 11.sp,
+                                                fontWeight = if (selected) FontWeight.ExtraBold else FontWeight.Medium
                                             )
-                                        }
-                                    } else {
-                                        Icon(
-                                            imageVector = tab.icon,
-                                            contentDescription = tab.title
-                                        )
-                                    }
-                                },
-                                label = {
-                                    Text(
-                                        text = tab.title,
-                                        fontSize = 11.sp,
-                                        fontWeight = if (selected) FontWeight.Bold else FontWeight.Normal
+                                        },
+                                        colors = NavigationBarItemDefaults.colors(
+                                            selectedIconColor = Color(0xFF1D4ED8),
+                                            selectedTextColor = Color(0xFF1D4ED8),
+                                            indicatorColor = if (tab == MainTab.AI_AGENT) Color.Transparent else Color(0xFF3B82F6).copy(alpha = 0.16f),
+                                            unselectedIconColor = Color(0xFF64748B),
+                                            unselectedTextColor = Color(0xFF64748B)
+                                        ),
+                                        modifier = Modifier.testTag("nav_item_${tab.name.lowercase()}")
                                     )
-                                },
-                                colors = NavigationBarItemDefaults.colors(
-                                    selectedIconColor = PrimaryNavy,
-                                    selectedTextColor = PrimaryNavy,
-                                    indicatorColor = if (tab == MainTab.AI_AGENT) Color.Transparent else MaterialTheme.colorScheme.primaryContainer,
-                                    unselectedIconColor = MaterialTheme.colorScheme.onSurfaceVariant,
-                                    unselectedTextColor = MaterialTheme.colorScheme.onSurfaceVariant
-                                ),
-                                modifier = Modifier.testTag("nav_item_${tab.name.lowercase()}")
-                            )
+                                }
+                            }
                         }
                     }
                 }
             }
-        }
-    ) { innerPadding ->
+        ) { innerPadding ->
         Box(
             modifier = Modifier
                 .fillMaxSize()
@@ -257,7 +313,8 @@ fun MainAppContainer(viewModel: InvoiceViewModel) {
                                 onOpenAiChat = {
                                     currentTab = MainTab.AI_AGENT
                                     currentScreen = AppScreen.TabScreen(MainTab.AI_AGENT)
-                                }
+                                },
+                                onOpenMenu = { showMenuSheet = true }
                             )
                         }
                         MainTab.INVOICES -> {
@@ -269,7 +326,8 @@ fun MainAppContainer(viewModel: InvoiceViewModel) {
                                 },
                                 onCreateInvoice = { currentScreen = AppScreen.InvoiceEdit(0L) },
                                 onOpenInvoice = { id -> currentScreen = AppScreen.InvoicePreview(id) },
-                                onEditInvoice = { id -> currentScreen = AppScreen.InvoiceEdit(id) }
+                                onEditInvoice = { id -> currentScreen = AppScreen.InvoiceEdit(id) },
+                                onOpenMenu = { showMenuSheet = true }
                             )
                         }
                         MainTab.AI_AGENT -> {
@@ -284,7 +342,8 @@ fun MainAppContainer(viewModel: InvoiceViewModel) {
                                 onNavigateToDashboard = {
                                     currentTab = MainTab.DASHBOARD
                                     currentScreen = AppScreen.TabScreen(MainTab.DASHBOARD)
-                                }
+                                },
+                                onOpenMenu = { showMenuSheet = true }
                             )
                         }
                         MainTab.EXPENSES -> {
@@ -293,7 +352,8 @@ fun MainAppContainer(viewModel: InvoiceViewModel) {
                                 onOpenAiChat = {
                                     currentTab = MainTab.AI_AGENT
                                     currentScreen = AppScreen.TabScreen(MainTab.AI_AGENT)
-                                }
+                                },
+                                onOpenMenu = { showMenuSheet = true }
                             )
                         }
                         MainTab.MENU -> {
@@ -316,7 +376,8 @@ fun MainAppContainer(viewModel: InvoiceViewModel) {
                                 onOpenAiChat = {
                                     currentTab = MainTab.AI_AGENT
                                     currentScreen = AppScreen.TabScreen(MainTab.AI_AGENT)
-                                }
+                                },
+                                onOpenMenu = { showMenuSheet = true }
                             )
                         }
                     }
@@ -328,20 +389,23 @@ fun MainAppContainer(viewModel: InvoiceViewModel) {
                         onCreateInvoiceForClient = { client ->
                             currentScreen = AppScreen.InvoiceEdit(0L)
                         },
-                        onOpenInvoice = { id -> currentScreen = AppScreen.InvoicePreview(id) }
+                        onOpenInvoice = { id -> currentScreen = AppScreen.InvoicePreview(id) },
+                        onOpenMenu = { showMenuSheet = true }
                     )
                 }
                 is AppScreen.Reports -> {
                     ReportsScreen(
                         viewModel = viewModel,
-                        onBack = { currentScreen = AppScreen.TabScreen(currentTab) }
+                        onBack = { currentScreen = AppScreen.TabScreen(currentTab) },
+                        onOpenMenu = { showMenuSheet = true }
                     )
                 }
                 is AppScreen.TemplatesList -> {
                     TemplatesScreen(
                         viewModel = viewModel,
                         onBack = { currentScreen = AppScreen.TabScreen(currentTab) },
-                        onPreviewWithInvoice = { id -> currentScreen = AppScreen.InvoicePreview(id) }
+                        onPreviewWithInvoice = { id -> currentScreen = AppScreen.InvoicePreview(id) },
+                        onOpenMenu = { showMenuSheet = true }
                     )
                 }
                 is AppScreen.Settings -> {
@@ -373,7 +437,8 @@ fun MainAppContainer(viewModel: InvoiceViewModel) {
                         onViewAiChat = {
                             currentTab = MainTab.AI_AGENT
                             currentScreen = AppScreen.TabScreen(MainTab.AI_AGENT)
-                        }
+                        },
+                        onOpenMenu = { showMenuSheet = true }
                     )
                 }
                 is AppScreen.InvoiceEdit -> {
@@ -381,7 +446,8 @@ fun MainAppContainer(viewModel: InvoiceViewModel) {
                         invoiceId = screen.invoiceId,
                         viewModel = viewModel,
                         onBack = { currentScreen = AppScreen.TabScreen(currentTab) },
-                        onSavedAndPreview = { savedId -> currentScreen = AppScreen.InvoicePreview(savedId) }
+                        onSavedAndPreview = { savedId -> currentScreen = AppScreen.InvoicePreview(savedId) },
+                        onOpenMenu = { showMenuSheet = true }
                     )
                 }
                 is AppScreen.InvoicePreview -> {
@@ -390,18 +456,21 @@ fun MainAppContainer(viewModel: InvoiceViewModel) {
                         viewModel = viewModel,
                         onBack = { currentScreen = AppScreen.TabScreen(currentTab) },
                         onEditInvoice = { id -> currentScreen = AppScreen.InvoiceEdit(id) },
-                        initialFullPage = screen.initialFullPage
+                        initialFullPage = screen.initialFullPage,
+                        onOpenMenu = { showMenuSheet = true }
                     )
                 }
                 is AppScreen.TaxTool -> {
                     TaxCalculatorScreen(
-                        onBack = { currentScreen = AppScreen.TabScreen(currentTab) }
+                        onBack = { currentScreen = AppScreen.TabScreen(currentTab) },
+                        onOpenMenu = { showMenuSheet = true }
                     )
                 }
                 is AppScreen.InvoiceSettings -> {
                     InvoiceSettingsScreen(
                         viewModel = viewModel,
-                        onBack = { currentScreen = AppScreen.TabScreen(currentTab) }
+                        onBack = { currentScreen = AppScreen.TabScreen(currentTab) },
+                        onOpenMenu = { showMenuSheet = true }
                     )
                 }
             }
@@ -412,6 +481,8 @@ fun MainAppContainer(viewModel: InvoiceViewModel) {
             AppMenuModalSheet(
                 sheetState = menuSheetState,
                 onDismiss = { showMenuSheet = false },
+                isDarkTheme = isDarkTheme,
+                onToggleDarkTheme = onToggleDarkTheme,
                 onNavigateToClients = {
                     currentScreen = AppScreen.ClientsList
                 },
@@ -442,3 +513,5 @@ fun MainAppContainer(viewModel: InvoiceViewModel) {
         }
     }
 }
+}
+

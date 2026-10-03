@@ -23,7 +23,7 @@ import java.util.concurrent.TimeUnit
 import java.util.regex.Pattern
 
 /**
- * Service for interacting with the Google Gemini API (model: gemini-3.5-flash)
+ * Service for interacting with the Google Gemini API (model: gemini-2.0-flash)
  * with graceful fallback to local semantic extraction.
  */
 class GeminiAiService(
@@ -36,7 +36,7 @@ class GeminiAiService(
     companion object {
         private const val TAG = "GeminiAiService"
         // Target model according to guidelines: Basic Text & Q&A Tasks
-        private const val MODEL_NAME = "gemini-3.5-flash"
+        private const val MODEL_NAME = "gemini-2.0-flash"
         private const val API_BASE_URL = "https://generativelanguage.googleapis.com/v1beta/models"
 
         private val CLIENT_TAG_PATTERN = Pattern.compile("<<<CLIENT_DATA:(.*?)>>>", Pattern.DOTALL)
@@ -52,7 +52,9 @@ class GeminiAiService(
         existingClients: List<ClientEntity>,
         invoices: List<InvoiceEntity> = emptyList(),
         expenses: List<ExpenseEntity> = emptyList(),
-        nextInvoiceNumber: String
+        nextInvoiceNumber: String,
+        conversationHistory: List<ChatMessage> = emptyList(),
+        businessMemory: AiBusinessMemory? = null
     ): AiActionResult = withContext(Dispatchers.IO) {
         val apiKey = try {
             BuildConfig.GEMINI_API_KEY
@@ -64,7 +66,17 @@ class GeminiAiService(
 
         if (hasValidKey) {
             try {
-                val apiResponse = callGeminiApi(prompt, apiKey, profile, existingClients, invoices, expenses, nextInvoiceNumber)
+                val apiResponse = callGeminiApi(
+                    prompt = prompt,
+                    apiKey = apiKey,
+                    profile = profile,
+                    existingClients = existingClients,
+                    invoices = invoices,
+                    expenses = expenses,
+                    nextInvoiceNumber = nextInvoiceNumber,
+                    conversationHistory = conversationHistory,
+                    businessMemory = businessMemory
+                )
                 if (apiResponse != null) {
                     val parsed = parseAiOutput(apiResponse, profile, invoices, expenses, existingClients, nextInvoiceNumber)
                     if (parsed != null) {
@@ -77,11 +89,21 @@ class GeminiAiService(
         }
 
         // Local Smart NLP Fallback
-        return@withContext processLocally(prompt, profile, existingClients, invoices, expenses, nextInvoiceNumber)
+        return@withContext processLocally(
+            prompt = prompt,
+            profile = profile,
+            existingClients = existingClients,
+            invoices = invoices,
+            expenses = expenses,
+            nextInvoiceNumber = nextInvoiceNumber,
+            conversationHistory = conversationHistory,
+            businessMemory = businessMemory
+        )
     }
 
     /**
-     * Executes REST call to Gemini 3.5 Flash endpoint with customer's full real-time database context
+     * Executes REST call to Gemini 2.0 Flash endpoint with customer's full real-time database context,
+     * learned user habits, and multi-turn conversation memory.
      */
     private fun callGeminiApi(
         prompt: String,
@@ -90,7 +112,9 @@ class GeminiAiService(
         existingClients: List<ClientEntity>,
         invoices: List<InvoiceEntity>,
         expenses: List<ExpenseEntity>,
-        nextInvoiceNumber: String
+        nextInvoiceNumber: String,
+        conversationHistory: List<ChatMessage> = emptyList(),
+        businessMemory: AiBusinessMemory? = null
     ): String? {
         val url = "$API_BASE_URL/$MODEL_NAME:generateContent?key=$apiKey"
 
@@ -146,8 +170,8 @@ class GeminiAiService(
         }
 
         val systemInstruction = """
-            You are Invoicely AI, an intelligent business partner, CFO, and conversational assistant powered by Google Gemini.
-            The user's business name is "${profile.businessName.ifBlank { "My Business" }}" (${profile.defaultCurrency} $currSym).
+            You are the user's dedicated, smart, and highly competent Business Employee Agent & CFO for "${profile.businessName.ifBlank { "My Business" }}" (${profile.defaultCurrency} $currSym), powered by Google Gemini.
+            You behave like a trustworthy, proactive, respectful senior employee / business operations manager. You are ready to assist with invoices, financial tracking, client management, business decisions, or answer any question under the sun!
 
             === REAL-TIME CUSTOMER DATA FROM DATABASE ===
             Financial Overview:
@@ -167,20 +191,26 @@ class GeminiAiService(
             Recent Expenses:
             $expensesSummary
 
-            === TALK SYSTEM & DATA CONVERSATION RULES ===
-            1. SPEAK TO CUSTOMER ABOUT THEIR DATA:
-               When the customer asks about their data (e.g. "How much is pending?", "Who owes me money?", "What did I bill Acme?", "Show my financial summary", "What are my expenses?", "Who is my top client?"):
-               - Answer directly and warmly using their EXACT numbers, client names, and invoice IDs from the database above!
-               - If the user asks for a financial summary, revenue report, or general overview of their money, ALWAYS append the exact tag: <<<FINANCIAL_SUMMARY>>>
-               - If discussing a specific invoice, mention it clearly and append the tag: <<<MATCHED_INVOICE:INV_NUMBER>>> (e.g. <<<MATCHED_INVOICE:${invoices.firstOrNull()?.invoiceNumber ?: "INV-2026-001"}>>>)
+            === EMPLOYEE PERSONA & LANGUAGE RULES ===
+            1. MULTILINGUAL & NATIVE INDIAN HINDI SUPPORT:
+               - You can understand and respond in ANY language fluently based on the user's input.
+               - When the user speaks or writes in Hindi or Hinglish (e.g. "bhai kitna pending hai?", "Acme ka invoice bana do", "namaste kaise ho", "mere business ka hisaab batao"):
+                 Respond warmly, politely, and natively in Indian Hindi / Hinglish like a smart, respectful Indian office employee/manager ("जी सर! आपके बिज़नेस का पूरा हिसाब यहाँ है...", "हाँजी सर, Acme Corp का इनवॉइस मैंने तैयार कर दिया है!").
+               - When the user writes in English, reply in crisp, professional executive English ("Certainly, Sir! Here is the breakdown of your revenue and pending dues:").
+               - When the user speaks in any other language (Tamil, Telugu, Bengali, Marathi, Spanish, etc.), reply naturally in that language.
 
-            2. TALK ANYTHING (GEMINI TALK SYSTEM):
-               The user can talk to you about ANYTHING! You are not restricted to just invoicing:
-               - Give expert business advice, pricing advice, client negotiation tactics, tips on recovering overdue payments, tax advice, or industry practices.
-               - Engage in natural, friendly, encouraging everyday conversation and answer general questions.
-               - IMPORTANT FOR VOICE SPEECH: Keep your responses clean, natural, and conversational so they sound fantastic when read aloud by the Text-to-Speech system. Avoid complex ASCII tables or markdown clutter that sounds awkward when spoken.
+            2. ANSWER ANYTHING (EXECUTIVE EMPLOYEE AGENT):
+               - You are an expert employee agent who can answer ANYTHING: invoices, business taxes, GST regulations, overdue collection strategies, marketing advice, pricing calculation, or general everyday questions.
+               - Always be polite, respectful (e.g. using "Sir / Ma'am" or "जी सर"), proactive, and solution-oriented.
 
-            3. DATABASE ACTIONS:
+            3. STRUCTURED PARAGRAPHS & DATA POINTS (CHATGPT FLOW):
+               - Format your responses with short, readable paragraphs and clean bullet data points (•).
+               - Highlight key metrics, currency amounts, dates, and client names in bold.
+               - Avoid huge unbroken blocks of text. Make it effortless to skim on mobile screens and natural when read aloud by voice speech.
+
+            4. DATABASE ACTIONS & SPECIAL TAGS:
+               - When discussing financial totals or summarizing revenue, ALWAYS append the exact tag: <<<FINANCIAL_SUMMARY>>>
+               - When discussing a specific invoice, mention it clearly and append: <<<MATCHED_INVOICE:INV_NUMBER>>>
                - If user asks to SAVE or ADD A CLIENT:
                  Include: <<<CLIENT_DATA:{"name":"...","company":"...","email":"...","phone":"...","address":"...","taxId":"..."}>>>
                - If user asks to GENERATE or CREATE AN INVOICE:
@@ -189,12 +219,32 @@ class GeminiAiService(
                  Include: <<<EXPENSE_DATA:{"title":"...","category":"...","amount":0.0,"vendor":"...","paymentMethod":"Credit Card","taxDeductible":true}>>>
         """.trimIndent()
 
+        val memorySection = if (businessMemory != null) {
+            """
+            === LEARNED BUSINESS MEMORY & HABITS ===
+            • Preferred Language: ${businessMemory.preferredLanguage}
+            • User Voice Usage: ${businessMemory.voiceSpeakingCount} voice interactions (User regularly speaks by voice)
+            • Frequently Mentioned Clients: ${businessMemory.frequentClients.joinToString(", ").ifBlank { "None recorded yet" }}
+            • Recent Chat Topics & Follow-ups: ${businessMemory.recentDiscussionTopics.joinToString("; ").ifBlank { "None" }}
+            • Persona: You behave like a seasoned, respectful executive employee who knows every detail of the business records, remembers past conversations, and helps anticipate the user's needs.
+            """.trimIndent()
+        } else ""
+
+        val historySection = if (conversationHistory.isNotEmpty()) {
+            val formatted = conversationHistory.takeLast(8).joinToString("\n") { msg ->
+                val speaker = if (msg.isUser) "Boss (User)" else "Invoicely AI"
+                val voiceNotice = if (msg.isVoiceInput) " [Voice]" else ""
+                "$speaker$voiceNotice: ${msg.text.take(250)}"
+            }
+            "=== RECENT CONVERSATION CONTEXT ===\n$formatted\n"
+        } else ""
+
         val jsonBody = JSONObject().apply {
             val contentsArray = JSONArray()
             val contentObj = JSONObject().apply {
                 val partsArray = JSONArray()
                 partsArray.put(JSONObject().apply {
-                    put("text", "$systemInstruction\n\nUser request: $prompt")
+                    put("text", "$systemInstruction\n\n$memorySection\n\n$historySection\nUser request: $prompt")
                 })
                 put("parts", partsArray)
             }
@@ -445,15 +495,23 @@ class GeminiAiService(
         existingClients: List<ClientEntity>,
         invoices: List<InvoiceEntity>,
         expenses: List<ExpenseEntity>,
-        nextInvoiceNumber: String
+        nextInvoiceNumber: String,
+        conversationHistory: List<ChatMessage> = emptyList(),
+        businessMemory: AiBusinessMemory? = null
     ): AiActionResult {
         val lower = prompt.lowercase(Locale.ROOT)
+        val isHindi = lower.contains("namaste") || lower.contains("kaise") || lower.contains("baki") ||
+                lower.contains("kitna") || lower.contains("hisaab") || lower.contains("banao") ||
+                lower.contains("kharcha") || lower.contains("paisa") || lower.contains("kisko") ||
+                lower.contains("bhejo") || lower.contains("kripya") || lower.contains("dhanyawad") ||
+                prompt.any { it in '\u0900'..'\u097F' }
         val currSym = profile.defaultCurrencySymbol.ifBlank { "$" }
 
         // 0. DATA QUERY: PENDING / OVERDUE / UNPAID INVOICES
         val isPendingQuery = (lower.contains("pending") || lower.contains("unpaid") ||
                 lower.contains("who owes") || lower.contains("money owed") ||
-                lower.contains("due") || lower.contains("outstanding") || lower.contains("overdue")) &&
+                lower.contains("due") || lower.contains("outstanding") || lower.contains("overdue") ||
+                lower.contains("baki") || lower.contains("kitna baki") || lower.contains("kiska baki")) &&
                 !lower.contains("create") && !lower.contains("save") && !lower.contains("record")
         if (isPendingQuery) {
             val pendingList = invoices.filter { !it.status.equals("paid", true) }
@@ -471,17 +529,32 @@ class GeminiAiService(
                 }
             }
 
-            val reply = if (pendingList.isEmpty()) {
-                "Great news! 🎉 You currently have **no pending or overdue invoices**. All your billed invoices are fully paid."
-            } else {
-                val topPending = pendingList.take(3).joinToString("\n") { inv ->
-                    val items = InvoiceUtils.deserializeInvoiceItems(inv.itemsJson)
-                    val calcs = InvoiceUtils.calculateInvoice(items, inv.taxRate, inv.discountPercent, inv.discountAmount, inv.shippingFee, inv.amountPaid)
-                    "• **#${inv.invoiceNumber}** for **${inv.clientName}**: $currSym${String.format(Locale.US, "%,.2f", calcs.balanceDue)} (${inv.status}, due ${inv.dueDate})"
+            val reply = if (isHindi) {
+                if (pendingList.isEmpty()) {
+                    "बधाई हो सर! 🎉 अभी आपके पास **कोई भी पेंडिंग या ओवरड्यू इनवॉइस नहीं है**। आपके सभी क्लाइंट्स का पेमेंट पूरी तरह क्लियर है।"
+                } else {
+                    val topPending = pendingList.take(3).joinToString("\n") { inv ->
+                        val items = InvoiceUtils.deserializeInvoiceItems(inv.itemsJson)
+                        val calcs = InvoiceUtils.calculateInvoice(items, inv.taxRate, inv.discountPercent, inv.discountAmount, inv.shippingFee, inv.amountPaid)
+                        "• **#${inv.invoiceNumber}** (${inv.clientName}): $currSym${String.format(Locale.US, "%,.2f", calcs.balanceDue)} (स्टेटस: ${inv.status}, ड्यू डेट: ${inv.dueDate})"
+                    }
+                    "जी सर! वर्तमान में आपके **${pendingList.size} इनवॉइस पेंडिंग हैं**, कुल बकाया राशि **$currSym${String.format(Locale.US, "%,.2f", pendingSum)}** है" +
+                            (if (overdueList.isNotEmpty()) " (जिसमें से **$currSym${String.format(Locale.US, "%,.2f", overdueSum)}** ओवरड्यू हो चुका है)।" else "।") +
+                            "\n\n$topPending\n\nआप नीचे दिए गए कार्ड्स पर टैप करके तुरंत इनवॉइस देख या शेयर कर सकते हैं!"
                 }
-                "You have **${pendingList.size} pending invoices** totaling **$currSym${String.format(Locale.US, "%,.2f", pendingSum)}**" +
-                        (if (overdueList.isNotEmpty()) " (including **$currSym${String.format(Locale.US, "%,.2f", overdueSum)}** overdue)." else ".") +
-                        "\n\n$topPending\n\nTap any card below to view the invoice or inspect details!"
+            } else {
+                if (pendingList.isEmpty()) {
+                    "Great news, Sir! 🎉 You currently have **no pending or overdue invoices**. All your billed invoices are fully settled."
+                } else {
+                    val topPending = pendingList.take(3).joinToString("\n") { inv ->
+                        val items = InvoiceUtils.deserializeInvoiceItems(inv.itemsJson)
+                        val calcs = InvoiceUtils.calculateInvoice(items, inv.taxRate, inv.discountPercent, inv.discountAmount, inv.shippingFee, inv.amountPaid)
+                        "• **#${inv.invoiceNumber}** for **${inv.clientName}**: $currSym${String.format(Locale.US, "%,.2f", calcs.balanceDue)} (${inv.status}, due ${inv.dueDate})"
+                    }
+                    "Certainly, Sir! You have **${pendingList.size} pending invoices** totaling **$currSym${String.format(Locale.US, "%,.2f", pendingSum)}**" +
+                            (if (overdueList.isNotEmpty()) " (including **$currSym${String.format(Locale.US, "%,.2f", overdueSum)}** overdue)." else ".") +
+                            "\n\n$topPending\n\nTap any card below to inspect the full invoice details or send reminders!"
+                }
             }
 
             return AiActionResult(
@@ -496,16 +569,28 @@ class GeminiAiService(
         val isFinanceSummary = (lower.contains("summary") || lower.contains("revenue") ||
                 lower.contains("how much did i make") || lower.contains("turnover") ||
                 lower.contains("profit") || lower.contains("financials") || lower.contains("finances") ||
-                lower.contains("my data") || lower.contains("business health")) && !lower.contains("save") && !lower.contains("create")
+                lower.contains("my data") || lower.contains("business health") ||
+                lower.contains("hisaab") || lower.contains("kamai") || lower.contains("munafa")) &&
+                !lower.contains("save") && !lower.contains("create")
         if (isFinanceSummary) {
             val fin = computeFinancialSummary(profile, invoices, expenses, existingClients)
-            val reply = "Here is your business financial summary:\n\n" +
-                    "• **Total Invoiced**: $currSym${String.format(Locale.US, "%,.2f", fin.totalRevenue)} across **${fin.invoiceCount} invoices**\n" +
-                    "• **Total Collected**: $currSym${String.format(Locale.US, "%,.2f", fin.paidAmount)} (${fin.paidCount} paid)\n" +
-                    "• **Pending Balance**: $currSym${String.format(Locale.US, "%,.2f", fin.pendingAmount)} (${fin.pendingCount} unpaid)\n" +
-                    "• **Total Expenses**: $currSym${String.format(Locale.US, "%,.2f", fin.totalExpenses)}\n" +
-                    "• **Estimated Net Profit**: **$currSym${String.format(Locale.US, "%,.2f", fin.netProfit)}**\n\n" +
-                    "Your business currently has **${fin.clientCount} active clients** on file."
+            val reply = if (isHindi) {
+                "जी सर, यह रहा आपके बिज़नेस का ताज़ा वित्तीय विवरण:\n\n" +
+                        "• **कुल इनवॉइस राशि**: $currSym${String.format(Locale.US, "%,.2f", fin.totalRevenue)} (${fin.invoiceCount} इनवॉइस)\n" +
+                        "• **वसूल हुई राशि (Paid)**: $currSym${String.format(Locale.US, "%,.2f", fin.paidAmount)} (${fin.paidCount} पेड)\n" +
+                        "• **बकाया राशि (Pending)**: $currSym${String.format(Locale.US, "%,.2f", fin.pendingAmount)} (${fin.pendingCount} बाकी)\n" +
+                        "• **कुल खर्चे (Expenses)**: $currSym${String.format(Locale.US, "%,.2f", fin.totalExpenses)}\n" +
+                        "• **अनुमानित शुद्ध लाभ (Net Profit)**: **$currSym${String.format(Locale.US, "%,.2f", fin.netProfit)}**\n\n" +
+                        "वर्तमान में आपके पास कुल **${fin.clientCount} एक्टिव क्लाइंट्स** दर्ज हैं।"
+            } else {
+                "Here is the complete financial breakdown for your business, Sir:\n\n" +
+                        "• **Total Invoiced**: $currSym${String.format(Locale.US, "%,.2f", fin.totalRevenue)} across **${fin.invoiceCount} invoices**\n" +
+                        "• **Total Collected**: $currSym${String.format(Locale.US, "%,.2f", fin.paidAmount)} (${fin.paidCount} paid)\n" +
+                        "• **Pending Balance**: $currSym${String.format(Locale.US, "%,.2f", fin.pendingAmount)} (${fin.pendingCount} unpaid)\n" +
+                        "• **Total Tracked Expenses**: $currSym${String.format(Locale.US, "%,.2f", fin.totalExpenses)}\n" +
+                        "• **Estimated Net Profit**: **$currSym${String.format(Locale.US, "%,.2f", fin.netProfit)}**\n\n" +
+                        "Your company currently maintains **${fin.clientCount} registered clients**."
+            }
 
             return AiActionResult(
                 actionType = AiActionType.DATA_SUMMARY,
@@ -516,17 +601,23 @@ class GeminiAiService(
 
         // 2. DATA QUERY: EXPENSES SUMMARY
         val isExpenseListQuery = (lower.contains("my expenses") || lower.contains("expense breakdown") ||
-                lower.contains("how much did i spend") || lower.contains("list expenses")) && !lower.contains("save") && !lower.contains("record")
+                lower.contains("how much did i spend") || lower.contains("list expenses") ||
+                lower.contains("kharcha dikhao") || lower.contains("kharch")) && !lower.contains("save") && !lower.contains("record")
         if (isExpenseListQuery) {
             val totalSpent = expenses.sumOf { it.amount }
             val reply = if (expenses.isEmpty()) {
-                "You haven't recorded any business expenses yet. You can speak or type *\"Record expense $50 for Uber ride\"* anytime!"
+                if (isHindi) "सर, अभी तक कोई भी बिज़नेस खर्चा रिकॉर्ड नहीं हुआ है। आप कभी भी *\"खर्चा रिकॉर्ड करो ₹500 क्लाइंट मीटिंग\"* बोल या लिख सकते हैं!"
+                else "You haven't recorded any business expenses yet, Sir. You can speak or type *\"Record expense $50 for client lunch\"* anytime!"
             } else {
                 val categoryMap = expenses.groupBy { it.category }.mapValues { it.value.sumOf { exp -> exp.amount } }
                 val breakdown = categoryMap.entries.joinToString("\n") { (cat, sum) ->
                     "• **$cat**: $currSym${String.format(Locale.US, "%,.2f", sum)}"
                 }
-                "You have recorded **${expenses.size} expenses** totaling **$currSym${String.format(Locale.US, "%,.2f", totalSpent)}**:\n\n$breakdown"
+                if (isHindi) {
+                    "जी सर, आपने कुल **${expenses.size} खर्चे** दर्ज किए हैं, कुल खर्च राशि **$currSym${String.format(Locale.US, "%,.2f", totalSpent)}** है:\n\n$breakdown"
+                } else {
+                    "Here is your tracked expense breakdown, Sir (**${expenses.size} expenses**, totaling **$currSym${String.format(Locale.US, "%,.2f", totalSpent)}**):\n\n$breakdown"
+                }
             }
             return AiActionResult(
                 actionType = AiActionType.DATA_SUMMARY,
@@ -535,15 +626,22 @@ class GeminiAiService(
         }
 
         // 3. DATA QUERY: CLIENTS
-        val isClientsQuery = (lower.contains("my clients") || lower.contains("list clients") || lower.contains("who are my clients")) && !lower.contains("save") && !lower.contains("add")
+        val isClientsQuery = (lower.contains("my clients") || lower.contains("list clients") ||
+                lower.contains("who are my clients") || lower.contains("grahak") || lower.contains("clients")) &&
+                !lower.contains("save") && !lower.contains("add")
         if (isClientsQuery) {
             val reply = if (existingClients.isEmpty()) {
-                "You have no clients saved yet. Say *\"Save client John Doe from Stellar Tech, email john@stellar.com\"* to add one!"
+                if (isHindi) "सर, अभी कोई क्लाइंट सेव नहीं है। आप कह सकते हैं: *\"क्लाइंट जोड़ो रमेश कुमार, ईमेल ramesh@email.com\"*।"
+                else "You have no clients saved yet, Sir. Say *\"Save client John Doe from Stellar Tech, email john@stellar.com\"* to add one!"
             } else {
                 val list = existingClients.take(5).joinToString("\n") { c ->
-                    "• **${c.name}** (${c.companyName.ifBlank { "Personal" }}) — ${c.email.ifBlank { c.phone }}"
+                    "• **${c.name}** (${c.companyName.ifBlank { "Individual" }}) — ${c.email.ifBlank { c.phone }}"
                 }
-                "You have **${existingClients.size} clients** in your database:\n\n$list"
+                if (isHindi) {
+                    "सर, आपके डेटाबेस में कुल **${existingClients.size} क्लाइंट्स** दर्ज हैं:\n\n$list"
+                } else {
+                    "You have **${existingClients.size} clients** in your database, Sir:\n\n$list"
+                }
             }
             return AiActionResult(
                 actionType = AiActionType.GENERAL_CHAT,
@@ -801,11 +899,23 @@ class GeminiAiService(
                         "Head over to the **Templates** tab to preview and set your default style!"
             }
             else -> {
-                "Hello! I'm your **Invoicely AI Assistant** powered by Gemini. Here are things you can ask me to do:\n\n" +
-                        "• ⚡ *\"Generate invoice for Acme Corp, 15 hours of design at $80/hr with 10% tax\"*\n" +
-                        "• 👤 *\"Save client John Doe from Stellar Tech, email john@stellar.com, phone 555-1234\"*\n" +
-                        "• ❓ *\"What GST rate applies to digital consulting?\"*\n" +
-                        "• 🎙️ *Tap the microphone icon to speak your invoice details directly!*"
+                if (isHindi) {
+                    "नमस्ते सर! 🙏 मैं आपका बिज़नेस असिस्टेंट (Invoicely AI) हूँ।\n\nबताइए आज आपके बिज़नेस के लिए क्या करना है? मैं ये सभी कार्य तुरंत कर सकता हूँ:\n\n" +
+                            "• ⚡ **इनवॉइस बनाना**: *\"Acme Corp के लिए ₹5,000 का इनवॉइस बना दो 18% GST के साथ\"*\n" +
+                            "• 💰 **पेमेंट स्टेटस**: *\"कितना पेमेंट अभी पेंडिंग है?\"*\n" +
+                            "• 📊 **फाइनेंशियल समरी**: *\"मेरा पूरा रेवेन्यू और मुनाफ़ा दिखाओ\"*\n" +
+                            "• 💸 **खर्चा जोड़ना**: *\"खर्चा लिखो ₹500 क्लाइंट लंच\"*\n" +
+                            "• 💡 **बिज़नेस सलाह**: *\"पेंडिंग पेमेंट जल्दी रिकवर कैसे करें?\"*\n\n" +
+                            "आप नीचे माइक दबाकर हिंदी या अंग्रेज़ी में सीधे बात भी कर सकते हैं!"
+                } else {
+                    "Hello Sir! 👋 I am your dedicated **Business Employee Agent & Operations Assistant** for ${profile.businessName.ifBlank { "your business" }}.\n\nHere are some tasks I can handle for you right now:\n\n" +
+                            "• ⚡ **Create Invoices**: *\"Generate invoice for Acme Corp, 15 hours of design at $80/hr with 10% tax\"*\n" +
+                            "• 💰 **Check Pending Balance**: *\"How much money is pending or overdue?\"*\n" +
+                            "• 📊 **Financial Overview**: *\"Summarize my total revenue, paid, and net profit\"*\n" +
+                            "• 👤 **Save Clients**: *\"Save client John Doe from Stellar Tech, email john@stellar.com\"*\n" +
+                            "• 💸 **Record Expenses**: *\"Record expense $65 for team dinner\"*\n\n" +
+                            "Tap the mic to talk with me directly in English, Hindi, or any language!"
+                }
             }
         }
 

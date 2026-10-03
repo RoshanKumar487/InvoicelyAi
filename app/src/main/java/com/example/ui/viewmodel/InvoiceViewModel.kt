@@ -4,6 +4,8 @@ import android.app.Application
 import android.content.Context
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
+import com.example.ai.AiBusinessMemory
+import com.example.ai.AiChatHistoryManager
 import com.example.ai.ChatMessage
 import com.example.ai.GeminiAiService
 import com.example.data.local.AppDatabase
@@ -88,6 +90,20 @@ class InvoiceViewModel(application: Application) : AndroidViewModel(application)
                     AppDatabase.populateInitialData(database)
                 }
             } catch (_: Exception) {}
+
+            // Initialize chat history from persistent storage or generate proactive executive greeting
+            val savedHistory = chatHistoryManager.loadChatHistory()
+            if (savedHistory.isNotEmpty()) {
+                _chatMessages.value = savedHistory
+            } else {
+                _chatMessages.value = listOf(
+                    chatHistoryManager.createExecutiveGreeting(
+                        profile = businessProfile.value,
+                        invoices = allInvoices.value,
+                        clients = allClients.value
+                    )
+                )
+            }
         }
     }
 
@@ -647,42 +663,70 @@ class InvoiceViewModel(application: Application) : AndroidViewModel(application)
     }
 
     // =========================================================================
-    // GEMINI AI CHAT & CONVERSATIONAL ASSISTANT
+    // GEMINI AI CHAT & CONVERSATIONAL ASSISTANT (PERSISTENT & CONTEXT-AWARE)
     // =========================================================================
     private val geminiService = GeminiAiService()
+    val chatHistoryManager = AiChatHistoryManager(application.applicationContext)
 
-    private val initialGreeting = ChatMessage(
-        text = "Hi there! 👋 I'm **Invoicely AI**, your personal assistant powered by Google Gemini.\n\n" +
-                "You can chat or speak with me to:\n" +
-                "• **Generate an invoice**: *\"Create invoice for Acme Corp, 10 hours at $80/hr with 18% GST\"*\n" +
-                "• **Save a client**: *\"Add client Sarah at NextGen Corp, email sarah@nextgen.com\"*\n" +
-                "• **Business enquiry**: *\"What are the tax slabs for freelance services?\"*\n\n" +
-                "Tap the mic or type below to get started!",
-        isUser = false
-    )
-
-    private val _chatMessages = MutableStateFlow<List<ChatMessage>>(listOf(initialGreeting))
+    private val _chatMessages = MutableStateFlow<List<ChatMessage>>(emptyList())
     val chatMessages: StateFlow<List<ChatMessage>> = _chatMessages.asStateFlow()
 
     private val _isAiThinking = MutableStateFlow(false)
     val isAiThinking: StateFlow<Boolean> = _isAiThinking.asStateFlow()
 
-    fun sendAiChatMessage(userPrompt: String, onInvoiceCreated: ((Long) -> Unit)? = null) {
+    val dynamicPredictions: StateFlow<List<String>> = combine(
+        allInvoices,
+        allClients,
+        allExpenses,
+        businessProfile
+    ) { invoices, clients, expenses, profile ->
+        chatHistoryManager.generateDynamicPredictions(
+            invoices = invoices,
+            clients = clients,
+            expenses = expenses,
+            currencySymbol = profile.defaultCurrencySymbol.ifBlank { "$" }
+        )
+    }.stateIn(
+        viewModelScope,
+        SharingStarted.WhileSubscribed(5000),
+        listOf(
+            "💰 कुल कितना पेंडिंग पेमेंट बाकी है?",
+            "📊 Show complete revenue & profit overview",
+            "⚡ Create an invoice with GST",
+            "💸 Record a new business expense",
+            "👥 Who are my active clients?",
+            "💡 How to recover overdue payments faster?"
+        )
+    )
+
+    fun sendAiChatMessage(userPrompt: String, isVoiceInput: Boolean = false, onInvoiceCreated: ((Long) -> Unit)? = null) {
         val trimmed = userPrompt.trim()
         if (trimmed.isBlank()) return
 
-        val userMessage = ChatMessage(text = trimmed, isUser = true)
-        _chatMessages.value = _chatMessages.value + userMessage
+        val userMessage = ChatMessage(text = trimmed, isUser = true, isVoiceInput = isVoiceInput)
+        val updatedList = _chatMessages.value + userMessage
+        _chatMessages.value = updatedList
         _isAiThinking.value = true
 
         viewModelScope.launch(kotlinx.coroutines.Dispatchers.IO) {
+            val memory = chatHistoryManager.loadMemory()
             val result = geminiService.processUserPrompt(
                 prompt = trimmed,
                 profile = businessProfile.value,
                 existingClients = allClients.value,
                 invoices = allInvoices.value,
                 expenses = allExpenses.value,
-                nextInvoiceNumber = generateNextInvoiceNumber()
+                nextInvoiceNumber = generateNextInvoiceNumber(),
+                conversationHistory = updatedList,
+                businessMemory = memory
+            )
+
+            // Learn user habits, language tone, frequent clients from this turn
+            chatHistoryManager.learnFromTurn(
+                userPrompt = trimmed,
+                isVoice = isVoiceInput,
+                aiResult = result,
+                existingClients = allClients.value
             )
 
             var createdInvoiceId: Long? = null
@@ -723,13 +767,22 @@ class InvoiceViewModel(application: Application) : AndroidViewModel(application)
                 matchedInvoices = result.matchedInvoices
             )
 
-            _chatMessages.value = _chatMessages.value + botMessage
+            val finalList = _chatMessages.value + botMessage
+            _chatMessages.value = finalList
+            chatHistoryManager.saveChatHistory(finalList)
             _isAiThinking.value = false
         }
     }
 
     fun clearAiChat() {
-        _chatMessages.value = listOf(initialGreeting)
+        chatHistoryManager.clearChatHistory()
+        _chatMessages.value = listOf(
+            chatHistoryManager.createExecutiveGreeting(
+                profile = businessProfile.value,
+                invoices = allInvoices.value,
+                clients = allClients.value
+            )
+        )
     }
 
     // =========================================================================

@@ -36,6 +36,7 @@ import androidx.compose.material.icons.filled.Description
 import androidx.compose.material.icons.filled.ExpandLess
 import androidx.compose.material.icons.filled.ExpandMore
 import androidx.compose.material.icons.filled.Fullscreen
+import androidx.compose.material.icons.filled.Menu
 import androidx.compose.material.icons.filled.Palette
 import androidx.compose.material.icons.filled.QrCode
 import androidx.compose.material.icons.filled.Receipt
@@ -87,6 +88,8 @@ import com.example.data.model.BusinessProfile
 import com.example.data.model.IndustryTemplates
 import com.example.data.model.InvoiceUtils
 import com.example.docx.DocxTemplatePreset
+import com.example.ui.components.AdaptiveContainer
+import com.example.ui.components.rememberWindowAdaptiveInfo
 import com.example.ui.components.BusinessCustomIcon
 import com.example.ui.components.IndustryTemplateSelectorDialog
 import com.example.ui.components.ItemizationBuilderDialog
@@ -106,6 +109,7 @@ fun SettingsScreen(
     onViewTemplates: () -> Unit = {},
     onViewExpenses: () -> Unit = {},
     onViewAiChat: () -> Unit = {},
+    onOpenMenu: () -> Unit = {},
     modifier: Modifier = Modifier
 ) {
     val context = LocalContext.current
@@ -113,6 +117,7 @@ fun SettingsScreen(
     val allInvoices by viewModel.allInvoices.collectAsStateWithLifecycle()
     val allClients by viewModel.allClients.collectAsStateWithLifecycle()
     val activeTemplate by viewModel.activeTemplateConfig.collectAsStateWithLifecycle()
+    val adaptiveInfo = rememberWindowAdaptiveInfo()
 
     // State holders for all settings
     var profileState by remember(currentProfile) { mutableStateOf(currentProfile) }
@@ -186,19 +191,23 @@ fun SettingsScreen(
                     IconButton(onClick = { saveChanges() }, modifier = Modifier.testTag("save_all_settings_btn")) {
                         Icon(imageVector = Icons.Default.Check, contentDescription = "Save", tint = PrimaryNavy)
                     }
+                    IconButton(onClick = onOpenMenu, modifier = Modifier.testTag("settings_menu_btn")) {
+                        Icon(imageVector = Icons.Default.Menu, contentDescription = "Menu", tint = PrimaryNavy)
+                    }
                 },
                 colors = TopAppBarDefaults.topAppBarColors(containerColor = MaterialTheme.colorScheme.surface)
             )
         }
     ) { padding ->
-        Column(
-            modifier = Modifier
-                .fillMaxSize()
-                .padding(padding)
-                .verticalScroll(rememberScrollState())
-                .padding(16.dp),
-            verticalArrangement = Arrangement.spacedBy(14.dp)
-        ) {
+        AdaptiveContainer(maxWidth = adaptiveInfo.formMaxWidth) {
+            Column(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .padding(padding)
+                    .verticalScroll(rememberScrollState())
+                    .padding(horizontal = adaptiveInfo.horizontalPadding, vertical = 14.dp),
+                verticalArrangement = Arrangement.spacedBy(14.dp)
+            ) {
 
             // =========================================================================
             // CARD-BASED ACCESS TO ALL FEATURES AND TOOLS (USER REQUEST)
@@ -1679,6 +1688,7 @@ fun SettingsScreen(
             Spacer(modifier = Modifier.height(24.dp))
         }
     }
+}
 
     // Reset Demo Confirmation Dialog
     if (showResetDialog) {
@@ -1836,7 +1846,7 @@ fun SettingAccordionCard(
 }
 
 @Composable
-fun FieldToggleRow(
+private fun FieldToggleRow(
     title: String,
     description: String,
     checked: Boolean,
