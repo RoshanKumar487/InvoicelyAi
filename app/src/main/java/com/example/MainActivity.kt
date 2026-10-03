@@ -43,6 +43,7 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableLongStateOf
 import androidx.compose.runtime.mutableStateOf
@@ -59,12 +60,15 @@ import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.example.data.model.ClientEntity
+import com.example.data.repository.AuthSessionManager
 import com.example.ui.components.AmbientGlassBackdrop
 import com.example.ui.components.AppMenuModalSheet
 import com.example.ui.components.GlassCard
 import com.example.ui.components.rememberWindowAdaptiveInfo
 import com.example.ui.screens.AiChatScreen
+import com.example.ui.screens.AuthScreen
 import com.example.ui.screens.ClientsScreen
 import com.example.ui.screens.DashboardScreen
 import com.example.ui.screens.ExpensesScreen
@@ -75,6 +79,7 @@ import com.example.ui.screens.InvoicesListScreen
 import com.example.ui.screens.ReportsScreen
 import com.example.ui.screens.SettingsScreen
 import com.example.ui.screens.TaxCalculatorScreen
+import com.example.ui.screens.TeamManagementScreen
 import com.example.ui.screens.TemplatesScreen
 import com.example.ui.theme.MyApplicationTheme
 import com.example.ui.theme.PrimaryNavy
@@ -98,7 +103,10 @@ sealed class AppScreen {
     object TemplatesList : AppScreen()
     object Settings : AppScreen()
     object InvoiceSettings : AppScreen()
+    object TeamManagement : AppScreen()
+    object Auth : AppScreen()
 }
+
 
 class MainActivity : ComponentActivity() {
 
@@ -143,40 +151,41 @@ fun MainAppContainer(
     isDarkTheme: Boolean = isSystemInDarkTheme(),
     onToggleDarkTheme: ((Boolean) -> Unit)? = null
 ) {
-    var currentScreen by remember { mutableStateOf<AppScreen>(AppScreen.TabScreen(MainTab.DASHBOARD)) }
+    val isLoggedIn by AuthSessionManager.isLoggedIn.collectAsStateWithLifecycle()
+    var currentScreen by remember {
+        mutableStateOf<AppScreen>(
+            if (AuthSessionManager.isLoggedIn.value) AppScreen.TabScreen(MainTab.DASHBOARD) else AppScreen.Auth
+        )
+    }
     var currentTab by remember { mutableStateOf(MainTab.DASHBOARD) }
     var showMenuSheet by remember { mutableStateOf(false) }
     val menuSheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
 
+    LaunchedEffect(isLoggedIn) {
+        if (!isLoggedIn) {
+            currentScreen = AppScreen.Auth
+        }
+    }
+
     // Navigation backstack handler
-    BackHandler(enabled = showMenuSheet || currentScreen !is AppScreen.TabScreen || currentTab != MainTab.DASHBOARD) {
+    BackHandler(enabled = showMenuSheet || (isLoggedIn && (currentScreen !is AppScreen.TabScreen || currentTab != MainTab.DASHBOARD))) {
         if (showMenuSheet) {
             showMenuSheet = false
         } else {
             when (currentScreen) {
-                is AppScreen.InvoiceEdit -> {
+                is AppScreen.InvoiceEdit,
+                is AppScreen.InvoicePreview,
+                is AppScreen.TaxTool,
+                is AppScreen.ClientsList,
+                is AppScreen.Reports,
+                is AppScreen.TemplatesList,
+                is AppScreen.Settings,
+                is AppScreen.InvoiceSettings,
+                is AppScreen.TeamManagement -> {
                     currentScreen = AppScreen.TabScreen(currentTab)
                 }
-                is AppScreen.InvoicePreview -> {
-                    currentScreen = AppScreen.TabScreen(currentTab)
-                }
-                is AppScreen.TaxTool -> {
-                    currentScreen = AppScreen.TabScreen(currentTab)
-                }
-                is AppScreen.ClientsList -> {
-                    currentScreen = AppScreen.TabScreen(currentTab)
-                }
-                is AppScreen.Reports -> {
-                    currentScreen = AppScreen.TabScreen(currentTab)
-                }
-                is AppScreen.TemplatesList -> {
-                    currentScreen = AppScreen.TabScreen(currentTab)
-                }
-                is AppScreen.Settings -> {
-                    currentScreen = AppScreen.TabScreen(currentTab)
-                }
-                is AppScreen.InvoiceSettings -> {
-                    currentScreen = AppScreen.TabScreen(currentTab)
+                is AppScreen.Auth -> {
+                    // Keep on Auth screen if logged out
                 }
                 is AppScreen.TabScreen -> {
                     if (currentTab != MainTab.DASHBOARD) {
@@ -188,7 +197,7 @@ fun MainAppContainer(
         }
     }
 
-    val isTopLevelTab = currentScreen is AppScreen.TabScreen
+    val isTopLevelTab = isLoggedIn && currentScreen is AppScreen.TabScreen
 
     AmbientGlassBackdrop {
         Scaffold(
@@ -473,6 +482,20 @@ fun MainAppContainer(
                         onOpenMenu = { showMenuSheet = true }
                     )
                 }
+                is AppScreen.TeamManagement -> {
+                    TeamManagementScreen(
+                        onBack = { currentScreen = AppScreen.TabScreen(currentTab) },
+                        onOpenMenu = { showMenuSheet = true }
+                    )
+                }
+                is AppScreen.Auth -> {
+                    AuthScreen(
+                        onLoginSuccess = {
+                            currentTab = MainTab.DASHBOARD
+                            currentScreen = AppScreen.TabScreen(MainTab.DASHBOARD)
+                        }
+                    )
+                }
             }
         }
 
@@ -500,6 +523,13 @@ fun MainAppContainer(
                 },
                 onNavigateToInvoiceSettings = {
                     currentScreen = AppScreen.InvoiceSettings
+                },
+                onNavigateToTeamManagement = {
+                    currentScreen = AppScreen.TeamManagement
+                },
+                onSignOut = {
+                    AuthSessionManager.logout()
+                    currentScreen = AppScreen.Auth
                 },
                 onNavigateToExpenses = {
                     currentTab = MainTab.EXPENSES

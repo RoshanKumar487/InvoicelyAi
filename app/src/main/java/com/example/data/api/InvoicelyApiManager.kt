@@ -1,0 +1,445 @@
+package com.example.data.api
+
+import android.util.Log
+import com.example.data.api.client.ApiClient
+import com.example.data.api.model.ApiResponse
+import com.example.data.api.model.AuthResponseDto
+import com.example.data.api.model.BackendBusinessProfileDto
+import com.example.data.api.model.BackendClientDto
+import com.example.data.api.model.BackendExpenseDto
+import com.example.data.api.model.BackendInvoiceDto
+import com.example.data.api.model.CompanyJoinRequestDto
+import com.example.data.api.model.CompanySummaryDto
+import com.example.data.api.model.DashboardStatsResponse
+import com.example.data.api.model.JoinRequestActionRequest
+import com.example.data.api.model.LoginRequest
+import com.example.data.api.model.RegisterCompanyRequest
+import com.example.data.api.model.RegisterDeveloperRequest
+import com.example.data.api.model.RegisterEmployeeRequest
+import com.example.data.api.model.UserSummaryDto
+import com.example.data.api.model.toBackendDto
+import com.example.data.model.BusinessProfile
+import com.example.data.model.ClientEntity
+import com.example.data.model.ExpenseEntity
+import com.example.data.model.InvoiceEntity
+import com.example.data.repository.BusinessRepository
+import com.example.data.repository.ClientRepository
+import com.example.data.repository.ExpenseRepository
+import com.example.data.repository.InvoiceRepository
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.flow.firstOrNull
+import kotlinx.coroutines.withContext
+import retrofit2.Response
+
+/**
+ * Centralized API Manager:
+ * Handles all backend REST API invocations, error handling, network state updates,
+ * and bi-directional offline-first data synchronization.
+ */
+object InvoicelyApiManager {
+
+    private const val TAG = "InvoicelyApiManager"
+
+    // =========================================================================
+    // SAFE API EXECUTION WRAPPER
+    // =========================================================================
+
+    private suspend fun <T> safeApiCall(
+        callName: String,
+        apiCall: suspend () -> Response<ApiResponse<T>>
+    ): Result<T> = withContext(Dispatchers.IO) {
+        try {
+            val response = apiCall()
+            if (response.isSuccessful) {
+                val body = response.body()
+                if (body != null && body.success && body.data != null) {
+                    ApiConfig.setReachable(true)
+                    Result.success(body.data)
+                } else if (body != null && body.data != null) {
+                    ApiConfig.setReachable(true)
+                    Result.success(body.data)
+                } else if (response.code() in 200..204) {
+                    ApiConfig.setReachable(true)
+                    @Suppress("UNCHECKED_CAST")
+                    Result.success(Unit as T)
+                } else {
+                    val errorMsg = body?.message ?: "Unknown server response (${response.code()})"
+                    ApiConfig.recordSyncError(errorMsg)
+                    Result.failure(Exception(errorMsg))
+                }
+            } else {
+                val errorBodyStr = response.errorBody()?.string()
+                val message = "Server error ${response.code()}: ${errorBodyStr ?: response.message()}"
+                Log.w(TAG, "[$callName] Failed: $message")
+                ApiConfig.recordSyncError(message)
+                Result.failure(Exception(message))
+            }
+        } catch (e: Exception) {
+            Log.e(TAG, "[$callName] Network Exception: ${e.message}", e)
+            ApiConfig.setReachable(false)
+            ApiConfig.recordSyncError(e.localizedMessage ?: "Network connection failed")
+            Result.failure(e)
+        }
+    }
+
+    // =========================================================================
+    // HEALTH CHECK & CONNECTIVITY
+    // =========================================================================
+
+    suspend fun checkConnection(): Result<Boolean> {
+        val statsResult = getDashboardStats()
+        return if (statsResult.isSuccess) {
+            ApiConfig.setReachable(true)
+            Result.success(true)
+        } else {
+            // Check auth me if stats requires token
+            val meResult = getMe()
+            if (meResult.isSuccess) {
+                ApiConfig.setReachable(true)
+                Result.success(true)
+            } else {
+                Result.failure(statsResult.exceptionOrNull() ?: Exception("Cannot connect to server"))
+            }
+        }
+    }
+
+    // =========================================================================
+    // AUTHENTICATION APIS
+    // =========================================================================
+
+    suspend fun login(identifier: String, password: String): Result<AuthResponseDto> {
+        val result = safeApiCall("login") {
+            ApiClient.getService().login(LoginRequest(identifier.trim(), password))
+        }
+        result.onSuccess { auth ->
+            auth.token?.let { ApiClient.setAuthToken(it) }
+        }
+        return result
+    }
+
+    suspend fun registerCompany(request: RegisterCompanyRequest): Result<AuthResponseDto> {
+        val result = safeApiCall("registerCompany") {
+            ApiClient.getService().registerCompany(request)
+        }
+        result.onSuccess { auth ->
+            auth.token?.let { ApiClient.setAuthToken(it) }
+        }
+        return result
+    }
+
+    suspend fun registerEmployee(request: RegisterEmployeeRequest): Result<AuthResponseDto> {
+        return safeApiCall("registerEmployee") {
+            ApiClient.getService().registerEmployee(request)
+        }
+    }
+
+    suspend fun registerDeveloper(request: RegisterDeveloperRequest): Result<AuthResponseDto> {
+        val result = safeApiCall("registerDeveloper") {
+            ApiClient.getService().registerDeveloper(request)
+        }
+        result.onSuccess { auth ->
+            auth.token?.let { ApiClient.setAuthToken(it) }
+        }
+        return result
+    }
+
+    suspend fun getMe(): Result<AuthResponseDto> {
+        return safeApiCall("getMe") {
+            ApiClient.getService().getMe()
+        }
+    }
+
+    // =========================================================================
+    // DASHBOARD APIS
+    // =========================================================================
+
+    suspend fun getDashboardStats(): Result<DashboardStatsResponse> {
+        return safeApiCall("getDashboardStats") {
+            ApiClient.getService().getDashboardStats()
+        }
+    }
+
+    // =========================================================================
+    // CLIENTS APIS
+    // =========================================================================
+
+    suspend fun getAllClients(search: String? = null): Result<List<BackendClientDto>> {
+        return safeApiCall("getAllClients") {
+            ApiClient.getService().getAllClients(search)
+        }
+    }
+
+    suspend fun getClientById(id: Long): Result<BackendClientDto> {
+        return safeApiCall("getClientById") {
+            ApiClient.getService().getClientById(id)
+        }
+    }
+
+    suspend fun createClient(client: BackendClientDto): Result<BackendClientDto> {
+        return safeApiCall("createClient") {
+            ApiClient.getService().createClient(client)
+        }
+    }
+
+    suspend fun updateClient(id: Long, client: BackendClientDto): Result<BackendClientDto> {
+        return safeApiCall("updateClient") {
+            ApiClient.getService().updateClient(id, client)
+        }
+    }
+
+    suspend fun deleteClient(id: Long): Result<Unit> {
+        return safeApiCall("deleteClient") {
+            ApiClient.getService().deleteClient(id)
+        }
+    }
+
+    // =========================================================================
+    // EXPENSES APIS
+    // =========================================================================
+
+    suspend fun getAllExpenses(category: String? = null): Result<List<BackendExpenseDto>> {
+        return safeApiCall("getAllExpenses") {
+            ApiClient.getService().getAllExpenses(category)
+        }
+    }
+
+    suspend fun getExpenseById(id: Long): Result<BackendExpenseDto> {
+        return safeApiCall("getExpenseById") {
+            ApiClient.getService().getExpenseById(id)
+        }
+    }
+
+    suspend fun createExpense(expense: BackendExpenseDto): Result<BackendExpenseDto> {
+        return safeApiCall("createExpense") {
+            ApiClient.getService().createExpense(expense)
+        }
+    }
+
+    suspend fun updateExpense(id: Long, expense: BackendExpenseDto): Result<BackendExpenseDto> {
+        return safeApiCall("updateExpense") {
+            ApiClient.getService().updateExpense(id, expense)
+        }
+    }
+
+    suspend fun deleteExpense(id: Long): Result<Unit> {
+        return safeApiCall("deleteExpense") {
+            ApiClient.getService().deleteExpense(id)
+        }
+    }
+
+    // =========================================================================
+    // INVOICES APIS
+    // =========================================================================
+
+    suspend fun getAllInvoices(status: String? = null, clientId: Long? = null): Result<List<BackendInvoiceDto>> {
+        return safeApiCall("getAllInvoices") {
+            ApiClient.getService().getAllInvoices(status, clientId)
+        }
+    }
+
+    suspend fun getInvoiceById(id: Long): Result<BackendInvoiceDto> {
+        return safeApiCall("getInvoiceById") {
+            ApiClient.getService().getInvoiceById(id)
+        }
+    }
+
+    suspend fun getInvoiceByNumber(invoiceNumber: String): Result<BackendInvoiceDto> {
+        return safeApiCall("getInvoiceByNumber") {
+            ApiClient.getService().getInvoiceByNumber(invoiceNumber)
+        }
+    }
+
+    suspend fun createInvoice(invoice: BackendInvoiceDto): Result<BackendInvoiceDto> {
+        return safeApiCall("createInvoice") {
+            ApiClient.getService().createInvoice(invoice)
+        }
+    }
+
+    suspend fun updateInvoice(id: Long, invoice: BackendInvoiceDto): Result<BackendInvoiceDto> {
+        return safeApiCall("updateInvoice") {
+            ApiClient.getService().updateInvoice(id, invoice)
+        }
+    }
+
+    suspend fun updateInvoiceStatus(id: Long, status: String): Result<BackendInvoiceDto> {
+        return safeApiCall("updateInvoiceStatus") {
+            ApiClient.getService().updateInvoiceStatus(id, status)
+        }
+    }
+
+    suspend fun deleteInvoice(id: Long): Result<Unit> {
+        return safeApiCall("deleteInvoice") {
+            ApiClient.getService().deleteInvoice(id)
+        }
+    }
+
+    // =========================================================================
+    // COMPANIES & JOIN REQUESTS APIS
+    // =========================================================================
+
+    suspend fun getMyCompany(): Result<CompanySummaryDto> {
+        return safeApiCall("getMyCompany") {
+            ApiClient.getService().getMyCompany()
+        }
+    }
+
+    suspend fun getJoinRequests(status: String? = null): Result<List<CompanyJoinRequestDto>> {
+        return safeApiCall("getJoinRequests") {
+            ApiClient.getService().getJoinRequests(status)
+        }
+    }
+
+    suspend fun processJoinRequest(id: Long, action: String): Result<CompanyJoinRequestDto> {
+        return safeApiCall("processJoinRequest") {
+            ApiClient.getService().processJoinRequest(id, JoinRequestActionRequest(action))
+        }
+    }
+
+    suspend fun getCompanyEmployees(): Result<List<UserSummaryDto>> {
+        return safeApiCall("getCompanyEmployees") {
+            ApiClient.getService().getCompanyEmployees()
+        }
+    }
+
+    suspend fun getAllCompanies(): Result<List<CompanySummaryDto>> {
+        return safeApiCall("getAllCompanies") {
+            ApiClient.getService().getAllCompanies()
+        }
+    }
+
+    // =========================================================================
+    // BUSINESS PROFILE APIS
+    // =========================================================================
+
+    suspend fun getBusinessProfile(): Result<BackendBusinessProfileDto> {
+        return safeApiCall("getBusinessProfile") {
+            ApiClient.getService().getProfile()
+        }
+    }
+
+    suspend fun updateBusinessProfile(profile: BackendBusinessProfileDto): Result<BackendBusinessProfileDto> {
+        return safeApiCall("updateBusinessProfile") {
+            ApiClient.getService().updateProfile(profile)
+        }
+    }
+
+    // =========================================================================
+    // BI-DIRECTIONAL SEAMLESS SYNCHRONIZATION
+    // =========================================================================
+
+    suspend fun syncAllWithBackend(
+        invoiceRepository: InvoiceRepository,
+        clientRepository: ClientRepository,
+        expenseRepository: ExpenseRepository,
+        businessRepository: BusinessRepository
+    ): Result<String> = withContext(Dispatchers.IO) {
+        ApiConfig.setSyncing(true)
+        val syncLog = StringBuilder()
+
+        try {
+            // 1. Sync Business Profile
+            val remoteProfileRes = getBusinessProfile()
+            if (remoteProfileRes.isSuccess) {
+                val remoteProfile = remoteProfileRes.getOrNull()
+                if (remoteProfile != null) {
+                    val currentLocal = businessRepository.getProfileDirect() ?: BusinessProfile()
+                    val mergedProfile = remoteProfile.toEntity(currentLocal)
+                    businessRepository.saveProfile(mergedProfile)
+                    syncLog.append("✓ Profile synced. ")
+                }
+            } else {
+                // If remote profile not set up yet, upload local
+                val localProfile = businessRepository.getProfileDirect()
+                if (localProfile != null) {
+                    updateBusinessProfile(localProfile.toBackendDto())
+                }
+            }
+
+            // 2. Sync Clients
+            val remoteClientsRes = getAllClients()
+            if (remoteClientsRes.isSuccess) {
+                val remoteClients = remoteClientsRes.getOrNull() ?: emptyList()
+                val localClients = clientRepository.allClients.firstOrNull() ?: emptyList()
+
+                // Save remote into local if not present
+                val localIds = localClients.map { it.id }.toSet()
+                for (rc in remoteClients) {
+                    val entity = rc.toEntity()
+                    if (entity.id in localIds) {
+                        clientRepository.updateClient(entity)
+                    } else {
+                        clientRepository.insertClient(entity)
+                    }
+                }
+
+                // Push any local clients to backend if backend was empty
+                if (remoteClients.isEmpty() && localClients.isNotEmpty()) {
+                    for (lc in localClients) {
+                        createClient(lc.toBackendDto())
+                    }
+                }
+                syncLog.append("✓ ${remoteClients.size} clients synced. ")
+            }
+
+            // 3. Sync Expenses
+            val remoteExpensesRes = getAllExpenses()
+            if (remoteExpensesRes.isSuccess) {
+                val remoteExpenses = remoteExpensesRes.getOrNull() ?: emptyList()
+                val localExpenses = expenseRepository.allExpenses.firstOrNull() ?: emptyList()
+
+                val localExpIds = localExpenses.map { it.id }.toSet()
+                for (re in remoteExpenses) {
+                    val entity = re.toEntity()
+                    if (entity.id in localExpIds) {
+                        expenseRepository.updateExpense(entity)
+                    } else {
+                        expenseRepository.insertExpense(entity)
+                    }
+                }
+
+                if (remoteExpenses.isEmpty() && localExpenses.isNotEmpty()) {
+                    for (le in localExpenses) {
+                        createExpense(le.toBackendDto())
+                    }
+                }
+                syncLog.append("✓ ${remoteExpenses.size} expenses synced. ")
+            }
+
+            // 4. Sync Invoices
+            val remoteInvoicesRes = getAllInvoices()
+            if (remoteInvoicesRes.isSuccess) {
+                val remoteInvoices = remoteInvoicesRes.getOrNull() ?: emptyList()
+                val localInvoices = invoiceRepository.allInvoices.firstOrNull() ?: emptyList()
+
+                val localInvNumbers = localInvoices.map { it.invoiceNumber }.toSet()
+                for (ri in remoteInvoices) {
+                    val entity = ri.toEntity()
+                    if (entity.invoiceNumber in localInvNumbers) {
+                        val localMatch = localInvoices.find { it.invoiceNumber == entity.invoiceNumber }
+                        if (localMatch != null) {
+                            invoiceRepository.updateInvoice(entity.copy(id = localMatch.id))
+                        }
+                    } else {
+                        invoiceRepository.insertInvoice(entity)
+                    }
+                }
+
+                if (remoteInvoices.isEmpty() && localInvoices.isNotEmpty()) {
+                    for (li in localInvoices) {
+                        createInvoice(li.toBackendDto())
+                    }
+                }
+                syncLog.append("✓ ${remoteInvoices.size} invoices synced.")
+            }
+
+            ApiConfig.recordSyncSuccess()
+            Result.success("Sync complete: $syncLog")
+        } catch (e: Exception) {
+            Log.e(TAG, "Sync error: ${e.message}", e)
+            ApiConfig.recordSyncError(e.localizedMessage ?: "Sync error")
+            Result.failure(e)
+        } finally {
+            ApiConfig.setSyncing(false)
+        }
+    }
+}
