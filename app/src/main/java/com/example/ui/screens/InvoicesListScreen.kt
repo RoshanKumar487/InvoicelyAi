@@ -34,6 +34,7 @@ import androidx.compose.material.icons.filled.NotificationsActive
 import androidx.compose.material.icons.filled.PictureAsPdf
 import androidx.compose.material.icons.filled.Receipt
 import androidx.compose.material.icons.filled.Search
+import androidx.compose.material.icons.filled.Sync
 import androidx.compose.material.icons.filled.Visibility
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Card
@@ -142,6 +143,29 @@ fun InvoicesListScreen(
                         }
                     },
                     actions = {
+                        // Sync Invoices with Backend
+                        IconButton(
+                            onClick = {
+                                viewModel.refreshInvoicesFromBackend()
+                            },
+                            modifier = Modifier.testTag("invoices_sync_btn")
+                        ) {
+                            Box(
+                                modifier = Modifier
+                                    .size(36.dp)
+                                    .clip(CircleShape)
+                                    .background(if (isDark) Color(0xFF1E293B) else Color(0xFFEFF6FF)),
+                                contentAlignment = Alignment.Center
+                            ) {
+                                Icon(
+                                    imageVector = Icons.Default.Sync,
+                                    contentDescription = "Sync Invoices",
+                                    tint = if (isDark) Color.White else Color(0xFF1D4ED8),
+                                    modifier = Modifier.size(18.dp)
+                                )
+                            }
+                        }
+
                         // Create Invoice Button in Header
                         IconButton(
                             onClick = onCreateInvoice,

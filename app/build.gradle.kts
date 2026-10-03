@@ -15,7 +15,7 @@ android {
   defaultConfig {
     applicationId = "com.aistudio.invoicely.pxrtvb"
     minSdk = 24
-    targetSdk = 36
+    targetSdk = 35
     versionCode = 1
     versionName = "1.0"
 
@@ -24,11 +24,13 @@ android {
 
   signingConfigs {
     create("release") {
-      val keystorePath = System.getenv("KEYSTORE_PATH") ?: "${rootDir}/my-upload-key.jks"
+      val keystorePath = System.getenv("KEYSTORE_PATH") ?: "${rootDir}/release-key.jks"
       storeFile = file(keystorePath)
-      storePassword = System.getenv("STORE_PASSWORD")
-      keyAlias = "upload"
-      keyPassword = System.getenv("KEY_PASSWORD")
+      storePassword = System.getenv("STORE_PASSWORD") ?: "invoicelypassword"
+      keyAlias = System.getenv("KEY_ALIAS") ?: "invoicely"
+      keyPassword = System.getenv("KEY_PASSWORD") ?: "invoicelypassword"
+      enableV1Signing = true
+      enableV2Signing = true
     }
     val customDebugKeystore = file("${rootDir}/debug.keystore")
     if (customDebugKeystore.exists()) {
@@ -37,12 +39,15 @@ android {
         storePassword = "android"
         keyAlias = "androiddebugkey"
         keyPassword = "android"
+        enableV1Signing = true
+        enableV2Signing = true
       }
     }
   }
 
   buildTypes {
     release {
+      isDebuggable = false
       isCrunchPngs = false
       isMinifyEnabled = false
       proguardFiles(getDefaultProguardFile("proguard-android-optimize.txt"), "proguard-rules.pro")

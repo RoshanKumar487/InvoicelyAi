@@ -17,6 +17,10 @@ import com.example.data.model.InvoiceEntity
 import com.example.data.model.InvoiceItem
 import com.example.data.model.InvoiceUtils
 import com.example.data.model.TemplateConfig
+import com.example.data.api.ApiConfig
+import com.example.data.api.InvoicelyApiManager
+import com.example.data.api.model.DashboardStatsResponse
+import com.example.data.api.model.toBackendDto
 import com.example.data.repository.BusinessRepository
 import com.example.data.repository.ClientRepository
 import com.example.data.repository.ExpenseRepository
@@ -29,6 +33,7 @@ import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.firstOrNull
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 import java.io.File
@@ -83,13 +88,50 @@ class InvoiceViewModel(application: Application) : AndroidViewModel(application)
         }
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), BusinessProfile())
 
+    // Backend API & Server State Flows
+    val isBackendOnline: StateFlow<Boolean> = ApiConfig.isBackendReachable
+    val isSyncing: StateFlow<Boolean> = ApiConfig.isSyncing
+    val lastSyncTime: StateFlow<Long> = ApiConfig.lastSyncTimestamp
+    val syncErrorMessage: StateFlow<String?> = ApiConfig.lastErrorMessage
+
+    private val _backendStats = MutableStateFlow<DashboardStatsResponse?>(null)
+    val backendStats: StateFlow<DashboardStatsResponse?> = _backendStats.asStateFlow()
+
+    fun refreshBackendStats() {
+        viewModelScope.launch(kotlinx.coroutines.Dispatchers.IO) {
+            val result = InvoicelyApiManager.getDashboardStats()
+            if (result.isSuccess) {
+                _backendStats.value = result.getOrNull()
+            }
+        }
+    }
+
+    fun syncAllDataWithBackend(onComplete: ((Boolean, String) -> Unit)? = null) {
+        viewModelScope.launch(kotlinx.coroutines.Dispatchers.IO) {
+            val res = InvoicelyApiManager.syncAllWithBackend(
+                invoiceRepository = invoiceRepository,
+                clientRepository = clientRepository,
+                expenseRepository = expenseRepository,
+                businessRepository = businessRepository
+            )
+            refreshBackendStats()
+            kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.Main) {
+                if (res.isSuccess) {
+                    onComplete?.invoke(true, res.getOrNull() ?: "Backend sync completed successfully")
+                } else {
+                    onComplete?.invoke(false, res.exceptionOrNull()?.message ?: "Backend sync encountered an issue")
+                }
+            }
+        }
+    }
+
     init {
         viewModelScope.launch {
             try {
                 if (businessRepository.getProfileDirect() == null) {
                     AppDatabase.populateInitialData(database)
                 }
-            } catch (_: Exception) {}
+            } catch (e: Exception) {}
 
             // Initialize chat history from persistent storage or generate proactive executive greeting
             val savedHistory = chatHistoryManager.loadChatHistory()
@@ -104,6 +146,12 @@ class InvoiceViewModel(application: Application) : AndroidViewModel(application)
                     )
                 )
             }
+
+            // Sync with backend API and fetch live stats
+            try {
+                refreshBackendStats()
+                syncAllDataWithBackend()
+            } catch (e: Exception) {}
         }
     }
 
@@ -422,6 +470,18 @@ class InvoiceViewModel(application: Application) : AndroidViewModel(application)
                 entity.id
             }
             _invoiceFormState.value = _invoiceFormState.value.copy(isSaving = false, invoiceId = id)
+
+            // Asynchronous Backend Sync
+            try {
+                val dto = entity.copy(id = id).toBackendDto()
+                if (entity.id == 0L) {
+                    InvoicelyApiManager.createInvoice(dto)
+                } else {
+                    InvoicelyApiManager.updateInvoice(id, dto)
+                }
+                refreshBackendStats()
+            } catch (_: Exception) {}
+
             kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.Main) {
                 onSuccess(id)
             }
@@ -441,31 +501,64 @@ class InvoiceViewModel(application: Application) : AndroidViewModel(application)
             entity.id
         }
         _invoiceFormState.value = _invoiceFormState.value.copy(invoiceId = id)
+
+        try {
+            val dto = entity.copy(id = id).toBackendDto()
+            if (entity.id == 0L) {
+                InvoicelyApiManager.createInvoice(dto)
+            } else {
+                InvoicelyApiManager.updateInvoice(id, dto)
+            }
+            refreshBackendStats()
+        } catch (_: Exception) {}
+
         return id
     }
 
     // Invoice CRUD Actions
     fun saveInvoice(invoice: InvoiceEntity, onSaved: (Long) -> Unit = {}) {
         viewModelScope.launch {
+            val finalId: Long
             if (invoice.id == 0L) {
-                val newId = invoiceRepository.insertInvoice(invoice)
-                onSaved(newId)
+                finalId = invoiceRepository.insertInvoice(invoice)
+                onSaved(finalId)
             } else {
+                finalId = invoice.id
                 invoiceRepository.updateInvoice(invoice)
-                onSaved(invoice.id)
+                onSaved(finalId)
             }
+
+            try {
+                val dto = invoice.copy(id = finalId).toBackendDto()
+                if (invoice.id == 0L) {
+                    InvoicelyApiManager.createInvoice(dto)
+                } else {
+                    InvoicelyApiManager.updateInvoice(finalId, dto)
+                }
+                refreshBackendStats()
+            } catch (_: Exception) {}
         }
     }
 
     fun deleteInvoice(invoice: InvoiceEntity) {
         viewModelScope.launch {
             invoiceRepository.deleteInvoice(invoice)
+            try {
+                if (invoice.id > 0) {
+                    InvoicelyApiManager.deleteInvoice(invoice.id)
+                    refreshBackendStats()
+                }
+            } catch (_: Exception) {}
         }
     }
 
     fun updateInvoiceStatus(invoiceId: Long, status: String) {
         viewModelScope.launch {
             invoiceRepository.updateStatus(invoiceId, status)
+            try {
+                InvoicelyApiManager.updateInvoiceStatus(invoiceId, status)
+                refreshBackendStats()
+            } catch (_: Exception) {}
         }
     }
 
@@ -478,19 +571,37 @@ class InvoiceViewModel(application: Application) : AndroidViewModel(application)
     // Client CRUD Actions
     fun saveClient(client: ClientEntity, onSaved: (Long) -> Unit = {}) {
         viewModelScope.launch {
+            val finalId: Long
             if (client.id == 0L) {
-                val newId = clientRepository.insertClient(client)
-                onSaved(newId)
+                finalId = clientRepository.insertClient(client)
+                onSaved(finalId)
             } else {
+                finalId = client.id
                 clientRepository.updateClient(client)
-                onSaved(client.id)
+                onSaved(finalId)
             }
+
+            try {
+                val dto = client.copy(id = finalId).toBackendDto()
+                if (client.id == 0L) {
+                    InvoicelyApiManager.createClient(dto)
+                } else {
+                    InvoicelyApiManager.updateClient(finalId, dto)
+                }
+                refreshBackendStats()
+            } catch (_: Exception) {}
         }
     }
 
     fun deleteClient(client: ClientEntity) {
         viewModelScope.launch {
             clientRepository.deleteClient(client)
+            try {
+                if (client.id > 0) {
+                    InvoicelyApiManager.deleteClient(client.id)
+                    refreshBackendStats()
+                }
+            } catch (_: Exception) {}
         }
     }
 
@@ -498,6 +609,9 @@ class InvoiceViewModel(application: Application) : AndroidViewModel(application)
     fun saveBusinessProfile(profile: BusinessProfile) {
         viewModelScope.launch {
             businessRepository.saveProfile(profile)
+            try {
+                InvoicelyApiManager.updateBusinessProfile(profile.toBackendDto())
+            } catch (_: Exception) {}
         }
     }
 
@@ -796,6 +910,17 @@ class InvoiceViewModel(application: Application) : AndroidViewModel(application)
                 expenseRepository.updateExpense(expense)
                 expense.id
             }
+
+            try {
+                val dto = expense.copy(id = id).toBackendDto()
+                if (expense.id == 0L) {
+                    InvoicelyApiManager.createExpense(dto)
+                } else {
+                    InvoicelyApiManager.updateExpense(id, dto)
+                }
+                refreshBackendStats()
+            } catch (e: Exception) {}
+
             kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.Main) {
                 onSaved(id)
             }
@@ -805,6 +930,77 @@ class InvoiceViewModel(application: Application) : AndroidViewModel(application)
     fun deleteExpense(expense: ExpenseEntity) {
         viewModelScope.launch(kotlinx.coroutines.Dispatchers.IO) {
             expenseRepository.deleteExpense(expense)
+            try {
+                if (expense.id > 0) {
+                    InvoicelyApiManager.deleteExpense(expense.id)
+                    refreshBackendStats()
+                }
+            } catch (e: Exception) {}
+        }
+    }
+
+    // =========================================================================
+    // BACKEND API ENTITY REFRESH HELPERS
+    // =========================================================================
+
+    fun refreshClientsFromBackend() {
+        viewModelScope.launch(kotlinx.coroutines.Dispatchers.IO) {
+            val res = InvoicelyApiManager.getAllClients()
+            if (res.isSuccess) {
+                val remoteList = res.getOrNull() ?: emptyList()
+                val localList = allClients.value
+                val localIds = localList.map { it.id }.toSet()
+                for (rc in remoteList) {
+                    val entity = rc.toEntity()
+                    if (entity.id in localIds) {
+                        clientRepository.updateClient(entity)
+                    } else {
+                        clientRepository.insertClient(entity)
+                    }
+                }
+            }
+        }
+    }
+
+    fun refreshExpensesFromBackend() {
+        viewModelScope.launch(kotlinx.coroutines.Dispatchers.IO) {
+            val res = InvoicelyApiManager.getAllExpenses()
+            if (res.isSuccess) {
+                val remoteList = res.getOrNull() ?: emptyList()
+                val localList = allExpenses.value
+                val localIds = localList.map { it.id }.toSet()
+                for (re in remoteList) {
+                    val entity = re.toEntity()
+                    if (entity.id in localIds) {
+                        expenseRepository.updateExpense(entity)
+                    } else {
+                        expenseRepository.insertExpense(entity)
+                    }
+                }
+            }
+        }
+    }
+
+    fun refreshInvoicesFromBackend() {
+        viewModelScope.launch(kotlinx.coroutines.Dispatchers.IO) {
+            val res = InvoicelyApiManager.getAllInvoices()
+            if (res.isSuccess) {
+                val remoteList = res.getOrNull() ?: emptyList()
+                val localList = allInvoices.value
+                val localNumbers = localList.map { it.invoiceNumber }.toSet()
+                for (ri in remoteList) {
+                    val entity = ri.toEntity()
+                    if (entity.invoiceNumber in localNumbers) {
+                        val localMatch = localList.find { it.invoiceNumber == entity.invoiceNumber }
+                        if (localMatch != null) {
+                            invoiceRepository.updateInvoice(entity.copy(id = localMatch.id))
+                        }
+                    } else {
+                        invoiceRepository.insertInvoice(entity)
+                    }
+                }
+                refreshBackendStats()
+            }
         }
     }
 }

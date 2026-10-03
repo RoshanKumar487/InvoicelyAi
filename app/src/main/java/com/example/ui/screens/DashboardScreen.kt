@@ -32,12 +32,18 @@ import androidx.compose.material.icons.filled.Menu
 import androidx.compose.material.icons.filled.NotificationsActive
 import androidx.compose.material.icons.filled.People
 import androidx.compose.material.icons.filled.Receipt
+import androidx.compose.material.icons.filled.Security
+import androidx.compose.material.icons.filled.Sync
 import androidx.compose.material.icons.filled.TrendingUp
 import androidx.compose.material.icons.filled.Warning
+import androidx.compose.material.icons.filled.CloudDone
+import androidx.compose.material.icons.filled.CloudOff
+import com.example.ui.components.rememberWindowAdaptiveInfo
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
+import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.FloatingActionButton
 import androidx.compose.material3.Icon
@@ -104,12 +110,18 @@ fun DashboardScreen(
     val analytics by viewModel.dashboardAnalytics.collectAsStateWithLifecycle()
     val allInvoices by viewModel.allInvoices.collectAsStateWithLifecycle()
     val profile by viewModel.businessProfile.collectAsStateWithLifecycle()
+    val currentUser by com.example.data.repository.AuthSessionManager.currentUser.collectAsStateWithLifecycle()
 
     var reminderInvoice by remember { mutableStateOf<InvoiceEntity?>(null) }
     val reminderSheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
 
     val recentInvoices = allInvoices.take(5)
 
+    val isOnline by viewModel.isBackendOnline.collectAsStateWithLifecycle()
+    val isSyncing by viewModel.isSyncing.collectAsStateWithLifecycle()
+    val backendStats by viewModel.backendStats.collectAsStateWithLifecycle()
+    val lastSyncTime by viewModel.lastSyncTime.collectAsStateWithLifecycle()
+    val context = androidx.compose.ui.platform.LocalContext.current
     val isDark = isSystemInDarkTheme()
     val adaptiveInfo = rememberWindowAdaptiveInfo()
 
@@ -118,6 +130,8 @@ fun DashboardScreen(
         modifier = modifier.fillMaxSize(),
         containerColor = Color.Transparent,
         topBar = {
+            val currentUser by com.example.data.repository.AuthSessionManager.currentUser.collectAsStateWithLifecycle()
+            val userRole = currentUser?.role ?: com.example.data.model.UserRole.ADMIN
             TopAppBar(
                 navigationIcon = {
                     Box(modifier = Modifier.padding(start = 12.dp, end = 4.dp)) {
@@ -129,15 +143,32 @@ fun DashboardScreen(
                 },
                 title = {
                     Column {
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(6.dp)
+                        ) {
+                            Text(
+                                text = profile.businessName,
+                                style = MaterialTheme.typography.titleLarge,
+                                fontWeight = FontWeight.ExtraBold,
+                                color = if (isDark) Color.White else Color(0xFF0F172A),
+                                fontSize = adaptiveInfo.titleLargeSize
+                            )
+                            Surface(
+                                shape = RoundedCornerShape(8.dp),
+                                color = userRole.badgeBgColor
+                            ) {
+                                Text(
+                                    text = userRole.shortBadge,
+                                    color = userRole.badgeFgColor,
+                                    fontSize = 10.sp,
+                                    fontWeight = FontWeight.ExtraBold,
+                                    modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
+                                )
+                            }
+                        }
                         Text(
-                            text = profile.businessName,
-                            style = MaterialTheme.typography.titleLarge,
-                            fontWeight = FontWeight.ExtraBold,
-                            color = if (isDark) Color.White else Color(0xFF0F172A),
-                            fontSize = adaptiveInfo.titleLargeSize
-                        )
-                        Text(
-                            text = "Invoice Dashboard & Analytics",
+                            text = if (userRole == com.example.data.model.UserRole.EMPLOYEE) "Staff Workspace • Operational Access" else "Invoice Dashboard & Analytics",
                             style = MaterialTheme.typography.bodySmall,
                             color = if (isDark) Color(0xFF94A3B8) else Color(0xFF64748B),
                             fontSize = 12.sp,
@@ -146,6 +177,39 @@ fun DashboardScreen(
                     }
                 },
                 actions = {
+                    // Backend API Sync Action
+                    IconButton(
+                        onClick = {
+                            viewModel.syncAllDataWithBackend { success, msg ->
+                                android.widget.Toast.makeText(context, msg, android.widget.Toast.LENGTH_SHORT).show()
+                            }
+                        },
+                        modifier = Modifier.testTag("dashboard_sync_btn")
+                    ) {
+                        Box(
+                            modifier = Modifier
+                                .size(36.dp)
+                                .clip(CircleShape)
+                                .background(if (isOnline) Color(0xFFDCFCE7) else (if (isDark) Color(0xFF1E293B) else Color(0xFFF1F5F9))),
+                            contentAlignment = Alignment.Center
+                        ) {
+                            if (isSyncing) {
+                                CircularProgressIndicator(
+                                    modifier = Modifier.size(18.dp),
+                                    strokeWidth = 2.dp,
+                                    color = Color(0xFF16A34A)
+                                )
+                            } else {
+                                Icon(
+                                    imageVector = Icons.Default.Sync,
+                                    contentDescription = "Sync Backend",
+                                    tint = if (isOnline) Color(0xFF16A34A) else Color(0xFF64748B),
+                                    modifier = Modifier.size(20.dp)
+                                )
+                            }
+                        }
+                    }
+
                     // New Invoice Button
                     IconButton(
                         onClick = onCreateInvoice,
@@ -223,6 +287,167 @@ fun DashboardScreen(
                 contentPadding = PaddingValues(horizontal = adaptiveInfo.horizontalPadding, vertical = 10.dp),
                 verticalArrangement = Arrangement.spacedBy(16.dp)
             ) {
+            // Live Backend Cloud Sync Banner
+            item {
+                Card(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .clickable {
+                            viewModel.syncAllDataWithBackend { success, msg ->
+                                android.widget.Toast.makeText(context, msg, android.widget.Toast.LENGTH_SHORT).show()
+                            }
+                        }
+                        .testTag("backend_sync_banner"),
+                    colors = CardDefaults.cardColors(
+                        containerColor = if (isOnline) {
+                            if (isDark) Color(0xFF064E3B).copy(alpha = 0.35f) else Color(0xFFF0FDF4)
+                        } else {
+                            if (isDark) Color(0xFF1E293B).copy(alpha = 0.5f) else Color(0xFFF8FAFC)
+                        }
+                    ),
+                    shape = RoundedCornerShape(16.dp),
+                    border = BorderStroke(1.dp, if (isOnline) Color(0xFF86EFAC) else Color(0xFFCBD5E1))
+                ) {
+                    Row(
+                        modifier = Modifier.padding(horizontal = 14.dp, vertical = 10.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.SpaceBetween
+                    ) {
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(10.dp),
+                            modifier = Modifier.weight(1f)
+                        ) {
+                            Box(
+                                modifier = Modifier
+                                    .size(10.dp)
+                                    .clip(CircleShape)
+                                    .background(if (isOnline) Color(0xFF22C55E) else Color(0xFF94A3B8))
+                            )
+                            Column {
+                                Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                                    Text(
+                                        text = if (isOnline) "Cloud Backend Connected (Spring Boot + PostgreSQL)" else "Local Offline Mode (Room DB)",
+                                        fontWeight = FontWeight.Bold,
+                                        fontSize = 12.sp,
+                                        color = if (isOnline) (if (isDark) Color(0xFF86EFAC) else Color(0xFF15803D)) else Color(0xFF64748B)
+                                    )
+                                    if (isSyncing) {
+                                        Text(
+                                            text = "• Syncing...",
+                                            fontSize = 11.sp,
+                                            color = Color(0xFF2563EB),
+                                            fontWeight = FontWeight.SemiBold
+                                        )
+                                    }
+                                }
+                                Text(
+                                    text = if (backendStats != null) {
+                                        "Live Server: ${backendStats?.totalInvoices ?: 0} invoices • ${backendStats?.totalClients ?: 0} clients"
+                                    } else {
+                                        "Tap to sync invoices, clients & expenses with server"
+                                    },
+                                    fontSize = 11.sp,
+                                    color = Color(0xFF64748B)
+                                )
+                            }
+                        }
+
+                        Surface(
+                            shape = RoundedCornerShape(10.dp),
+                            color = if (isOnline) Color(0xFFDCFCE7) else Color(0xFFE2E8F0)
+                        ) {
+                            Text(
+                                text = if (isSyncing) "Syncing" else "Sync Now",
+                                fontSize = 11.sp,
+                                fontWeight = FontWeight.Bold,
+                                color = if (isOnline) Color(0xFF16A34A) else Color(0xFF475569),
+                                modifier = Modifier.padding(horizontal = 10.dp, vertical = 4.dp)
+                            )
+                        }
+                    }
+                }
+            }
+
+            // Operational Role Guidance Banner
+            if (currentUser?.role == com.example.data.model.UserRole.EMPLOYEE) {
+                item {
+                    Card(
+                        modifier = Modifier.fillMaxWidth(),
+                        colors = CardDefaults.cardColors(containerColor = if (isDark) Color(0xFF064E3B).copy(alpha = 0.45f) else Color(0xFFECFDF5)),
+                        shape = RoundedCornerShape(18.dp),
+                        border = androidx.compose.foundation.BorderStroke(1.dp, Color(0xFFA7F3D0))
+                    ) {
+                        Row(
+                            modifier = Modifier.padding(14.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(12.dp)
+                        ) {
+                            Box(
+                                modifier = Modifier
+                                    .size(36.dp)
+                                    .clip(CircleShape)
+                                    .background(Color(0xFF059669)),
+                                contentAlignment = Alignment.Center
+                            ) {
+                                Icon(Icons.Default.Receipt, contentDescription = null, tint = Color.White, modifier = Modifier.size(20.dp))
+                            }
+                            Column(modifier = Modifier.weight(1f)) {
+                                Text(
+                                    text = "Staff Operational Access Active",
+                                    fontWeight = FontWeight.Bold,
+                                    fontSize = 13.5.sp,
+                                    color = if (isDark) Color(0xFFA7F3D0) else Color(0xFF065F46)
+                                )
+                                Text(
+                                    text = "You can add/scan team expenses, draft invoices, and use billing tools for ${profile.businessName}.",
+                                    fontSize = 11.5.sp,
+                                    color = if (isDark) Color(0xFFD1FAE5) else Color(0xFF047857)
+                                )
+                            }
+                        }
+                    }
+                }
+            } else if (currentUser?.role == com.example.data.model.UserRole.DEVELOPER) {
+                item {
+                    Card(
+                        modifier = Modifier.fillMaxWidth(),
+                        colors = CardDefaults.cardColors(containerColor = if (isDark) Color(0xFF581C87).copy(alpha = 0.45f) else Color(0xFFFAF5FF)),
+                        shape = RoundedCornerShape(18.dp),
+                        border = androidx.compose.foundation.BorderStroke(1.dp, Color(0xFFE9D5FF))
+                    ) {
+                        Row(
+                            modifier = Modifier.padding(14.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(12.dp)
+                        ) {
+                            Box(
+                                modifier = Modifier
+                                    .size(36.dp)
+                                    .clip(CircleShape)
+                                    .background(Color(0xFF7E22CE)),
+                                contentAlignment = Alignment.Center
+                            ) {
+                                Icon(Icons.Default.Security, contentDescription = null, tint = Color.White, modifier = Modifier.size(20.dp))
+                            }
+                            Column(modifier = Modifier.weight(1f)) {
+                                Text(
+                                    text = "Platform Developer Superuser Mode",
+                                    fontWeight = FontWeight.Bold,
+                                    fontSize = 13.5.sp,
+                                    color = if (isDark) Color(0xFFE9D5FF) else Color(0xFF6B21A8)
+                                )
+                                Text(
+                                    text = "Unrestricted cross-organization platform inspection & join request management active.",
+                                    fontSize = 11.5.sp,
+                                    color = if (isDark) Color(0xFFF3E8FF) else Color(0xFF7E22CE)
+                                )
+                            }
+                        }
+                    }
+                }
+            }
+
             // Gemini AI Voice & Chat Assistant Hero Banner
             item {
                 GlassHeroCard(

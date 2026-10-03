@@ -45,6 +45,7 @@ import androidx.compose.material.icons.filled.Receipt
 import androidx.compose.material.icons.filled.Restaurant
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.ShoppingCart
+import androidx.compose.material.icons.filled.Sync
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
@@ -162,17 +163,33 @@ fun ExpensesScreen(
             modifier = modifier.fillMaxSize(),
             containerColor = Color.Transparent,
             topBar = {
+                val currentUser by com.example.data.repository.AuthSessionManager.currentUser.collectAsStateWithLifecycle()
+                val userRole = currentUser?.role ?: com.example.data.model.UserRole.EMPLOYEE
                 TopAppBar(
                     title = {
                         Column {
+                            Row(
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.spacedBy(6.dp)
+                            ) {
+                                Text(
+                                    text = "Expenses & Bills",
+                                    fontSize = adaptiveInfo.titleLargeSize,
+                                    fontWeight = FontWeight.Bold,
+                                    color = if (isDark) Color.White else PrimaryNavy
+                                )
+                                Surface(shape = RoundedCornerShape(8.dp), color = userRole.badgeBgColor) {
+                                    Text(
+                                        text = userRole.shortBadge,
+                                        color = userRole.badgeFgColor,
+                                        fontSize = 10.sp,
+                                        fontWeight = FontWeight.ExtraBold,
+                                        modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
+                                    )
+                                }
+                            }
                             Text(
-                                text = "Expenses & Bills",
-                                fontSize = adaptiveInfo.titleLargeSize,
-                                fontWeight = FontWeight.Bold,
-                                color = if (isDark) Color.White else PrimaryNavy
-                            )
-                            Text(
-                                text = "Track deductible business expenses",
+                                text = if (userRole == com.example.data.model.UserRole.EMPLOYEE) "Staff Mode • Add & track deductible team bills" else "Track deductible business expenses",
                                 fontSize = 11.sp,
                                 color = if (isDark) Color(0xFF94A3B8) else Color.Gray
                             )
@@ -218,6 +235,30 @@ fun ExpensesScreen(
                                     contentDescription = "Add Expense",
                                     tint = Color.White,
                                     modifier = Modifier.size(20.dp)
+                                )
+                            }
+                        }
+
+                        // Sync Expenses with Backend
+                        IconButton(
+                            onClick = {
+                                viewModel.refreshExpensesFromBackend()
+                                Toast.makeText(context, "Refreshing expenses from server...", Toast.LENGTH_SHORT).show()
+                            },
+                            modifier = Modifier.testTag("expenses_sync_btn")
+                        ) {
+                            Box(
+                                modifier = Modifier
+                                    .size(36.dp)
+                                    .clip(CircleShape)
+                                    .background(if (isDark) Color(0xFF1E293B) else Color(0xFFEFF6FF)),
+                                contentAlignment = Alignment.Center
+                            ) {
+                                Icon(
+                                    imageVector = Icons.Default.Sync,
+                                    contentDescription = "Sync Expenses",
+                                    tint = if (isDark) Color.White else Color(0xFF1D4ED8),
+                                    modifier = Modifier.size(18.dp)
                                 )
                             }
                         }

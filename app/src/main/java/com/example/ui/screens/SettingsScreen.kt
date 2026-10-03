@@ -36,6 +36,7 @@ import androidx.compose.material.icons.filled.Description
 import androidx.compose.material.icons.filled.ExpandLess
 import androidx.compose.material.icons.filled.ExpandMore
 import androidx.compose.material.icons.filled.Fullscreen
+import androidx.compose.material.icons.filled.Lock
 import androidx.compose.material.icons.filled.Menu
 import androidx.compose.material.icons.filled.Palette
 import androidx.compose.material.icons.filled.QrCode
@@ -50,6 +51,7 @@ import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
+import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.ExposedDropdownMenuBox
@@ -72,7 +74,12 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
+import kotlinx.coroutines.launch
+import com.example.data.api.ApiConfig
+import com.example.data.api.InvoicelyApiManager
+import com.example.data.repository.AuthSessionManager
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -125,6 +132,13 @@ fun SettingsScreen(
     // Card Expand/Collapse States for Zoho-style card navigation
     var expandedCard by remember { mutableStateOf<String?>("columns") }
 
+    val isBackendOnline by viewModel.isBackendOnline.collectAsStateWithLifecycle()
+    val isSyncing by viewModel.isSyncing.collectAsStateWithLifecycle()
+    val lastSyncTime by viewModel.lastSyncTime.collectAsStateWithLifecycle()
+    val syncErrorMessage by viewModel.syncErrorMessage.collectAsStateWithLifecycle()
+    val coroutineScope = rememberCoroutineScope()
+    var serverUrlInput by remember { mutableStateOf(ApiConfig.baseUrl.value) }
+
     var showResetDialog by remember { mutableStateOf(false) }
     var showClearInvoicesDialog by remember { mutableStateOf(false) }
     var showSettingsItemBuilder by remember { mutableStateOf(false) }
@@ -168,9 +182,17 @@ fun SettingsScreen(
     )
 
     fun saveChanges() {
+        val currentUser = com.example.data.repository.AuthSessionManager.currentUser.value
+        if (currentUser?.role == com.example.data.model.UserRole.EMPLOYEE) {
+            Toast.makeText(context, "Permission Denied: Organization settings can only be modified by an Admin.", Toast.LENGTH_LONG).show()
+            return
+        }
         viewModel.saveBusinessProfile(profileState)
         Toast.makeText(context, "Settings & Preferences saved successfully", Toast.LENGTH_SHORT).show()
     }
+
+    val currentUser by com.example.data.repository.AuthSessionManager.currentUser.collectAsStateWithLifecycle()
+    val userRole = currentUser?.role ?: com.example.data.model.UserRole.ADMIN
 
     Scaffold(
         modifier = modifier.fillMaxSize(),
@@ -178,8 +200,23 @@ fun SettingsScreen(
             TopAppBar(
                 title = {
                     Column {
-                        Text("Invoice Settings", fontWeight = FontWeight.Bold)
-                        Text("Card-based access to features, tools & custom preferences", fontSize = 11.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                            Text("Invoice Settings", fontWeight = FontWeight.Bold)
+                            Surface(shape = RoundedCornerShape(8.dp), color = userRole.badgeBgColor) {
+                                Text(
+                                    text = if (userRole == com.example.data.model.UserRole.EMPLOYEE) "🔒 EMPLOYEE (READ-ONLY)" else userRole.shortBadge,
+                                    color = userRole.badgeFgColor,
+                                    fontSize = 10.sp,
+                                    fontWeight = FontWeight.ExtraBold,
+                                    modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
+                                )
+                            }
+                        }
+                        Text(
+                            text = if (userRole == com.example.data.model.UserRole.EMPLOYEE) "Admin credentials required to edit organization data" else "Card-based access to features, tools & custom preferences",
+                            fontSize = 11.sp,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
                     }
                 },
                 navigationIcon = {
@@ -208,6 +245,29 @@ fun SettingsScreen(
                     .padding(horizontal = adaptiveInfo.horizontalPadding, vertical = 14.dp),
                 verticalArrangement = Arrangement.spacedBy(14.dp)
             ) {
+
+            if (userRole == com.example.data.model.UserRole.EMPLOYEE) {
+                Card(
+                    modifier = Modifier.fillMaxWidth(),
+                    colors = CardDefaults.cardColors(containerColor = Color(0xFFFEF3C7)),
+                    shape = RoundedCornerShape(14.dp),
+                    border = androidx.compose.foundation.BorderStroke(1.dp, Color(0xFFFDE68A))
+                ) {
+                    Row(
+                        modifier = Modifier.padding(12.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(10.dp)
+                    ) {
+                        Icon(Icons.Default.Lock, contentDescription = null, tint = Color(0xFFD97706), modifier = Modifier.size(20.dp))
+                        Text(
+                            text = "Staff Notice: Organization profile, banking credentials, and tax settings can only be altered by an Organization Admin.",
+                            fontSize = 12.sp,
+                            fontWeight = FontWeight.Medium,
+                            color = Color(0xFF92400E)
+                        )
+                    }
+                }
+            }
 
             // =========================================================================
             // CARD-BASED ACCESS TO ALL FEATURES AND TOOLS (USER REQUEST)
@@ -1666,6 +1726,175 @@ fun SettingsScreen(
                         Icon(Icons.Default.AutoAwesome, contentDescription = null, modifier = Modifier.size(16.dp))
                         Spacer(modifier = Modifier.width(6.dp))
                         Text("Open Gemini Voice & Chat Assistant", fontSize = 12.sp, fontWeight = FontWeight.Bold)
+                    }
+                }
+            }
+
+            // =========================================================================
+            // BACKEND CLOUD & API SERVER SETTINGS (SPRING BOOT + POSTGRESQL)
+            // =========================================================================
+            SettingAccordionCard(
+                title = "Backend Cloud & API Server",
+                subtitle = "Spring Boot + PostgreSQL connection, URL & live synchronization",
+                icon = Icons.Default.Storage,
+                isExpanded = expandedCard == "backend_sync",
+                onToggle = { expandedCard = if (expandedCard == "backend_sync") null else "backend_sync" },
+                badge = if (isBackendOnline) "ONLINE" else "OFFLINE"
+            ) {
+                Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                    // Status banner
+                    Surface(
+                        color = if (isBackendOnline) Color(0xFFF0FDF4) else Color(0xFFFFFBEB),
+                        shape = RoundedCornerShape(10.dp),
+                        border = androidx.compose.foundation.BorderStroke(1.dp, if (isBackendOnline) Color(0xFFBBF7D0) else Color(0xFFFDE68A)),
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        Row(
+                            modifier = Modifier.padding(12.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(10.dp)
+                        ) {
+                            Box(
+                                modifier = Modifier
+                                    .size(10.dp)
+                                    .clip(CircleShape)
+                                    .background(if (isBackendOnline) StatusPaidGreen else Color(0xFFF59E0B))
+                            )
+                            Column(modifier = Modifier.weight(1f)) {
+                                Text(
+                                    text = if (isBackendOnline) "Backend API Online & Connected" else "Backend Server Offline / Unreachable",
+                                    fontWeight = FontWeight.Bold,
+                                    fontSize = 12.sp,
+                                    color = if (isBackendOnline) Color(0xFF166534) else Color(0xFF92400E)
+                                )
+                                Text(
+                                    text = if (lastSyncTime != null) "Last synchronized: $lastSyncTime" else "Offline-first fallback active (Room DB snappiness preserved)",
+                                    fontSize = 11.sp,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                                )
+                                if (syncErrorMessage != null) {
+                                    Text(
+                                        text = "Sync status: $syncErrorMessage",
+                                        fontSize = 10.sp,
+                                        color = MaterialTheme.colorScheme.error
+                                    )
+                                }
+                            }
+                        }
+                    }
+
+                    // Server Base URL field
+                    OutlinedTextField(
+                        value = serverUrlInput,
+                        onValueChange = { serverUrlInput = it },
+                        label = { Text("Backend Server Base URL") },
+                        supportingText = { Text("E.g. http://10.0.2.2:8080/ for Android emulator, or LAN IP for physical device") },
+                        modifier = Modifier.fillMaxWidth(),
+                        singleLine = true,
+                        shape = RoundedCornerShape(10.dp)
+                    )
+
+                    // URL quick preset chips
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(6.dp)
+                    ) {
+                        OutlinedButton(
+                            onClick = {
+                                serverUrlInput = "http://10.0.2.2:8080/"
+                                ApiConfig.updateBaseUrl(serverUrlInput)
+                                Toast.makeText(context, "Set to Emulator URL", Toast.LENGTH_SHORT).show()
+                            },
+                            modifier = Modifier.weight(1f),
+                            shape = RoundedCornerShape(8.dp)
+                        ) {
+                            Text("Emulator", fontSize = 11.sp)
+                        }
+                        OutlinedButton(
+                            onClick = {
+                                serverUrlInput = "http://localhost:8080/"
+                                ApiConfig.updateBaseUrl(serverUrlInput)
+                                Toast.makeText(context, "Set to Localhost", Toast.LENGTH_SHORT).show()
+                            },
+                            modifier = Modifier.weight(1f),
+                            shape = RoundedCornerShape(8.dp)
+                        ) {
+                            Text("Localhost", fontSize = 11.sp)
+                        }
+                        Button(
+                            onClick = {
+                                ApiConfig.updateBaseUrl(serverUrlInput)
+                                Toast.makeText(context, "Base URL saved", Toast.LENGTH_SHORT).show()
+                            },
+                            shape = RoundedCornerShape(8.dp),
+                            colors = ButtonDefaults.buttonColors(containerColor = PrimaryNavy)
+                        ) {
+                            Text("Save URL", fontSize = 11.sp)
+                        }
+                    }
+
+                    // Test connection & Sync Now actions
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        OutlinedButton(
+                            onClick = {
+                                coroutineScope.launch {
+                                    val ok = InvoicelyApiManager.checkConnection().getOrDefault(false)
+                                    if (ok) {
+                                        Toast.makeText(context, "✓ Connected to Spring Boot backend!", Toast.LENGTH_SHORT).show()
+                                    } else {
+                                        Toast.makeText(context, "✗ Backend unreachable. Verify Spring Boot is running on 8080.", Toast.LENGTH_LONG).show()
+                                    }
+                                }
+                            },
+                            modifier = Modifier.weight(1f),
+                            shape = RoundedCornerShape(10.dp)
+                        ) {
+                            Icon(Icons.Default.Refresh, contentDescription = null, modifier = Modifier.size(16.dp))
+                            Spacer(modifier = Modifier.width(6.dp))
+                            Text("Test Link", fontSize = 12.sp)
+                        }
+
+                        Button(
+                            onClick = {
+                                viewModel.syncAllDataWithBackend()
+                                Toast.makeText(context, "Synchronizing all data with backend...", Toast.LENGTH_SHORT).show()
+                            },
+                            enabled = !isSyncing,
+                            modifier = Modifier.weight(1.2f),
+                            shape = RoundedCornerShape(10.dp),
+                            colors = ButtonDefaults.buttonColors(containerColor = PrimaryNavy)
+                        ) {
+                            if (isSyncing) {
+                                CircularProgressIndicator(modifier = Modifier.size(16.dp), color = Color.White, strokeWidth = 2.dp)
+                                Spacer(modifier = Modifier.width(6.dp))
+                                Text("Syncing...", fontSize = 12.sp)
+                            } else {
+                                Icon(Icons.Default.Refresh, contentDescription = null, modifier = Modifier.size(16.dp))
+                                Spacer(modifier = Modifier.width(6.dp))
+                                Text("Sync All Now", fontSize = 12.sp)
+                            }
+                        }
+                    }
+
+                    // Active session info
+                    val currentToken: String? = com.example.data.api.client.ApiClient.getAuthToken()
+                    Surface(
+                        color = Color(0xFFF8FAFC),
+                        shape = RoundedCornerShape(8.dp),
+                        border = androidx.compose.foundation.BorderStroke(1.dp, Color(0xFFE2E8F0)),
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        Column(modifier = Modifier.padding(10.dp)) {
+                            Text("API Authentication & Session:", fontSize = 11.sp, fontWeight = FontWeight.Bold, color = PrimaryNavy)
+                            Text(
+                                text = if (currentToken != null) "JWT Bearer Token Active (${currentToken.take(12)}...)" else "No active JWT token (offline / guest mode)",
+                                fontSize = 10.sp,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                        }
                     }
                 }
             }

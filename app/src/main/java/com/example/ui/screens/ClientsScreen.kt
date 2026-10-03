@@ -45,6 +45,7 @@ import androidx.compose.material.icons.filled.Phone
 import androidx.compose.material.icons.filled.PostAdd
 import androidx.compose.material.icons.filled.Receipt
 import androidx.compose.material.icons.filled.Search
+import androidx.compose.material.icons.filled.Sync
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
@@ -149,6 +150,28 @@ fun ClientsScreen(
                         }
                     },
                     actions = {
+                        IconButton(
+                            onClick = {
+                                viewModel.refreshClientsFromBackend()
+                                Toast.makeText(context, "Refreshing clients from server...", Toast.LENGTH_SHORT).show()
+                            },
+                            modifier = Modifier.testTag("clients_sync_btn")
+                        ) {
+                            Box(
+                                modifier = Modifier
+                                    .size(36.dp)
+                                    .clip(CircleShape)
+                                    .background(if (isDark) Color(0xFF1E293B) else Color(0xFFEFF6FF)),
+                                contentAlignment = Alignment.Center
+                            ) {
+                                Icon(
+                                    imageVector = Icons.Default.Sync,
+                                    contentDescription = "Sync Clients",
+                                    tint = if (isDark) Color.White else Color(0xFF1D4ED8),
+                                    modifier = Modifier.size(18.dp)
+                                )
+                            }
+                        }
                         IconButton(
                             onClick = onOpenMenu,
                             modifier = Modifier.testTag("clients_menu_btn")
