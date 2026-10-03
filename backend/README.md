@@ -125,6 +125,16 @@ Or using Gradle:
 ..\gradlew.bat bootRun
 ```
 
+Using Docker (Recommended for Deployment):
+```bash
+# Build image from source
+docker build -t invoicely-backend:latest .
+
+# Run container
+docker run -p 8080:8080 invoicely-backend:latest
+```
+See [DOCKER.md](file:///c:/Users/ADMIN/Documents/InvocielyAi/InvoicelyAi-main/InvoicelyAi/backend/DOCKER.md) for full cloud deployment instructions (AWS, Render, Railway, Cloud Run).
+
 ---
 
 ## 📖 Interactive API Documentation (Swagger UI)

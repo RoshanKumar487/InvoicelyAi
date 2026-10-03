@@ -1,0 +1,31 @@
+version: '3.8'
+
+services:
+  backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    image: invoicely-backend:latest
+    container_name: invoicely-backend-service
+    restart: unless-stopped
+    ports:
+      - "8080:8080"
+    environment:
+      - PORT=8080
+      - DB_HOST=${DB_HOST:-db.pggsnzcbkqyzcpjmcmqj.supabase.co}
+      - DB_PORT=${DB_PORT:-5432}
+      - DB_NAME=${DB_NAME:-postgres}
+      - DB_USER=${DB_USER:-postgres}
+      - DB_PASSWORD=${DB_PASSWORD:-Roshan96522@}
+      - JWT_SECRET=${JWT_SECRET:-invoicelyai_supabase_postgres_super_secret_jwt_key_2026_secure}
+      - DEV_SECRET_KEY=${DEV_SECRET_KEY:-invoicely_dev_secret_2026}
+      - SPRING_PROFILES_ACTIVE=prod
+    env_file:
+      - path: ./backend/.env
+        required: false
+    healthcheck:
+      test: ["CMD-SHELL", "curl -f http://localhost:8080/api/v1/health || exit 1"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 40s

@@ -1,0 +1,41 @@
+# ==============================================================================
+# InvoicelyAi Backend - Fast Pre-Built JAR Dockerfile
+# Use this when you have already built the JAR locally via Gradle or Maven:
+#   gradlew bootJar (or mvn clean package)
+# Build image:
+#   docker build -f Dockerfile.prebuilt -t invoicely-backend:latest .
+# ==============================================================================
+
+FROM eclipse-temurin:17-jre-alpine
+
+WORKDIR /app
+
+# Install curl for health checks and tzdata for proper timezone handling
+RUN apk add --no-cache curl tzdata
+
+# Create unprivileged application user
+RUN addgroup -S appgroup && adduser -S appuser -G appgroup
+
+# Copy pre-built JAR (Gradle build/libs or Maven target)
+# If using Maven, change path to: target/*.jar
+COPY build/libs/invoicely-backend-1.0.0.jar /app/app.jar
+
+# Set ownership
+RUN chown -R appuser:appgroup /app
+
+# Switch to non-root user
+USER appuser:appgroup
+
+# Expose port
+EXPOSE 8080
+
+# Environment variables
+ENV PORT=8080 \
+    SPRING_PROFILES_ACTIVE=prod \
+    JAVA_OPTS="-XX:+UseContainerSupport -XX:MaxRAMPercentage=75.0 -XX:InitialRAMPercentage=50.0 -Djava.security.egd=file:/dev/./urandom"
+
+# Healthcheck
+HEALTHCHECK --interval=30s --timeout=5s --start-period=30s --retries=3 \
+  CMD curl -f http://localhost:${PORT}/api/v1/health || exit 1
+
+ENTRYPOINT ["sh", "-c", "exec java $JAVA_OPTS -Dserver.port=${PORT} -jar /app/app.jar"]
