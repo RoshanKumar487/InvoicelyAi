@@ -1,7 +1,10 @@
 package com.example.ui.screens
 
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -25,6 +28,7 @@ import androidx.compose.material.icons.filled.Calculate
 import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.filled.Description
 import androidx.compose.material.icons.filled.HourglassTop
+import androidx.compose.material.icons.filled.Menu
 import androidx.compose.material.icons.filled.NotificationsActive
 import androidx.compose.material.icons.filled.People
 import androidx.compose.material.icons.filled.Receipt
@@ -66,9 +70,14 @@ import androidx.compose.ui.graphics.Brush
 import com.example.data.model.InvoiceEntity
 import com.example.data.model.InvoiceUtils
 import com.example.ui.components.BusinessCustomIcon
+import com.example.ui.components.GlassCard
+import com.example.ui.components.GlassHeroCard
+import com.example.ui.components.GlassPrimaryButton
 import com.example.ui.components.InvoiceStatusBadge
 import com.example.ui.components.PaymentReminderBottomSheet
 import com.example.ui.components.RevenueChart
+import com.example.ui.components.AdaptiveContainer
+import com.example.ui.components.rememberWindowAdaptiveInfo
 import com.example.ui.components.StatMetricCard
 import com.example.ui.theme.AccentIndigo
 import com.example.ui.theme.AccentTeal
@@ -89,6 +98,7 @@ fun DashboardScreen(
     onViewTaxTool: () -> Unit,
     onOpenInvoice: (Long) -> Unit,
     onOpenAiChat: () -> Unit = {},
+    onOpenMenu: () -> Unit = {},
     modifier: Modifier = Modifier
 ) {
     val analytics by viewModel.dashboardAnalytics.collectAsStateWithLifecycle()
@@ -100,15 +110,20 @@ fun DashboardScreen(
 
     val recentInvoices = allInvoices.take(5)
 
+    val isDark = isSystemInDarkTheme()
+    val adaptiveInfo = rememberWindowAdaptiveInfo()
+
     Scaffold(
+        contentWindowInsets = androidx.compose.foundation.layout.WindowInsets(0, 0, 0, 0),
         modifier = modifier.fillMaxSize(),
+        containerColor = Color.Transparent,
         topBar = {
             TopAppBar(
                 navigationIcon = {
                     Box(modifier = Modifier.padding(start = 12.dp, end = 4.dp)) {
                         BusinessCustomIcon(
                             profile = profile,
-                            size = 38.dp
+                            size = 40.dp
                         )
                     }
                 },
@@ -117,81 +132,127 @@ fun DashboardScreen(
                         Text(
                             text = profile.businessName,
                             style = MaterialTheme.typography.titleLarge,
-                            fontWeight = FontWeight.Bold,
-                            color = MaterialTheme.colorScheme.onSurface
+                            fontWeight = FontWeight.ExtraBold,
+                            color = if (isDark) Color.White else Color(0xFF0F172A),
+                            fontSize = adaptiveInfo.titleLargeSize
                         )
                         Text(
                             text = "Invoice Dashboard & Analytics",
                             style = MaterialTheme.typography.bodySmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                            color = if (isDark) Color(0xFF94A3B8) else Color(0xFF64748B),
+                            fontSize = 12.sp,
+                            fontWeight = FontWeight.Medium
                         )
                     }
                 },
                 actions = {
+                    // New Invoice Button
+                    IconButton(
+                        onClick = onCreateInvoice,
+                        modifier = Modifier.testTag("create_invoice_fab")
+                    ) {
+                        Box(
+                            modifier = Modifier
+                                .size(36.dp)
+                                .clip(CircleShape)
+                                .background(Color(0xFF1D4ED8)),
+                            contentAlignment = Alignment.Center
+                        ) {
+                            Icon(
+                                imageVector = Icons.Default.Add,
+                                contentDescription = "New Invoice",
+                                tint = Color.White,
+                                modifier = Modifier.size(20.dp)
+                            )
+                        }
+                    }
+
+                    // Tax Calculator
                     IconButton(
                         onClick = onViewTaxTool,
                         modifier = Modifier.testTag("dashboard_tax_calc_btn")
                     ) {
-                        Icon(
-                            imageVector = Icons.Default.Calculate,
-                            contentDescription = "Tax Calculator",
-                            tint = PrimaryNavy
-                        )
+                        Box(
+                            modifier = Modifier
+                                .size(36.dp)
+                                .clip(CircleShape)
+                                .background(if (isDark) Color(0xFF1E293B) else Color(0xFFEFF6FF)),
+                            contentAlignment = Alignment.Center
+                        ) {
+                            Icon(
+                                imageVector = Icons.Default.Calculate,
+                                contentDescription = "Tax Calculator",
+                                tint = Color(0xFF2563EB),
+                                modifier = Modifier.size(20.dp)
+                            )
+                        }
+                    }
+
+                    // Menu Action
+                    IconButton(
+                        onClick = onOpenMenu,
+                        modifier = Modifier.testTag("dashboard_menu_btn")
+                    ) {
+                        Box(
+                            modifier = Modifier
+                                .size(36.dp)
+                                .clip(CircleShape)
+                                .background(if (isDark) Color(0xFF1E293B) else Color(0xFFEFF6FF)),
+                            contentAlignment = Alignment.Center
+                        ) {
+                            Icon(
+                                imageVector = Icons.Default.Menu,
+                                contentDescription = "Menu",
+                                tint = if (isDark) Color.White else PrimaryNavy,
+                                modifier = Modifier.size(20.dp)
+                            )
+                        }
                     }
                 },
                 colors = TopAppBarDefaults.topAppBarColors(
-                    containerColor = MaterialTheme.colorScheme.surface
+                    containerColor = Color.Transparent
                 )
             )
-        },
-        floatingActionButton = {
-            FloatingActionButton(
-                onClick = onCreateInvoice,
-                containerColor = PrimaryNavy,
-                contentColor = Color.White,
-                shape = RoundedCornerShape(16.dp),
-                modifier = Modifier.testTag("create_invoice_fab")
-            ) {
-                Row(
-                    modifier = Modifier.padding(horizontal = 16.dp),
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    Icon(imageVector = Icons.Default.Add, contentDescription = null)
-                    Spacer(modifier = Modifier.width(6.dp))
-                    Text(
-                        text = "New Invoice",
-                        fontWeight = FontWeight.SemiBold
-                    )
-                }
-            }
         }
     ) { padding ->
-        LazyColumn(
-            modifier = Modifier
-                .fillMaxSize()
-                .padding(padding),
-            contentPadding = PaddingValues(horizontal = 16.dp, vertical = 12.dp),
-            verticalArrangement = Arrangement.spacedBy(16.dp)
-        ) {
+        AdaptiveContainer(maxWidth = adaptiveInfo.contentMaxWidth) {
+            LazyColumn(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .padding(padding),
+                contentPadding = PaddingValues(horizontal = adaptiveInfo.horizontalPadding, vertical = 10.dp),
+                verticalArrangement = Arrangement.spacedBy(16.dp)
+            ) {
             // Gemini AI Voice & Chat Assistant Hero Banner
             item {
-                Card(
+                GlassHeroCard(
                     modifier = Modifier
                         .fillMaxWidth()
                         .clickable { onOpenAiChat() }
                         .testTag("dashboard_ai_banner"),
-                    shape = RoundedCornerShape(16.dp),
-                    colors = CardDefaults.cardColors(containerColor = Color.Transparent)
+                    shape = RoundedCornerShape(22.dp)
                 ) {
                     Box(
                         modifier = Modifier
                             .fillMaxWidth()
                             .background(
                                 Brush.linearGradient(
-                                    colors = listOf(Color(0xFF1E3A8A), Color(0xFF2563EB), Color(0xFF7C3AED))
+                                    colors = if (isDark) {
+                                        listOf(
+                                            Color(0xFF1E3A8A).copy(alpha = 0.90f),
+                                            Color(0xFF312E81).copy(alpha = 0.85f),
+                                            Color(0xFF581C87).copy(alpha = 0.80f)
+                                        )
+                                    } else {
+                                        listOf(
+                                            Color(0xFF1E40AF),
+                                            Color(0xFF2563EB),
+                                            Color(0xFF6366F1)
+                                        )
+                                    }
                                 )
                             )
-                            .padding(16.dp)
+                            .padding(18.dp)
                     ) {
                         Row(
                             verticalAlignment = Alignment.CenterVertically,
@@ -202,52 +263,56 @@ fun DashboardScreen(
                                 Row(verticalAlignment = Alignment.CenterVertically) {
                                     Surface(
                                         color = Color.White.copy(alpha = 0.22f),
-                                        shape = RoundedCornerShape(12.dp)
+                                        shape = RoundedCornerShape(10.dp),
+                                        border = BorderStroke(1.dp, Color.White.copy(alpha = 0.35f))
                                     ) {
                                         Text(
-                                            text = "GEMINI 3.5 FLASH",
-                                            fontSize = 9.sp,
-                                            fontWeight = FontWeight.Bold,
+                                            text = "GEMINI 2.0 FLASH",
+                                            fontSize = 9.5.sp,
+                                            fontWeight = FontWeight.ExtraBold,
                                             color = Color.White,
-                                            modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
+                                            modifier = Modifier.padding(horizontal = 7.dp, vertical = 2.5.dp),
+                                            letterSpacing = 0.5.sp
                                         )
                                     }
-                                    Spacer(modifier = Modifier.width(6.dp))
+                                    Spacer(modifier = Modifier.width(8.dp))
                                     Text(
                                         text = "Voice & Chat Assistant",
-                                        fontSize = 11.sp,
-                                        fontWeight = FontWeight.Medium,
-                                        color = Color.White.copy(alpha = 0.9f)
+                                        fontSize = 11.5.sp,
+                                        fontWeight = FontWeight.SemiBold,
+                                        color = Color.White.copy(alpha = 0.92f)
                                     )
                                 }
-                                Spacer(modifier = Modifier.height(4.dp))
+                                Spacer(modifier = Modifier.height(6.dp))
                                 Text(
                                     text = "Generate Invoices via Chat",
-                                    fontSize = 16.sp,
-                                    fontWeight = FontWeight.Bold,
-                                    color = Color.White
+                                    fontSize = 17.sp,
+                                    fontWeight = FontWeight.ExtraBold,
+                                    color = Color.White,
+                                    letterSpacing = (-0.3).sp
                                 )
-                                Spacer(modifier = Modifier.height(2.dp))
+                                Spacer(modifier = Modifier.height(3.dp))
                                 Text(
                                     text = "Speak or text to generate invoices, save clients, or ask tax questions",
-                                    fontSize = 12.sp,
-                                    color = Color.White.copy(alpha = 0.85f),
-                                    lineHeight = 16.sp
+                                    fontSize = 12.5.sp,
+                                    color = Color.White.copy(alpha = 0.88f),
+                                    lineHeight = 16.5.sp
                                 )
                             }
-                            Spacer(modifier = Modifier.width(10.dp))
+                            Spacer(modifier = Modifier.width(12.dp))
                             Box(
                                 modifier = Modifier
-                                    .size(44.dp)
+                                    .size(46.dp)
                                     .clip(CircleShape)
-                                    .background(Color.White),
+                                    .background(Color.White)
+                                    .border(1.5.dp, Color.White.copy(alpha = 0.6f), CircleShape),
                                 contentAlignment = Alignment.Center
                             ) {
                                 Icon(
                                     imageVector = Icons.Default.AutoAwesome,
                                     contentDescription = "AI",
-                                    tint = Color(0xFF2563EB),
-                                    modifier = Modifier.size(22.dp)
+                                    tint = Color(0xFF1D4ED8),
+                                    modifier = Modifier.size(24.dp)
                                 )
                             }
                         }
@@ -286,9 +351,9 @@ fun DashboardScreen(
                 }
             }
 
-            // High Level KPI Stat Cards Grid (2x2)
+            // High Level KPI Stat Cards Grid (Adaptive: 4 across on tablet, 2x2 on phone)
             item {
-                Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                if (adaptiveInfo.metricColumns == 4) {
                     Row(
                         modifier = Modifier.fillMaxWidth(),
                         horizontalArrangement = Arrangement.spacedBy(12.dp)
@@ -313,12 +378,6 @@ fun DashboardScreen(
                             modifier = Modifier.weight(1f),
                             testTag = "stat_total_paid"
                         )
-                    }
-
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.spacedBy(12.dp)
-                    ) {
                         StatMetricCard(
                             title = "Outstanding",
                             value = InvoiceUtils.formatMoney(analytics.totalOutstanding, profile.defaultCurrencySymbol),
@@ -339,6 +398,60 @@ fun DashboardScreen(
                             modifier = Modifier.weight(1f),
                             testTag = "stat_total_overdue"
                         )
+                    }
+                } else {
+                    Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.spacedBy(12.dp)
+                        ) {
+                            StatMetricCard(
+                                title = "Total Invoiced",
+                                value = InvoiceUtils.formatMoney(analytics.totalInvoiced, profile.defaultCurrencySymbol),
+                                subtext = "${analytics.totalInvoiceCount} total invoices",
+                                icon = Icons.Default.TrendingUp,
+                                iconTint = PrimaryNavy,
+                                iconBgColor = Color(0xFFEFF6FF),
+                                modifier = Modifier.weight(1f),
+                                testTag = "stat_total_invoiced"
+                            )
+                            StatMetricCard(
+                                title = "Paid Collected",
+                                value = InvoiceUtils.formatMoney(analytics.totalPaid, profile.defaultCurrencySymbol),
+                                subtext = "${analytics.paidCount} fully settled",
+                                icon = Icons.Default.CheckCircle,
+                                iconTint = StatusPaidGreen,
+                                iconBgColor = Color(0xFFD1FAE5),
+                                modifier = Modifier.weight(1f),
+                                testTag = "stat_total_paid"
+                            )
+                        }
+
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.spacedBy(12.dp)
+                        ) {
+                            StatMetricCard(
+                                title = "Outstanding",
+                                value = InvoiceUtils.formatMoney(analytics.totalOutstanding, profile.defaultCurrencySymbol),
+                                subtext = "${analytics.pendingCount} pending payment",
+                                icon = Icons.Default.HourglassTop,
+                                iconTint = StatusPendingAmber,
+                                iconBgColor = Color(0xFFFEF3C7),
+                                modifier = Modifier.weight(1f),
+                                testTag = "stat_total_outstanding"
+                            )
+                            StatMetricCard(
+                                title = "Overdue",
+                                value = InvoiceUtils.formatMoney(analytics.totalOverdue, profile.defaultCurrencySymbol),
+                                subtext = "${analytics.overdueCount} require reminder",
+                                icon = Icons.Default.Warning,
+                                iconTint = StatusOverdueRose,
+                                iconBgColor = Color(0xFFFEE2E2),
+                                modifier = Modifier.weight(1f),
+                                testTag = "stat_total_overdue"
+                            )
+                        }
                     }
                 }
             }
@@ -378,10 +491,10 @@ fun DashboardScreen(
             // Recent Invoices Items
             if (recentInvoices.isEmpty()) {
                 item {
-                    Card(
+                    GlassCard(
                         modifier = Modifier.fillMaxWidth(),
-                        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
-                        shape = RoundedCornerShape(16.dp)
+                        shape = RoundedCornerShape(20.dp),
+                        elevation = 4.dp
                     ) {
                         Column(
                             modifier = Modifier
@@ -389,32 +502,40 @@ fun DashboardScreen(
                                 .padding(32.dp),
                             horizontalAlignment = Alignment.CenterHorizontally
                         ) {
-                            Icon(
-                                imageVector = Icons.Default.Receipt,
-                                contentDescription = null,
-                                tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                                modifier = Modifier.size(48.dp)
-                            )
-                            Spacer(modifier = Modifier.height(12.dp))
+                            Box(
+                                modifier = Modifier
+                                    .size(56.dp)
+                                    .clip(CircleShape)
+                                    .background(if (isDark) Color(0xFF1E293B) else Color(0xFFEFF6FF)),
+                                contentAlignment = Alignment.Center
+                            ) {
+                                Icon(
+                                    imageVector = Icons.Default.Receipt,
+                                    contentDescription = null,
+                                    tint = Color(0xFF2563EB),
+                                    modifier = Modifier.size(28.dp)
+                                )
+                            }
+                            Spacer(modifier = Modifier.height(14.dp))
                             Text(
                                 text = "No Invoices Yet",
                                 style = MaterialTheme.typography.titleMedium,
-                                fontWeight = FontWeight.SemiBold
+                                fontWeight = FontWeight.Bold,
+                                color = if (isDark) Color.White else Color(0xFF0F172A)
                             )
                             Spacer(modifier = Modifier.height(6.dp))
                             Text(
                                 text = "Create your first professional invoice in seconds",
                                 style = MaterialTheme.typography.bodySmall,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                                color = if (isDark) Color(0xFF94A3B8) else Color(0xFF64748B),
+                                fontSize = 12.sp
                             )
-                            Spacer(modifier = Modifier.height(16.dp))
-                            Button(
+                            Spacer(modifier = Modifier.height(18.dp))
+                            GlassPrimaryButton(
+                                text = "Create Invoice",
                                 onClick = onCreateInvoice,
-                                colors = ButtonDefaults.buttonColors(containerColor = PrimaryNavy),
-                                shape = RoundedCornerShape(12.dp)
-                            ) {
-                                Text("Create Invoice")
-                            }
+                                icon = Icons.Default.Add
+                            )
                         }
                     }
                 }
@@ -430,39 +551,37 @@ fun DashboardScreen(
                         amountPaid = invoice.amountPaid
                     )
 
-                    Card(
+                    GlassCard(
                         modifier = Modifier
                             .fillMaxWidth()
-                            .testTag("recent_invoice_${invoice.id}")
-                            .clickable { onOpenInvoice(invoice.id) },
-                        colors = CardDefaults.cardColors(
-                            containerColor = MaterialTheme.colorScheme.surface
-                        ),
-                        shape = RoundedCornerShape(14.dp),
-                        elevation = CardDefaults.cardElevation(defaultElevation = 1.dp)
+                            .testTag("recent_invoice_${invoice.id}"),
+                        shape = RoundedCornerShape(18.dp),
+                        elevation = 4.dp,
+                        onClick = { onOpenInvoice(invoice.id) }
                     ) {
                         Row(
                             modifier = Modifier
                                 .fillMaxWidth()
-                                .padding(14.dp),
+                                .padding(16.dp),
                             verticalAlignment = Alignment.CenterVertically
                         ) {
                             Box(
                                 modifier = Modifier
-                                    .size(42.dp)
-                                    .clip(RoundedCornerShape(10.dp))
-                                    .background(Color(0xFFEFF6FF)),
+                                    .size(44.dp)
+                                    .clip(RoundedCornerShape(12.dp))
+                                    .background(if (isDark) Color(0xFF1E293B) else Color(0xFFEFF6FF))
+                                    .border(1.dp, Color(0xFF2563EB).copy(alpha = 0.25f), RoundedCornerShape(12.dp)),
                                 contentAlignment = Alignment.Center
                             ) {
                                 Icon(
                                     imageVector = Icons.Default.Receipt,
                                     contentDescription = null,
-                                    tint = PrimaryNavy,
+                                    tint = Color(0xFF2563EB),
                                     modifier = Modifier.size(22.dp)
                                 )
                             }
 
-                            Spacer(modifier = Modifier.width(12.dp))
+                            Spacer(modifier = Modifier.width(14.dp))
 
                             Column(modifier = Modifier.weight(1f)) {
                                 Row(
@@ -472,24 +591,28 @@ fun DashboardScreen(
                                         text = invoice.invoiceNumber,
                                         style = MaterialTheme.typography.bodyMedium,
                                         fontWeight = FontWeight.Bold,
-                                        color = MaterialTheme.colorScheme.onSurface
+                                        color = if (isDark) Color.White else Color(0xFF0F172A),
+                                        fontSize = 14.5.sp
                                     )
                                     Spacer(modifier = Modifier.width(8.dp))
                                     InvoiceStatusBadge(status = invoice.status)
                                 }
-                                Spacer(modifier = Modifier.height(2.dp))
+                                Spacer(modifier = Modifier.height(3.dp))
                                 Text(
-                                    text = if (invoice.clientCompany.isNotBlank()) "${invoice.clientName} (${invoice.clientCompany})" else invoice.clientName,
+                                    text = if (invoice.clientCompany.isNotBlank()) "${invoice.clientName} • ${invoice.clientCompany}" else invoice.clientName,
                                     style = MaterialTheme.typography.bodySmall,
-                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                    maxLines = 1
+                                    color = if (isDark) Color(0xFFCBD5E1) else Color(0xFF475569),
+                                    maxLines = 1,
+                                    fontWeight = FontWeight.Medium,
+                                    fontSize = 12.sp
                                 )
-                                Spacer(modifier = Modifier.height(2.dp))
+                                Spacer(modifier = Modifier.height(3.dp))
                                 Text(
                                     text = "Due ${invoice.dueDate}",
                                     style = MaterialTheme.typography.labelSmall,
-                                    color = if (invoice.status.equals("overdue", true)) StatusOverdueRose else MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f),
-                                    fontSize = 11.sp
+                                    color = if (invoice.status.equals("overdue", true)) StatusOverdueRose else Color(0xFF64748B),
+                                    fontSize = 11.sp,
+                                    fontWeight = FontWeight.Medium
                                 )
                             }
 
@@ -497,8 +620,9 @@ fun DashboardScreen(
                                 Text(
                                     text = InvoiceUtils.formatMoney(calcs.grandTotal, invoice.currencySymbol),
                                     style = MaterialTheme.typography.titleMedium,
-                                    fontWeight = FontWeight.Bold,
-                                    color = MaterialTheme.colorScheme.onSurface
+                                    fontWeight = FontWeight.ExtraBold,
+                                    color = if (isDark) Color.White else Color(0xFF0F172A),
+                                    fontSize = 15.sp
                                 )
 
                                 if (invoice.status.equals("overdue", true) || invoice.status.equals("sent", true)) {
@@ -522,12 +646,13 @@ fun DashboardScreen(
                 }
             }
 
-            // Bottom breathing room for FAB
+            // Bottom spacing
             item {
-                Spacer(modifier = Modifier.height(64.dp))
+                Spacer(modifier = Modifier.height(16.dp))
             }
         }
     }
+}
 
     // Payment reminder modal bottom sheet
     reminderInvoice?.let { inv ->
@@ -550,13 +675,14 @@ fun QuickActionChip(
     modifier: Modifier = Modifier,
     testTag: String = "quick_chip"
 ) {
-    Card(
+    val isDark = isSystemInDarkTheme()
+
+    GlassCard(
         modifier = modifier
-            .testTag(testTag)
-            .clickable(onClick = onClick),
-        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
-        shape = RoundedCornerShape(12.dp),
-        elevation = CardDefaults.cardElevation(defaultElevation = 1.dp)
+            .testTag(testTag),
+        shape = RoundedCornerShape(16.dp),
+        elevation = 3.dp,
+        onClick = onClick
     ) {
         Row(
             modifier = Modifier
@@ -565,18 +691,26 @@ fun QuickActionChip(
             verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.Center
         ) {
-            Icon(
-                imageVector = icon,
-                contentDescription = null,
-                tint = PrimaryNavy,
-                modifier = Modifier.size(18.dp)
-            )
+            Box(
+                modifier = Modifier
+                    .size(28.dp)
+                    .clip(CircleShape)
+                    .background(Color(0xFF2563EB).copy(alpha = if (isDark) 0.25f else 0.12f)),
+                contentAlignment = Alignment.Center
+            ) {
+                Icon(
+                    imageVector = icon,
+                    contentDescription = null,
+                    tint = Color(0xFF2563EB),
+                    modifier = Modifier.size(15.dp)
+                )
+            }
             Spacer(modifier = Modifier.width(6.dp))
             Text(
                 text = label,
                 fontSize = 12.sp,
-                fontWeight = FontWeight.SemiBold,
-                color = MaterialTheme.colorScheme.onSurface,
+                fontWeight = FontWeight.Bold,
+                color = if (isDark) Color.White else Color(0xFF0F172A),
                 maxLines = 1
             )
             if (badge != null) {
@@ -584,14 +718,14 @@ fun QuickActionChip(
                 Box(
                     modifier = Modifier
                         .clip(CircleShape)
-                        .background(Color(0xFFEFF6FF))
+                        .background(Color(0xFF2563EB).copy(alpha = 0.15f))
                         .padding(horizontal = 6.dp, vertical = 2.dp)
                 ) {
                     Text(
                         text = badge,
                         fontSize = 10.sp,
-                        fontWeight = FontWeight.Bold,
-                        color = PrimaryNavy
+                        fontWeight = FontWeight.ExtraBold,
+                        color = Color(0xFF2563EB)
                     )
                 }
             }

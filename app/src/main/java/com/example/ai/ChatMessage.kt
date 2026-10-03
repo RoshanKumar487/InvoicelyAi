@@ -36,7 +36,8 @@ data class ChatMessage(
     val generatedExpense: ExpenseEntity? = null,
     val financialSummary: FinancialSummaryData? = null,
     val matchedInvoices: List<InvoiceEntity>? = null,
-    val isError: Boolean = false
+    val isError: Boolean = false,
+    val isVoiceInput: Boolean = false
 )
 
 /**

@@ -21,6 +21,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.Calculate
 import androidx.compose.material.icons.filled.CurrencyExchange
+import androidx.compose.material.icons.filled.Menu
 import androidx.compose.material.icons.filled.SwapHoriz
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
@@ -56,65 +57,79 @@ import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.example.data.model.InvoiceUtils
+import com.example.ui.components.AdaptiveContainer
+import com.example.ui.components.rememberWindowAdaptiveInfo
 import com.example.ui.theme.PrimaryNavy
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun TaxCalculatorScreen(
     onBack: () -> Unit,
+    onOpenMenu: () -> Unit = {},
     modifier: Modifier = Modifier
 ) {
     var selectedTab by remember { mutableIntStateOf(0) } // 0: Tax Tool, 1: Currency Converter
+    val adaptiveInfo = rememberWindowAdaptiveInfo()
 
     Scaffold(
         modifier = modifier.fillMaxSize(),
         topBar = {
             TopAppBar(
-                title = { Text("Tax & Currency Tools", fontWeight = FontWeight.Bold) },
+                title = { Text("Tax & Currency Tools", fontWeight = FontWeight.Bold, fontSize = adaptiveInfo.titleLargeSize) },
                 navigationIcon = {
                     IconButton(onClick = onBack) {
                         Icon(imageVector = Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back")
+                    }
+                },
+                actions = {
+                    IconButton(
+                        onClick = onOpenMenu,
+                        modifier = Modifier.testTag("tax_tool_menu_btn")
+                    ) {
+                        Icon(imageVector = Icons.Default.Menu, contentDescription = "Menu")
                     }
                 },
                 colors = TopAppBarDefaults.topAppBarColors(containerColor = MaterialTheme.colorScheme.surface)
             )
         }
     ) { padding ->
-        Column(
-            modifier = Modifier
-                .fillMaxSize()
-                .padding(padding)
-        ) {
-            TabRow(
-                selectedTabIndex = selectedTab,
-                containerColor = MaterialTheme.colorScheme.surface,
-                contentColor = PrimaryNavy
-            ) {
-                Tab(
-                    selected = selectedTab == 0,
-                    onClick = { selectedTab = 0 },
-                    text = { Text("Tax Calculator", fontWeight = FontWeight.SemiBold) },
-                    icon = { Icon(Icons.Default.Calculate, contentDescription = null, modifier = Modifier.size(18.dp)) }
-                )
-                Tab(
-                    selected = selectedTab == 1,
-                    onClick = { selectedTab = 1 },
-                    text = { Text("Multi-Currency", fontWeight = FontWeight.SemiBold) },
-                    icon = { Icon(Icons.Default.CurrencyExchange, contentDescription = null, modifier = Modifier.size(18.dp)) }
-                )
-            }
-
+        AdaptiveContainer(maxWidth = adaptiveInfo.formMaxWidth) {
             Column(
                 modifier = Modifier
                     .fillMaxSize()
-                    .verticalScroll(rememberScrollState())
-                    .padding(16.dp),
-                verticalArrangement = Arrangement.spacedBy(16.dp)
+                    .padding(padding)
             ) {
-                if (selectedTab == 0) {
-                    TaxCalculatorSection()
-                } else {
-                    CurrencyConverterSection()
+                TabRow(
+                    selectedTabIndex = selectedTab,
+                    containerColor = MaterialTheme.colorScheme.surface,
+                    contentColor = PrimaryNavy
+                ) {
+                    Tab(
+                        selected = selectedTab == 0,
+                        onClick = { selectedTab = 0 },
+                        text = { Text("Tax Calculator", fontWeight = FontWeight.SemiBold) },
+                        icon = { Icon(Icons.Default.Calculate, contentDescription = null, modifier = Modifier.size(18.dp)) }
+                    )
+                    Tab(
+                        selected = selectedTab == 1,
+                        onClick = { selectedTab = 1 },
+                        text = { Text("Multi-Currency", fontWeight = FontWeight.SemiBold) },
+                        icon = { Icon(Icons.Default.CurrencyExchange, contentDescription = null, modifier = Modifier.size(18.dp)) }
+                    )
+                }
+
+                Column(
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .verticalScroll(rememberScrollState())
+                        .padding(horizontal = adaptiveInfo.horizontalPadding, vertical = 16.dp),
+                    verticalArrangement = Arrangement.spacedBy(16.dp)
+                ) {
+                    if (selectedTab == 0) {
+                        TaxCalculatorSection()
+                    } else {
+                        CurrencyConverterSection()
+                    }
                 }
             }
         }

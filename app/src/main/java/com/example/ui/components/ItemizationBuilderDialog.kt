@@ -18,6 +18,7 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.rememberScrollState
@@ -133,13 +134,20 @@ fun ItemizationBuilderDialog(
         onDismissRequest = onDismiss,
         properties = DialogProperties(usePlatformDefaultWidth = false)
     ) {
-        Surface(
+        Box(
             modifier = Modifier
                 .fillMaxSize()
                 .padding(12.dp),
-            shape = RoundedCornerShape(20.dp),
-            color = Color(0xFFF8FAFC)
+            contentAlignment = Alignment.Center
         ) {
+            Surface(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .widthIn(max = 760.dp)
+                    .fillMaxHeight(0.95f),
+                shape = RoundedCornerShape(20.dp),
+                color = Color(0xFFF8FAFC)
+            ) {
             Column(modifier = Modifier.fillMaxSize()) {
                 // Top Header
                 Row(
@@ -310,6 +318,7 @@ fun ItemizationBuilderDialog(
             }
         }
     }
+}
 
     // Modal to Add Custom Column
     if (showAddCustomDialog) {
@@ -956,13 +965,20 @@ fun IndustryTemplateSelectorDialog(
         onDismissRequest = onDismiss,
         properties = DialogProperties(usePlatformDefaultWidth = false)
     ) {
-        Surface(
+        Box(
             modifier = Modifier
                 .fillMaxSize()
                 .padding(12.dp),
-            shape = RoundedCornerShape(20.dp),
-            color = Color(0xFFF8FAFC)
+            contentAlignment = Alignment.Center
         ) {
+            Surface(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .widthIn(max = 760.dp)
+                    .fillMaxHeight(0.95f),
+                shape = RoundedCornerShape(20.dp),
+                color = Color(0xFFF8FAFC)
+            ) {
             Column(modifier = Modifier.fillMaxSize()) {
                 // Header
                 Row(
@@ -1176,4 +1192,5 @@ fun IndustryTemplateSelectorDialog(
             }
         }
     }
+}
 }

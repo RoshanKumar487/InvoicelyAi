@@ -77,14 +77,20 @@ data class BusinessProfile(
     val showItemTax: Boolean = true,
     val showShippingFee: Boolean = true,
     val showShippingSection: Boolean = false,
+    val showNotesSection: Boolean = false,
     val showPaymentInstructions: Boolean = true,
     val showNotes: Boolean = true,
     val showTerms: Boolean = true,
     val showSignature: Boolean = true,
 
     // Tax & Invoicing defaults
+    val isTaxApplicable: Boolean = true,
     val defaultTaxRate: Double = 18.0,
     val defaultTaxLabel: String = "GST (18%)",
+    val defaultDiscountType: String = "percentage", // "percentage" or "flat"
+    val defaultDiscountValue: Double = 0.0,
+    val additionalChargeLabel: String = "Additional Charges",
+    val defaultAdditionalCharge: Double = 0.0,
     val defaultPaymentTerms: String = "Net 30",
     val defaultNotes: String = "Thank you for partnering with Apex Nova! We appreciate your business.",
     val defaultTerms: String = "Payment is due according to the specified terms. Outstanding balances are subject to 1.5% interest per month.",

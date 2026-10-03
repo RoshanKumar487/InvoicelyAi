@@ -15,14 +15,20 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyRow
+import androidx.compose.foundation.lazy.grid.GridCells
+import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
+import androidx.compose.foundation.lazy.grid.items
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
+import com.example.ui.components.AdaptiveContainer
+import com.example.ui.components.rememberWindowAdaptiveInfo
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Clear
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Edit
+import androidx.compose.material.icons.filled.Menu
 import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material.icons.filled.NotificationsActive
 import androidx.compose.material.icons.filled.PictureAsPdf
@@ -68,6 +74,16 @@ import com.example.ui.theme.PrimaryNavy
 import com.example.ui.theme.StatusOverdueRose
 import com.example.ui.viewmodel.InvoiceViewModel
 
+import androidx.compose.foundation.BorderStroke
+import androidx.compose.foundation.background
+import androidx.compose.foundation.border
+import androidx.compose.foundation.isSystemInDarkTheme
+import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.ui.draw.clip
+import com.example.ui.components.AmbientGlassBackdrop
+import com.example.ui.components.GlassCard
+import com.example.ui.components.glassTextFieldColors
+
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun InvoicesListScreen(
@@ -76,6 +92,7 @@ fun InvoicesListScreen(
     onCreateInvoice: () -> Unit,
     onOpenInvoice: (Long) -> Unit,
     onEditInvoice: (Long) -> Unit,
+    onOpenMenu: () -> Unit = {},
     modifier: Modifier = Modifier
 ) {
     val invoices by viewModel.filteredInvoices.collectAsStateWithLifecycle()
@@ -88,76 +105,155 @@ fun InvoicesListScreen(
     val reminderSheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
 
     val filterOptions = listOf("All", "Draft", "Sent", "Paid", "Overdue")
+    val isDark = isSystemInDarkTheme()
+    val adaptiveInfo = rememberWindowAdaptiveInfo()
 
-    Scaffold(
-        modifier = modifier.fillMaxSize(),
-        topBar = {
-            TopAppBar(
-                title = { Text("All Invoices", fontWeight = FontWeight.Bold) },
-                navigationIcon = {
-                    IconButton(onClick = onBack) {
-                        Icon(imageVector = Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back")
-                    }
-                },
-                colors = TopAppBarDefaults.topAppBarColors(containerColor = MaterialTheme.colorScheme.surface)
-            )
-        },
-        floatingActionButton = {
-            FloatingActionButton(
-                onClick = onCreateInvoice,
-                containerColor = PrimaryNavy,
-                contentColor = Color.White,
-                shape = RoundedCornerShape(16.dp),
-                modifier = Modifier.testTag("invoices_create_fab")
-            ) {
-                Icon(imageVector = Icons.Default.Add, contentDescription = "Create Invoice")
-            }
-        }
-    ) { padding ->
-        Column(
-            modifier = Modifier
-                .fillMaxSize()
-                .padding(padding)
-        ) {
-            // Search Input
-            OutlinedTextField(
-                value = searchQuery,
-                onValueChange = { viewModel.setInvoiceSearchQuery(it) },
-                placeholder = { Text("Search by invoice # or client name...") },
-                leadingIcon = { Icon(Icons.Default.Search, contentDescription = null) },
-                trailingIcon = {
-                    if (searchQuery.isNotEmpty()) {
-                        IconButton(onClick = { viewModel.setInvoiceSearchQuery("") }) {
-                            Icon(Icons.Default.Clear, contentDescription = "Clear")
+    AmbientGlassBackdrop {
+        Scaffold(
+            contentWindowInsets = androidx.compose.foundation.layout.WindowInsets(0, 0, 0, 0),
+            modifier = modifier.fillMaxSize(),
+            containerColor = Color.Transparent,
+            topBar = {
+                TopAppBar(
+                    title = {
+                        Text(
+                            text = "All Invoices",
+                            fontWeight = FontWeight.ExtraBold,
+                            color = if (isDark) Color.White else Color(0xFF0F172A),
+                            fontSize = adaptiveInfo.titleLargeSize
+                        )
+                    },
+                    navigationIcon = {
+                        IconButton(onClick = onBack) {
+                            Box(
+                                modifier = Modifier
+                                    .size(36.dp)
+                                    .clip(CircleShape)
+                                    .background(if (isDark) Color(0xFF1E293B) else Color(0xFFEFF6FF)),
+                                contentAlignment = Alignment.Center
+                            ) {
+                                Icon(
+                                    imageVector = Icons.AutoMirrored.Filled.ArrowBack,
+                                    contentDescription = "Back",
+                                    tint = if (isDark) Color.White else Color(0xFF1D4ED8),
+                                    modifier = Modifier.size(18.dp)
+                                )
+                            }
                         }
-                    }
-                },
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(horizontal = 16.dp, vertical = 6.dp)
-                    .testTag("invoice_search_field"),
-                shape = RoundedCornerShape(12.dp),
-                singleLine = true
-            )
+                    },
+                    actions = {
+                        // Create Invoice Button in Header
+                        IconButton(
+                            onClick = onCreateInvoice,
+                            modifier = Modifier.testTag("invoices_create_fab")
+                        ) {
+                            Box(
+                                modifier = Modifier
+                                    .size(36.dp)
+                                    .clip(CircleShape)
+                                    .background(Color(0xFF1D4ED8)),
+                                contentAlignment = Alignment.Center
+                            ) {
+                                Icon(
+                                    imageVector = Icons.Default.Add,
+                                    contentDescription = "Create Invoice",
+                                    tint = Color.White,
+                                    modifier = Modifier.size(20.dp)
+                                )
+                            }
+                        }
 
-            // Status Filter Chips
-            LazyRow(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(horizontal = 16.dp, vertical = 6.dp),
-                horizontalArrangement = Arrangement.spacedBy(8.dp)
-            ) {
-                items(filterOptions) { filter ->
-                    FilterChip(
-                        selected = currentFilter.equals(filter, ignoreCase = true),
-                        onClick = { viewModel.setInvoiceStatusFilter(filter) },
-                        label = { Text(filter) },
-                        modifier = Modifier.testTag("filter_chip_$filter")
-                    )
-                }
+                        // Menu Action
+                        IconButton(
+                            onClick = onOpenMenu,
+                            modifier = Modifier.testTag("invoices_menu_btn")
+                        ) {
+                            Box(
+                                modifier = Modifier
+                                    .size(36.dp)
+                                    .clip(CircleShape)
+                                    .background(if (isDark) Color(0xFF1E293B) else Color(0xFFEFF6FF)),
+                                contentAlignment = Alignment.Center
+                            ) {
+                                Icon(
+                                    imageVector = Icons.Default.Menu,
+                                    contentDescription = "Menu",
+                                    tint = if (isDark) Color.White else PrimaryNavy,
+                                    modifier = Modifier.size(20.dp)
+                                )
+                            }
+                        }
+                    },
+                    colors = TopAppBarDefaults.topAppBarColors(containerColor = Color.Transparent)
+                )
             }
+        ) { padding ->
+            AdaptiveContainer(maxWidth = adaptiveInfo.contentMaxWidth) {
+                Column(
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .padding(padding)
+                ) {
+                // Search Input with 100% Crisp Visibility
+                OutlinedTextField(
+                    value = searchQuery,
+                    onValueChange = { viewModel.setInvoiceSearchQuery(it) },
+                    placeholder = { Text("Search by invoice # or client name...") },
+                    leadingIcon = { Icon(Icons.Default.Search, contentDescription = null) },
+                    trailingIcon = {
+                        if (searchQuery.isNotEmpty()) {
+                            IconButton(onClick = { viewModel.setInvoiceSearchQuery("") }) {
+                                Icon(Icons.Default.Clear, contentDescription = "Clear")
+                            }
+                        }
+                    },
+                    colors = glassTextFieldColors(),
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(horizontal = 16.dp, vertical = 6.dp)
+                        .testTag("invoice_search_field"),
+                    shape = RoundedCornerShape(16.dp),
+                    singleLine = true
+                )
 
-            Spacer(modifier = Modifier.height(4.dp))
+                // Status Filter Chips
+                LazyRow(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(horizontal = 16.dp, vertical = 6.dp),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    items(filterOptions) { filter ->
+                        val isSelected = currentFilter.equals(filter, ignoreCase = true)
+                        FilterChip(
+                            selected = isSelected,
+                            onClick = { viewModel.setInvoiceStatusFilter(filter) },
+                            label = {
+                                Text(
+                                    text = filter,
+                                    fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Medium,
+                                    fontSize = 12.5.sp
+                                )
+                            },
+                            colors = androidx.compose.material3.FilterChipDefaults.filterChipColors(
+                                selectedContainerColor = Color(0xFF2563EB),
+                                selectedLabelColor = Color.White,
+                                containerColor = if (isDark) Color(0xFF1E293B).copy(alpha = 0.7f) else Color.White.copy(alpha = 0.85f),
+                                labelColor = if (isDark) Color(0xFFCBD5E1) else Color(0xFF334155)
+                            ),
+                            border = androidx.compose.material3.FilterChipDefaults.filterChipBorder(
+                                enabled = true,
+                                selected = isSelected,
+                                borderColor = if (isSelected) Color(0xFF1D4ED8) else if (isDark) Color(0xFF475569) else Color(0xFFCBD5E1),
+                                selectedBorderColor = Color(0xFF1D4ED8)
+                            ),
+                            shape = RoundedCornerShape(12.dp),
+                            modifier = Modifier.testTag("filter_chip_$filter")
+                        )
+                    }
+                }
+
+                Spacer(modifier = Modifier.height(4.dp))
 
             if (invoices.isEmpty()) {
                 Box(
@@ -187,9 +283,11 @@ fun InvoicesListScreen(
                     }
                 }
             } else {
-                LazyColumn(
+                LazyVerticalGrid(
+                    columns = GridCells.Adaptive(minSize = 340.dp),
                     modifier = Modifier.fillMaxSize(),
-                    contentPadding = PaddingValues(start = 16.dp, end = 16.dp, top = 8.dp, bottom = 80.dp),
+                    contentPadding = PaddingValues(start = adaptiveInfo.horizontalPadding, end = adaptiveInfo.horizontalPadding, top = 8.dp, bottom = 16.dp),
+                    horizontalArrangement = Arrangement.spacedBy(12.dp),
                     verticalArrangement = Arrangement.spacedBy(10.dp)
                 ) {
                     items(invoices, key = { it.id }) { invoice ->
@@ -205,14 +303,13 @@ fun InvoicesListScreen(
 
                         var menuExpanded by remember { mutableStateOf(false) }
 
-                        Card(
+                        GlassCard(
                             modifier = Modifier
                                 .fillMaxWidth()
                                 .testTag("invoice_card_${invoice.id}")
                                 .clickable { onOpenInvoice(invoice.id) },
-                            colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
-                            shape = RoundedCornerShape(14.dp),
-                            elevation = CardDefaults.cardElevation(defaultElevation = 1.dp)
+                            shape = RoundedCornerShape(18.dp),
+                            elevation = 3.dp
                         ) {
                             Column(modifier = Modifier.padding(16.dp)) {
                                 Row(
@@ -346,6 +443,8 @@ fun InvoicesListScreen(
             }
         }
     }
+}
+}
 
     // Delete Confirmation Dialog
     invoiceToDelete?.let { inv ->

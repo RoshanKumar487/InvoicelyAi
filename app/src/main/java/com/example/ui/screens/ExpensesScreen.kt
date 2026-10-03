@@ -39,6 +39,7 @@ import androidx.compose.material.icons.filled.CreditCard
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.DirectionsCar
 import androidx.compose.material.icons.filled.Laptop
+import androidx.compose.material.icons.filled.Menu
 import androidx.compose.material.icons.filled.Mic
 import androidx.compose.material.icons.filled.Receipt
 import androidx.compose.material.icons.filled.Restaurant
@@ -91,6 +92,12 @@ import com.example.data.model.ExpenseEntity
 import com.example.ui.theme.PrimaryNavy
 import com.example.ui.theme.StatusPaidGreen
 import com.example.ui.viewmodel.InvoiceViewModel
+import androidx.compose.foundation.isSystemInDarkTheme
+import com.example.ui.components.AmbientGlassBackdrop
+import com.example.ui.components.AdaptiveContainer
+import com.example.ui.components.GlassCard
+import com.example.ui.components.glassTextFieldColors
+import com.example.ui.components.rememberWindowAdaptiveInfo
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
@@ -100,6 +107,7 @@ import java.util.Locale
 fun ExpensesScreen(
     viewModel: InvoiceViewModel,
     onOpenAiChat: () -> Unit,
+    onOpenMenu: () -> Unit = {},
     modifier: Modifier = Modifier
 ) {
     val context = LocalContext.current
@@ -145,81 +153,115 @@ fun ExpensesScreen(
     val totalAmount = filteredExpenses.sumOf { it.amount }
     val taxDeductibleTotal = filteredExpenses.filter { it.taxDeductible }.sumOf { it.amount }
 
-    Scaffold(
-        modifier = modifier.fillMaxSize(),
-        topBar = {
-            TopAppBar(
-                title = {
-                    Column {
-                        Text(
-                            text = "Expenses & Bills",
-                            fontSize = 18.sp,
-                            fontWeight = FontWeight.Bold,
-                            color = PrimaryNavy
-                        )
-                        Text(
-                            text = "Track deductible business expenses",
-                            fontSize = 11.sp,
-                            color = Color.Gray
-                        )
-                    }
-                },
-                actions = {
-                    // Quick Scan Bill Button
-                    Button(
-                        onClick = {
-                            photoPickerLauncher.launch(
-                                PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly)
+    val isDark = isSystemInDarkTheme()
+    val adaptiveInfo = rememberWindowAdaptiveInfo()
+
+    AmbientGlassBackdrop {
+        Scaffold(
+            contentWindowInsets = androidx.compose.foundation.layout.WindowInsets(0, 0, 0, 0),
+            modifier = modifier.fillMaxSize(),
+            containerColor = Color.Transparent,
+            topBar = {
+                TopAppBar(
+                    title = {
+                        Column {
+                            Text(
+                                text = "Expenses & Bills",
+                                fontSize = adaptiveInfo.titleLargeSize,
+                                fontWeight = FontWeight.Bold,
+                                color = if (isDark) Color.White else PrimaryNavy
                             )
-                        },
-                        colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF4F46E5)),
-                        shape = RoundedCornerShape(20.dp),
-                        contentPadding = PaddingValues(horizontal = 10.dp, vertical = 4.dp),
-                        modifier = Modifier
-                            .padding(end = 8.dp)
-                            .testTag("scan_bill_header_button")
-                    ) {
-                        Icon(
-                            imageVector = Icons.Default.CameraAlt,
-                            contentDescription = "Scan Bill",
-                            modifier = Modifier.size(16.dp)
-                        )
-                        Spacer(modifier = Modifier.width(4.dp))
-                        Text(text = "Scan Bill", fontSize = 12.sp, fontWeight = FontWeight.SemiBold)
-                    }
-                },
-                colors = TopAppBarDefaults.topAppBarColors(containerColor = MaterialTheme.colorScheme.surface)
-            )
-        },
-        floatingActionButton = {
-            FloatingActionButton(
-                onClick = { showAddDialog = true },
-                containerColor = PrimaryNavy,
-                contentColor = Color.White,
-                shape = CircleShape,
-                modifier = Modifier.testTag("add_expense_fab")
-            ) {
-                Icon(imageVector = Icons.Default.Add, contentDescription = "Add Expense")
+                            Text(
+                                text = "Track deductible business expenses",
+                                fontSize = 11.sp,
+                                color = if (isDark) Color(0xFF94A3B8) else Color.Gray
+                            )
+                        }
+                    },
+                    actions = {
+                        // Quick Scan Bill Button
+                        Button(
+                            onClick = {
+                                photoPickerLauncher.launch(
+                                    PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly)
+                                )
+                            },
+                            colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF2563EB)),
+                            shape = RoundedCornerShape(20.dp),
+                            contentPadding = PaddingValues(horizontal = 10.dp, vertical = 4.dp),
+                            modifier = Modifier
+                                .testTag("scan_bill_header_button")
+                        ) {
+                            Icon(
+                                imageVector = Icons.Default.CameraAlt,
+                                contentDescription = "Scan Bill",
+                                modifier = Modifier.size(16.dp)
+                            )
+                            Spacer(modifier = Modifier.width(4.dp))
+                            Text(text = "Scan", fontSize = 12.sp, fontWeight = FontWeight.SemiBold)
+                        }
+
+                        // Add Expense Button in Header
+                        IconButton(
+                            onClick = { showAddDialog = true },
+                            modifier = Modifier.testTag("add_expense_fab")
+                        ) {
+                            Box(
+                                modifier = Modifier
+                                    .size(36.dp)
+                                    .clip(CircleShape)
+                                    .background(Color(0xFF1D4ED8)),
+                                contentAlignment = Alignment.Center
+                            ) {
+                                Icon(
+                                    imageVector = Icons.Default.Add,
+                                    contentDescription = "Add Expense",
+                                    tint = Color.White,
+                                    modifier = Modifier.size(20.dp)
+                                )
+                            }
+                        }
+
+                        // Menu Action
+                        IconButton(
+                            onClick = onOpenMenu,
+                            modifier = Modifier.testTag("expenses_menu_btn")
+                        ) {
+                            Box(
+                                modifier = Modifier
+                                    .size(36.dp)
+                                    .clip(CircleShape)
+                                    .background(if (isDark) Color(0xFF1E293B) else Color(0xFFEFF6FF)),
+                                contentAlignment = Alignment.Center
+                            ) {
+                                Icon(
+                                    imageVector = Icons.Default.Menu,
+                                    contentDescription = "Menu",
+                                    tint = if (isDark) Color.White else PrimaryNavy,
+                                    modifier = Modifier.size(20.dp)
+                                )
+                            }
+                        }
+                    },
+                    colors = TopAppBarDefaults.topAppBarColors(containerColor = Color.Transparent)
+                )
             }
-        }
-    ) { innerPadding ->
-        LazyColumn(
-            modifier = Modifier
-                .fillMaxSize()
-                .padding(innerPadding)
-                .background(Color(0xFFF8FAFC)),
-            contentPadding = PaddingValues(16.dp),
-            verticalArrangement = Arrangement.spacedBy(14.dp)
-        ) {
-            // Metrics Hero Card
-            item {
-                Card(
-                    modifier = Modifier.fillMaxWidth(),
-                    shape = RoundedCornerShape(16.dp),
-                    colors = CardDefaults.cardColors(containerColor = Color.White),
-                    border = androidx.compose.foundation.BorderStroke(1.dp, Color(0xFFE2E8F0)),
-                    elevation = CardDefaults.cardElevation(defaultElevation = 2.dp)
+        ) { innerPadding ->
+            AdaptiveContainer(maxWidth = adaptiveInfo.contentMaxWidth) {
+                LazyColumn(
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .padding(innerPadding),
+                    contentPadding = PaddingValues(horizontal = adaptiveInfo.horizontalPadding, vertical = 10.dp),
+                    verticalArrangement = Arrangement.spacedBy(14.dp)
                 ) {
+                // Metrics Hero Card
+                item {
+                    GlassCard(
+                        modifier = Modifier.fillMaxWidth(),
+                        shape = RoundedCornerShape(18.dp),
+                        elevation = 3.dp
+                    ) {
                     Column(modifier = Modifier.padding(16.dp)) {
                         Row(
                             modifier = Modifier.fillMaxWidth(),
@@ -304,14 +346,15 @@ fun ExpensesScreen(
                 OutlinedTextField(
                     value = searchQuery,
                     onValueChange = { searchQuery = it },
-                    placeholder = { Text("Search by title, vendor, category...", fontSize = 13.sp) },
+                    placeholder = { Text("Search by title, vendor, category...", fontSize = 13.sp, color = if (isDark) Color(0xFF94A3B8) else Color(0xFF64748B)) },
                     leadingIcon = {
-                        Icon(imageVector = Icons.Default.Search, contentDescription = "Search", tint = Color.Gray)
+                        Icon(imageVector = Icons.Default.Search, contentDescription = "Search", tint = Color(0xFF2563EB))
                     },
                     modifier = Modifier
                         .fillMaxWidth()
                         .testTag("expense_search_input"),
-                    shape = RoundedCornerShape(12.dp),
+                    shape = RoundedCornerShape(14.dp),
+                    colors = glassTextFieldColors(),
                     singleLine = true
                 )
             }
@@ -327,11 +370,11 @@ fun ExpensesScreen(
                     categories.forEach { cat ->
                         val selected = selectedCategoryFilter == cat
                         Surface(
-                            color = if (selected) PrimaryNavy else Color.White,
+                            color = if (selected) Color(0xFF1D4ED8) else if (isDark) Color(0xFF1E293B).copy(alpha = 0.7f) else Color(0xF2FFFFFF),
                             shape = RoundedCornerShape(16.dp),
                             border = androidx.compose.foundation.BorderStroke(
                                 1.dp,
-                                if (selected) PrimaryNavy else Color(0xFFCBD5E1)
+                                if (selected) Color(0xFF1D4ED8) else if (isDark) Color.White.copy(alpha = 0.15f) else Color(0xFFCBD5E1)
                             ),
                             modifier = Modifier.clickable { selectedCategoryFilter = cat }
                         ) {
@@ -339,7 +382,7 @@ fun ExpensesScreen(
                                 text = cat,
                                 fontSize = 12.sp,
                                 fontWeight = if (selected) FontWeight.Bold else FontWeight.Medium,
-                                color = if (selected) Color.White else Color(0xFF334155),
+                                color = if (selected) Color.White else if (isDark) Color.White else Color(0xFF334155),
                                 modifier = Modifier.padding(horizontal = 12.dp, vertical = 6.dp)
                             )
                         }
@@ -380,16 +423,43 @@ fun ExpensesScreen(
                     }
                 }
             } else {
-                items(filteredExpenses, key = { it.id }) { expense ->
-                    ExpenseItemCard(
-                        expense = expense,
-                        currencySymbol = profile.defaultCurrencySymbol,
-                        onDelete = { viewModel.deleteExpense(expense) }
-                    )
+                if (adaptiveInfo.listGridColumns > 1) {
+                    val chunkedExpenses = filteredExpenses.chunked(adaptiveInfo.listGridColumns)
+                    items(chunkedExpenses) { rowExpenses ->
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.spacedBy(12.dp)
+                        ) {
+                            rowExpenses.forEach { expense ->
+                                Box(modifier = Modifier.weight(1f)) {
+                                    ExpenseItemCard(
+                                        expense = expense,
+                                        currencySymbol = profile.defaultCurrencySymbol,
+                                        onDelete = { viewModel.deleteExpense(expense) }
+                                    )
+                                }
+                            }
+                            if (rowExpenses.size < adaptiveInfo.listGridColumns) {
+                                repeat(adaptiveInfo.listGridColumns - rowExpenses.size) {
+                                    Spacer(modifier = Modifier.weight(1f))
+                                }
+                            }
+                        }
+                    }
+                } else {
+                    items(filteredExpenses, key = { it.id }) { expense ->
+                        ExpenseItemCard(
+                            expense = expense,
+                            currencySymbol = profile.defaultCurrencySymbol,
+                            onDelete = { viewModel.deleteExpense(expense) }
+                        )
+                    }
                 }
             }
         }
     }
+}
+}
 
     // Add Expense Dialog
     if (showAddDialog) {
@@ -432,11 +502,10 @@ fun ExpenseItemCard(
     onDelete: () -> Unit,
     modifier: Modifier = Modifier
 ) {
-    Card(
+    GlassCard(
         modifier = modifier.fillMaxWidth(),
-        shape = RoundedCornerShape(12.dp),
-        colors = CardDefaults.cardColors(containerColor = Color.White),
-        border = androidx.compose.foundation.BorderStroke(1.dp, Color(0xFFE2E8F0))
+        shape = RoundedCornerShape(18.dp),
+        elevation = 2.dp
     ) {
         Row(
             modifier = Modifier
