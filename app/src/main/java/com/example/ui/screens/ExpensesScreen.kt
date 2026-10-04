@@ -46,6 +46,9 @@ import androidx.compose.material.icons.filled.Restaurant
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.ShoppingCart
 import androidx.compose.material.icons.filled.Sync
+import androidx.compose.material.icons.filled.CloudDone
+import androidx.compose.material.icons.filled.CloudOff
+import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
@@ -157,13 +160,17 @@ fun ExpensesScreen(
     val isDark = isSystemInDarkTheme()
     val adaptiveInfo = rememberWindowAdaptiveInfo()
 
+    val isOnline by viewModel.isBackendOnline.collectAsStateWithLifecycle()
+    val isLiveRefreshing by viewModel.isLiveRefreshing.collectAsStateWithLifecycle()
+    val currentUser by com.example.data.repository.AuthSessionManager.currentUser.collectAsStateWithLifecycle()
+    val canAccessExpenses = currentUser?.role != com.example.data.model.UserRole.EMPLOYEE || (currentUser?.canAccessFeature("EXPENSES") == true)
+
     AmbientGlassBackdrop {
         Scaffold(
             contentWindowInsets = androidx.compose.foundation.layout.WindowInsets(0, 0, 0, 0),
             modifier = modifier.fillMaxSize(),
             containerColor = Color.Transparent,
             topBar = {
-                val currentUser by com.example.data.repository.AuthSessionManager.currentUser.collectAsStateWithLifecycle()
                 val userRole = currentUser?.role ?: com.example.data.model.UserRole.EMPLOYEE
                 TopAppBar(
                     title = {
@@ -189,61 +196,62 @@ fun ExpensesScreen(
                                 }
                             }
                             Text(
-                                text = if (userRole == com.example.data.model.UserRole.EMPLOYEE) "Staff Mode • Add & track deductible team bills" else "Track deductible business expenses",
+                                text = if (userRole == com.example.data.model.UserRole.EMPLOYEE) "Staff Records • Direct Live Tracking" else "Track deductible business expenses",
                                 fontSize = 11.sp,
                                 color = if (isDark) Color(0xFF94A3B8) else Color.Gray
                             )
                         }
                     },
                     actions = {
-                        // Quick Scan Bill Button
-                        Button(
-                            onClick = {
-                                photoPickerLauncher.launch(
-                                    PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly)
-                                )
-                            },
-                            colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF2563EB)),
-                            shape = RoundedCornerShape(20.dp),
-                            contentPadding = PaddingValues(horizontal = 10.dp, vertical = 4.dp),
-                            modifier = Modifier
-                                .testTag("scan_bill_header_button")
-                        ) {
-                            Icon(
-                                imageVector = Icons.Default.CameraAlt,
-                                contentDescription = "Scan Bill",
-                                modifier = Modifier.size(16.dp)
-                            )
-                            Spacer(modifier = Modifier.width(4.dp))
-                            Text(text = "Scan", fontSize = 12.sp, fontWeight = FontWeight.SemiBold)
-                        }
-
-                        // Add Expense Button in Header
-                        IconButton(
-                            onClick = { showAddDialog = true },
-                            modifier = Modifier.testTag("add_expense_fab")
-                        ) {
-                            Box(
+                        if (canAccessExpenses) {
+                            // Quick Scan Bill Button
+                            Button(
+                                onClick = {
+                                    photoPickerLauncher.launch(
+                                        PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly)
+                                    )
+                                },
+                                colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF2563EB)),
+                                shape = RoundedCornerShape(20.dp),
+                                contentPadding = PaddingValues(horizontal = 10.dp, vertical = 4.dp),
                                 modifier = Modifier
-                                    .size(36.dp)
-                                    .clip(CircleShape)
-                                    .background(Color(0xFF1D4ED8)),
-                                contentAlignment = Alignment.Center
+                                    .testTag("scan_bill_header_button")
                             ) {
                                 Icon(
-                                    imageVector = Icons.Default.Add,
-                                    contentDescription = "Add Expense",
-                                    tint = Color.White,
-                                    modifier = Modifier.size(20.dp)
+                                    imageVector = Icons.Default.CameraAlt,
+                                    contentDescription = "Scan Bill",
+                                    modifier = Modifier.size(16.dp)
                                 )
+                                Spacer(modifier = Modifier.width(4.dp))
+                                Text(text = "Scan", fontSize = 12.sp, fontWeight = FontWeight.SemiBold)
+                            }
+
+                            // Add Expense Button in Header
+                            IconButton(
+                                onClick = { showAddDialog = true },
+                                modifier = Modifier.testTag("add_expense_fab")
+                            ) {
+                                Box(
+                                    modifier = Modifier
+                                        .size(36.dp)
+                                        .clip(CircleShape)
+                                        .background(Color(0xFF1D4ED8)),
+                                    contentAlignment = Alignment.Center
+                                ) {
+                                    Icon(
+                                        imageVector = Icons.Default.Add,
+                                        contentDescription = "Add Expense",
+                                        tint = Color.White,
+                                        modifier = Modifier.size(20.dp)
+                                    )
+                                }
                             }
                         }
 
-                        // Sync Expenses with Backend
+                        // Real-Time Live Status Indicator
                         IconButton(
                             onClick = {
-                                viewModel.refreshExpensesFromBackend()
-                                Toast.makeText(context, "Refreshing expenses from server...", Toast.LENGTH_SHORT).show()
+                                viewModel.refreshRealtimeData()
                             },
                             modifier = Modifier.testTag("expenses_sync_btn")
                         ) {
@@ -251,15 +259,23 @@ fun ExpensesScreen(
                                 modifier = Modifier
                                     .size(36.dp)
                                     .clip(CircleShape)
-                                    .background(if (isDark) Color(0xFF1E293B) else Color(0xFFEFF6FF)),
+                                    .background(if (isOnline) Color(0xFFDCFCE7) else (if (isDark) Color(0xFF1E293B) else Color(0xFFEFF6FF))),
                                 contentAlignment = Alignment.Center
                             ) {
-                                Icon(
-                                    imageVector = Icons.Default.Sync,
-                                    contentDescription = "Sync Expenses",
-                                    tint = if (isDark) Color.White else Color(0xFF1D4ED8),
-                                    modifier = Modifier.size(18.dp)
-                                )
+                                if (isLiveRefreshing) {
+                                    CircularProgressIndicator(
+                                        modifier = Modifier.size(18.dp),
+                                        strokeWidth = 2.dp,
+                                        color = Color(0xFF16A34A)
+                                    )
+                                } else {
+                                    Icon(
+                                        imageVector = if (isOnline) Icons.Default.CloudDone else Icons.Default.CloudOff,
+                                        contentDescription = "Realtime Active",
+                                        tint = if (isOnline) Color(0xFF16A34A) else Color(0xFF1D4ED8),
+                                        modifier = Modifier.size(18.dp)
+                                    )
+                                }
                             }
                         }
 
@@ -616,6 +632,23 @@ fun ExpenseItemCard(
                             )
                         }
                     }
+                }
+                if (!expense.createdByUserName.isNullOrBlank()) {
+                    Text(
+                        text = "👤 Logged by ${expense.createdByUserName}",
+                        fontSize = 11.sp,
+                        fontWeight = FontWeight.SemiBold,
+                        color = Color(0xFF2563EB),
+                        modifier = Modifier.padding(top = 2.dp)
+                    )
+                }
+                if (expense.companyId != null && expense.companyId > 0) {
+                    Text(
+                        text = "🏢 Company #${expense.companyId}",
+                        fontSize = 10.5.sp,
+                        fontWeight = FontWeight.Medium,
+                        color = Color(0xFF7E22CE)
+                    )
                 }
             }
 

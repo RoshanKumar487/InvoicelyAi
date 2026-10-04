@@ -74,7 +74,8 @@ data class UserSummaryDto(
     val mobile: String = "",
     val role: String = "EMPLOYEE",
     val status: String = "ACTIVE",
-    val companyId: Long? = null
+    val companyId: Long? = null,
+    val permissions: String? = "INVOICES,EXPENSES,CLIENTS,REPORTS"
 ) {
     fun toUserAccount(companyCode: String? = null, companyName: String? = null): UserAccount {
         val userRole = try {
@@ -95,7 +96,8 @@ data class UserSummaryDto(
             status = status,
             companyId = companyId,
             companyName = companyName,
-            companyCode = companyCode
+            companyCode = companyCode,
+            permissions = permissions ?: "INVOICES,EXPENSES,CLIENTS,REPORTS"
         )
     }
 }
@@ -235,6 +237,8 @@ fun ClientEntity.toBackendDto(): BackendClientDto {
 data class BackendExpenseDto(
     val id: Long? = null,
     val companyId: Long? = null,
+    val createdByUserId: Long? = null,
+    val createdByUserName: String? = null,
     val title: String = "",
     val category: String = "General",
     val amount: Double = 0.0,
@@ -262,7 +266,10 @@ data class BackendExpenseDto(
             taxDeductible = taxDeductible,
             taxAmount = taxAmount,
             receiptImageUri = receiptImageUri,
-            notes = notes
+            notes = notes,
+            companyId = companyId,
+            createdByUserId = createdByUserId,
+            createdByUserName = createdByUserName
         )
     }
 }
@@ -270,6 +277,9 @@ data class BackendExpenseDto(
 fun ExpenseEntity.toBackendDto(): BackendExpenseDto {
     return BackendExpenseDto(
         id = if (id > 0) id else null,
+        companyId = companyId,
+        createdByUserId = createdByUserId,
+        createdByUserName = createdByUserName,
         title = title,
         category = category,
         amount = amount,
@@ -292,6 +302,8 @@ fun ExpenseEntity.toBackendDto(): BackendExpenseDto {
 data class BackendInvoiceDto(
     val id: Long? = null,
     val companyId: Long? = null,
+    val createdByUserId: Long? = null,
+    val createdByUserName: String? = null,
     val invoiceNumber: String = "",
     val clientId: Long? = null,
     val clientName: String = "",
@@ -355,7 +367,10 @@ data class BackendInvoiceDto(
             roundOff = roundOff,
             amountPaid = amountPaid,
             status = status,
-            templateId = templateId
+            templateId = templateId,
+            companyId = companyId,
+            createdByUserId = createdByUserId,
+            createdByUserName = createdByUserName
         )
     }
 }
@@ -363,6 +378,9 @@ data class BackendInvoiceDto(
 fun InvoiceEntity.toBackendDto(): BackendInvoiceDto {
     return BackendInvoiceDto(
         id = if (id > 0) id else null,
+        companyId = companyId,
+        createdByUserId = createdByUserId,
+        createdByUserName = createdByUserName,
         invoiceNumber = invoiceNumber,
         clientId = clientId,
         clientName = clientName,
@@ -503,3 +521,34 @@ fun BusinessProfile.toBackendDto(): BackendBusinessProfileDto {
         brandColorHex = brandColorHex
     )
 }
+
+// =========================================================================
+// DEVELOPER OVERVIEW & ROLE PERMISSIONS MODELS
+// =========================================================================
+
+data class UpdateEmployeePermissionsRequest(
+    val permissions: String
+)
+
+data class CompanyPlatformStatsDto(
+    val companyId: Long? = null,
+    val companyCode: String = "",
+    val companyName: String = "",
+    val email: String = "",
+    val location: String = "",
+    val userCount: Long = 0L,
+    val invoiceCount: Long = 0L,
+    val expenseCount: Long = 0L,
+    val totalRevenue: Double = 0.0,
+    val totalExpenses: Double = 0.0
+)
+
+data class DeveloperOverviewDto(
+    val totalCompanies: Long = 0L,
+    val totalUsers: Long = 0L,
+    val totalInvoices: Long = 0L,
+    val totalExpenses: Long = 0L,
+    val totalPlatformRevenue: Double = 0.0,
+    val totalPlatformExpenses: Double = 0.0,
+    val companies: List<CompanyPlatformStatsDto> = emptyList()
+)

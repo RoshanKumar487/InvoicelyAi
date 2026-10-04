@@ -84,9 +84,16 @@ data class InvoiceFormState(
         get() = maxOf(0.0, grandTotal - amountPaid)
 
     /** Convert form state to Room persistent InvoiceEntity */
-    fun toInvoiceEntity(): InvoiceEntity {
+    fun toInvoiceEntity(
+        companyId: Long? = null,
+        createdByUserId: Long? = null,
+        createdByUserName: String? = null
+    ): InvoiceEntity {
         return InvoiceEntity(
             id = invoiceId,
+            companyId = companyId,
+            createdByUserId = createdByUserId,
+            createdByUserName = createdByUserName,
             invoiceNumber = invoiceNumber.trim(),
             clientId = clientId,
             clientName = clientName.trim(),

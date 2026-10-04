@@ -47,8 +47,16 @@ data class UserAccount(
     val status: String = "ACTIVE", // ACTIVE, PENDING_APPROVAL, REJECTED
     val companyId: Long? = null,
     val companyName: String? = null,
-    val companyCode: String? = null
-)
+    val companyCode: String? = null,
+    val permissions: String = "INVOICES,EXPENSES,CLIENTS,REPORTS"
+) {
+    /** Checks whether this user has access to a specific tool/feature */
+    fun canAccessFeature(feature: String): Boolean {
+        if (role == UserRole.ADMIN || role == UserRole.DEVELOPER) return true
+        val list = permissions.split(",").map { it.trim().uppercase() }
+        return list.contains(feature.trim().uppercase())
+    }
+}
 
 data class CompanyInfo(
     val id: Long,

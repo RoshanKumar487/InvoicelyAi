@@ -140,6 +140,24 @@ public class CompanyService {
                 .collect(Collectors.toList());
     }
 
+    @Transactional
+    public UserSummaryDto updateEmployeePermissions(Long userId, String permissions, UserPrincipal principal) {
+        ensureAdminOrDeveloper(principal);
+
+        User user = userRepository.findById(userId)
+                .orElseThrow(() -> new ResourceNotFoundException("User", "id", userId));
+
+        if (principal.getRole() != Role.DEVELOPER) {
+            if (principal.getCompanyId() == null || !principal.getCompanyId().equals(user.getCompanyId())) {
+                throw new AccessDeniedException("You do not have permission to manage employees outside your organization.");
+            }
+        }
+
+        user.setPermissions(permissions != null && !permissions.isBlank() ? permissions : "INVOICES,EXPENSES,CLIENTS,REPORTS");
+        User saved = userRepository.save(user);
+        return new UserSummaryDto(saved);
+    }
+
     private void ensureAdminOrDeveloper(UserPrincipal principal) {
         if (principal.getRole() != Role.ADMIN && principal.getRole() != Role.DEVELOPER) {
             throw new AccessDeniedException("Only ADMIN or DEVELOPER roles can perform this action.");

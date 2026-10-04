@@ -28,13 +28,15 @@ public class InvoiceController {
     }
 
     @GetMapping
-    @Operation(summary = "Get all invoices with optional status or client filter (Scoped to company or global for Developer)")
+    @Operation(summary = "Get all invoices with optional status or client filter (Scoped to staff for Employee, company for Admin, global/filtered for Developer)")
     public ResponseEntity<ApiResponse<List<Invoice>>> getAllInvoices(
             @RequestParam(required = false) String status,
             @RequestParam(required = false) Long clientId,
+            @RequestParam(required = false) Long companyId,
             @AuthenticationPrincipal UserPrincipal principal) {
-        Long companyId = resolveCompanyId(principal);
-        List<Invoice> invoices = invoiceService.getInvoices(companyId, status, clientId);
+        Long resolvedCompanyId = resolveCompanyId(principal, companyId);
+        Long createdByUserId = (principal != null && principal.getRole() == Role.EMPLOYEE) ? principal.getId() : null;
+        List<Invoice> invoices = invoiceService.getInvoices(resolvedCompanyId, createdByUserId, status, clientId);
         return ResponseEntity.ok(ApiResponse.ok(invoices));
     }
 
@@ -42,18 +44,21 @@ public class InvoiceController {
     @Operation(summary = "Get invoice by database ID")
     public ResponseEntity<ApiResponse<Invoice>> getInvoiceById(
             @PathVariable Long id,
+            @RequestParam(required = false) Long companyId,
             @AuthenticationPrincipal UserPrincipal principal) {
-        Long companyId = resolveCompanyId(principal);
-        return ResponseEntity.ok(ApiResponse.ok(invoiceService.getInvoiceById(id, companyId)));
+        Long resolvedCompanyId = resolveCompanyId(principal, companyId);
+        Long createdByUserId = (principal != null && principal.getRole() == Role.EMPLOYEE) ? principal.getId() : null;
+        return ResponseEntity.ok(ApiResponse.ok(invoiceService.getInvoiceById(id, resolvedCompanyId, createdByUserId)));
     }
 
     @GetMapping("/by-number/{invoiceNumber}")
     @Operation(summary = "Get invoice by invoice number (e.g. INV-2026-001)")
     public ResponseEntity<ApiResponse<Invoice>> getInvoiceByNumber(
             @PathVariable String invoiceNumber,
+            @RequestParam(required = false) Long companyId,
             @AuthenticationPrincipal UserPrincipal principal) {
-        Long companyId = resolveCompanyId(principal);
-        return ResponseEntity.ok(ApiResponse.ok(invoiceService.getInvoiceByNumber(invoiceNumber, companyId)));
+        Long resolvedCompanyId = resolveCompanyId(principal, companyId);
+        return ResponseEntity.ok(ApiResponse.ok(invoiceService.getInvoiceByNumber(invoiceNumber, resolvedCompanyId)));
     }
 
     @PostMapping
@@ -61,8 +66,10 @@ public class InvoiceController {
     public ResponseEntity<ApiResponse<Invoice>> createInvoice(
             @RequestBody Invoice invoice,
             @AuthenticationPrincipal UserPrincipal principal) {
-        Long companyId = resolveCompanyId(principal);
-        Invoice created = invoiceService.createInvoice(invoice, companyId);
+        Long companyId = (principal != null && principal.getRole() != Role.DEVELOPER) ? principal.getCompanyId() : invoice.getCompanyId();
+        Long createdByUserId = (principal != null) ? principal.getId() : null;
+        String createdByUserName = (principal != null) ? principal.getFullName() : "";
+        Invoice created = invoiceService.createInvoice(invoice, companyId, createdByUserId, createdByUserName);
         return new ResponseEntity<>(ApiResponse.ok("Invoice created successfully", created), HttpStatus.CREATED);
     }
 
@@ -72,8 +79,9 @@ public class InvoiceController {
             @PathVariable Long id,
             @RequestBody Invoice invoice,
             @AuthenticationPrincipal UserPrincipal principal) {
-        Long companyId = resolveCompanyId(principal);
-        Invoice updated = invoiceService.updateInvoice(id, invoice, companyId);
+        Long companyId = resolveCompanyId(principal, invoice.getCompanyId());
+        Long createdByUserId = (principal != null && principal.getRole() == Role.EMPLOYEE) ? principal.getId() : null;
+        Invoice updated = invoiceService.updateInvoice(id, invoice, companyId, createdByUserId);
         return ResponseEntity.ok(ApiResponse.ok("Invoice updated successfully", updated));
     }
 
@@ -83,8 +91,9 @@ public class InvoiceController {
             @PathVariable Long id,
             @RequestParam String status,
             @AuthenticationPrincipal UserPrincipal principal) {
-        Long companyId = resolveCompanyId(principal);
-        Invoice updated = invoiceService.updateStatus(id, status, companyId);
+        Long companyId = resolveCompanyId(principal, null);
+        Long createdByUserId = (principal != null && principal.getRole() == Role.EMPLOYEE) ? principal.getId() : null;
+        Invoice updated = invoiceService.updateStatus(id, status, companyId, createdByUserId);
         return ResponseEntity.ok(ApiResponse.ok("Invoice status updated", updated));
     }
 
@@ -93,14 +102,15 @@ public class InvoiceController {
     public ResponseEntity<ApiResponse<Void>> deleteInvoice(
             @PathVariable Long id,
             @AuthenticationPrincipal UserPrincipal principal) {
-        Long companyId = resolveCompanyId(principal);
-        invoiceService.deleteInvoice(id, companyId);
+        Long companyId = resolveCompanyId(principal, null);
+        Long createdByUserId = (principal != null && principal.getRole() == Role.EMPLOYEE) ? principal.getId() : null;
+        invoiceService.deleteInvoice(id, companyId, createdByUserId);
         return ResponseEntity.ok(ApiResponse.ok("Invoice deleted successfully", null));
     }
 
-    private Long resolveCompanyId(UserPrincipal principal) {
-        if (principal == null) return null;
-        if (principal.getRole() == Role.DEVELOPER) return null; // Developer has global access
+    private Long resolveCompanyId(UserPrincipal principal, Long requestedCompanyId) {
+        if (principal == null) return requestedCompanyId;
+        if (principal.getRole() == Role.DEVELOPER) return requestedCompanyId; // Developer can query globally or filter by requested company
         return principal.getCompanyId();
     }
 }

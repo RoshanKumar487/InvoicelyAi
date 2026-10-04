@@ -26,6 +26,8 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Clear
+import androidx.compose.material.icons.filled.CloudDone
+import androidx.compose.material.icons.filled.CloudOff
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.Menu
@@ -39,6 +41,7 @@ import androidx.compose.material.icons.filled.Visibility
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
+import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
@@ -108,6 +111,10 @@ fun InvoicesListScreen(
     val filterOptions = listOf("All", "Draft", "Sent", "Paid", "Overdue")
     val isDark = isSystemInDarkTheme()
     val adaptiveInfo = rememberWindowAdaptiveInfo()
+    val currentUser by com.example.data.repository.AuthSessionManager.currentUser.collectAsStateWithLifecycle()
+    val isOnline by viewModel.isBackendOnline.collectAsStateWithLifecycle()
+    val isLiveRefreshing by viewModel.isLiveRefreshing.collectAsStateWithLifecycle()
+    val canAccessInvoices = currentUser?.role != com.example.data.model.UserRole.EMPLOYEE || (currentUser?.canAccessFeature("INVOICES") == true)
 
     AmbientGlassBackdrop {
         Scaffold(
@@ -117,12 +124,19 @@ fun InvoicesListScreen(
             topBar = {
                 TopAppBar(
                     title = {
-                        Text(
-                            text = "All Invoices",
-                            fontWeight = FontWeight.ExtraBold,
-                            color = if (isDark) Color.White else Color(0xFF0F172A),
-                            fontSize = adaptiveInfo.titleLargeSize
-                        )
+                        Column {
+                            Text(
+                                text = "All Invoices",
+                                fontWeight = FontWeight.ExtraBold,
+                                color = if (isDark) Color.White else Color(0xFF0F172A),
+                                fontSize = adaptiveInfo.titleLargeSize
+                            )
+                            Text(
+                                text = if (currentUser?.role == com.example.data.model.UserRole.EMPLOYEE) "Staff Created Invoices" else "Real-time Live Records",
+                                fontSize = 11.5.sp,
+                                color = if (isDark) Color(0xFF94A3B8) else Color(0xFF64748B)
+                            )
+                        }
                     },
                     navigationIcon = {
                         IconButton(onClick = onBack) {
@@ -143,10 +157,10 @@ fun InvoicesListScreen(
                         }
                     },
                     actions = {
-                        // Sync Invoices with Backend
+                        // Real-time live status indicator
                         IconButton(
                             onClick = {
-                                viewModel.refreshInvoicesFromBackend()
+                                viewModel.refreshRealtimeData()
                             },
                             modifier = Modifier.testTag("invoices_sync_btn")
                         ) {
@@ -154,36 +168,46 @@ fun InvoicesListScreen(
                                 modifier = Modifier
                                     .size(36.dp)
                                     .clip(CircleShape)
-                                    .background(if (isDark) Color(0xFF1E293B) else Color(0xFFEFF6FF)),
+                                    .background(if (isOnline) Color(0xFFDCFCE7) else (if (isDark) Color(0xFF1E293B) else Color(0xFFEFF6FF))),
                                 contentAlignment = Alignment.Center
                             ) {
-                                Icon(
-                                    imageVector = Icons.Default.Sync,
-                                    contentDescription = "Sync Invoices",
-                                    tint = if (isDark) Color.White else Color(0xFF1D4ED8),
-                                    modifier = Modifier.size(18.dp)
-                                )
+                                if (isLiveRefreshing) {
+                                    CircularProgressIndicator(
+                                        modifier = Modifier.size(18.dp),
+                                        strokeWidth = 2.dp,
+                                        color = Color(0xFF16A34A)
+                                    )
+                                } else {
+                                    Icon(
+                                        imageVector = if (isOnline) Icons.Default.CloudDone else Icons.Default.CloudOff,
+                                        contentDescription = "Realtime Active",
+                                        tint = if (isOnline) Color(0xFF16A34A) else Color(0xFF1D4ED8),
+                                        modifier = Modifier.size(18.dp)
+                                    )
+                                }
                             }
                         }
 
-                        // Create Invoice Button in Header
-                        IconButton(
-                            onClick = onCreateInvoice,
-                            modifier = Modifier.testTag("invoices_create_fab")
-                        ) {
-                            Box(
-                                modifier = Modifier
-                                    .size(36.dp)
-                                    .clip(CircleShape)
-                                    .background(Color(0xFF1D4ED8)),
-                                contentAlignment = Alignment.Center
+                        // Create Invoice Button in Header (if permitted)
+                        if (canAccessInvoices) {
+                            IconButton(
+                                onClick = onCreateInvoice,
+                                modifier = Modifier.testTag("invoices_create_fab")
                             ) {
-                                Icon(
-                                    imageVector = Icons.Default.Add,
-                                    contentDescription = "Create Invoice",
-                                    tint = Color.White,
-                                    modifier = Modifier.size(20.dp)
-                                )
+                                Box(
+                                    modifier = Modifier
+                                        .size(36.dp)
+                                        .clip(CircleShape)
+                                        .background(Color(0xFF1D4ED8)),
+                                    contentAlignment = Alignment.Center
+                                ) {
+                                    Icon(
+                                        imageVector = Icons.Default.Add,
+                                        contentDescription = "Create Invoice",
+                                        tint = Color.White,
+                                        modifier = Modifier.size(20.dp)
+                                    )
+                                }
                             }
                         }
 
@@ -422,6 +446,24 @@ fun InvoicesListScreen(
                                     fontWeight = FontWeight.Medium,
                                     color = MaterialTheme.colorScheme.onSurface
                                 )
+
+                                if (!invoice.createdByUserName.isNullOrBlank()) {
+                                    Spacer(modifier = Modifier.height(3.dp))
+                                    Text(
+                                        text = "👤 Created by ${invoice.createdByUserName}",
+                                        fontSize = 11.5.sp,
+                                        fontWeight = FontWeight.SemiBold,
+                                        color = Color(0xFF2563EB)
+                                    )
+                                }
+                                if (currentUser?.role == com.example.data.model.UserRole.DEVELOPER && invoice.companyId != null) {
+                                    Text(
+                                        text = "🏢 Company #${invoice.companyId}",
+                                        fontSize = 11.sp,
+                                        fontWeight = FontWeight.Medium,
+                                        color = Color(0xFF7E22CE)
+                                    )
+                                }
 
                                 Spacer(modifier = Modifier.height(10.dp))
 

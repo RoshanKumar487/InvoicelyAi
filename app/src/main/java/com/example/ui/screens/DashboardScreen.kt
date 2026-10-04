@@ -18,26 +18,29 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.ArrowForward
+import androidx.compose.material.icons.filled.Business
 import androidx.compose.material.icons.filled.Calculate
 import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.filled.Description
 import androidx.compose.material.icons.filled.HourglassTop
+import androidx.compose.material.icons.filled.Lock
 import androidx.compose.material.icons.filled.Menu
 import androidx.compose.material.icons.filled.NotificationsActive
 import androidx.compose.material.icons.filled.People
 import androidx.compose.material.icons.filled.Receipt
 import androidx.compose.material.icons.filled.Security
-import androidx.compose.material.icons.filled.Sync
 import androidx.compose.material.icons.filled.TrendingUp
 import androidx.compose.material.icons.filled.Warning
 import androidx.compose.material.icons.filled.CloudDone
 import androidx.compose.material.icons.filled.CloudOff
+import androidx.compose.material.icons.filled.AccountBalanceWallet
 import com.example.ui.components.rememberWindowAdaptiveInfo
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
@@ -118,9 +121,13 @@ fun DashboardScreen(
     val recentInvoices = allInvoices.take(5)
 
     val isOnline by viewModel.isBackendOnline.collectAsStateWithLifecycle()
+    val isLiveRefreshing by viewModel.isLiveRefreshing.collectAsStateWithLifecycle()
     val isSyncing by viewModel.isSyncing.collectAsStateWithLifecycle()
     val backendStats by viewModel.backendStats.collectAsStateWithLifecycle()
     val lastSyncTime by viewModel.lastSyncTime.collectAsStateWithLifecycle()
+    val allCompanies by com.example.data.repository.AuthSessionManager.allCompanies.collectAsStateWithLifecycle()
+    val selectedDevCompId by viewModel.selectedDeveloperCompanyId.collectAsStateWithLifecycle()
+    val developerOverview by viewModel.developerOverview.collectAsStateWithLifecycle()
     val context = androidx.compose.ui.platform.LocalContext.current
     val isDark = isSystemInDarkTheme()
     val adaptiveInfo = rememberWindowAdaptiveInfo()
@@ -148,7 +155,7 @@ fun DashboardScreen(
                             horizontalArrangement = Arrangement.spacedBy(6.dp)
                         ) {
                             Text(
-                                text = profile.businessName,
+                                text = if (userRole == com.example.data.model.UserRole.DEVELOPER) "Platform Developer" else profile.businessName,
                                 style = MaterialTheme.typography.titleLarge,
                                 fontWeight = FontWeight.ExtraBold,
                                 color = if (isDark) Color.White else Color(0xFF0F172A),
@@ -168,7 +175,11 @@ fun DashboardScreen(
                             }
                         }
                         Text(
-                            text = if (userRole == com.example.data.model.UserRole.EMPLOYEE) "Staff Workspace • Operational Access" else "Invoice Dashboard & Analytics",
+                            text = when (userRole) {
+                                com.example.data.model.UserRole.DEVELOPER -> "Cross-Company Platform Control & Monitoring"
+                                com.example.data.model.UserRole.EMPLOYEE -> "Staff Workspace • Operational Access"
+                                else -> "Organization Overview & Real-Time Analytics"
+                            },
                             style = MaterialTheme.typography.bodySmall,
                             color = if (isDark) Color(0xFF94A3B8) else Color(0xFF64748B),
                             fontSize = 12.sp,
@@ -177,12 +188,10 @@ fun DashboardScreen(
                     }
                 },
                 actions = {
-                    // Backend API Sync Action
+                    // Live Real-Time Connection / Refresh status indicator
                     IconButton(
                         onClick = {
-                            viewModel.syncAllDataWithBackend { success, msg ->
-                                android.widget.Toast.makeText(context, msg, android.widget.Toast.LENGTH_SHORT).show()
-                            }
+                            viewModel.refreshRealtimeData()
                         },
                         modifier = Modifier.testTag("dashboard_sync_btn")
                     ) {
@@ -193,7 +202,7 @@ fun DashboardScreen(
                                 .background(if (isOnline) Color(0xFFDCFCE7) else (if (isDark) Color(0xFF1E293B) else Color(0xFFF1F5F9))),
                             contentAlignment = Alignment.Center
                         ) {
-                            if (isSyncing) {
+                            if (isLiveRefreshing) {
                                 CircularProgressIndicator(
                                     modifier = Modifier.size(18.dp),
                                     strokeWidth = 2.dp,
@@ -201,8 +210,8 @@ fun DashboardScreen(
                                 )
                             } else {
                                 Icon(
-                                    imageVector = Icons.Default.Sync,
-                                    contentDescription = "Sync Backend",
+                                    imageVector = if (isOnline) Icons.Default.CloudDone else Icons.Default.CloudOff,
+                                    contentDescription = "Cloud Realtime",
                                     tint = if (isOnline) Color(0xFF16A34A) else Color(0xFF64748B),
                                     modifier = Modifier.size(20.dp)
                                 )
@@ -210,24 +219,27 @@ fun DashboardScreen(
                         }
                     }
 
-                    // New Invoice Button
-                    IconButton(
-                        onClick = onCreateInvoice,
-                        modifier = Modifier.testTag("create_invoice_fab")
-                    ) {
-                        Box(
-                            modifier = Modifier
-                                .size(36.dp)
-                                .clip(CircleShape)
-                                .background(Color(0xFF1D4ED8)),
-                            contentAlignment = Alignment.Center
+                    // New Invoice Button (if allowed by role and permissions)
+                    val canCreateInvoice = currentUser?.role != com.example.data.model.UserRole.EMPLOYEE || (currentUser?.canAccessFeature("INVOICES") == true)
+                    if (canCreateInvoice) {
+                        IconButton(
+                            onClick = onCreateInvoice,
+                            modifier = Modifier.testTag("create_invoice_fab")
                         ) {
-                            Icon(
-                                imageVector = Icons.Default.Add,
-                                contentDescription = "New Invoice",
-                                tint = Color.White,
-                                modifier = Modifier.size(20.dp)
-                            )
+                            Box(
+                                modifier = Modifier
+                                    .size(36.dp)
+                                    .clip(CircleShape)
+                                    .background(Color(0xFF1D4ED8)),
+                                contentAlignment = Alignment.Center
+                            ) {
+                                Icon(
+                                    imageVector = Icons.Default.Add,
+                                    contentDescription = "New Invoice",
+                                    tint = Color.White,
+                                    modifier = Modifier.size(20.dp)
+                                )
+                            }
                         }
                     }
 
@@ -287,16 +299,11 @@ fun DashboardScreen(
                 contentPadding = PaddingValues(horizontal = adaptiveInfo.horizontalPadding, vertical = 10.dp),
                 verticalArrangement = Arrangement.spacedBy(16.dp)
             ) {
-            // Live Backend Cloud Sync Banner
+            // Real-Time Live Cloud Status & Identity Mapping Banner
             item {
                 Card(
                     modifier = Modifier
                         .fillMaxWidth()
-                        .clickable {
-                            viewModel.syncAllDataWithBackend { success, msg ->
-                                android.widget.Toast.makeText(context, msg, android.widget.Toast.LENGTH_SHORT).show()
-                            }
-                        }
                         .testTag("backend_sync_banner"),
                     colors = CardDefaults.cardColors(
                         containerColor = if (isOnline) {
@@ -309,7 +316,7 @@ fun DashboardScreen(
                     border = BorderStroke(1.dp, if (isOnline) Color(0xFF86EFAC) else Color(0xFFCBD5E1))
                 ) {
                     Row(
-                        modifier = Modifier.padding(horizontal = 14.dp, vertical = 10.dp),
+                        modifier = Modifier.padding(horizontal = 14.dp, vertical = 11.dp),
                         verticalAlignment = Alignment.CenterVertically,
                         horizontalArrangement = Arrangement.SpaceBetween
                     ) {
@@ -327,42 +334,177 @@ fun DashboardScreen(
                             Column {
                                 Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                                     Text(
-                                        text = if (isOnline) "Cloud Backend Connected (Spring Boot + PostgreSQL)" else "Local Offline Mode (Room DB)",
+                                        text = if (isOnline) "PostgreSQL Real-Time Connected" else "Local Offline Mode",
                                         fontWeight = FontWeight.Bold,
                                         fontSize = 12.sp,
                                         color = if (isOnline) (if (isDark) Color(0xFF86EFAC) else Color(0xFF15803D)) else Color(0xFF64748B)
                                     )
-                                    if (isSyncing) {
+                                    if (isLiveRefreshing) {
                                         Text(
-                                            text = "• Syncing...",
+                                            text = "• Live Updating...",
                                             fontSize = 11.sp,
                                             color = Color(0xFF2563EB),
                                             fontWeight = FontWeight.SemiBold
                                         )
                                     }
                                 }
+                                val mappingInfo = buildString {
+                                    append(currentUser?.fullName ?: "User")
+                                    append(" • ")
+                                    append(currentUser?.role?.name ?: "ADMIN")
+                                    if (!currentUser?.companyCode.isNullOrBlank()) {
+                                        append(" • Org: ${currentUser?.companyCode}")
+                                    }
+                                    if (currentUser?.id != null && currentUser?.id != 0L) {
+                                        append(" • User ID: #${currentUser?.id}")
+                                    }
+                                }
                                 Text(
-                                    text = if (backendStats != null) {
-                                        "Live Server: ${backendStats?.totalInvoices ?: 0} invoices • ${backendStats?.totalClients ?: 0} clients"
-                                    } else {
-                                        "Tap to sync invoices, clients & expenses with server"
-                                    },
+                                    text = mappingInfo,
                                     fontSize = 11.sp,
-                                    color = Color(0xFF64748B)
+                                    color = if (isDark) Color(0xFFCBD5E1) else Color(0xFF475569)
                                 )
                             }
                         }
 
                         Surface(
-                            shape = RoundedCornerShape(10.dp),
+                            shape = RoundedCornerShape(8.dp),
                             color = if (isOnline) Color(0xFFDCFCE7) else Color(0xFFE2E8F0)
                         ) {
                             Text(
-                                text = if (isSyncing) "Syncing" else "Sync Now",
-                                fontSize = 11.sp,
-                                fontWeight = FontWeight.Bold,
+                                text = "REAL-TIME",
+                                fontSize = 10.sp,
+                                fontWeight = FontWeight.ExtraBold,
                                 color = if (isOnline) Color(0xFF16A34A) else Color(0xFF475569),
-                                modifier = Modifier.padding(horizontal = 10.dp, vertical = 4.dp)
+                                modifier = Modifier.padding(horizontal = 8.dp, vertical = 3.dp)
+                            )
+                        }
+                    }
+                }
+            }
+
+            // Developer Platform Multi-Company Control Center
+            if (currentUser?.role == com.example.data.model.UserRole.DEVELOPER) {
+                item {
+                    Card(
+                        modifier = Modifier.fillMaxWidth(),
+                        colors = CardDefaults.cardColors(containerColor = if (isDark) Color(0xFF1E1B4B) else Color(0xFFFAF5FF)),
+                        shape = RoundedCornerShape(18.dp),
+                        border = BorderStroke(1.dp, Color(0xFFC084FC).copy(alpha = 0.5f))
+                    ) {
+                        Column(modifier = Modifier.padding(14.dp)) {
+                            Row(
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.spacedBy(8.dp)
+                            ) {
+                                Icon(Icons.Default.Security, contentDescription = null, tint = Color(0xFF9333EA), modifier = Modifier.size(20.dp))
+                                Text(
+                                    text = "Developer Multi-Company Control Center",
+                                    fontWeight = FontWeight.ExtraBold,
+                                    fontSize = 14.sp,
+                                    color = if (isDark) Color(0xFFE9D5FF) else Color(0xFF581C87)
+                                )
+                            }
+                            Spacer(modifier = Modifier.height(4.dp))
+                            Text(
+                                text = "Independent superuser mode. Filter data by company ID or inspect all registered organizations globally.",
+                                fontSize = 11.5.sp,
+                                color = if (isDark) Color(0xFFD8B4FE) else Color(0xFF7E22CE)
+                            )
+                            Spacer(modifier = Modifier.height(10.dp))
+
+                            // Horizontal Company Switcher Chips
+                            LazyRow(
+                                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                                contentPadding = PaddingValues(vertical = 4.dp)
+                            ) {
+                                item {
+                                    val isGlobal = selectedDevCompId == null
+                                    Surface(
+                                        shape = RoundedCornerShape(20.dp),
+                                        color = if (isGlobal) Color(0xFF9333EA) else (if (isDark) Color(0xFF3B0764) else Color(0xFFF3E8FF)),
+                                        border = BorderStroke(1.dp, if (isGlobal) Color(0xFF9333EA) else Color(0xFFD8B4FE)),
+                                        modifier = Modifier.clickable { viewModel.setDeveloperSelectedCompany(null) }
+                                    ) {
+                                        Text(
+                                            text = "🌐 All Companies (Global)",
+                                            fontSize = 11.5.sp,
+                                            fontWeight = if (isGlobal) FontWeight.Bold else FontWeight.Medium,
+                                            color = if (isGlobal) Color.White else (if (isDark) Color(0xFFE9D5FF) else Color(0xFF581C87)),
+                                            modifier = Modifier.padding(horizontal = 12.dp, vertical = 6.dp)
+                                        )
+                                    }
+                                }
+
+                                val compList = developerOverview?.companies ?: emptyList()
+                                items(compList) { comp ->
+                                    val isSelected = selectedDevCompId == comp.companyId
+                                    Surface(
+                                        shape = RoundedCornerShape(20.dp),
+                                        color = if (isSelected) Color(0xFF9333EA) else (if (isDark) Color(0xFF3B0764) else Color(0xFFF3E8FF)),
+                                        border = BorderStroke(1.dp, if (isSelected) Color(0xFF9333EA) else Color(0xFFD8B4FE)),
+                                        modifier = Modifier.clickable { viewModel.setDeveloperSelectedCompany(comp.companyId) }
+                                    ) {
+                                        Text(
+                                            text = "🏢 ${comp.companyName} (${comp.companyCode})",
+                                            fontSize = 11.5.sp,
+                                            fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Medium,
+                                            color = if (isSelected) Color.White else (if (isDark) Color(0xFFE9D5FF) else Color(0xFF581C87)),
+                                            modifier = Modifier.padding(horizontal = 12.dp, vertical = 6.dp)
+                                        )
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+
+                // Global Platform Overview KPI Cards (When viewing globally or selected company)
+                item {
+                    val dev = developerOverview
+                    Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                        Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                            StatMetricCard(
+                                title = "Total Orgs",
+                                value = "${dev?.totalCompanies ?: allCompanies.size}",
+                                subtext = "Registered businesses",
+                                icon = Icons.Default.Business,
+                                iconTint = Color(0xFF7E22CE),
+                                iconBgColor = Color(0xFFF3E8FF),
+                                modifier = Modifier.weight(1f),
+                                testTag = "dev_stat_companies"
+                            )
+                            StatMetricCard(
+                                title = "Platform Users",
+                                value = "${dev?.totalUsers ?: 0}",
+                                subtext = "Mapped across companies",
+                                icon = Icons.Default.People,
+                                iconTint = PrimaryNavy,
+                                iconBgColor = Color(0xFFEFF6FF),
+                                modifier = Modifier.weight(1f),
+                                testTag = "dev_stat_users"
+                            )
+                        }
+                        Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                            StatMetricCard(
+                                title = "Platform Revenue",
+                                value = InvoiceUtils.formatMoney(dev?.totalPlatformRevenue ?: 0.0, "$"),
+                                subtext = "${dev?.totalInvoices ?: 0} invoices created",
+                                icon = Icons.Default.TrendingUp,
+                                iconTint = StatusPaidGreen,
+                                iconBgColor = Color(0xFFD1FAE5),
+                                modifier = Modifier.weight(1f),
+                                testTag = "dev_stat_revenue"
+                            )
+                            StatMetricCard(
+                                title = "Platform Expenses",
+                                value = InvoiceUtils.formatMoney(dev?.totalPlatformExpenses ?: 0.0, "$"),
+                                subtext = "${dev?.totalExpenses ?: 0} recorded items",
+                                icon = Icons.Default.AccountBalanceWallet,
+                                iconTint = StatusOverdueRose,
+                                iconBgColor = Color(0xFFFEE2E2),
+                                modifier = Modifier.weight(1f),
+                                testTag = "dev_stat_expenses"
                             )
                         }
                     }
@@ -376,7 +518,7 @@ fun DashboardScreen(
                         modifier = Modifier.fillMaxWidth(),
                         colors = CardDefaults.cardColors(containerColor = if (isDark) Color(0xFF064E3B).copy(alpha = 0.45f) else Color(0xFFECFDF5)),
                         shape = RoundedCornerShape(18.dp),
-                        border = androidx.compose.foundation.BorderStroke(1.dp, Color(0xFFA7F3D0))
+                        border = BorderStroke(1.dp, Color(0xFFA7F3D0))
                     ) {
                         Row(
                             modifier = Modifier.padding(14.dp),
@@ -394,53 +536,16 @@ fun DashboardScreen(
                             }
                             Column(modifier = Modifier.weight(1f)) {
                                 Text(
-                                    text = "Staff Operational Access Active",
+                                    text = "Staff Operations: ${currentUser?.fullName}",
                                     fontWeight = FontWeight.Bold,
                                     fontSize = 13.5.sp,
                                     color = if (isDark) Color(0xFFA7F3D0) else Color(0xFF065F46)
                                 )
+                                val toolPerms = currentUser?.permissions?.replace(",", " • ") ?: "INVOICES • EXPENSES"
                                 Text(
-                                    text = "You can add/scan team expenses, draft invoices, and use billing tools for ${profile.businessName}.",
+                                    text = "Granted Tool Access: $toolPerms\nYou are viewing data created and mapped to your account.",
                                     fontSize = 11.5.sp,
                                     color = if (isDark) Color(0xFFD1FAE5) else Color(0xFF047857)
-                                )
-                            }
-                        }
-                    }
-                }
-            } else if (currentUser?.role == com.example.data.model.UserRole.DEVELOPER) {
-                item {
-                    Card(
-                        modifier = Modifier.fillMaxWidth(),
-                        colors = CardDefaults.cardColors(containerColor = if (isDark) Color(0xFF581C87).copy(alpha = 0.45f) else Color(0xFFFAF5FF)),
-                        shape = RoundedCornerShape(18.dp),
-                        border = androidx.compose.foundation.BorderStroke(1.dp, Color(0xFFE9D5FF))
-                    ) {
-                        Row(
-                            modifier = Modifier.padding(14.dp),
-                            verticalAlignment = Alignment.CenterVertically,
-                            horizontalArrangement = Arrangement.spacedBy(12.dp)
-                        ) {
-                            Box(
-                                modifier = Modifier
-                                    .size(36.dp)
-                                    .clip(CircleShape)
-                                    .background(Color(0xFF7E22CE)),
-                                contentAlignment = Alignment.Center
-                            ) {
-                                Icon(Icons.Default.Security, contentDescription = null, tint = Color.White, modifier = Modifier.size(20.dp))
-                            }
-                            Column(modifier = Modifier.weight(1f)) {
-                                Text(
-                                    text = "Platform Developer Superuser Mode",
-                                    fontWeight = FontWeight.Bold,
-                                    fontSize = 13.5.sp,
-                                    color = if (isDark) Color(0xFFE9D5FF) else Color(0xFF6B21A8)
-                                )
-                                Text(
-                                    text = "Unrestricted cross-organization platform inspection & join request management active.",
-                                    fontSize = 11.5.sp,
-                                    color = if (isDark) Color(0xFFF3E8FF) else Color(0xFF7E22CE)
                                 )
                             }
                         }
@@ -545,34 +650,54 @@ fun DashboardScreen(
                 }
             }
 
-            // Quick Action Shortcuts Bar
+            // Quick Action Shortcuts Bar (Role & Permissions Filtered)
             item {
+                val canAccessInvoices = currentUser?.role != com.example.data.model.UserRole.EMPLOYEE || (currentUser?.canAccessFeature("INVOICES") == true)
+                val canAccessExpenses = currentUser?.role != com.example.data.model.UserRole.EMPLOYEE || (currentUser?.canAccessFeature("EXPENSES") == true)
+                val canAccessClients = currentUser?.role != com.example.data.model.UserRole.EMPLOYEE || (currentUser?.canAccessFeature("CLIENTS") == true)
+                val isStaff = currentUser?.role == com.example.data.model.UserRole.EMPLOYEE
+
                 Row(
                     modifier = Modifier.fillMaxWidth(),
                     horizontalArrangement = Arrangement.spacedBy(8.dp)
                 ) {
-                    QuickActionChip(
-                        icon = Icons.Default.Receipt,
-                        label = "Invoices",
-                        badge = "${analytics.totalInvoiceCount}",
-                        onClick = onViewInvoices,
-                        modifier = Modifier.weight(1f),
-                        testTag = "quick_invoices"
-                    )
-                    QuickActionChip(
-                        icon = Icons.Default.People,
-                        label = "Clients",
-                        onClick = onViewClients,
-                        modifier = Modifier.weight(1f),
-                        testTag = "quick_clients"
-                    )
-                    QuickActionChip(
-                        icon = Icons.Default.Description,
-                        label = "DOCX Templates",
-                        onClick = onViewTemplates,
-                        modifier = Modifier.weight(1f),
-                        testTag = "quick_templates"
-                    )
+                    if (canAccessInvoices) {
+                        QuickActionChip(
+                            icon = Icons.Default.Receipt,
+                            label = "Invoices",
+                            badge = "${analytics.totalInvoiceCount}",
+                            onClick = onViewInvoices,
+                            modifier = Modifier.weight(1f),
+                            testTag = "quick_invoices"
+                        )
+                    }
+                    if (canAccessExpenses) {
+                        QuickActionChip(
+                            icon = Icons.Default.AccountBalanceWallet,
+                            label = "Expenses",
+                            onClick = onViewTaxTool,
+                            modifier = Modifier.weight(1f),
+                            testTag = "quick_expenses"
+                        )
+                    }
+                    if (canAccessClients) {
+                        QuickActionChip(
+                            icon = Icons.Default.People,
+                            label = "Clients",
+                            onClick = onViewClients,
+                            modifier = Modifier.weight(1f),
+                            testTag = "quick_clients"
+                        )
+                    }
+                    if (!isStaff) {
+                        QuickActionChip(
+                            icon = Icons.Default.Description,
+                            label = "Templates",
+                            onClick = onViewTemplates,
+                            modifier = Modifier.weight(1f),
+                            testTag = "quick_templates"
+                        )
+                    }
                 }
             }
 
@@ -831,6 +956,23 @@ fun DashboardScreen(
                                     fontWeight = FontWeight.Medium,
                                     fontSize = 12.sp
                                 )
+                                if (!invoice.createdByUserName.isNullOrBlank()) {
+                                    Spacer(modifier = Modifier.height(2.dp))
+                                    Text(
+                                        text = "👤 ${invoice.createdByUserName}",
+                                        fontSize = 11.sp,
+                                        fontWeight = FontWeight.SemiBold,
+                                        color = Color(0xFF2563EB)
+                                    )
+                                }
+                                if (currentUser?.role == com.example.data.model.UserRole.DEVELOPER && selectedDevCompId == null && invoice.companyId != null) {
+                                    Text(
+                                        text = "🏢 Org #${invoice.companyId}",
+                                        fontSize = 10.5.sp,
+                                        fontWeight = FontWeight.Medium,
+                                        color = Color(0xFF7E22CE)
+                                    )
+                                }
                                 Spacer(modifier = Modifier.height(3.dp))
                                 Text(
                                     text = "Due ${invoice.dueDate}",

@@ -19,9 +19,10 @@ public class UserPrincipal implements UserDetails {
     private final Role role;
     private final UserStatus status;
     private final Long companyId;
+    private final String permissions;
     private final Collection<? extends GrantedAuthority> authorities;
 
-    public UserPrincipal(Long id, String fullName, String email, String password, Role role, UserStatus status, Long companyId) {
+    public UserPrincipal(Long id, String fullName, String email, String password, Role role, UserStatus status, Long companyId, String permissions) {
         this.id = id;
         this.fullName = fullName;
         this.email = email;
@@ -29,6 +30,7 @@ public class UserPrincipal implements UserDetails {
         this.role = role;
         this.status = status;
         this.companyId = companyId;
+        this.permissions = permissions != null ? permissions : "INVOICES,EXPENSES,CLIENTS,REPORTS";
         this.authorities = Collections.singletonList(new SimpleGrantedAuthority("ROLE_" + role.name()));
     }
 
@@ -40,7 +42,8 @@ public class UserPrincipal implements UserDetails {
                 user.getPassword(),
                 user.getRole(),
                 user.getStatus(),
-                user.getCompanyId()
+                user.getCompanyId(),
+                user.getPermissions()
         );
     }
 
@@ -50,6 +53,7 @@ public class UserPrincipal implements UserDetails {
     public Role getRole() { return role; }
     public UserStatus getStatus() { return status; }
     public Long getCompanyId() { return companyId; }
+    public String getPermissions() { return permissions; }
 
     @Override
     public Collection<? extends GrantedAuthority> getAuthorities() {

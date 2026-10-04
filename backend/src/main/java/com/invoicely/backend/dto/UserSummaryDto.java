@@ -12,6 +12,7 @@ public class UserSummaryDto {
     private Role role;
     private UserStatus status;
     private Long companyId;
+    private String permissions;
 
     public UserSummaryDto() {}
 
@@ -23,6 +24,7 @@ public class UserSummaryDto {
         this.role = user.getRole();
         this.status = user.getStatus();
         this.companyId = user.getCompanyId();
+        this.permissions = user.getPermissions();
     }
 
     public Long getId() { return id; }
@@ -45,4 +47,7 @@ public class UserSummaryDto {
 
     public Long getCompanyId() { return companyId; }
     public void setCompanyId(Long companyId) { this.companyId = companyId; }
+
+    public String getPermissions() { return permissions; }
+    public void setPermissions(String permissions) { this.permissions = permissions; }
 }

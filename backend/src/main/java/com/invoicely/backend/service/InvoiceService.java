@@ -24,7 +24,19 @@ public class InvoiceService {
         return invoiceRepository.findAllByOrderByCreatedAtDesc();
     }
 
-    public List<Invoice> getInvoices(Long companyId, String status, Long clientId) {
+    public List<Invoice> getInvoices(Long companyId, Long createdByUserId, String status, Long clientId) {
+        // Staff view: restricted to their company and their created invoices
+        if (companyId != null && createdByUserId != null) {
+            if (status != null && !status.trim().isEmpty()) {
+                return invoiceRepository.findByCompanyIdAndCreatedByUserIdAndStatusIgnoreCaseOrderByCreatedAtDesc(companyId, createdByUserId, status.trim());
+            } else if (clientId != null) {
+                return invoiceRepository.findByCompanyIdAndCreatedByUserIdAndClientIdOrderByCreatedAtDesc(companyId, createdByUserId, clientId);
+            } else {
+                return invoiceRepository.findByCompanyIdAndCreatedByUserIdOrderByCreatedAtDesc(companyId, createdByUserId);
+            }
+        }
+
+        // Admin view (or Developer filtered by companyId): sees all invoices in company
         if (companyId != null) {
             if (status != null && !status.trim().isEmpty()) {
                 return invoiceRepository.findByCompanyIdAndStatusIgnoreCaseOrderByCreatedAtDesc(companyId, status.trim());
@@ -35,6 +47,7 @@ public class InvoiceService {
             }
         }
 
+        // Developer global view across all companies
         if (status != null && !status.trim().isEmpty()) {
             return invoiceRepository.findByStatusIgnoreCaseOrderByCreatedAtDesc(status.trim());
         } else if (clientId != null) {
@@ -42,6 +55,10 @@ public class InvoiceService {
         } else {
             return invoiceRepository.findAllByOrderByCreatedAtDesc();
         }
+    }
+
+    public List<Invoice> getInvoices(Long companyId, String status, Long clientId) {
+        return getInvoices(companyId, null, status, clientId);
     }
 
     public List<Invoice> getInvoicesByStatus(String status) {
@@ -58,11 +75,21 @@ public class InvoiceService {
     }
 
     public Invoice getInvoiceById(Long id, Long companyId) {
-        if (companyId != null) {
-            return invoiceRepository.findByIdAndCompanyId(id, companyId)
+        return getInvoiceById(id, companyId, null);
+    }
+
+    public Invoice getInvoiceById(Long id, Long companyId, Long createdByUserId) {
+        Invoice invoice;
+        if (companyId != null && createdByUserId != null) {
+            invoice = invoiceRepository.findByIdAndCompanyIdAndCreatedByUserId(id, companyId, createdByUserId)
                     .orElseThrow(() -> new ResourceNotFoundException("Invoice", "id", id));
+        } else if (companyId != null) {
+            invoice = invoiceRepository.findByIdAndCompanyId(id, companyId)
+                    .orElseThrow(() -> new ResourceNotFoundException("Invoice", "id", id));
+        } else {
+            invoice = getInvoiceById(id);
         }
-        return getInvoiceById(id);
+        return invoice;
     }
 
     public Invoice getInvoiceByNumber(String number) {
@@ -80,13 +107,24 @@ public class InvoiceService {
 
     @Transactional
     public Invoice createInvoice(Invoice invoice) {
-        return createInvoice(invoice, invoice.getCompanyId());
+        return createInvoice(invoice, invoice.getCompanyId(), invoice.getCreatedByUserId(), invoice.getCreatedByUserName());
     }
 
     @Transactional
     public Invoice createInvoice(Invoice invoice, Long companyId) {
+        return createInvoice(invoice, companyId, invoice.getCreatedByUserId(), invoice.getCreatedByUserName());
+    }
+
+    @Transactional
+    public Invoice createInvoice(Invoice invoice, Long companyId, Long createdByUserId, String createdByUserName) {
         if (companyId != null && invoice.getCompanyId() == null) {
             invoice.setCompanyId(companyId);
+        }
+        if (createdByUserId != null && invoice.getCreatedByUserId() == null) {
+            invoice.setCreatedByUserId(createdByUserId);
+        }
+        if (createdByUserName != null && (invoice.getCreatedByUserName() == null || invoice.getCreatedByUserName().isBlank())) {
+            invoice.setCreatedByUserName(createdByUserName);
         }
         if (invoice.getInvoiceNumber() == null || invoice.getInvoiceNumber().trim().isEmpty()) {
             invoice.setInvoiceNumber(generateNextInvoiceNumber(invoice.getCompanyId()));
@@ -99,12 +137,17 @@ public class InvoiceService {
 
     @Transactional
     public Invoice updateInvoice(Long id, Invoice updated) {
-        return updateInvoice(id, updated, updated.getCompanyId());
+        return updateInvoice(id, updated, updated.getCompanyId(), null);
     }
 
     @Transactional
     public Invoice updateInvoice(Long id, Invoice updated, Long companyId) {
-        Invoice existing = getInvoiceById(id, companyId);
+        return updateInvoice(id, updated, companyId, null);
+    }
+
+    @Transactional
+    public Invoice updateInvoice(Long id, Invoice updated, Long companyId, Long createdByUserId) {
+        Invoice existing = getInvoiceById(id, companyId, createdByUserId);
 
         if (companyId != null) {
             existing.setCompanyId(companyId);
@@ -152,12 +195,17 @@ public class InvoiceService {
 
     @Transactional
     public Invoice updateStatus(Long id, String newStatus) {
-        return updateStatus(id, newStatus, null);
+        return updateStatus(id, newStatus, null, null);
     }
 
     @Transactional
     public Invoice updateStatus(Long id, String newStatus, Long companyId) {
-        Invoice existing = getInvoiceById(id, companyId);
+        return updateStatus(id, newStatus, companyId, null);
+    }
+
+    @Transactional
+    public Invoice updateStatus(Long id, String newStatus, Long companyId, Long createdByUserId) {
+        Invoice existing = getInvoiceById(id, companyId, createdByUserId);
         existing.setStatus(newStatus);
         if ("Paid".equalsIgnoreCase(newStatus) && existing.getPaidDate() == null) {
             existing.setPaidDate(System.currentTimeMillis());
@@ -167,12 +215,17 @@ public class InvoiceService {
 
     @Transactional
     public void deleteInvoice(Long id) {
-        deleteInvoice(id, null);
+        deleteInvoice(id, null, null);
     }
 
     @Transactional
     public void deleteInvoice(Long id, Long companyId) {
-        Invoice existing = getInvoiceById(id, companyId);
+        deleteInvoice(id, companyId, null);
+    }
+
+    @Transactional
+    public void deleteInvoice(Long id, Long companyId, Long createdByUserId) {
+        Invoice existing = getInvoiceById(id, companyId, createdByUserId);
         invoiceRepository.delete(existing);
     }
 
