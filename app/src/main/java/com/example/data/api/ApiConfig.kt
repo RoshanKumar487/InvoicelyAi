@@ -43,6 +43,10 @@ object ApiConfig {
         ApiClient.resetClient()
     }
 
+    fun resetToDefaultCloudUrl() {
+        updateBaseUrl(CLOUD_BASE_URL)
+    }
+
     fun setReachable(reachable: Boolean) {
         _isBackendReachable.value = reachable
     }
@@ -59,5 +63,9 @@ object ApiConfig {
 
     fun recordSyncError(error: String) {
         _lastErrorMessage.value = error
+    }
+
+    fun clearSyncError() {
+        _lastErrorMessage.value = null
     }
 }

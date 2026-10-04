@@ -2,6 +2,11 @@ package com.example.ui.screens
 
 import android.widget.Toast
 import androidx.compose.animation.AnimatedVisibility
+import com.example.data.model.UserRole
+import com.example.data.repository.AuthSessionManager
+import java.text.SimpleDateFormat
+import java.util.Date
+import java.util.Locale
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -79,7 +84,6 @@ import androidx.compose.runtime.setValue
 import kotlinx.coroutines.launch
 import com.example.data.api.ApiConfig
 import com.example.data.api.InvoicelyApiManager
-import com.example.data.repository.AuthSessionManager
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -136,6 +140,7 @@ fun SettingsScreen(
     val isSyncing by viewModel.isSyncing.collectAsStateWithLifecycle()
     val lastSyncTime by viewModel.lastSyncTime.collectAsStateWithLifecycle()
     val syncErrorMessage by viewModel.syncErrorMessage.collectAsStateWithLifecycle()
+    val currentUser by AuthSessionManager.currentUser.collectAsStateWithLifecycle()
     val coroutineScope = rememberCoroutineScope()
     var serverUrlInput by remember { mutableStateOf(ApiConfig.baseUrl.value) }
 
@@ -191,7 +196,6 @@ fun SettingsScreen(
         Toast.makeText(context, "Settings & Preferences saved successfully", Toast.LENGTH_SHORT).show()
     }
 
-    val currentUser by com.example.data.repository.AuthSessionManager.currentUser.collectAsStateWithLifecycle()
     val userRole = currentUser?.role ?: com.example.data.model.UserRole.ADMIN
 
     Scaffold(
@@ -1633,7 +1637,7 @@ fun SettingsScreen(
                         ) {
                             Icon(Icons.Default.Refresh, contentDescription = null, modifier = Modifier.size(16.dp))
                             Spacer(modifier = Modifier.width(6.dp))
-                            Text("Reset Demo Data", fontSize = 11.sp)
+                            Text("Re-sync from Cloud", fontSize = 11.sp)
                         }
 
                         OutlinedButton(
@@ -1731,180 +1735,188 @@ fun SettingsScreen(
             }
 
             // =========================================================================
-            // BACKEND CLOUD & API SERVER SETTINGS (SPRING BOOT + POSTGRESQL)
+            // BACKEND CLOUD & API SERVER SETTINGS (STRICTLY DEVELOPER ROLE ONLY)
             // =========================================================================
-            SettingAccordionCard(
-                title = "Backend Cloud & API Server",
-                subtitle = "Spring Boot + PostgreSQL connection, URL & live synchronization",
-                icon = Icons.Default.Storage,
-                isExpanded = expandedCard == "backend_sync",
-                onToggle = { expandedCard = if (expandedCard == "backend_sync") null else "backend_sync" },
-                badge = if (isBackendOnline) "ONLINE" else "OFFLINE"
-            ) {
-                Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
-                    // Status banner
-                    Surface(
-                        color = if (isBackendOnline) Color(0xFFF0FDF4) else Color(0xFFFFFBEB),
-                        shape = RoundedCornerShape(10.dp),
-                        border = androidx.compose.foundation.BorderStroke(1.dp, if (isBackendOnline) Color(0xFFBBF7D0) else Color(0xFFFDE68A)),
-                        modifier = Modifier.fillMaxWidth()
-                    ) {
-                        Row(
-                            modifier = Modifier.padding(12.dp),
-                            verticalAlignment = Alignment.CenterVertically,
-                            horizontalArrangement = Arrangement.spacedBy(10.dp)
+            if (currentUser?.role == UserRole.DEVELOPER) {
+                SettingAccordionCard(
+                    title = "Backend Cloud & API Server (Developer Only)",
+                    subtitle = "Render Cloud Production + PostgreSQL connection, URL & live synchronization",
+                    icon = Icons.Default.Storage,
+                    isExpanded = expandedCard == "backend_sync",
+                    onToggle = { expandedCard = if (expandedCard == "backend_sync") null else "backend_sync" },
+                    badge = if (isBackendOnline) "ONLINE" else "OFFLINE"
+                ) {
+                    Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                        // Status banner
+                        Surface(
+                            color = if (isBackendOnline) Color(0xFFF0FDF4) else Color(0xFFFFFBEB),
+                            shape = RoundedCornerShape(10.dp),
+                            border = androidx.compose.foundation.BorderStroke(1.dp, if (isBackendOnline) Color(0xFFBBF7D0) else Color(0xFFFDE68A)),
+                            modifier = Modifier.fillMaxWidth()
                         ) {
-                            Box(
-                                modifier = Modifier
-                                    .size(10.dp)
-                                    .clip(CircleShape)
-                                    .background(if (isBackendOnline) StatusPaidGreen else Color(0xFFF59E0B))
-                            )
-                            Column(modifier = Modifier.weight(1f)) {
-                                Text(
-                                    text = if (isBackendOnline) "Backend API Online & Connected" else "Backend Server Offline / Unreachable",
-                                    fontWeight = FontWeight.Bold,
-                                    fontSize = 12.sp,
-                                    color = if (isBackendOnline) Color(0xFF166534) else Color(0xFF92400E)
+                            Row(
+                                modifier = Modifier.padding(12.dp),
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.spacedBy(10.dp)
+                            ) {
+                                Box(
+                                    modifier = Modifier
+                                        .size(10.dp)
+                                        .clip(CircleShape)
+                                        .background(if (isBackendOnline) StatusPaidGreen else Color(0xFFF59E0B))
                                 )
-                                Text(
-                                    text = if (lastSyncTime != null) "Last synchronized: $lastSyncTime" else "Offline-first fallback active (Room DB snappiness preserved)",
-                                    fontSize = 11.sp,
-                                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                                )
-                                if (syncErrorMessage != null) {
+                                Column(modifier = Modifier.weight(1f)) {
                                     Text(
-                                        text = "Sync status: $syncErrorMessage",
-                                        fontSize = 10.sp,
-                                        color = MaterialTheme.colorScheme.error
+                                        text = if (isBackendOnline) "Render Cloud API Online & Operational" else "Backend Server Offline / Reconnecting",
+                                        fontWeight = FontWeight.Bold,
+                                        fontSize = 12.sp,
+                                        color = if (isBackendOnline) Color(0xFF166534) else Color(0xFF92400E)
                                     )
-                                }
-                            }
-                        }
-                    }
-
-                    // Server Base URL field
-                    OutlinedTextField(
-                        value = serverUrlInput,
-                        onValueChange = { serverUrlInput = it },
-                        label = { Text("Backend Server Base URL") },
-                        supportingText = { Text("E.g. http://10.0.2.2:8080/ for Android emulator, or LAN IP for physical device") },
-                        modifier = Modifier.fillMaxWidth(),
-                        singleLine = true,
-                        shape = RoundedCornerShape(10.dp)
-                    )
-
-                    // URL quick preset chips
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.spacedBy(6.dp)
-                    ) {
-                        OutlinedButton(
-                            onClick = {
-                                serverUrlInput = ApiConfig.CLOUD_BASE_URL
-                                ApiConfig.updateBaseUrl(serverUrlInput)
-                                Toast.makeText(context, "Set to Cloud (Render)", Toast.LENGTH_SHORT).show()
-                            },
-                            modifier = Modifier.weight(1f),
-                            shape = RoundedCornerShape(8.dp)
-                        ) {
-                            Text("Cloud", fontSize = 11.sp)
-                        }
-                        OutlinedButton(
-                            onClick = {
-                                serverUrlInput = ApiConfig.EMULATOR_BASE_URL
-                                ApiConfig.updateBaseUrl(serverUrlInput)
-                                Toast.makeText(context, "Set to Emulator", Toast.LENGTH_SHORT).show()
-                            },
-                            modifier = Modifier.weight(1f),
-                            shape = RoundedCornerShape(8.dp)
-                        ) {
-                            Text("Emulator", fontSize = 11.sp)
-                        }
-                        OutlinedButton(
-                            onClick = {
-                                serverUrlInput = ApiConfig.LOCALHOST_BASE_URL
-                                ApiConfig.updateBaseUrl(serverUrlInput)
-                                Toast.makeText(context, "Set to Localhost", Toast.LENGTH_SHORT).show()
-                            },
-                            modifier = Modifier.weight(1f),
-                            shape = RoundedCornerShape(8.dp)
-                        ) {
-                            Text("Local", fontSize = 11.sp)
-                        }
-                        Button(
-                            onClick = {
-                                ApiConfig.updateBaseUrl(serverUrlInput)
-                                Toast.makeText(context, "Base URL saved", Toast.LENGTH_SHORT).show()
-                            },
-                            shape = RoundedCornerShape(8.dp),
-                            colors = ButtonDefaults.buttonColors(containerColor = PrimaryNavy)
-                        ) {
-                            Text("Save", fontSize = 11.sp)
-                        }
-                    }
-
-                    // Test connection & Sync Now actions
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.spacedBy(8.dp)
-                    ) {
-                        OutlinedButton(
-                            onClick = {
-                                coroutineScope.launch {
-                                    val ok = InvoicelyApiManager.checkConnection().getOrDefault(false)
-                                    if (ok) {
-                                        Toast.makeText(context, "✓ Connected to Spring Boot backend!", Toast.LENGTH_SHORT).show()
-                                    } else {
-                                        Toast.makeText(context, "✗ Backend unreachable. Verify Spring Boot is running on 8080.", Toast.LENGTH_LONG).show()
+                                    val syncTimeText = if (lastSyncTime > 0) "Last synchronized: " + SimpleDateFormat("hh:mm:ss a", Locale.getDefault()).format(Date(lastSyncTime)) else "Render Cloud Default Service: https://invoicelyai.onrender.com/"
+                                    Text(
+                                        text = syncTimeText,
+                                        fontSize = 11.sp,
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                                    )
+                                    if (syncErrorMessage != null) {
+                                        Text(
+                                            text = "Sync status: $syncErrorMessage",
+                                            fontSize = 10.sp,
+                                            color = MaterialTheme.colorScheme.error
+                                        )
                                     }
                                 }
-                            },
-                            modifier = Modifier.weight(1f),
-                            shape = RoundedCornerShape(10.dp)
-                        ) {
-                            Icon(Icons.Default.Refresh, contentDescription = null, modifier = Modifier.size(16.dp))
-                            Spacer(modifier = Modifier.width(6.dp))
-                            Text("Test Link", fontSize = 12.sp)
-                        }
-
-                        Button(
-                            onClick = {
-                                viewModel.syncAllDataWithBackend()
-                                Toast.makeText(context, "Synchronizing all data with backend...", Toast.LENGTH_SHORT).show()
-                            },
-                            enabled = !isSyncing,
-                            modifier = Modifier.weight(1.2f),
-                            shape = RoundedCornerShape(10.dp),
-                            colors = ButtonDefaults.buttonColors(containerColor = PrimaryNavy)
-                        ) {
-                            if (isSyncing) {
-                                CircularProgressIndicator(modifier = Modifier.size(16.dp), color = Color.White, strokeWidth = 2.dp)
-                                Spacer(modifier = Modifier.width(6.dp))
-                                Text("Syncing...", fontSize = 12.sp)
-                            } else {
-                                Icon(Icons.Default.Refresh, contentDescription = null, modifier = Modifier.size(16.dp))
-                                Spacer(modifier = Modifier.width(6.dp))
-                                Text("Sync All Now", fontSize = 12.sp)
                             }
                         }
-                    }
 
-                    // Active session info
-                    val currentToken: String? = com.example.data.api.client.ApiClient.getAuthToken()
-                    Surface(
-                        color = Color(0xFFF8FAFC),
-                        shape = RoundedCornerShape(8.dp),
-                        border = androidx.compose.foundation.BorderStroke(1.dp, Color(0xFFE2E8F0)),
-                        modifier = Modifier.fillMaxWidth()
-                    ) {
-                        Column(modifier = Modifier.padding(10.dp)) {
-                            Text("API Authentication & Session:", fontSize = 11.sp, fontWeight = FontWeight.Bold, color = PrimaryNavy)
-                            Text(
-                                text = if (currentToken != null) "JWT Bearer Token Active (${currentToken.take(12)}...)" else "No active JWT token (offline / guest mode)",
-                                fontSize = 10.sp,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant
-                            )
+                        // Server Base URL field
+                        OutlinedTextField(
+                            value = serverUrlInput,
+                            onValueChange = { serverUrlInput = it },
+                            label = { Text("Backend Server Base URL") },
+                            supportingText = { Text("Default: https://invoicelyai.onrender.com/ (Render Cloud)") },
+                            modifier = Modifier.fillMaxWidth(),
+                            singleLine = true,
+                            shape = RoundedCornerShape(10.dp)
+                        )
+
+                        // URL quick preset chips
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.spacedBy(6.dp)
+                        ) {
+                            Button(
+                                onClick = {
+                                    serverUrlInput = ApiConfig.CLOUD_BASE_URL
+                                    AuthSessionManager.saveCustomServerUrl(serverUrlInput)
+                                    Toast.makeText(context, "Default Render Cloud Active", Toast.LENGTH_SHORT).show()
+                                },
+                                modifier = Modifier.weight(1.3f),
+                                shape = RoundedCornerShape(8.dp),
+                                colors = ButtonDefaults.buttonColors(containerColor = PrimaryNavy)
+                            ) {
+                                Text("Render (Default)", fontSize = 11.sp)
+                            }
+                            OutlinedButton(
+                                onClick = {
+                                    serverUrlInput = ApiConfig.EMULATOR_BASE_URL
+                                    AuthSessionManager.saveCustomServerUrl(serverUrlInput)
+                                    Toast.makeText(context, "Set to Emulator", Toast.LENGTH_SHORT).show()
+                                },
+                                modifier = Modifier.weight(1f),
+                                shape = RoundedCornerShape(8.dp)
+                            ) {
+                                Text("Emulator", fontSize = 11.sp)
+                            }
+                            OutlinedButton(
+                                onClick = {
+                                    serverUrlInput = ApiConfig.LOCALHOST_BASE_URL
+                                    AuthSessionManager.saveCustomServerUrl(serverUrlInput)
+                                    Toast.makeText(context, "Set to Localhost", Toast.LENGTH_SHORT).show()
+                                },
+                                modifier = Modifier.weight(1f),
+                                shape = RoundedCornerShape(8.dp)
+                            ) {
+                                Text("Local", fontSize = 11.sp)
+                            }
+                            OutlinedButton(
+                                onClick = {
+                                    AuthSessionManager.saveCustomServerUrl(serverUrlInput)
+                                    Toast.makeText(context, "Base URL saved", Toast.LENGTH_SHORT).show()
+                                },
+                                shape = RoundedCornerShape(8.dp)
+                            ) {
+                                Text("Save", fontSize = 11.sp)
+                            }
+                        }
+
+                        // Test connection & Sync Now actions
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.spacedBy(8.dp)
+                        ) {
+                            OutlinedButton(
+                                onClick = {
+                                    coroutineScope.launch {
+                                        val ok = InvoicelyApiManager.checkConnection().getOrDefault(false)
+                                        if (ok) {
+                                            Toast.makeText(context, "✓ Connected to Render Cloud backend!", Toast.LENGTH_SHORT).show()
+                                        } else {
+                                            Toast.makeText(context, "✗ Backend unreachable. Verify network or server status.", Toast.LENGTH_LONG).show()
+                                        }
+                                    }
+                                },
+                                modifier = Modifier.weight(1f),
+                                shape = RoundedCornerShape(10.dp)
+                            ) {
+                                Icon(Icons.Default.Refresh, contentDescription = null, modifier = Modifier.size(16.dp))
+                                Spacer(modifier = Modifier.width(6.dp))
+                                Text("Test Link", fontSize = 12.sp)
+                            }
+
+                            Button(
+                                onClick = {
+                                    val token = com.example.data.api.client.ApiClient.getAuthToken()
+                                    if (token.isNullOrBlank() || !com.example.data.repository.AuthSessionManager.isLoggedIn.value) {
+                                        Toast.makeText(context, "Please sign in to your account to synchronize data with the cloud", Toast.LENGTH_SHORT).show()
+                                    } else {
+                                        viewModel.syncAllDataWithBackend()
+                                        Toast.makeText(context, "Synchronizing all data with backend...", Toast.LENGTH_SHORT).show()
+                                    }
+                                },
+                                enabled = !isSyncing,
+                                modifier = Modifier.weight(1.2f),
+                                shape = RoundedCornerShape(10.dp),
+                                colors = ButtonDefaults.buttonColors(containerColor = PrimaryNavy)
+                            ) {
+                                if (isSyncing) {
+                                    CircularProgressIndicator(modifier = Modifier.size(16.dp), color = Color.White, strokeWidth = 2.dp)
+                                    Spacer(modifier = Modifier.width(6.dp))
+                                    Text("Syncing...", fontSize = 12.sp)
+                                } else {
+                                    Icon(Icons.Default.Refresh, contentDescription = null, modifier = Modifier.size(16.dp))
+                                    Spacer(modifier = Modifier.width(6.dp))
+                                    Text("Sync All Now", fontSize = 12.sp)
+                                }
+                            }
+                        }
+
+                        // Active session info
+                        val currentToken: String? = com.example.data.api.client.ApiClient.getAuthToken()
+                        Surface(
+                            color = Color(0xFFF8FAFC),
+                            shape = RoundedCornerShape(8.dp),
+                            border = androidx.compose.foundation.BorderStroke(1.dp, Color(0xFFE2E8F0)),
+                            modifier = Modifier.fillMaxWidth()
+                        ) {
+                            Column(modifier = Modifier.padding(10.dp)) {
+                                Text("API Authentication & Session:", fontSize = 11.sp, fontWeight = FontWeight.Bold, color = PrimaryNavy)
+                                Text(
+                                    text = if (currentToken != null) "JWT Bearer Token Active (${currentToken.take(12)}...)" else "No active JWT token (offline / guest mode)",
+                                    fontSize = 10.sp,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                                )
+                            }
                         }
                     }
                 }
@@ -1930,22 +1942,23 @@ fun SettingsScreen(
     }
 }
 
-    // Reset Demo Confirmation Dialog
+    // Re-sync Confirmation Dialog
     if (showResetDialog) {
         AlertDialog(
             onDismissRequest = { showResetDialog = false },
-            title = { Text("Reset Sample Invoices & Clients?") },
-            text = { Text("This will reload sample invoices, clients, and default configuration into your local Room database.") },
+            title = { Text("Re-sync from PostgreSQL Database?") },
+            text = { Text("This will clear your local device cache and fetch all your real invoices, clients, expenses, and organization profile directly from PostgreSQL.") },
             confirmButton = {
                 Button(
                     onClick = {
-                        viewModel.resetSampleData()
                         showResetDialog = false
-                        Toast.makeText(context, "Sample data reset in Room database", Toast.LENGTH_SHORT).show()
+                        viewModel.resyncFromCloudDatabase { success, msg ->
+                            Toast.makeText(context, msg, Toast.LENGTH_LONG).show()
+                        }
                     },
                     colors = ButtonDefaults.buttonColors(containerColor = PrimaryNavy)
                 ) {
-                    Text("Reset")
+                    Text("Re-sync Now")
                 }
             },
             dismissButton = {

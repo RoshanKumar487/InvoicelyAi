@@ -114,6 +114,7 @@ class MainActivity : ComponentActivity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        AuthSessionManager.init(applicationContext)
         enableEdgeToEdge()
         setContent {
             val systemDark = isSystemInDarkTheme()
@@ -493,6 +494,7 @@ fun MainAppContainer(
                         onLoginSuccess = {
                             currentTab = MainTab.DASHBOARD
                             currentScreen = AppScreen.TabScreen(MainTab.DASHBOARD)
+                            viewModel.syncAllDataWithBackend()
                         }
                     )
                 }
@@ -529,6 +531,7 @@ fun MainAppContainer(
                 },
                 onSignOut = {
                     AuthSessionManager.logout()
+                    viewModel.clearAllLocalData()
                     currentScreen = AppScreen.Auth
                 },
                 onNavigateToExpenses = {

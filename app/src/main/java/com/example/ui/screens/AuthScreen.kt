@@ -2,10 +2,13 @@ package com.example.ui.screens
 
 import android.widget.Toast
 import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.expandVertically
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.shrinkVertically
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
-import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -28,28 +31,32 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.AccountCircle
 import androidx.compose.material.icons.filled.Apartment
+import androidx.compose.material.icons.filled.ArrowForward
 import androidx.compose.material.icons.filled.Badge
 import androidx.compose.material.icons.filled.Business
 import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.filled.Code
 import androidx.compose.material.icons.filled.Email
+import androidx.compose.material.icons.filled.Info
 import androidx.compose.material.icons.filled.Key
 import androidx.compose.material.icons.filled.LocationOn
 import androidx.compose.material.icons.filled.Lock
 import androidx.compose.material.icons.filled.Person
 import androidx.compose.material.icons.filled.Phone
-import androidx.compose.material.icons.filled.Receipt
+import androidx.compose.material.icons.filled.ReceiptLong
 import androidx.compose.material.icons.filled.Security
 import androidx.compose.material.icons.filled.Visibility
 import androidx.compose.material.icons.filled.VisibilityOff
+import androidx.compose.material.icons.filled.Warning
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
-import androidx.compose.material3.Card
-import androidx.compose.material3.CardDefaults
-import androidx.compose.material3.HorizontalDivider
+import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.OutlinedTextFieldDefaults
 import androidx.compose.material3.Surface
@@ -58,11 +65,14 @@ import androidx.compose.material3.TabRow
 import androidx.compose.material3.TabRowDefaults
 import androidx.compose.material3.TabRowDefaults.tabIndicatorOffset
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -75,19 +85,23 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.text.input.VisualTransformation
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import androidx.compose.material3.CircularProgressIndicator
-import androidx.compose.runtime.rememberCoroutineScope
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.example.data.api.ApiConfig
-import com.example.data.model.UserRole
+import com.example.data.api.InvoicelyApiManager
 import com.example.data.repository.AuthSessionManager
 import com.example.ui.components.AmbientGlassBackdrop
 import com.example.ui.components.GlassCard
 import com.example.ui.theme.PrimaryNavy
 import kotlinx.coroutines.launch
 
+/**
+ * Enhanced, State-of-the-Art Authentication Screen for InvoicelyAi.
+ * Communicates directly with PostgreSQL via Spring Boot REST APIs.
+ * Supports Organization Admin registration, Employee Join requests, and Platform Developer roles.
+ */
 @Composable
 fun AuthScreen(
     onLoginSuccess: () -> Unit,
@@ -96,36 +110,49 @@ fun AuthScreen(
     val context = LocalContext.current
     val isDark = isSystemInDarkTheme()
     val coroutineScope = rememberCoroutineScope()
+
+    var selectedTab by remember { mutableIntStateOf(0) } // 0 = Sign In, 1 = Create Account / Join
     var isSubmitting by remember { mutableStateOf(false) }
-    var selectedTab by remember { mutableIntStateOf(0) } // 0 = Sign In, 1 = Register / Join
-    val serverBaseUrl by ApiConfig.baseUrl.collectAsStateWithLifecycle()
+    var errorMessage by remember { mutableStateOf<String?>(null) }
+    var successMessage by remember { mutableStateOf<String?>(null) }
+
+    // Backend Connectivity State (Always defaults to Render Cloud Web Service)
     val isServerConnected by ApiConfig.isBackendReachable.collectAsStateWithLifecycle()
 
-    // Sign In Fields
-    var loginIdentifier by remember { mutableStateOf("admin@apexnova.io") }
-    var loginPassword by remember { mutableStateOf("admin123") }
-    var passwordVisible by remember { mutableStateOf(false) }
-    var loginError by remember { mutableStateOf<String?>(null) }
+    // Trigger initial health check on screen load
+    LaunchedEffect(Unit) {
+        InvoicelyApiManager.checkConnection()
+    }
 
-    // Register Fields
-    var regRoleMode by remember { mutableIntStateOf(0) } // 0 = Admin (Create Org), 1 = Employee (Join Org), 2 = Developer
+    // Sign In State Fields
+    var loginIdentifier by remember { mutableStateOf("") }
+    var loginPassword by remember { mutableStateOf("") }
+    var loginPasswordVisible by remember { mutableStateOf(false) }
+
+    // Sign Up State Fields
+    var regRoleMode by remember { mutableIntStateOf(0) } // 0 = Company Admin, 1 = Employee Join, 2 = Developer
     var regFullName by remember { mutableStateOf("") }
     var regEmail by remember { mutableStateOf("") }
     var regMobile by remember { mutableStateOf("") }
     var regPassword by remember { mutableStateOf("") }
+    var regPasswordVisible by remember { mutableStateOf(false) }
+
+    // Company Specific (Role = Admin)
     var regCompanyName by remember { mutableStateOf("") }
     var regGstin by remember { mutableStateOf("") }
     var regLocation by remember { mutableStateOf("") }
     var regCompanyDetails by remember { mutableStateOf("") }
-    var regCompanyCode by remember { mutableStateOf("COMP-APEX99") }
+
+    // Employee Specific (Role = Employee)
+    var regCompanyCode by remember { mutableStateOf("") }
     var regRequestMessage by remember { mutableStateOf("") }
-    var regSecretKey by remember { mutableStateOf("invoicely_dev_secret_2026") }
-    var regFeedbackMessage by remember { mutableStateOf<String?>(null) }
-    var regIsSuccess by remember { mutableStateOf(false) }
+
+    // Developer Specific (Role = Developer)
+    var regDeveloperKey by remember { mutableStateOf("invoicely_dev_secret_2026") }
 
     AmbientGlassBackdrop {
         Box(
-            modifier = Modifier
+            modifier = modifier
                 .fillMaxSize()
                 .statusBarsPadding()
                 .navigationBarsPadding()
@@ -135,52 +162,95 @@ fun AuthScreen(
             Column(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .widthIn(max = 520.dp)
+                    .widthIn(max = 500.dp)
                     .padding(horizontal = 20.dp, vertical = 12.dp)
                     .verticalScroll(rememberScrollState()),
                 horizontalAlignment = Alignment.CenterHorizontally,
-                verticalArrangement = Arrangement.spacedBy(16.dp)
+                verticalArrangement = Arrangement.spacedBy(14.dp)
             ) {
-                // Brand Header
+
+                // =============================================================
+                // 1. BRAND HERO HEADER
+                // =============================================================
                 Column(
                     horizontalAlignment = Alignment.CenterHorizontally,
                     verticalArrangement = Arrangement.spacedBy(6.dp)
                 ) {
                     Box(
                         modifier = Modifier
-                            .size(60.dp)
-                            .clip(RoundedCornerShape(18.dp))
+                            .size(64.dp)
+                            .clip(RoundedCornerShape(20.dp))
                             .background(
                                 Brush.linearGradient(
-                                    colors = listOf(Color(0xFF1D4ED8), Color(0xFF6366F1), Color(0xFF8B5CF6))
+                                    colors = listOf(Color(0xFF1D4ED8), Color(0xFF4F46E5), Color(0xFF7C3AED))
                                 )
-                            ),
+                            )
+                            .border(1.5.dp, Color.White.copy(alpha = 0.3f), RoundedCornerShape(20.dp)),
                         contentAlignment = Alignment.Center
                     ) {
                         Icon(
-                            imageVector = Icons.Default.Receipt,
-                            contentDescription = "InvoicelyAi Logo",
+                            imageVector = Icons.Default.ReceiptLong,
+                            contentDescription = "Invoicely Logo",
                             tint = Color.White,
-                            modifier = Modifier.size(32.dp)
+                            modifier = Modifier.size(34.dp)
                         )
                     }
 
                     Text(
-                        text = "InvoicelyAi",
-                        fontSize = 26.sp,
+                        text = "Invoicely AI",
+                        fontSize = 28.sp,
                         fontWeight = FontWeight.ExtraBold,
-                        color = if (isDark) Color.White else PrimaryNavy
+                        color = if (isDark) Color.White else PrimaryNavy,
+                        letterSpacing = (-0.5).sp
                     )
 
                     Text(
-                        text = "Role-Based Multi-Tenant Billing & Accounting",
+                        text = "Cloud Invoicing & Multi-Tenant Accounting",
                         fontSize = 13.sp,
                         fontWeight = FontWeight.Medium,
-                        color = if (isDark) Color(0xFF94A3B8) else Color(0xFF64748B)
+                        color = if (isDark) Color(0xFF94A3B8) else Color(0xFF64748B),
+                        textAlign = TextAlign.Center
                     )
                 }
 
-                // Main Container Glass Card
+                // =============================================================
+                // 2. LIVE RENDER CLOUD BACKEND STATUS PILL
+                // =============================================================
+                Surface(
+                    shape = RoundedCornerShape(20.dp),
+                    color = if (isServerConnected) {
+                        if (isDark) Color(0xFF064E3B).copy(alpha = 0.6f) else Color(0xFFECFDF5)
+                    } else {
+                        if (isDark) Color(0xFF451A03).copy(alpha = 0.6f) else Color(0xFFFFFBEB)
+                    },
+                    border = androidx.compose.foundation.BorderStroke(
+                        1.dp,
+                        if (isServerConnected) Color(0xFF10B981).copy(alpha = 0.4f) else Color(0xFFF59E0B).copy(alpha = 0.4f)
+                    )
+                ) {
+                    Row(
+                        modifier = Modifier.padding(horizontal = 14.dp, vertical = 6.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        Box(
+                            modifier = Modifier
+                                .size(8.dp)
+                                .clip(CircleShape)
+                                .background(if (isServerConnected) Color(0xFF10B981) else Color(0xFFF59E0B))
+                        )
+                        Text(
+                            text = if (isServerConnected) "Render Cloud API Online" else "Connecting to Render Cloud...",
+                            fontSize = 11.sp,
+                            fontWeight = FontWeight.SemiBold,
+                            color = if (isServerConnected) Color(0xFF059669) else Color(0xFFD97706)
+                        )
+                    }
+                }
+
+                // =============================================================
+                // 3. MAIN GLASS CONTAINER CARD
+                // =============================================================
                 GlassCard(
                     modifier = Modifier.fillMaxWidth(),
                     shape = RoundedCornerShape(24.dp),
@@ -192,10 +262,11 @@ fun AuthScreen(
                             .padding(20.dp),
                         verticalArrangement = Arrangement.spacedBy(16.dp)
                     ) {
-                        // Navigation Tabs (Sign In vs Register)
+
+                        // NAVIGATION TAB ROW (Sign In vs Sign Up)
                         TabRow(
                             selectedTabIndex = selectedTab,
-                            containerColor = Color.Transparent,
+                            containerColor = if (isDark) Color(0xFF1E293B).copy(alpha = 0.5f) else Color(0xFFF1F5F9),
                             contentColor = Color(0xFF1D4ED8),
                             indicator = { tabPositions ->
                                 TabRowDefaults.SecondaryIndicator(
@@ -204,154 +275,163 @@ fun AuthScreen(
                                     height = 3.dp
                                 )
                             },
-                            divider = { HorizontalDivider(color = Color(0xFFE2E8F0).copy(alpha = 0.4f)) }
+                            modifier = Modifier.clip(RoundedCornerShape(14.dp))
                         ) {
                             Tab(
                                 selected = selectedTab == 0,
-                                onClick = { selectedTab = 0; loginError = null },
+                                onClick = {
+                                    selectedTab = 0
+                                    errorMessage = null
+                                    successMessage = null
+                                },
                                 text = {
                                     Text(
                                         text = "Sign In",
                                         fontWeight = if (selectedTab == 0) FontWeight.Bold else FontWeight.Medium,
-                                        fontSize = 14.sp
+                                        fontSize = 14.sp,
+                                        color = if (selectedTab == 0) Color(0xFF1D4ED8) else Color(0xFF64748B)
                                     )
                                 },
                                 icon = {
-                                    Icon(Icons.Default.Lock, contentDescription = "Sign In", modifier = Modifier.size(16.dp))
+                                    Icon(
+                                        Icons.Default.Lock,
+                                        contentDescription = null,
+                                        modifier = Modifier.size(16.dp),
+                                        tint = if (selectedTab == 0) Color(0xFF1D4ED8) else Color(0xFF64748B)
+                                    )
                                 }
                             )
+
                             Tab(
                                 selected = selectedTab == 1,
-                                onClick = { selectedTab = 1; regFeedbackMessage = null },
+                                onClick = {
+                                    selectedTab = 1
+                                    errorMessage = null
+                                    successMessage = null
+                                },
                                 text = {
                                     Text(
-                                        text = "Sign Up / Join",
+                                        text = "Create Account",
                                         fontWeight = if (selectedTab == 1) FontWeight.Bold else FontWeight.Medium,
-                                        fontSize = 14.sp
+                                        fontSize = 14.sp,
+                                        color = if (selectedTab == 1) Color(0xFF1D4ED8) else Color(0xFF64748B)
                                     )
                                 },
                                 icon = {
-                                    Icon(Icons.Default.Business, contentDescription = "Register", modifier = Modifier.size(16.dp))
+                                    Icon(
+                                        Icons.Default.Business,
+                                        contentDescription = null,
+                                        modifier = Modifier.size(16.dp),
+                                        tint = if (selectedTab == 1) Color(0xFF1D4ED8) else Color(0xFF64748B)
+                                    )
                                 }
                             )
                         }
 
-                        if (selectedTab == 0) {
-                            // =================================================================
-                            // TAB 1: SIGN IN (EMAIL / PASSWORD + QUICK ROLE SWITCHER)
-                            // =================================================================
-                            Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
-                                Text(
-                                    text = "Welcome Back",
-                                    fontSize = 18.sp,
-                                    fontWeight = FontWeight.Bold,
-                                    color = if (isDark) Color.White else Color(0xFF0F172A)
-                                )
-
-                                // Quick Role Pills for instant testing
-                                Column(
-                                    modifier = Modifier
-                                        .fillMaxWidth()
-                                        .clip(RoundedCornerShape(12.dp))
-                                        .background(if (isDark) Color(0xFF1E293B) else Color(0xFFF1F5F9))
-                                        .padding(10.dp),
-                                    verticalArrangement = Arrangement.spacedBy(6.dp)
+                        // ERROR ALERT BANNER
+                        AnimatedVisibility(
+                            visible = errorMessage != null,
+                            enter = fadeIn() + expandVertically(),
+                            exit = fadeOut() + shrinkVertically()
+                        ) {
+                            Surface(
+                                shape = RoundedCornerShape(12.dp),
+                                color = if (isDark) Color(0xFF450A0A) else Color(0xFFFEF2F2),
+                                border = androidx.compose.foundation.BorderStroke(1.dp, Color(0xFFF87171).copy(alpha = 0.5f)),
+                                modifier = Modifier.fillMaxWidth()
+                            ) {
+                                Row(
+                                    modifier = Modifier.padding(12.dp),
+                                    verticalAlignment = Alignment.CenterVertically,
+                                    horizontalArrangement = Arrangement.spacedBy(10.dp)
                                 ) {
-                                    Row(
-                                        modifier = Modifier.fillMaxWidth(),
-                                        horizontalArrangement = Arrangement.SpaceBetween,
-                                        verticalAlignment = Alignment.CenterVertically
-                                    ) {
-                                        Text(
-                                            text = "QUICK ROLE DEMO (1-TAP)",
-                                            fontSize = 10.sp,
-                                            fontWeight = FontWeight.ExtraBold,
-                                            color = Color(0xFF64748B)
-                                        )
-                                        Text(
-                                            text = "Tap to switch role",
-                                            fontSize = 10.sp,
-                                            color = Color(0xFF3B82F6)
-                                        )
-                                    }
+                                    Icon(
+                                        imageVector = Icons.Default.Warning,
+                                        contentDescription = "Error",
+                                        tint = Color(0xFFDC2626),
+                                        modifier = Modifier.size(20.dp)
+                                    )
+                                    Text(
+                                        text = errorMessage ?: "",
+                                        color = if (isDark) Color(0xFFFCA5A5) else Color(0xFFB91C1C),
+                                        fontSize = 12.sp,
+                                        fontWeight = FontWeight.Medium,
+                                        modifier = Modifier.weight(1f)
+                                    )
+                                }
+                            }
+                        }
 
-                                    Row(
-                                        modifier = Modifier
-                                            .fillMaxWidth()
-                                            .horizontalScroll(rememberScrollState()),
-                                        horizontalArrangement = Arrangement.spacedBy(8.dp)
-                                    ) {
-                                        // Admin Pill
-                                        Surface(
-                                            shape = RoundedCornerShape(16.dp),
-                                            color = Color(0xFFDBEAFE),
-                                            border = androidx.compose.foundation.BorderStroke(1.dp, Color(0xFF93C5FD)),
-                                            modifier = Modifier.clickable {
-                                                AuthSessionManager.switchRoleQuick(UserRole.ADMIN)
-                                                Toast.makeText(context, "Logged in as Organization Admin (Apex Nova)", Toast.LENGTH_SHORT).show()
-                                                onLoginSuccess()
-                                            }
-                                        ) {
-                                            Text(
-                                                text = "👑 Org Admin",
-                                                color = Color(0xFF1D4ED8),
-                                                fontWeight = FontWeight.Bold,
-                                                fontSize = 11.sp,
-                                                modifier = Modifier.padding(horizontal = 10.dp, vertical = 6.dp)
-                                            )
-                                        }
+                        // SUCCESS ALERT BANNER
+                        AnimatedVisibility(
+                            visible = successMessage != null,
+                            enter = fadeIn() + expandVertically(),
+                            exit = fadeOut() + shrinkVertically()
+                        ) {
+                            Surface(
+                                shape = RoundedCornerShape(12.dp),
+                                color = if (isDark) Color(0xFF022C22) else Color(0xFFECFDF5),
+                                border = androidx.compose.foundation.BorderStroke(1.dp, Color(0xFF34D399).copy(alpha = 0.5f)),
+                                modifier = Modifier.fillMaxWidth()
+                            ) {
+                                Row(
+                                    modifier = Modifier.padding(12.dp),
+                                    verticalAlignment = Alignment.CenterVertically,
+                                    horizontalArrangement = Arrangement.spacedBy(10.dp)
+                                ) {
+                                    Icon(
+                                        imageVector = Icons.Default.CheckCircle,
+                                        contentDescription = "Success",
+                                        tint = Color(0xFF059669),
+                                        modifier = Modifier.size(20.dp)
+                                    )
+                                    Text(
+                                        text = successMessage ?: "",
+                                        color = if (isDark) Color(0xFF6EE7B7) else Color(0xFF047857),
+                                        fontSize = 12.sp,
+                                        fontWeight = FontWeight.Medium,
+                                        modifier = Modifier.weight(1f)
+                                    )
+                                }
+                            }
+                        }
 
-                                        // Employee Pill
-                                        Surface(
-                                            shape = RoundedCornerShape(16.dp),
-                                            color = Color(0xFFD1FAE5),
-                                            border = androidx.compose.foundation.BorderStroke(1.dp, Color(0xFF6EE7B7)),
-                                            modifier = Modifier.clickable {
-                                                AuthSessionManager.switchRoleQuick(UserRole.EMPLOYEE)
-                                                Toast.makeText(context, "Logged in as Team Employee (Operational & Expenses)", Toast.LENGTH_SHORT).show()
-                                                onLoginSuccess()
-                                            }
-                                        ) {
-                                            Text(
-                                                text = "👤 Team Employee",
-                                                color = Color(0xFF047857),
-                                                fontWeight = FontWeight.Bold,
-                                                fontSize = 11.sp,
-                                                modifier = Modifier.padding(horizontal = 10.dp, vertical = 6.dp)
-                                            )
-                                        }
-
-                                        // Developer Pill
-                                        Surface(
-                                            shape = RoundedCornerShape(16.dp),
-                                            color = Color(0xFFF3E8FF),
-                                            border = androidx.compose.foundation.BorderStroke(1.dp, Color(0xFFD8B4FE)),
-                                            modifier = Modifier.clickable {
-                                                AuthSessionManager.switchRoleQuick(UserRole.DEVELOPER)
-                                                Toast.makeText(context, "Logged in as Platform Developer (Global All-Org)", Toast.LENGTH_SHORT).show()
-                                                onLoginSuccess()
-                                            }
-                                        ) {
-                                            Text(
-                                                text = "⚡ Global Dev",
-                                                color = Color(0xFF7E22CE),
-                                                fontWeight = FontWeight.Bold,
-                                                fontSize = 11.sp,
-                                                modifier = Modifier.padding(horizontal = 10.dp, vertical = 6.dp)
-                                            )
-                                        }
-                                    }
+                        // =====================================================
+                        // TAB CONTENT: 0 = SIGN IN
+                        // =====================================================
+                        if (selectedTab == 0) {
+                            Column(verticalArrangement = Arrangement.spacedBy(14.dp)) {
+                                Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                                    Text(
+                                        text = "Welcome Back",
+                                        fontSize = 20.sp,
+                                        fontWeight = FontWeight.Bold,
+                                        color = if (isDark) Color.White else Color(0xFF0F172A)
+                                    )
+                                    Text(
+                                        text = "Sign in to access your PostgreSQL organization database",
+                                        fontSize = 12.sp,
+                                        color = Color(0xFF64748B)
+                                    )
                                 }
 
-                                // Identifier (Email/Mobile)
+                                // Identifier (Email or Mobile)
                                 OutlinedTextField(
                                     value = loginIdentifier,
-                                    onValueChange = { loginIdentifier = it },
+                                    onValueChange = {
+                                        loginIdentifier = it
+                                        errorMessage = null
+                                    },
                                     label = { Text("Email or Mobile Number") },
-                                    leadingIcon = { Icon(Icons.Default.Email, contentDescription = null, tint = Color(0xFF64748B)) },
+                                    placeholder = { Text("you@company.com or +91...") },
+                                    leadingIcon = {
+                                        Icon(Icons.Default.AccountCircle, contentDescription = null, tint = Color(0xFF64748B))
+                                    },
                                     singleLine = true,
-                                    modifier = Modifier.fillMaxWidth().testTag("field_login_identifier"),
                                     shape = RoundedCornerShape(12.dp),
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .testTag("field_login_identifier"),
                                     colors = OutlinedTextFieldDefaults.colors(
                                         focusedBorderColor = Color(0xFF2563EB),
                                         unfocusedBorderColor = if (isDark) Color(0xFF334155) else Color(0xFFCBD5E1)
@@ -361,91 +441,135 @@ fun AuthScreen(
                                 // Password
                                 OutlinedTextField(
                                     value = loginPassword,
-                                    onValueChange = { loginPassword = it },
+                                    onValueChange = {
+                                        loginPassword = it
+                                        errorMessage = null
+                                    },
                                     label = { Text("Password") },
-                                    leadingIcon = { Icon(Icons.Default.Lock, contentDescription = null, tint = Color(0xFF64748B)) },
+                                    placeholder = { Text("Enter your account password") },
+                                    leadingIcon = {
+                                        Icon(Icons.Default.Lock, contentDescription = null, tint = Color(0xFF64748B))
+                                    },
                                     trailingIcon = {
-                                        IconButton(onClick = { passwordVisible = !passwordVisible }) {
+                                        IconButton(onClick = { loginPasswordVisible = !loginPasswordVisible }) {
                                             Icon(
-                                                imageVector = if (passwordVisible) Icons.Default.VisibilityOff else Icons.Default.Visibility,
-                                                contentDescription = "Toggle password visibility"
+                                                imageVector = if (loginPasswordVisible) Icons.Default.VisibilityOff else Icons.Default.Visibility,
+                                                contentDescription = "Toggle password visibility",
+                                                tint = Color(0xFF64748B)
                                             )
                                         }
                                     },
-                                    singleLine = true,
-                                    visualTransformation = if (passwordVisible) VisualTransformation.None else PasswordVisualTransformation(),
+                                    visualTransformation = if (loginPasswordVisible) VisualTransformation.None else PasswordVisualTransformation(),
                                     keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Password),
-                                    modifier = Modifier.fillMaxWidth().testTag("field_login_password"),
+                                    singleLine = true,
                                     shape = RoundedCornerShape(12.dp),
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .testTag("field_login_password"),
                                     colors = OutlinedTextFieldDefaults.colors(
                                         focusedBorderColor = Color(0xFF2563EB),
                                         unfocusedBorderColor = if (isDark) Color(0xFF334155) else Color(0xFFCBD5E1)
                                     )
                                 )
 
-                                if (loginError != null) {
-                                    Text(
-                                        text = loginError ?: "",
-                                        color = Color(0xFFDC2626),
-                                        fontSize = 12.sp,
-                                        fontWeight = FontWeight.SemiBold
-                                    )
-                                }
-
-                                // Sign In Button
+                                // Sign In Submit Button
                                 Button(
                                     onClick = {
+                                        if (loginIdentifier.isBlank() || loginPassword.isBlank()) {
+                                            errorMessage = "Please enter both identifier and password"
+                                            return@Button
+                                        }
                                         coroutineScope.launch {
                                             isSubmitting = true
-                                            loginError = null
+                                            errorMessage = null
                                             val result = AuthSessionManager.login(loginIdentifier, loginPassword)
                                             isSubmitting = false
                                             if (result.isSuccess) {
-                                                loginError = null
-                                                Toast.makeText(context, "Welcome back, ${result.getOrNull()?.fullName}!", Toast.LENGTH_SHORT).show()
+                                                val user = result.getOrNull()
+                                                Toast.makeText(
+                                                    context,
+                                                    "Signed in as ${user?.fullName} (${user?.role?.name})",
+                                                    Toast.LENGTH_SHORT
+                                                ).show()
                                                 onLoginSuccess()
                                             } else {
-                                                loginError = result.exceptionOrNull()?.message ?: "Login failed"
+                                                errorMessage = result.exceptionOrNull()?.message ?: "Login failed"
                                             }
                                         }
                                     },
                                     enabled = !isSubmitting,
+                                    shape = RoundedCornerShape(14.dp),
+                                    colors = ButtonDefaults.buttonColors(
+                                        containerColor = Color(0xFF1D4ED8)
+                                    ),
                                     modifier = Modifier
                                         .fillMaxWidth()
-                                        .height(48.dp)
-                                        .testTag("btn_submit_login"),
-                                    shape = RoundedCornerShape(12.dp),
-                                    colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF1D4ED8))
+                                        .height(52.dp)
+                                        .testTag("btn_submit_login")
                                 ) {
                                     if (isSubmitting) {
                                         CircularProgressIndicator(
-                                            modifier = Modifier.size(20.dp),
+                                            modifier = Modifier.size(22.dp),
                                             color = Color.White,
                                             strokeWidth = 2.dp
                                         )
+                                        Spacer(modifier = Modifier.width(10.dp))
+                                        Text("Authenticating...", fontSize = 14.sp, fontWeight = FontWeight.Bold)
                                     } else {
-                                        Text(
-                                            text = "Sign In",
-                                            fontWeight = FontWeight.Bold,
-                                            fontSize = 15.sp,
-                                            color = Color.White
-                                        )
+                                        Row(
+                                            verticalAlignment = Alignment.CenterVertically,
+                                            horizontalArrangement = Arrangement.spacedBy(8.dp)
+                                        ) {
+                                            Text("Sign In to Organization", fontSize = 15.sp, fontWeight = FontWeight.Bold)
+                                            Icon(Icons.Default.ArrowForward, contentDescription = null, modifier = Modifier.size(18.dp))
+                                        }
                                     }
+                                }
+
+                                // Toggle to Create Account
+                                Row(
+                                    modifier = Modifier.fillMaxWidth(),
+                                    horizontalArrangement = Arrangement.Center,
+                                    verticalAlignment = Alignment.CenterVertically
+                                ) {
+                                    Text(
+                                        text = "Don't have an organization? ",
+                                        fontSize = 12.sp,
+                                        color = Color(0xFF64748B)
+                                    )
+                                    Text(
+                                        text = "Create Account",
+                                        fontSize = 12.sp,
+                                        fontWeight = FontWeight.Bold,
+                                        color = Color(0xFF2563EB),
+                                        modifier = Modifier.clickable {
+                                            selectedTab = 1
+                                            errorMessage = null
+                                            successMessage = null
+                                        }
+                                    )
                                 }
                             }
                         } else {
-                            // =================================================================
-                            // TAB 2: REGISTER / JOIN WITH COMPANY DETAILS
-                            // =================================================================
-                            Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
-                                Text(
-                                    text = "Choose Your Role",
-                                    fontSize = 13.sp,
-                                    fontWeight = FontWeight.Bold,
-                                    color = Color(0xFF64748B)
-                                )
+                            // =====================================================
+                            // TAB CONTENT: 1 = SIGN UP / REGISTER
+                            // =====================================================
+                            Column(verticalArrangement = Arrangement.spacedBy(14.dp)) {
+                                Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                                    Text(
+                                        text = "Register Account",
+                                        fontSize = 20.sp,
+                                        fontWeight = FontWeight.Bold,
+                                        color = if (isDark) Color.White else Color(0xFF0F172A)
+                                    )
+                                    Text(
+                                        text = "Register your business or join an existing team",
+                                        fontSize = 12.sp,
+                                        color = Color(0xFF64748B)
+                                    )
+                                }
 
-                                // Role selector pills (Admin, Employee, Developer)
+                                // Role Mode Segmented Selector (Admin, Employee, Developer)
                                 Row(
                                     modifier = Modifier
                                         .fillMaxWidth()
@@ -454,242 +578,261 @@ fun AuthScreen(
                                         .padding(4.dp),
                                     horizontalArrangement = Arrangement.spacedBy(4.dp)
                                 ) {
-                                    listOf(
-                                        "👑 Org Admin" to 0,
-                                        "👤 Employee" to 1,
-                                        "⚡ Developer" to 2
-                                    ).forEach { (label, index) ->
-                                        val isSelected = regRoleMode == index
-                                        Box(
-                                            modifier = Modifier
-                                                .weight(1f)
-                                                .clip(RoundedCornerShape(10.dp))
-                                                .background(
-                                                    if (isSelected) Color(0xFF2563EB) else Color.Transparent
-                                                )
-                                                .clickable {
-                                                    regRoleMode = index
-                                                    regFeedbackMessage = null
-                                                }
-                                                .padding(vertical = 8.dp),
-                                            contentAlignment = Alignment.Center
-                                        ) {
-                                            Text(
-                                                text = label,
-                                                fontSize = 11.sp,
-                                                fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Medium,
-                                                color = if (isSelected) Color.White else Color(0xFF64748B)
-                                            )
-                                        }
+                                    // 1. Company Admin
+                                    Surface(
+                                        shape = RoundedCornerShape(10.dp),
+                                        color = if (regRoleMode == 0) Color(0xFF1D4ED8) else Color.Transparent,
+                                        modifier = Modifier
+                                            .weight(1f)
+                                            .clickable { regRoleMode = 0; errorMessage = null }
+                                    ) {
+                                        Text(
+                                            text = "🏢 Company",
+                                            fontSize = 11.sp,
+                                            fontWeight = if (regRoleMode == 0) FontWeight.Bold else FontWeight.Medium,
+                                            color = if (regRoleMode == 0) Color.White else Color(0xFF64748B),
+                                            textAlign = TextAlign.Center,
+                                            modifier = Modifier.padding(vertical = 8.dp)
+                                        )
+                                    }
+
+                                    // 2. Employee Join
+                                    Surface(
+                                        shape = RoundedCornerShape(10.dp),
+                                        color = if (regRoleMode == 1) Color(0xFF059669) else Color.Transparent,
+                                        modifier = Modifier
+                                            .weight(1f)
+                                            .clickable { regRoleMode = 1; errorMessage = null }
+                                    ) {
+                                        Text(
+                                            text = "👥 Team Join",
+                                            fontSize = 11.sp,
+                                            fontWeight = if (regRoleMode == 1) FontWeight.Bold else FontWeight.Medium,
+                                            color = if (regRoleMode == 1) Color.White else Color(0xFF64748B),
+                                            textAlign = TextAlign.Center,
+                                            modifier = Modifier.padding(vertical = 8.dp)
+                                        )
+                                    }
+
+                                    // 3. Platform Developer
+                                    Surface(
+                                        shape = RoundedCornerShape(10.dp),
+                                        color = if (regRoleMode == 2) Color(0xFF7C3AED) else Color.Transparent,
+                                        modifier = Modifier
+                                            .weight(1f)
+                                            .clickable { regRoleMode = 2; errorMessage = null }
+                                    ) {
+                                        Text(
+                                            text = "⚡ Developer",
+                                            fontSize = 11.sp,
+                                            fontWeight = if (regRoleMode == 2) FontWeight.Bold else FontWeight.Medium,
+                                            color = if (regRoleMode == 2) Color.White else Color(0xFF64748B),
+                                            textAlign = TextAlign.Center,
+                                            modifier = Modifier.padding(vertical = 8.dp)
+                                        )
                                     }
                                 }
 
-                                // Personal Info Fields
+                                // USER IDENTITY FIELDS (Common across all roles)
                                 OutlinedTextField(
                                     value = regFullName,
-                                    onValueChange = { regFullName = it },
-                                    label = { Text("Your Full Name") },
+                                    onValueChange = { regFullName = it; errorMessage = null },
+                                    label = { Text("Full Name *") },
+                                    placeholder = { Text("e.g. Roshan Kumar") },
                                     leadingIcon = { Icon(Icons.Default.Person, contentDescription = null, tint = Color(0xFF64748B)) },
                                     singleLine = true,
-                                    modifier = Modifier.fillMaxWidth().testTag("field_reg_name"),
-                                    shape = RoundedCornerShape(12.dp)
+                                    shape = RoundedCornerShape(12.dp),
+                                    modifier = Modifier.fillMaxWidth().testTag("field_reg_fullname")
                                 )
 
-                                Row(
-                                    modifier = Modifier.fillMaxWidth(),
-                                    horizontalArrangement = Arrangement.spacedBy(8.dp)
-                                ) {
-                                    OutlinedTextField(
-                                        value = regEmail,
-                                        onValueChange = { regEmail = it },
-                                        label = { Text("Work Email") },
-                                        leadingIcon = { Icon(Icons.Default.Email, contentDescription = null, tint = Color(0xFF64748B)) },
-                                        singleLine = true,
-                                        modifier = Modifier.weight(1f).testTag("field_reg_email"),
-                                        shape = RoundedCornerShape(12.dp)
-                                    )
-                                    OutlinedTextField(
-                                        value = regMobile,
-                                        onValueChange = { regMobile = it },
-                                        label = { Text("Mobile #") },
-                                        leadingIcon = { Icon(Icons.Default.Phone, contentDescription = null, tint = Color(0xFF64748B)) },
-                                        singleLine = true,
-                                        modifier = Modifier.weight(1f).testTag("field_reg_mobile"),
-                                        shape = RoundedCornerShape(12.dp)
-                                    )
-                                }
+                                OutlinedTextField(
+                                    value = regEmail,
+                                    onValueChange = { regEmail = it; errorMessage = null },
+                                    label = { Text("Email Address *") },
+                                    placeholder = { Text("name@company.com") },
+                                    leadingIcon = { Icon(Icons.Default.Email, contentDescription = null, tint = Color(0xFF64748B)) },
+                                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Email),
+                                    singleLine = true,
+                                    shape = RoundedCornerShape(12.dp),
+                                    modifier = Modifier.fillMaxWidth().testTag("field_reg_email")
+                                )
+
+                                OutlinedTextField(
+                                    value = regMobile,
+                                    onValueChange = { regMobile = it; errorMessage = null },
+                                    label = { Text("Mobile Number *") },
+                                    placeholder = { Text("+91 98765 43210") },
+                                    leadingIcon = { Icon(Icons.Default.Phone, contentDescription = null, tint = Color(0xFF64748B)) },
+                                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Phone),
+                                    singleLine = true,
+                                    shape = RoundedCornerShape(12.dp),
+                                    modifier = Modifier.fillMaxWidth().testTag("field_reg_mobile")
+                                )
 
                                 OutlinedTextField(
                                     value = regPassword,
-                                    onValueChange = { regPassword = it },
-                                    label = { Text("Password (Min 4 chars)") },
+                                    onValueChange = { regPassword = it; errorMessage = null },
+                                    label = { Text("Password (min 6 characters) *") },
+                                    placeholder = { Text("Create a secure password") },
                                     leadingIcon = { Icon(Icons.Default.Lock, contentDescription = null, tint = Color(0xFF64748B)) },
+                                    trailingIcon = {
+                                        IconButton(onClick = { regPasswordVisible = !regPasswordVisible }) {
+                                            Icon(
+                                                imageVector = if (regPasswordVisible) Icons.Default.VisibilityOff else Icons.Default.Visibility,
+                                                contentDescription = null,
+                                                tint = Color(0xFF64748B)
+                                            )
+                                        }
+                                    },
+                                    visualTransformation = if (regPasswordVisible) VisualTransformation.None else PasswordVisualTransformation(),
+                                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Password),
                                     singleLine = true,
-                                    visualTransformation = PasswordVisualTransformation(),
-                                    modifier = Modifier.fillMaxWidth().testTag("field_reg_password"),
-                                    shape = RoundedCornerShape(12.dp)
+                                    shape = RoundedCornerShape(12.dp),
+                                    modifier = Modifier.fillMaxWidth().testTag("field_reg_password")
                                 )
 
-                                // ROLE-SPECIFIC SECTIONS:
+                                // ROLE SPECIFIC FIELDS
                                 when (regRoleMode) {
                                     0 -> {
-                                        // -------------------------------------------------------------
-                                        // MODE 0: CREATE NEW COMPANY (ADMIN)
-                                        // -------------------------------------------------------------
-                                        Card(
-                                            modifier = Modifier.fillMaxWidth(),
-                                            colors = CardDefaults.cardColors(containerColor = if (isDark) Color(0xFF1E293B) else Color(0xFFEFF6FF)),
-                                            border = androidx.compose.foundation.BorderStroke(1.dp, Color(0xFFBFDBFE)),
-                                            shape = RoundedCornerShape(14.dp)
-                                        ) {
-                                            Column(modifier = Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                                                Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                                                    Icon(Icons.Default.Apartment, contentDescription = null, tint = Color(0xFF1D4ED8), modifier = Modifier.size(18.dp))
-                                                    Text("Company & Business Details", fontWeight = FontWeight.Bold, fontSize = 13.sp, color = Color(0xFF1D4ED8))
-                                                }
+                                        // =====================================
+                                        // ROLE: COMPANY ADMIN
+                                        // =====================================
+                                        Text(
+                                            text = "Business Organization Details",
+                                            fontSize = 13.sp,
+                                            fontWeight = FontWeight.Bold,
+                                            color = Color(0xFF1D4ED8)
+                                        )
 
-                                                OutlinedTextField(
-                                                    value = regCompanyName,
-                                                    onValueChange = { regCompanyName = it },
-                                                    label = { Text("Company Name (e.g. Apex Nova LLC)") },
-                                                    singleLine = true,
-                                                    modifier = Modifier.fillMaxWidth().testTag("field_reg_company_name"),
-                                                    shape = RoundedCornerShape(10.dp)
-                                                )
+                                        OutlinedTextField(
+                                            value = regCompanyName,
+                                            onValueChange = { regCompanyName = it; errorMessage = null },
+                                            label = { Text("Company / Business Name *") },
+                                            placeholder = { Text("e.g. Acme Tech Solutions LLC") },
+                                            leadingIcon = { Icon(Icons.Default.Apartment, contentDescription = null, tint = Color(0xFF64748B)) },
+                                            singleLine = true,
+                                            shape = RoundedCornerShape(12.dp),
+                                            modifier = Modifier.fillMaxWidth().testTag("field_reg_company_name")
+                                        )
 
-                                                Row(
-                                                    modifier = Modifier.fillMaxWidth(),
-                                                    horizontalArrangement = Arrangement.spacedBy(8.dp)
-                                                ) {
-                                                    OutlinedTextField(
-                                                        value = regGstin,
-                                                        onValueChange = { regGstin = it },
-                                                        label = { Text("GSTIN / Tax ID") },
-                                                        singleLine = true,
-                                                        modifier = Modifier.weight(1f).testTag("field_reg_gstin"),
-                                                        shape = RoundedCornerShape(10.dp)
-                                                    )
-                                                    OutlinedTextField(
-                                                        value = regLocation,
-                                                        onValueChange = { regLocation = it },
-                                                        label = { Text("City / State") },
-                                                        singleLine = true,
-                                                        modifier = Modifier.weight(1f).testTag("field_reg_location"),
-                                                        shape = RoundedCornerShape(10.dp)
-                                                    )
-                                                }
+                                        OutlinedTextField(
+                                            value = regGstin,
+                                            onValueChange = { regGstin = it },
+                                            label = { Text("GSTIN / Tax Registration ID") },
+                                            placeholder = { Text("e.g. 27AABCU9603R1ZN") },
+                                            leadingIcon = { Icon(Icons.Default.Badge, contentDescription = null, tint = Color(0xFF64748B)) },
+                                            singleLine = true,
+                                            shape = RoundedCornerShape(12.dp),
+                                            modifier = Modifier.fillMaxWidth()
+                                        )
 
-                                                OutlinedTextField(
-                                                    value = regCompanyDetails,
-                                                    onValueChange = { regCompanyDetails = it },
-                                                    label = { Text("Business Tagline / Specialty") },
-                                                    singleLine = true,
-                                                    modifier = Modifier.fillMaxWidth(),
-                                                    shape = RoundedCornerShape(10.dp)
-                                                )
+                                        OutlinedTextField(
+                                            value = regLocation,
+                                            onValueChange = { regLocation = it },
+                                            label = { Text("Business Address / City") },
+                                            placeholder = { Text("e.g. Mumbai, Maharashtra") },
+                                            leadingIcon = { Icon(Icons.Default.LocationOn, contentDescription = null, tint = Color(0xFF64748B)) },
+                                            singleLine = true,
+                                            shape = RoundedCornerShape(12.dp),
+                                            modifier = Modifier.fillMaxWidth()
+                                        )
 
-                                                Text(
-                                                    text = "ℹ A unique company code will be auto-generated so your employees can join your workspace.",
-                                                    fontSize = 11.sp,
-                                                    color = Color(0xFF2563EB)
-                                                )
-                                            }
-                                        }
+                                        OutlinedTextField(
+                                            value = regCompanyDetails,
+                                            onValueChange = { regCompanyDetails = it },
+                                            label = { Text("Business Category / Description") },
+                                            placeholder = { Text("e.g. IT Consulting & Software Development") },
+                                            singleLine = true,
+                                            shape = RoundedCornerShape(12.dp),
+                                            modifier = Modifier.fillMaxWidth()
+                                        )
                                     }
                                     1 -> {
-                                        // -------------------------------------------------------------
-                                        // MODE 1: JOIN EXISTING TEAM (EMPLOYEE)
-                                        // -------------------------------------------------------------
-                                        Card(
-                                            modifier = Modifier.fillMaxWidth(),
-                                            colors = CardDefaults.cardColors(containerColor = if (isDark) Color(0xFF1E293B) else Color(0xFFECFDF5)),
-                                            border = androidx.compose.foundation.BorderStroke(1.dp, Color(0xFFA7F3D0)),
-                                            shape = RoundedCornerShape(14.dp)
+                                        // =====================================
+                                        // ROLE: EMPLOYEE JOIN
+                                        // =====================================
+                                        Text(
+                                            text = "Company Join Details",
+                                            fontSize = 13.sp,
+                                            fontWeight = FontWeight.Bold,
+                                            color = Color(0xFF059669)
+                                        )
+
+                                        OutlinedTextField(
+                                            value = regCompanyCode,
+                                            onValueChange = { regCompanyCode = it.uppercase(); errorMessage = null },
+                                            label = { Text("Company Code to Join *") },
+                                            placeholder = { Text("e.g. COMP-APEX99") },
+                                            leadingIcon = { Icon(Icons.Default.Apartment, contentDescription = null, tint = Color(0xFF64748B)) },
+                                            singleLine = true,
+                                            shape = RoundedCornerShape(12.dp),
+                                            modifier = Modifier.fillMaxWidth().testTag("field_reg_company_code")
+                                        )
+
+                                        OutlinedTextField(
+                                            value = regRequestMessage,
+                                            onValueChange = { regRequestMessage = it },
+                                            label = { Text("Request Note for Administrator") },
+                                            placeholder = { Text("e.g. Junior Accountant joining the finance team") },
+                                            singleLine = false,
+                                            maxLines = 3,
+                                            shape = RoundedCornerShape(12.dp),
+                                            modifier = Modifier.fillMaxWidth()
+                                        )
+
+                                        Surface(
+                                            shape = RoundedCornerShape(10.dp),
+                                            color = if (isDark) Color(0xFF064E3B).copy(alpha = 0.5f) else Color(0xFFECFDF5),
+                                            modifier = Modifier.fillMaxWidth()
                                         ) {
-                                            Column(modifier = Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                                                Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                                                    Icon(Icons.Default.Badge, contentDescription = null, tint = Color(0xFF047857), modifier = Modifier.size(18.dp))
-                                                    Text("Join Organization Workspace", fontWeight = FontWeight.Bold, fontSize = 13.sp, color = Color(0xFF047857))
-                                                }
-
-                                                OutlinedTextField(
-                                                    value = regCompanyCode,
-                                                    onValueChange = { regCompanyCode = it },
-                                                    label = { Text("Organization Code (e.g. COMP-APEX99)") },
-                                                    singleLine = true,
-                                                    modifier = Modifier.fillMaxWidth().testTag("field_reg_join_code"),
-                                                    shape = RoundedCornerShape(10.dp)
-                                                )
-
-                                                OutlinedTextField(
-                                                    value = regRequestMessage,
-                                                    onValueChange = { regRequestMessage = it },
-                                                    label = { Text("Note for Admin (e.g. Sales desk staff)") },
-                                                    singleLine = true,
-                                                    modifier = Modifier.fillMaxWidth().testTag("field_reg_join_note"),
-                                                    shape = RoundedCornerShape(10.dp)
-                                                )
-
+                                            Row(
+                                                modifier = Modifier.padding(10.dp),
+                                                verticalAlignment = Alignment.CenterVertically,
+                                                horizontalArrangement = Arrangement.spacedBy(8.dp)
+                                            ) {
+                                                Icon(Icons.Default.Info, contentDescription = null, tint = Color(0xFF059669), modifier = Modifier.size(18.dp))
                                                 Text(
-                                                    text = "ℹ Once submitted, your company Admin can approve your account from their Team Management dashboard.",
+                                                    text = "Once submitted, your company Admin will review and approve your account before you can log in.",
                                                     fontSize = 11.sp,
-                                                    color = Color(0xFF059669)
+                                                    color = if (isDark) Color(0xFFA7F3D0) else Color(0xFF065F46)
                                                 )
                                             }
                                         }
                                     }
                                     2 -> {
-                                        // -------------------------------------------------------------
-                                        // MODE 2: DEVELOPER
-                                        // -------------------------------------------------------------
-                                        Card(
-                                            modifier = Modifier.fillMaxWidth(),
-                                            colors = CardDefaults.cardColors(containerColor = if (isDark) Color(0xFF1E293B) else Color(0xFFFAF5FF)),
-                                            border = androidx.compose.foundation.BorderStroke(1.dp, Color(0xFFE9D5FF)),
-                                            shape = RoundedCornerShape(14.dp)
-                                        ) {
-                                            Column(modifier = Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                                                Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                                                    Icon(Icons.Default.Code, contentDescription = null, tint = Color(0xFF7E22CE), modifier = Modifier.size(18.dp))
-                                                    Text("Platform Developer Registration", fontWeight = FontWeight.Bold, fontSize = 13.sp, color = Color(0xFF7E22CE))
-                                                }
+                                        // =====================================
+                                        // ROLE: PLATFORM DEVELOPER
+                                        // =====================================
+                                        Text(
+                                            text = "Developer Authentication",
+                                            fontSize = 13.sp,
+                                            fontWeight = FontWeight.Bold,
+                                            color = Color(0xFF7C3AED)
+                                        )
 
-                                                OutlinedTextField(
-                                                    value = regSecretKey,
-                                                    onValueChange = { regSecretKey = it },
-                                                    label = { Text("Developer Secret Key") },
-                                                    leadingIcon = { Icon(Icons.Default.Key, contentDescription = null) },
-                                                    singleLine = true,
-                                                    modifier = Modifier.fillMaxWidth().testTag("field_reg_dev_key"),
-                                                    shape = RoundedCornerShape(10.dp)
-                                                )
-
-                                                Text(
-                                                    text = "Default verification key: invoicely_dev_secret_2026",
-                                                    fontSize = 11.sp,
-                                                    color = Color(0xFF7E22CE)
-                                                )
-                                            }
-                                        }
+                                        OutlinedTextField(
+                                            value = regDeveloperKey,
+                                            onValueChange = { regDeveloperKey = it; errorMessage = null },
+                                            label = { Text("Developer Master Secret Key *") },
+                                            leadingIcon = { Icon(Icons.Default.Key, contentDescription = null, tint = Color(0xFF64748B)) },
+                                            singleLine = true,
+                                            shape = RoundedCornerShape(12.dp),
+                                            modifier = Modifier.fillMaxWidth().testTag("field_reg_dev_key")
+                                        )
                                     }
                                 }
 
-                                if (regFeedbackMessage != null) {
-                                    Text(
-                                        text = regFeedbackMessage ?: "",
-                                        color = if (regIsSuccess) Color(0xFF059669) else Color(0xFFDC2626),
-                                        fontSize = 12.sp,
-                                        fontWeight = FontWeight.SemiBold
-                                    )
-                                }
-
+                                // Sign Up Submit Button
                                 Button(
                                     onClick = {
                                         coroutineScope.launch {
                                             isSubmitting = true
-                                            regFeedbackMessage = null
+                                            errorMessage = null
+                                            successMessage = null
+
                                             when (regRoleMode) {
                                                 0 -> {
+                                                    // Register Company & Admin
                                                     val res = AuthSessionManager.registerCompany(
                                                         fullName = regFullName,
                                                         email = regEmail,
@@ -702,16 +845,14 @@ fun AuthScreen(
                                                     )
                                                     isSubmitting = false
                                                     if (res.isSuccess) {
-                                                        regIsSuccess = true
-                                                        regFeedbackMessage = "Organization & Admin registered! Code: ${res.getOrNull()?.companyCode}"
-                                                        Toast.makeText(context, "Organization created successfully!", Toast.LENGTH_SHORT).show()
+                                                        Toast.makeText(context, "Organization created successfully in PostgreSQL!", Toast.LENGTH_SHORT).show()
                                                         onLoginSuccess()
                                                     } else {
-                                                        regIsSuccess = false
-                                                        regFeedbackMessage = res.exceptionOrNull()?.message ?: "Registration failed"
+                                                        errorMessage = res.exceptionOrNull()?.message ?: "Registration failed"
                                                     }
                                                 }
                                                 1 -> {
+                                                    // Submit Employee Join Request
                                                     val res = AuthSessionManager.registerEmployee(
                                                         fullName = regFullName,
                                                         email = regEmail,
@@ -722,68 +863,77 @@ fun AuthScreen(
                                                     )
                                                     isSubmitting = false
                                                     if (res.isSuccess) {
-                                                        regIsSuccess = true
-                                                        regFeedbackMessage = res.getOrNull()
-                                                        Toast.makeText(context, "Join request submitted! Awaiting Admin approval.", Toast.LENGTH_LONG).show()
+                                                        successMessage = res.getOrNull() ?: "Join request submitted! Awaiting Admin approval."
                                                     } else {
-                                                        regIsSuccess = false
-                                                        regFeedbackMessage = res.exceptionOrNull()?.message ?: "Join request failed"
+                                                        errorMessage = res.exceptionOrNull()?.message ?: "Failed to submit join request"
                                                     }
                                                 }
                                                 2 -> {
+                                                    // Register Developer
                                                     val res = AuthSessionManager.registerDeveloper(
                                                         fullName = regFullName,
                                                         email = regEmail,
                                                         mobile = regMobile,
                                                         password = regPassword,
-                                                        secretKey = regSecretKey
+                                                        developerSecretKey = regDeveloperKey
                                                     )
                                                     isSubmitting = false
                                                     if (res.isSuccess) {
-                                                        regIsSuccess = true
-                                                        regFeedbackMessage = "Developer account activated!"
-                                                        Toast.makeText(context, "Developer Superuser logged in!", Toast.LENGTH_SHORT).show()
+                                                        Toast.makeText(context, "Platform Developer account created!", Toast.LENGTH_SHORT).show()
                                                         onLoginSuccess()
                                                     } else {
-                                                        regIsSuccess = false
-                                                        regFeedbackMessage = res.exceptionOrNull()?.message ?: "Developer key invalid"
+                                                        errorMessage = res.exceptionOrNull()?.message ?: "Developer registration failed"
                                                     }
                                                 }
                                             }
                                         }
                                     },
                                     enabled = !isSubmitting,
-                                    modifier = Modifier
-                                        .fillMaxWidth()
-                                        .height(48.dp)
-                                        .testTag("btn_submit_register"),
-                                    shape = RoundedCornerShape(12.dp),
+                                    shape = RoundedCornerShape(14.dp),
                                     colors = ButtonDefaults.buttonColors(
                                         containerColor = when (regRoleMode) {
-                                            0 -> Color(0xFF1D4ED8)
-                                            1 -> Color(0xFF047857)
-                                            else -> Color(0xFF7E22CE)
+                                            1 -> Color(0xFF059669)
+                                            2 -> Color(0xFF7C3AED)
+                                            else -> Color(0xFF1D4ED8)
                                         }
-                                    )
+                                    ),
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .height(52.dp)
+                                        .testTag("btn_submit_register")
                                 ) {
                                     if (isSubmitting) {
-                                        CircularProgressIndicator(
-                                            modifier = Modifier.size(20.dp),
-                                            color = Color.White,
-                                            strokeWidth = 2.dp
-                                        )
+                                        CircularProgressIndicator(modifier = Modifier.size(22.dp), color = Color.White, strokeWidth = 2.dp)
+                                        Spacer(modifier = Modifier.width(10.dp))
+                                        Text("Registering in PostgreSQL...", fontSize = 14.sp, fontWeight = FontWeight.Bold)
                                     } else {
-                                        Text(
-                                            text = when (regRoleMode) {
-                                                0 -> "Create Organization & Admin Account"
-                                                1 -> "Submit Join Request to Admin"
-                                                else -> "Activate Developer Access"
-                                            },
-                                            fontWeight = FontWeight.Bold,
-                                            fontSize = 14.sp,
-                                            color = Color.White
-                                        )
+                                        val btnLabel = when (regRoleMode) {
+                                            1 -> "Submit Employee Join Request"
+                                            2 -> "Activate Developer Access"
+                                            else -> "Register Organization & Admin"
+                                        }
+                                        Text(btnLabel, fontSize = 14.sp, fontWeight = FontWeight.Bold)
                                     }
+                                }
+
+                                // Toggle to Sign In
+                                Row(
+                                    modifier = Modifier.fillMaxWidth(),
+                                    horizontalArrangement = Arrangement.Center,
+                                    verticalAlignment = Alignment.CenterVertically
+                                ) {
+                                    Text(text = "Already have an account? ", fontSize = 12.sp, color = Color(0xFF64748B))
+                                    Text(
+                                        text = "Sign In",
+                                        fontSize = 12.sp,
+                                        fontWeight = FontWeight.Bold,
+                                        color = Color(0xFF2563EB),
+                                        modifier = Modifier.clickable {
+                                            selectedTab = 0
+                                            errorMessage = null
+                                            successMessage = null
+                                        }
+                                    )
                                 }
                             }
                         }

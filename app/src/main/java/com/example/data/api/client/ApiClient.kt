@@ -27,23 +27,31 @@ object ApiClient {
         cachedToken = token
     }
 
-    fun getAuthToken(): String? = cachedToken
+    fun getAuthToken(): String? = cachedToken ?: com.example.data.repository.AuthSessionManager.jwtToken.value
 
     private val authInterceptor = Interceptor { chain ->
         val original = chain.request()
         val requestBuilder = original.newBuilder()
 
-        cachedToken?.let { token ->
-            if (token.isNotBlank()) {
-                requestBuilder.header("Authorization", "Bearer $token")
-            }
+        val activeToken = getAuthToken()
+        if (!activeToken.isNullOrBlank()) {
+            val bearer = if (activeToken.startsWith("Bearer ", ignoreCase = true)) activeToken else "Bearer $activeToken"
+            requestBuilder.header("Authorization", bearer)
+            requestBuilder.header("X-Auth-Token", activeToken)
+            requestBuilder.header("X-Session-Id", activeToken)
         }
 
         requestBuilder.header("Content-Type", "application/json")
         requestBuilder.header("Accept", "application/json")
 
         val request = requestBuilder.build()
-        chain.proceed(request)
+        val response = chain.proceed(request)
+
+        if (response.code == 401) {
+            com.example.data.repository.AuthSessionManager.notifySessionExpired()
+        }
+
+        response
     }
 
     private val loggingInterceptor = HttpLoggingInterceptor().apply {
@@ -58,9 +66,9 @@ object ApiClient {
         return OkHttpClient.Builder()
             .addInterceptor(authInterceptor)
             .addInterceptor(loggingInterceptor)
-            .connectTimeout(15, TimeUnit.SECONDS)
-            .readTimeout(20, TimeUnit.SECONDS)
-            .writeTimeout(20, TimeUnit.SECONDS)
+            .connectTimeout(60, TimeUnit.SECONDS)
+            .readTimeout(60, TimeUnit.SECONDS)
+            .writeTimeout(60, TimeUnit.SECONDS)
             .retryOnConnectionFailure(true)
             .build()
     }

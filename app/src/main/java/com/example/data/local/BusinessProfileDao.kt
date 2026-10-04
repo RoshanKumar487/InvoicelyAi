@@ -18,4 +18,7 @@ interface BusinessProfileDao {
 
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun insertOrUpdate(profile: BusinessProfile)
+
+    @Query("DELETE FROM business_profile")
+    suspend fun deleteAll()
 }
