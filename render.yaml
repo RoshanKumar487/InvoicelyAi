@@ -20,7 +20,7 @@ services:
       - key: DB_USER
         value: postgres
       - key: DB_PASSWORD
-        sync: false
+        value: Roshan96522@
       - key: JWT_SECRET
         generateValue: true
       - key: DEV_SECRET_KEY
