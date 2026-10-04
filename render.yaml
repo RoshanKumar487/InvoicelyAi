@@ -12,15 +12,15 @@ services:
       - key: PORT
         value: 10000
       - key: DB_HOST
-        value: db.pggsnzcbkqyzcpjmcmqj.supabase.co
+        value: aws-0-ap-south-1.pooler.supabase.com
       - key: DB_PORT
         value: 5432
       - key: DB_NAME
         value: postgres
       - key: DB_USER
-        value: postgres
+        value: postgres.pggsnzcbkqyzcpjmcmqj
       - key: DB_PASSWORD
-        sync: false
+        value: Roshan96522@
       - key: JWT_SECRET
         generateValue: true
       - key: DEV_SECRET_KEY
