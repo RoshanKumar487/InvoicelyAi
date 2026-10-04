@@ -9,6 +9,7 @@ import com.example.data.api.client.ApiClient
 import com.example.data.api.model.RegisterCompanyRequest
 import com.example.data.api.model.RegisterDeveloperRequest
 import com.example.data.api.model.RegisterEmployeeRequest
+import com.example.data.api.model.UserSummaryDto
 import com.example.data.local.AppDatabase
 import com.example.data.model.CompanyInfo
 import com.example.data.model.EmployeeJoinRequest
@@ -40,6 +41,7 @@ object AuthSessionManager {
     private const val KEY_USER_MOBILE = "user_mobile"
     private const val KEY_USER_ROLE = "user_role"
     private const val KEY_USER_STATUS = "user_status"
+    private const val KEY_USER_PERMISSIONS = "user_permissions"
 
     private const val KEY_COMPANY_ID = "company_id"
     private const val KEY_COMPANY_CODE = "company_code"
@@ -70,6 +72,9 @@ object AuthSessionManager {
 
     private val _allCompanies = MutableStateFlow<List<CompanyInfo>>(emptyList())
     val allCompanies: StateFlow<List<CompanyInfo>> = _allCompanies.asStateFlow()
+
+    private val _companyEmployees = MutableStateFlow<List<UserSummaryDto>>(emptyList())
+    val companyEmployees: StateFlow<List<UserSummaryDto>> = _companyEmployees.asStateFlow()
 
     private val _jwtToken = MutableStateFlow<String?>(null)
     val jwtToken: StateFlow<String?> = _jwtToken.asStateFlow()
@@ -128,6 +133,8 @@ object AuthSessionManager {
                 )
             } else null
 
+            val permissions = sharedPrefs.getString(KEY_USER_PERMISSIONS, "INVOICES,EXPENSES,CLIENTS,REPORTS") ?: "INVOICES,EXPENSES,CLIENTS,REPORTS"
+
             val user = UserAccount(
                 id = sharedPrefs.getLong(KEY_USER_ID, 0L),
                 fullName = sharedPrefs.getString(KEY_USER_FULL_NAME, "User") ?: "User",
@@ -137,7 +144,8 @@ object AuthSessionManager {
                 status = sharedPrefs.getString(KEY_USER_STATUS, "ACTIVE") ?: "ACTIVE",
                 companyId = company?.id,
                 companyName = company?.companyName,
-                companyCode = company?.companyCode
+                companyCode = company?.companyCode,
+                permissions = permissions
             )
 
             _currentUser.value = user
@@ -220,6 +228,41 @@ object AuthSessionManager {
         }
 
         val errorMsg = remoteResult.exceptionOrNull()?.message ?: "Login failed. Check your credentials."
+        return Result.failure(Exception(cleanErrorMessage(errorMsg)))
+    }
+
+    /**
+     * Resets / updates user password via POST /api/v1/auth/reset-password.
+     */
+    suspend fun resetPassword(identifier: String, newPassword: String): Result<UserAccount> {
+        if (identifier.isBlank()) return Result.failure(IllegalArgumentException("Email or mobile number is required"))
+        if (newPassword.length < 6) return Result.failure(IllegalArgumentException("Password must be at least 6 characters"))
+
+        val remoteResult = InvoicelyApiManager.resetPassword(identifier.trim(), newPassword)
+        if (remoteResult.isSuccess) {
+            val authResp = remoteResult.getOrNull()
+            if (authResp != null) {
+                val token = authResp.token ?: ""
+                _jwtToken.value = token
+                ApiClient.setAuthToken(token)
+
+                val compInfo = authResp.company?.toCompanyInfo()
+                val user = authResp.user?.toUserAccount(
+                    companyCode = compInfo?.companyCode,
+                    companyName = compInfo?.companyName
+                ) ?: return Result.failure(Exception("Password reset: Server did not return a valid user profile"))
+
+                _currentUser.value = user
+                _currentCompany.value = compInfo
+                _isLoggedIn.value = true
+
+                saveUserSession(token, user, compInfo)
+                fetchRemoteMetadata()
+                return Result.success(user)
+            }
+        }
+
+        val errorMsg = remoteResult.exceptionOrNull()?.message ?: "Password update failed. Please check your credentials."
         return Result.failure(Exception(cleanErrorMessage(errorMsg)))
     }
 
@@ -399,6 +442,17 @@ object AuthSessionManager {
                     }
                 }
 
+                // Fetch Employees if user is Admin or Developer
+                if (_currentUser.value?.role == UserRole.ADMIN || _currentUser.value?.role == UserRole.DEVELOPER) {
+                    val empRes = InvoicelyApiManager.getCompanyEmployees()
+                    if (empRes.isSuccess) {
+                        val emps = empRes.getOrNull()
+                        if (emps != null) {
+                            _companyEmployees.value = emps
+                        }
+                    }
+                }
+
                 // Fetch All Companies if user is Developer
                 if (_currentUser.value?.role == UserRole.DEVELOPER) {
                     val compRes = InvoicelyApiManager.getAllCompanies()
@@ -430,6 +484,7 @@ object AuthSessionManager {
         }
         authScope.launch {
             InvoicelyApiManager.processJoinRequest(requestId, "APPROVE")
+            fetchRemoteMetadata()
         }
     }
 
@@ -442,9 +497,24 @@ object AuthSessionManager {
         }
     }
 
-    fun switchCompanyForDeveloper(company: CompanyInfo) {
+    fun switchCompanyForDeveloper(company: CompanyInfo?) {
         if (_currentUser.value?.role == UserRole.DEVELOPER) {
             _currentCompany.value = company
+        }
+    }
+
+    fun updateEmployeePermissions(employeeId: Long, permissions: String, onResult: (Boolean, String) -> Unit) {
+        authScope.launch {
+            val res = InvoicelyApiManager.updateEmployeePermissions(employeeId, permissions)
+            if (res.isSuccess) {
+                _companyEmployees.value = _companyEmployees.value.map { emp ->
+                    if (emp.id == employeeId) emp.copy(permissions = permissions) else emp
+                }
+                onResult(true, "Permissions updated successfully")
+            } else {
+                val err = res.exceptionOrNull()?.message ?: "Failed to update permissions"
+                onResult(false, err)
+            }
         }
     }
 
@@ -474,6 +544,7 @@ object AuthSessionManager {
         _currentCompany.value = null
         _jwtToken.value = null
         _joinRequests.value = emptyList()
+        _companyEmployees.value = emptyList()
         ApiClient.setAuthToken(null)
         ApiConfig.resetToDefaultCloudUrl()
         ApiConfig.clearSyncError()
@@ -498,6 +569,7 @@ object AuthSessionManager {
             putString(KEY_USER_MOBILE, user.mobile)
             putString(KEY_USER_ROLE, user.role.name)
             putString(KEY_USER_STATUS, user.status)
+            putString(KEY_USER_PERMISSIONS, user.permissions)
 
             if (company != null) {
                 putLong(KEY_COMPANY_ID, company.id)

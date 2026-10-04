@@ -1,6 +1,8 @@
 package com.invoicely.backend.model;
 
 import jakarta.persistence.*;
+import org.hibernate.annotations.JdbcTypeCode;
+import org.hibernate.type.SqlTypes;
 import java.math.BigDecimal;
 
 @Entity
@@ -13,6 +15,12 @@ public class Invoice {
 
     @Column(name = "company_id")
     private Long companyId;
+
+    @Column(name = "created_by_user_id")
+    private Long createdByUserId;
+
+    @Column(name = "created_by_user_name")
+    private String createdByUserName = "";
 
     @Column(name = "invoice_number", nullable = false, unique = true)
     private String invoiceNumber;
@@ -56,6 +64,7 @@ public class Invoice {
     @Column(name = "currency_symbol")
     private String currencySymbol = "$";
 
+    @JdbcTypeCode(SqlTypes.JSON)
     @Column(name = "items_json", columnDefinition = "JSONB")
     private String itemsJson = "[]";
 
@@ -113,9 +122,11 @@ public class Invoice {
     @Column(name = "reminder_last_sent")
     private Long reminderLastSent;
 
+    @JdbcTypeCode(SqlTypes.JSON)
     @Column(name = "shipping_details_json", columnDefinition = "JSONB")
     private String shippingDetailsJson = "{}";
 
+    @JdbcTypeCode(SqlTypes.JSON)
     @Column(name = "custom_fields_json", columnDefinition = "JSONB")
     private String customFieldsJson = "{}";
 
@@ -244,4 +255,10 @@ public class Invoice {
 
     public Long getCompanyId() { return companyId; }
     public void setCompanyId(Long companyId) { this.companyId = companyId; }
+
+    public Long getCreatedByUserId() { return createdByUserId; }
+    public void setCreatedByUserId(Long createdByUserId) { this.createdByUserId = createdByUserId; }
+
+    public String getCreatedByUserName() { return createdByUserName; }
+    public void setCreatedByUserName(String createdByUserName) { this.createdByUserName = createdByUserName; }
 }

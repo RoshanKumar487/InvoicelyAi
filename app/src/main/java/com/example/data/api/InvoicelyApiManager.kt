@@ -165,6 +165,21 @@ object InvoicelyApiManager {
         return result
     }
 
+    suspend fun resetPassword(identifier: String, newPassword: String): Result<AuthResponseDto> {
+        val result = safeApiCall("resetPassword") {
+            ApiClient.getService().resetPassword(
+                com.example.data.api.model.ResetPasswordRequest(
+                    identifier = identifier.trim(),
+                    newPassword = newPassword.trim()
+                )
+            )
+        }
+        result.onSuccess { auth ->
+            auth.token?.let { ApiClient.setAuthToken(it) }
+        }
+        return result
+    }
+
     suspend fun registerCompany(request: RegisterCompanyRequest): Result<AuthResponseDto> {
         val result = safeApiCall("registerCompany") {
             ApiClient.getService().registerCompany(request)
@@ -201,9 +216,15 @@ object InvoicelyApiManager {
     // DASHBOARD APIS
     // =========================================================================
 
-    suspend fun getDashboardStats(): Result<DashboardStatsResponse> {
+    suspend fun getDashboardStats(companyId: Long? = null): Result<DashboardStatsResponse> {
         return safeApiCall("getDashboardStats") {
-            ApiClient.getService().getDashboardStats()
+            ApiClient.getService().getDashboardStats(companyId)
+        }
+    }
+
+    suspend fun getDeveloperOverview(): Result<com.example.data.api.model.DeveloperOverviewDto> {
+        return safeApiCall("getDeveloperOverview") {
+            ApiClient.getService().getDeveloperOverview()
         }
     }
 
@@ -245,9 +266,9 @@ object InvoicelyApiManager {
     // EXPENSES APIS
     // =========================================================================
 
-    suspend fun getAllExpenses(category: String? = null): Result<List<BackendExpenseDto>> {
+    suspend fun getAllExpenses(category: String? = null, companyId: Long? = null): Result<List<BackendExpenseDto>> {
         return safeApiCall("getAllExpenses") {
-            ApiClient.getService().getAllExpenses(category)
+            ApiClient.getService().getAllExpenses(category, companyId)
         }
     }
 
@@ -279,9 +300,9 @@ object InvoicelyApiManager {
     // INVOICES APIS
     // =========================================================================
 
-    suspend fun getAllInvoices(status: String? = null, clientId: Long? = null): Result<List<BackendInvoiceDto>> {
+    suspend fun getAllInvoices(status: String? = null, clientId: Long? = null, companyId: Long? = null): Result<List<BackendInvoiceDto>> {
         return safeApiCall("getAllInvoices") {
-            ApiClient.getService().getAllInvoices(status, clientId)
+            ApiClient.getService().getAllInvoices(status, clientId, companyId)
         }
     }
 
@@ -349,6 +370,12 @@ object InvoicelyApiManager {
         }
     }
 
+    suspend fun updateEmployeePermissions(id: Long, permissions: String): Result<UserSummaryDto> {
+        return safeApiCall("updateEmployeePermissions") {
+            ApiClient.getService().updateEmployeePermissions(id, com.example.data.api.model.UpdateEmployeePermissionsRequest(permissions))
+        }
+    }
+
     suspend fun getAllCompanies(): Result<List<CompanySummaryDto>> {
         return safeApiCall("getAllCompanies") {
             ApiClient.getService().getAllCompanies()
@@ -379,10 +406,11 @@ object InvoicelyApiManager {
         invoiceRepository: InvoiceRepository,
         clientRepository: ClientRepository,
         expenseRepository: ExpenseRepository,
-        businessRepository: BusinessRepository
+        businessRepository: BusinessRepository,
+        companyId: Long? = null
     ): Result<String> = withContext(Dispatchers.IO) {
         if (!com.example.data.repository.AuthSessionManager.isLoggedIn.value || ApiClient.getAuthToken().isNullOrBlank()) {
-            return@withContext Result.failure(Exception("Authentication required. Please sign in to sync with cloud backend."))
+            return@withContext Result.failure(Exception("Authentication required. Please sign in to access cloud data."))
         }
 
         ApiConfig.setSyncing(true)
@@ -429,7 +457,7 @@ object InvoicelyApiManager {
             }
 
             // 3. Sync Expenses (Real Backend Storage)
-            val remoteExpensesRes = getAllExpenses()
+            val remoteExpensesRes = getAllExpenses(companyId = companyId)
             if (remoteExpensesRes.isSuccess) {
                 val remoteExpenses = remoteExpensesRes.getOrNull() ?: emptyList()
                 val localExpenses = expenseRepository.allExpenses.firstOrNull() ?: emptyList()
@@ -454,7 +482,7 @@ object InvoicelyApiManager {
             }
 
             // 4. Sync Invoices (Real Backend Storage)
-            val remoteInvoicesRes = getAllInvoices()
+            val remoteInvoicesRes = getAllInvoices(companyId = companyId)
             if (remoteInvoicesRes.isSuccess) {
                 val remoteInvoices = remoteInvoicesRes.getOrNull() ?: emptyList()
                 val localInvoices = invoiceRepository.allInvoices.firstOrNull() ?: emptyList()

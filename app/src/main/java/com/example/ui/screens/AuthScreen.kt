@@ -50,6 +50,7 @@ import androidx.compose.material.icons.filled.Security
 import androidx.compose.material.icons.filled.Visibility
 import androidx.compose.material.icons.filled.VisibilityOff
 import androidx.compose.material.icons.filled.Warning
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.CircularProgressIndicator
@@ -129,8 +130,8 @@ fun AuthScreen(
     var loginPassword by remember { mutableStateOf("") }
     var loginPasswordVisible by remember { mutableStateOf(false) }
 
-    // Sign Up State Fields
-    var regRoleMode by remember { mutableIntStateOf(0) } // 0 = Company Admin, 1 = Employee Join, 2 = Developer
+    // Sign Up State Fields (0 = Company Admin, 1 = Employee Join)
+    var regRoleMode by remember { mutableIntStateOf(0) }
     var regFullName by remember { mutableStateOf("") }
     var regEmail by remember { mutableStateOf("") }
     var regMobile by remember { mutableStateOf("") }
@@ -143,12 +144,20 @@ fun AuthScreen(
     var regLocation by remember { mutableStateOf("") }
     var regCompanyDetails by remember { mutableStateOf("") }
 
-    // Employee Specific (Role = Employee)
+    // Employee Specific (Role = Employee Join)
     var regCompanyCode by remember { mutableStateOf("") }
     var regRequestMessage by remember { mutableStateOf("") }
 
-    // Developer Specific (Role = Developer)
-    var regDeveloperKey by remember { mutableStateOf("invoicely_dev_secret_2026") }
+    // Forgot / Reset Password State
+    var showForgotPasswordDialog by remember { mutableStateOf(false) }
+    var forgotIdentifier by remember { mutableStateOf("") }
+    var forgotNewPassword by remember { mutableStateOf("") }
+    var forgotConfirmPassword by remember { mutableStateOf("") }
+    var forgotPasswordVisible by remember { mutableStateOf(false) }
+    var forgotConfirmVisible by remember { mutableStateOf(false) }
+    var forgotErrorMessage by remember { mutableStateOf<String?>(null) }
+    var forgotSuccessMessage by remember { mutableStateOf<String?>(null) }
+    var isForgotSubmitting by remember { mutableStateOf(false) }
 
     AmbientGlassBackdrop {
         Box(
@@ -472,6 +481,30 @@ fun AuthScreen(
                                     )
                                 )
 
+                                // Forgot Password Link
+                                Row(
+                                    modifier = Modifier.fillMaxWidth(),
+                                    horizontalArrangement = Arrangement.End
+                                ) {
+                                    Text(
+                                        text = "Forgot Password?",
+                                        fontSize = 12.sp,
+                                        fontWeight = FontWeight.SemiBold,
+                                        color = Color(0xFF2563EB),
+                                        modifier = Modifier
+                                            .clickable {
+                                                forgotIdentifier = loginIdentifier
+                                                forgotNewPassword = ""
+                                                forgotConfirmPassword = ""
+                                                forgotErrorMessage = null
+                                                forgotSuccessMessage = null
+                                                showForgotPasswordDialog = true
+                                            }
+                                            .padding(vertical = 2.dp)
+                                            .testTag("btn_forgot_password")
+                                    )
+                                }
+
                                 // Sign In Submit Button
                                 Button(
                                     onClick = {
@@ -569,7 +602,7 @@ fun AuthScreen(
                                     )
                                 }
 
-                                // Role Mode Segmented Selector (Admin, Employee, Developer)
+                                // Role Mode Segmented Selector (Admin, Employee)
                                 Row(
                                     modifier = Modifier
                                         .fillMaxWidth()
@@ -587,12 +620,12 @@ fun AuthScreen(
                                             .clickable { regRoleMode = 0; errorMessage = null }
                                     ) {
                                         Text(
-                                            text = "🏢 Company",
-                                            fontSize = 11.sp,
+                                            text = "🏢 Company Admin",
+                                            fontSize = 12.sp,
                                             fontWeight = if (regRoleMode == 0) FontWeight.Bold else FontWeight.Medium,
                                             color = if (regRoleMode == 0) Color.White else Color(0xFF64748B),
                                             textAlign = TextAlign.Center,
-                                            modifier = Modifier.padding(vertical = 8.dp)
+                                            modifier = Modifier.padding(vertical = 10.dp)
                                         )
                                     }
 
@@ -606,29 +639,11 @@ fun AuthScreen(
                                     ) {
                                         Text(
                                             text = "👥 Team Join",
-                                            fontSize = 11.sp,
+                                            fontSize = 12.sp,
                                             fontWeight = if (regRoleMode == 1) FontWeight.Bold else FontWeight.Medium,
                                             color = if (regRoleMode == 1) Color.White else Color(0xFF64748B),
                                             textAlign = TextAlign.Center,
-                                            modifier = Modifier.padding(vertical = 8.dp)
-                                        )
-                                    }
-
-                                    // 3. Platform Developer
-                                    Surface(
-                                        shape = RoundedCornerShape(10.dp),
-                                        color = if (regRoleMode == 2) Color(0xFF7C3AED) else Color.Transparent,
-                                        modifier = Modifier
-                                            .weight(1f)
-                                            .clickable { regRoleMode = 2; errorMessage = null }
-                                    ) {
-                                        Text(
-                                            text = "⚡ Developer",
-                                            fontSize = 11.sp,
-                                            fontWeight = if (regRoleMode == 2) FontWeight.Bold else FontWeight.Medium,
-                                            color = if (regRoleMode == 2) Color.White else Color(0xFF64748B),
-                                            textAlign = TextAlign.Center,
-                                            modifier = Modifier.padding(vertical = 8.dp)
+                                            modifier = Modifier.padding(vertical = 10.dp)
                                         )
                                     }
                                 }
@@ -799,27 +814,6 @@ fun AuthScreen(
                                             }
                                         }
                                     }
-                                    2 -> {
-                                        // =====================================
-                                        // ROLE: PLATFORM DEVELOPER
-                                        // =====================================
-                                        Text(
-                                            text = "Developer Authentication",
-                                            fontSize = 13.sp,
-                                            fontWeight = FontWeight.Bold,
-                                            color = Color(0xFF7C3AED)
-                                        )
-
-                                        OutlinedTextField(
-                                            value = regDeveloperKey,
-                                            onValueChange = { regDeveloperKey = it; errorMessage = null },
-                                            label = { Text("Developer Master Secret Key *") },
-                                            leadingIcon = { Icon(Icons.Default.Key, contentDescription = null, tint = Color(0xFF64748B)) },
-                                            singleLine = true,
-                                            shape = RoundedCornerShape(12.dp),
-                                            modifier = Modifier.fillMaxWidth().testTag("field_reg_dev_key")
-                                        )
-                                    }
                                 }
 
                                 // Sign Up Submit Button
@@ -851,7 +845,7 @@ fun AuthScreen(
                                                         errorMessage = res.exceptionOrNull()?.message ?: "Registration failed"
                                                     }
                                                 }
-                                                1 -> {
+                                                else -> {
                                                     // Submit Employee Join Request
                                                     val res = AuthSessionManager.registerEmployee(
                                                         fullName = regFullName,
@@ -868,34 +862,13 @@ fun AuthScreen(
                                                         errorMessage = res.exceptionOrNull()?.message ?: "Failed to submit join request"
                                                     }
                                                 }
-                                                2 -> {
-                                                    // Register Developer
-                                                    val res = AuthSessionManager.registerDeveloper(
-                                                        fullName = regFullName,
-                                                        email = regEmail,
-                                                        mobile = regMobile,
-                                                        password = regPassword,
-                                                        developerSecretKey = regDeveloperKey
-                                                    )
-                                                    isSubmitting = false
-                                                    if (res.isSuccess) {
-                                                        Toast.makeText(context, "Platform Developer account created!", Toast.LENGTH_SHORT).show()
-                                                        onLoginSuccess()
-                                                    } else {
-                                                        errorMessage = res.exceptionOrNull()?.message ?: "Developer registration failed"
-                                                    }
-                                                }
                                             }
                                         }
                                     },
                                     enabled = !isSubmitting,
                                     shape = RoundedCornerShape(14.dp),
                                     colors = ButtonDefaults.buttonColors(
-                                        containerColor = when (regRoleMode) {
-                                            1 -> Color(0xFF059669)
-                                            2 -> Color(0xFF7C3AED)
-                                            else -> Color(0xFF1D4ED8)
-                                        }
+                                        containerColor = if (regRoleMode == 1) Color(0xFF059669) else Color(0xFF1D4ED8)
                                     ),
                                     modifier = Modifier
                                         .fillMaxWidth()
@@ -907,11 +880,7 @@ fun AuthScreen(
                                         Spacer(modifier = Modifier.width(10.dp))
                                         Text("Registering in PostgreSQL...", fontSize = 14.sp, fontWeight = FontWeight.Bold)
                                     } else {
-                                        val btnLabel = when (regRoleMode) {
-                                            1 -> "Submit Employee Join Request"
-                                            2 -> "Activate Developer Access"
-                                            else -> "Register Organization & Admin"
-                                        }
+                                        val btnLabel = if (regRoleMode == 1) "Submit Employee Join Request" else "Register Organization & Admin"
                                         Text(btnLabel, fontSize = 14.sp, fontWeight = FontWeight.Bold)
                                     }
                                 }
@@ -940,6 +909,186 @@ fun AuthScreen(
                     }
                 }
             }
+        }
+
+        // =====================================================================
+        // FORGOT / RESET PASSWORD MODAL DIALOG
+        // =====================================================================
+        if (showForgotPasswordDialog) {
+            AlertDialog(
+                onDismissRequest = {
+                    if (!isForgotSubmitting) {
+                        showForgotPasswordDialog = false
+                        forgotErrorMessage = null
+                        forgotSuccessMessage = null
+                    }
+                },
+                title = {
+                    Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        Box(
+                            modifier = Modifier
+                                .size(36.dp)
+                                .clip(CircleShape)
+                                .background(Color(0xFFDBEAFE)),
+                            contentAlignment = Alignment.Center
+                        ) {
+                            Icon(Icons.Default.Lock, contentDescription = null, tint = Color(0xFF1D4ED8), modifier = Modifier.size(20.dp))
+                        }
+                        Column {
+                            Text("Reset Password", fontSize = 17.sp, fontWeight = FontWeight.Bold, color = if (isDark) Color.White else PrimaryNavy)
+                            Text("Update your account credentials", fontSize = 11.sp, color = Color(0xFF64748B))
+                        }
+                    }
+                },
+                text = {
+                    Column(
+                        modifier = Modifier.fillMaxWidth(),
+                        verticalArrangement = Arrangement.spacedBy(10.dp)
+                    ) {
+                        Text(
+                            text = "Enter your registered email address or mobile number, then set your new password.",
+                            fontSize = 12.sp,
+                            color = if (isDark) Color(0xFFCBD5E1) else Color(0xFF475569)
+                        )
+
+                        OutlinedTextField(
+                            value = forgotIdentifier,
+                            onValueChange = { forgotIdentifier = it; forgotErrorMessage = null },
+                            label = { Text("Email or Mobile Number *") },
+                            placeholder = { Text("you@company.com") },
+                            singleLine = true,
+                            leadingIcon = { Icon(Icons.Default.AccountCircle, contentDescription = null, tint = Color(0xFF64748B)) },
+                            modifier = Modifier.fillMaxWidth().testTag("field_forgot_identifier"),
+                            shape = RoundedCornerShape(10.dp)
+                        )
+
+                        OutlinedTextField(
+                            value = forgotNewPassword,
+                            onValueChange = { forgotNewPassword = it; forgotErrorMessage = null },
+                            label = { Text("New Password (min 6 chars) *") },
+                            leadingIcon = { Icon(Icons.Default.Lock, contentDescription = null, tint = Color(0xFF64748B)) },
+                            trailingIcon = {
+                                IconButton(onClick = { forgotPasswordVisible = !forgotPasswordVisible }) {
+                                    Icon(
+                                        imageVector = if (forgotPasswordVisible) Icons.Default.VisibilityOff else Icons.Default.Visibility,
+                                        contentDescription = null,
+                                        tint = Color(0xFF64748B)
+                                    )
+                                }
+                            },
+                            visualTransformation = if (forgotPasswordVisible) VisualTransformation.None else PasswordVisualTransformation(),
+                            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Password),
+                            singleLine = true,
+                            modifier = Modifier.fillMaxWidth().testTag("field_forgot_new_pass"),
+                            shape = RoundedCornerShape(10.dp)
+                        )
+
+                        OutlinedTextField(
+                            value = forgotConfirmPassword,
+                            onValueChange = { forgotConfirmPassword = it; forgotErrorMessage = null },
+                            label = { Text("Confirm New Password *") },
+                            leadingIcon = { Icon(Icons.Default.Lock, contentDescription = null, tint = Color(0xFF64748B)) },
+                            trailingIcon = {
+                                IconButton(onClick = { forgotConfirmVisible = !forgotConfirmVisible }) {
+                                    Icon(
+                                        imageVector = if (forgotConfirmVisible) Icons.Default.VisibilityOff else Icons.Default.Visibility,
+                                        contentDescription = null,
+                                        tint = Color(0xFF64748B)
+                                    )
+                                }
+                            },
+                            visualTransformation = if (forgotConfirmVisible) VisualTransformation.None else PasswordVisualTransformation(),
+                            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Password),
+                            singleLine = true,
+                            modifier = Modifier.fillMaxWidth().testTag("field_forgot_confirm_pass"),
+                            shape = RoundedCornerShape(10.dp)
+                        )
+
+                        if (forgotErrorMessage != null) {
+                            Surface(
+                                color = Color(0xFFFEE2E2),
+                                shape = RoundedCornerShape(8.dp),
+                                modifier = Modifier.fillMaxWidth()
+                            ) {
+                                Row(modifier = Modifier.padding(8.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                                    Icon(Icons.Default.Warning, contentDescription = null, tint = Color(0xFFDC2626), modifier = Modifier.size(16.dp))
+                                    Text(forgotErrorMessage ?: "", color = Color(0xFFDC2626), fontSize = 11.sp)
+                                }
+                            }
+                        }
+
+                        if (forgotSuccessMessage != null) {
+                            Surface(
+                                color = Color(0xFFD1FAE5),
+                                shape = RoundedCornerShape(8.dp),
+                                modifier = Modifier.fillMaxWidth()
+                            ) {
+                                Row(modifier = Modifier.padding(8.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                                    Icon(Icons.Default.CheckCircle, contentDescription = null, tint = Color(0xFF059669), modifier = Modifier.size(16.dp))
+                                    Text(forgotSuccessMessage ?: "", color = Color(0xFF047857), fontSize = 11.sp, fontWeight = FontWeight.Bold)
+                                }
+                            }
+                        }
+                    }
+                },
+                confirmButton = {
+                    Button(
+                        onClick = {
+                            if (forgotIdentifier.isBlank()) {
+                                forgotErrorMessage = "Please enter your email or mobile number"
+                                return@Button
+                            }
+                            if (forgotNewPassword.length < 6) {
+                                forgotErrorMessage = "Password must be at least 6 characters"
+                                return@Button
+                            }
+                            if (forgotNewPassword != forgotConfirmPassword) {
+                                forgotErrorMessage = "Passwords do not match"
+                                return@Button
+                            }
+                            coroutineScope.launch {
+                                isForgotSubmitting = true
+                                forgotErrorMessage = null
+                                forgotSuccessMessage = null
+                                val res = AuthSessionManager.resetPassword(forgotIdentifier, forgotNewPassword)
+                                isForgotSubmitting = false
+                                if (res.isSuccess) {
+                                    forgotSuccessMessage = "Password updated successfully!"
+                                    Toast.makeText(context, "Password updated successfully!", Toast.LENGTH_SHORT).show()
+                                    kotlinx.coroutines.delay(1200)
+                                    showForgotPasswordDialog = false
+                                    loginIdentifier = forgotIdentifier
+                                    loginPassword = forgotNewPassword
+                                    onLoginSuccess()
+                                } else {
+                                    forgotErrorMessage = res.exceptionOrNull()?.message ?: "Failed to reset password"
+                                }
+                            }
+                        },
+                        enabled = !isForgotSubmitting,
+                        colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF1D4ED8)),
+                        shape = RoundedCornerShape(8.dp),
+                        modifier = Modifier.testTag("btn_submit_forgot_password")
+                    ) {
+                        if (isForgotSubmitting) {
+                            CircularProgressIndicator(modifier = Modifier.size(16.dp), color = Color.White, strokeWidth = 2.dp)
+                            Spacer(modifier = Modifier.width(6.dp))
+                            Text("Updating...", fontSize = 12.sp)
+                        } else {
+                            Text("Update Password & Sign In", fontSize = 12.sp, fontWeight = FontWeight.Bold)
+                        }
+                    }
+                },
+                dismissButton = {
+                    OutlinedButton(
+                        onClick = { showForgotPasswordDialog = false },
+                        enabled = !isForgotSubmitting,
+                        shape = RoundedCornerShape(8.dp)
+                    ) {
+                        Text("Cancel", fontSize = 12.sp)
+                    }
+                }
+            )
         }
     }
 }

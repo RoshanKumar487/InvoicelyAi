@@ -48,4 +48,21 @@ public interface InvoiceRepository extends JpaRepository<Invoice, Long> {
 
     @Query("SELECT COALESCE(SUM(i.discountAmount), 0) FROM Invoice i WHERE i.companyId = :companyId")
     BigDecimal sumTotalDiscountByCompanyId(@org.springframework.data.repository.query.Param("companyId") Long companyId);
+
+    // Staff-scoped queries (mapped by companyId and createdByUserId)
+    List<Invoice> findByCompanyIdAndCreatedByUserIdOrderByCreatedAtDesc(Long companyId, Long createdByUserId);
+
+    List<Invoice> findByCompanyIdAndCreatedByUserIdAndStatusIgnoreCaseOrderByCreatedAtDesc(Long companyId, Long createdByUserId, String status);
+
+    List<Invoice> findByCompanyIdAndCreatedByUserIdAndClientIdOrderByCreatedAtDesc(Long companyId, Long createdByUserId, Long clientId);
+
+    Optional<Invoice> findByIdAndCompanyIdAndCreatedByUserId(Long id, Long companyId, Long createdByUserId);
+
+    long countByCompanyIdAndCreatedByUserId(Long companyId, Long createdByUserId);
+
+    long countByCompanyIdAndCreatedByUserIdAndStatusIgnoreCase(Long companyId, Long createdByUserId, String status);
+
+    @Query("SELECT COALESCE(SUM(i.amountPaid), 0) FROM Invoice i WHERE i.companyId = :companyId AND i.createdByUserId = :createdByUserId")
+    BigDecimal sumTotalRevenueByCompanyIdAndCreatedByUserId(@org.springframework.data.repository.query.Param("companyId") Long companyId,
+                                                             @org.springframework.data.repository.query.Param("createdByUserId") Long createdByUserId);
 }

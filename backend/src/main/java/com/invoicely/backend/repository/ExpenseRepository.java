@@ -35,4 +35,17 @@ public interface ExpenseRepository extends JpaRepository<Expense, Long> {
 
     @Query("SELECT COALESCE(SUM(e.taxAmount), 0) FROM Expense e WHERE e.companyId = :companyId AND e.taxDeductible = true")
     BigDecimal sumTotalTaxDeductibleByCompanyId(@org.springframework.data.repository.query.Param("companyId") Long companyId);
+
+    // Staff-scoped queries (mapped by companyId and createdByUserId)
+    List<Expense> findByCompanyIdAndCreatedByUserIdOrderByCreatedAtDesc(Long companyId, Long createdByUserId);
+
+    List<Expense> findByCompanyIdAndCreatedByUserIdAndCategoryIgnoreCaseOrderByCreatedAtDesc(Long companyId, Long createdByUserId, String category);
+
+    java.util.Optional<Expense> findByIdAndCompanyIdAndCreatedByUserId(Long id, Long companyId, Long createdByUserId);
+
+    long countByCompanyIdAndCreatedByUserId(Long companyId, Long createdByUserId);
+
+    @Query("SELECT COALESCE(SUM(e.amount), 0) FROM Expense e WHERE e.companyId = :companyId AND e.createdByUserId = :createdByUserId")
+    BigDecimal sumTotalExpensesByCompanyIdAndCreatedByUserId(@org.springframework.data.repository.query.Param("companyId") Long companyId,
+                                                             @org.springframework.data.repository.query.Param("createdByUserId") Long createdByUserId);
 }

@@ -174,12 +174,17 @@ CREATE TABLE IF NOT EXISTS business_profile (
 -- ===================================================================
 -- Safe Migrations for Existing Tables (in case tables already exist)
 -- ===================================================================
+ALTER TABLE users ADD COLUMN IF NOT EXISTS permissions VARCHAR(500) DEFAULT 'INVOICES,EXPENSES,CLIENTS,REPORTS';
 ALTER TABLE clients ADD COLUMN IF NOT EXISTS company_id BIGINT REFERENCES companies(id) ON DELETE CASCADE;
 ALTER TABLE invoices ADD COLUMN IF NOT EXISTS company_id BIGINT REFERENCES companies(id) ON DELETE CASCADE;
+ALTER TABLE invoices ADD COLUMN IF NOT EXISTS created_by_user_id BIGINT REFERENCES users(id) ON DELETE SET NULL;
+ALTER TABLE invoices ADD COLUMN IF NOT EXISTS created_by_user_name VARCHAR(255) DEFAULT '';
 ALTER TABLE invoices ADD COLUMN IF NOT EXISTS shipping_details_json JSONB DEFAULT '{}'::jsonb;
 ALTER TABLE invoices ADD COLUMN IF NOT EXISTS custom_fields_json JSONB DEFAULT '{}'::jsonb;
 ALTER TABLE invoices ADD COLUMN IF NOT EXISTS item_columns_json TEXT DEFAULT '';
 ALTER TABLE expenses ADD COLUMN IF NOT EXISTS company_id BIGINT REFERENCES companies(id) ON DELETE CASCADE;
+ALTER TABLE expenses ADD COLUMN IF NOT EXISTS created_by_user_id BIGINT REFERENCES users(id) ON DELETE SET NULL;
+ALTER TABLE expenses ADD COLUMN IF NOT EXISTS created_by_user_name VARCHAR(255) DEFAULT '';
 ALTER TABLE business_profile ADD COLUMN IF NOT EXISTS company_id BIGINT REFERENCES companies(id) ON DELETE CASCADE;
 
 -- ===================================================================
@@ -195,8 +200,10 @@ CREATE INDEX IF NOT EXISTS idx_join_requests_company ON company_join_requests(co
 CREATE INDEX IF NOT EXISTS idx_join_requests_user ON company_join_requests(user_id);
 CREATE INDEX IF NOT EXISTS idx_clients_company ON clients(company_id);
 CREATE INDEX IF NOT EXISTS idx_invoices_company ON invoices(company_id);
+CREATE INDEX IF NOT EXISTS idx_invoices_user ON invoices(company_id, created_by_user_id);
 CREATE INDEX IF NOT EXISTS idx_invoices_status ON invoices(status);
 CREATE INDEX IF NOT EXISTS idx_invoices_client ON invoices(client_id);
 CREATE INDEX IF NOT EXISTS idx_expenses_company ON expenses(company_id);
+CREATE INDEX IF NOT EXISTS idx_expenses_user ON expenses(company_id, created_by_user_id);
 CREATE INDEX IF NOT EXISTS idx_expenses_category ON expenses(category);
 CREATE INDEX IF NOT EXISTS idx_business_profile_company ON business_profile(company_id);

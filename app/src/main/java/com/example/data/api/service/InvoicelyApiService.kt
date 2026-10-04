@@ -54,6 +54,11 @@ interface InvoicelyApiService {
         @Body request: LoginRequest
     ): Response<ApiResponse<AuthResponseDto>>
 
+    @POST("api/v1/auth/reset-password")
+    suspend fun resetPassword(
+        @Body request: com.example.data.api.model.ResetPasswordRequest
+    ): Response<ApiResponse<AuthResponseDto>>
+
     @GET("api/v1/auth/me")
     suspend fun getMe(): Response<ApiResponse<AuthResponseDto>>
 
@@ -65,7 +70,12 @@ interface InvoicelyApiService {
     // =========================================================================
 
     @GET("api/v1/dashboard/stats")
-    suspend fun getDashboardStats(): Response<ApiResponse<DashboardStatsResponse>>
+    suspend fun getDashboardStats(
+        @Query("companyId") companyId: Long? = null
+    ): Response<ApiResponse<DashboardStatsResponse>>
+
+    @GET("api/v1/dashboard/developer-overview")
+    suspend fun getDeveloperOverview(): Response<ApiResponse<com.example.data.api.model.DeveloperOverviewDto>>
 
     // =========================================================================
     // CLIENTS
@@ -103,7 +113,8 @@ interface InvoicelyApiService {
 
     @GET("api/v1/expenses")
     suspend fun getAllExpenses(
-        @Query("category") category: String? = null
+        @Query("category") category: String? = null,
+        @Query("companyId") companyId: Long? = null
     ): Response<ApiResponse<List<BackendExpenseDto>>>
 
     @GET("api/v1/expenses/{id}")
@@ -134,7 +145,8 @@ interface InvoicelyApiService {
     @GET("api/v1/invoices")
     suspend fun getAllInvoices(
         @Query("status") status: String? = null,
-        @Query("clientId") clientId: Long? = null
+        @Query("clientId") clientId: Long? = null,
+        @Query("companyId") companyId: Long? = null
     ): Response<ApiResponse<List<BackendInvoiceDto>>>
 
     @GET("api/v1/invoices/{id}")
@@ -189,6 +201,12 @@ interface InvoicelyApiService {
 
     @GET("api/v1/companies/employees")
     suspend fun getCompanyEmployees(): Response<ApiResponse<List<UserSummaryDto>>>
+
+    @PUT("api/v1/companies/employees/{id}/permissions")
+    suspend fun updateEmployeePermissions(
+        @Path("id") id: Long,
+        @Body request: com.example.data.api.model.UpdateEmployeePermissionsRequest
+    ): Response<ApiResponse<UserSummaryDto>>
 
     @GET("api/v1/companies/all")
     suspend fun getAllCompanies(): Response<ApiResponse<List<CompanySummaryDto>>>

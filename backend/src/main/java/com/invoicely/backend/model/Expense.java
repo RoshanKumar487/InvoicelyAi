@@ -15,6 +15,12 @@ public class Expense {
     @Column(name = "company_id")
     private Long companyId;
 
+    @Column(name = "created_by_user_id")
+    private Long createdByUserId;
+
+    @Column(name = "created_by_user_name")
+    private String createdByUserName = "";
+
     @Column(nullable = false)
     private String title;
 
@@ -96,4 +102,10 @@ public class Expense {
 
     public Long getCompanyId() { return companyId; }
     public void setCompanyId(Long companyId) { this.companyId = companyId; }
+
+    public Long getCreatedByUserId() { return createdByUserId; }
+    public void setCreatedByUserId(Long createdByUserId) { this.createdByUserId = createdByUserId; }
+
+    public String getCreatedByUserName() { return createdByUserName; }
+    public void setCreatedByUserName(String createdByUserName) { this.createdByUserName = createdByUserName; }
 }

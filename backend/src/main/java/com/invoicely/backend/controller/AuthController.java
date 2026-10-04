@@ -50,6 +50,13 @@ public class AuthController {
         return ResponseEntity.ok(ApiResponse.ok("Login successful", response));
     }
 
+    @PostMapping("/reset-password")
+    @Operation(summary = "Reset or update user password by email or mobile identifier")
+    public ResponseEntity<ApiResponse<AuthResponse>> resetPassword(@Valid @RequestBody ResetPasswordRequest request) {
+        AuthResponse response = authService.resetPassword(request);
+        return ResponseEntity.ok(ApiResponse.ok("Password updated successfully", response));
+    }
+
     @GetMapping("/me")
     @Operation(summary = "Get current authenticated user profile and assigned company details")
     public ResponseEntity<ApiResponse<AuthResponse>> getMe(@AuthenticationPrincipal UserPrincipal principal) {

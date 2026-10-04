@@ -64,6 +64,17 @@ public class CompanyController {
         return ResponseEntity.ok(ApiResponse.ok(employees));
     }
 
+    @PutMapping("/employees/{id}/permissions")
+    @PreAuthorize("hasAnyRole('ADMIN', 'DEVELOPER')")
+    @Operation(summary = "Update employee tool permissions / feature access (Admin / Developer)")
+    public ResponseEntity<ApiResponse<UserSummaryDto>> updateEmployeePermissions(
+            @PathVariable Long id,
+            @Valid @RequestBody com.invoicely.backend.dto.UpdateEmployeePermissionsRequest request,
+            @AuthenticationPrincipal UserPrincipal principal) {
+        UserSummaryDto updated = companyService.updateEmployeePermissions(id, request.getPermissions(), principal);
+        return ResponseEntity.ok(ApiResponse.ok("Employee tool access updated successfully", updated));
+    }
+
     @GetMapping("/all")
     @PreAuthorize("hasRole('DEVELOPER')")
     @Operation(summary = "Get all registered companies across the platform (Developer only)")

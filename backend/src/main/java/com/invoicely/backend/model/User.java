@@ -36,6 +36,9 @@ public class User {
     @Column(name = "company_id")
     private Long companyId;
 
+    @Column(name = "permissions", length = 500)
+    private String permissions = "INVOICES,EXPENSES,CLIENTS,REPORTS";
+
     @Column(name = "created_at")
     private OffsetDateTime createdAt = OffsetDateTime.now();
 
@@ -124,6 +127,14 @@ public class User {
 
     public void setCompanyId(Long companyId) {
         this.companyId = companyId;
+    }
+
+    public String getPermissions() {
+        return permissions != null ? permissions : "INVOICES,EXPENSES,CLIENTS,REPORTS";
+    }
+
+    public void setPermissions(String permissions) {
+        this.permissions = permissions;
     }
 
     public OffsetDateTime getCreatedAt() {

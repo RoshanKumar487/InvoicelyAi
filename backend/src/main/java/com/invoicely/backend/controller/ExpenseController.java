@@ -28,12 +28,14 @@ public class ExpenseController {
     }
 
     @GetMapping
-    @Operation(summary = "Get all expenses or filter by category (Scoped to company or global for Developer)")
+    @Operation(summary = "Get all expenses or filter by category (Scoped to staff for Employee, company for Admin, global/filtered for Developer)")
     public ResponseEntity<ApiResponse<List<Expense>>> getAllExpenses(
             @RequestParam(required = false) String category,
+            @RequestParam(required = false) Long companyId,
             @AuthenticationPrincipal UserPrincipal principal) {
-        Long companyId = resolveCompanyId(principal);
-        List<Expense> expenses = expenseService.getExpenses(companyId, category);
+        Long resolvedCompanyId = resolveCompanyId(principal, companyId);
+        Long createdByUserId = (principal != null && principal.getRole() == Role.EMPLOYEE) ? principal.getId() : null;
+        List<Expense> expenses = expenseService.getExpenses(resolvedCompanyId, createdByUserId, category);
         return ResponseEntity.ok(ApiResponse.ok(expenses));
     }
 
@@ -41,9 +43,11 @@ public class ExpenseController {
     @Operation(summary = "Get expense by ID")
     public ResponseEntity<ApiResponse<Expense>> getExpenseById(
             @PathVariable Long id,
+            @RequestParam(required = false) Long companyId,
             @AuthenticationPrincipal UserPrincipal principal) {
-        Long companyId = resolveCompanyId(principal);
-        return ResponseEntity.ok(ApiResponse.ok(expenseService.getExpenseById(id, companyId)));
+        Long resolvedCompanyId = resolveCompanyId(principal, companyId);
+        Long createdByUserId = (principal != null && principal.getRole() == Role.EMPLOYEE) ? principal.getId() : null;
+        return ResponseEntity.ok(ApiResponse.ok(expenseService.getExpenseById(id, resolvedCompanyId, createdByUserId)));
     }
 
     @PostMapping
@@ -51,8 +55,10 @@ public class ExpenseController {
     public ResponseEntity<ApiResponse<Expense>> createExpense(
             @RequestBody Expense expense,
             @AuthenticationPrincipal UserPrincipal principal) {
-        Long companyId = resolveCompanyId(principal);
-        Expense created = expenseService.createExpense(expense, companyId);
+        Long companyId = (principal != null && principal.getRole() != Role.DEVELOPER) ? principal.getCompanyId() : expense.getCompanyId();
+        Long createdByUserId = (principal != null) ? principal.getId() : null;
+        String createdByUserName = (principal != null) ? principal.getFullName() : "";
+        Expense created = expenseService.createExpense(expense, companyId, createdByUserId, createdByUserName);
         return new ResponseEntity<>(ApiResponse.ok("Expense created successfully", created), HttpStatus.CREATED);
     }
 
@@ -62,8 +68,9 @@ public class ExpenseController {
             @PathVariable Long id,
             @RequestBody Expense expense,
             @AuthenticationPrincipal UserPrincipal principal) {
-        Long companyId = resolveCompanyId(principal);
-        Expense updated = expenseService.updateExpense(id, expense, companyId);
+        Long companyId = resolveCompanyId(principal, expense.getCompanyId());
+        Long createdByUserId = (principal != null && principal.getRole() == Role.EMPLOYEE) ? principal.getId() : null;
+        Expense updated = expenseService.updateExpense(id, expense, companyId, createdByUserId);
         return ResponseEntity.ok(ApiResponse.ok("Expense updated successfully", updated));
     }
 
@@ -72,14 +79,15 @@ public class ExpenseController {
     public ResponseEntity<ApiResponse<Void>> deleteExpense(
             @PathVariable Long id,
             @AuthenticationPrincipal UserPrincipal principal) {
-        Long companyId = resolveCompanyId(principal);
-        expenseService.deleteExpense(id, companyId);
+        Long companyId = resolveCompanyId(principal, null);
+        Long createdByUserId = (principal != null && principal.getRole() == Role.EMPLOYEE) ? principal.getId() : null;
+        expenseService.deleteExpense(id, companyId, createdByUserId);
         return ResponseEntity.ok(ApiResponse.ok("Expense deleted successfully", null));
     }
 
-    private Long resolveCompanyId(UserPrincipal principal) {
-        if (principal == null) return null;
-        if (principal.getRole() == Role.DEVELOPER) return null;
+    private Long resolveCompanyId(UserPrincipal principal, Long requestedCompanyId) {
+        if (principal == null) return requestedCompanyId;
+        if (principal.getRole() == Role.DEVELOPER) return requestedCompanyId;
         return principal.getCompanyId();
     }
 }

@@ -42,7 +42,10 @@ data class InvoiceEntity(
     val additionalCharges: Double = 0.0,
     val roundOff: Double = 0.0,
     val isTaxInclusive: Boolean = false,
-    val taxType: String = "GST"
+    val taxType: String = "GST",
+    val companyId: Long? = null,
+    val createdByUserId: Long? = null,
+    val createdByUserName: String? = null
 )
 
 data class InvoiceItem(
