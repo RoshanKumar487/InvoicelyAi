@@ -54,7 +54,9 @@ data class RegisterDeveloperRequest(
     val email: String,
     val mobile: String = "",
     val password: String,
-    val secretKey: String
+    @com.squareup.moshi.Json(name = "developerSecretKey")
+    val developerSecretKey: String = "",
+    val secretKey: String = developerSecretKey
 )
 
 data class AuthResponseDto(
@@ -401,9 +403,9 @@ fun InvoiceEntity.toBackendDto(): BackendInvoiceDto {
 data class BackendBusinessProfileDto(
     val id: Int? = null,
     val companyId: Long? = null,
-    val businessName: String = "Apex Nova Dynamics",
-    val legalName: String = "Apex Nova Dynamics LLC",
-    val email: String = "billing@apexnova.io",
+    val businessName: String = "",
+    val legalName: String = "",
+    val email: String = "",
     val phone: String = "",
     val website: String = "",
     val address: String = "",

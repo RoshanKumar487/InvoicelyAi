@@ -68,6 +68,12 @@ class InvoiceViewModel(application: Application) : AndroidViewModel(application)
     private val clientRepository = ClientRepository(database.clientDao())
     private val businessRepository = BusinessRepository(database.businessProfileDao())
     private val expenseRepository = ExpenseRepository(database.expenseDao())
+    private val geminiService = GeminiAiService()
+    val chatHistoryManager = AiChatHistoryManager(application.applicationContext)
+    private val _chatMessages = MutableStateFlow<List<ChatMessage>>(emptyList())
+    val chatMessages: StateFlow<List<ChatMessage>> = _chatMessages.asStateFlow()
+    private val _isAiThinking = MutableStateFlow(false)
+    val isAiThinking: StateFlow<Boolean> = _isAiThinking.asStateFlow()
 
     // All Invoices stream
     val allInvoices: StateFlow<List<InvoiceEntity>> = invoiceRepository.allInvoices
@@ -98,6 +104,9 @@ class InvoiceViewModel(application: Application) : AndroidViewModel(application)
     val backendStats: StateFlow<DashboardStatsResponse?> = _backendStats.asStateFlow()
 
     fun refreshBackendStats() {
+        if (!com.example.data.repository.AuthSessionManager.isLoggedIn.value || com.example.data.api.client.ApiClient.getAuthToken().isNullOrBlank()) {
+            return
+        }
         viewModelScope.launch(kotlinx.coroutines.Dispatchers.IO) {
             val result = InvoicelyApiManager.getDashboardStats()
             if (result.isSuccess) {
@@ -107,6 +116,10 @@ class InvoiceViewModel(application: Application) : AndroidViewModel(application)
     }
 
     fun syncAllDataWithBackend(onComplete: ((Boolean, String) -> Unit)? = null) {
+        if (!com.example.data.repository.AuthSessionManager.isLoggedIn.value || com.example.data.api.client.ApiClient.getAuthToken().isNullOrBlank()) {
+            onComplete?.invoke(false, "Please sign in to sync with cloud backend")
+            return
+        }
         viewModelScope.launch(kotlinx.coroutines.Dispatchers.IO) {
             val res = InvoicelyApiManager.syncAllWithBackend(
                 invoiceRepository = invoiceRepository,
@@ -127,11 +140,6 @@ class InvoiceViewModel(application: Application) : AndroidViewModel(application)
 
     init {
         viewModelScope.launch {
-            try {
-                if (businessRepository.getProfileDirect() == null) {
-                    AppDatabase.populateInitialData(database)
-                }
-            } catch (e: Exception) {}
 
             // Initialize chat history from persistent storage or generate proactive executive greeting
             val savedHistory = chatHistoryManager.loadChatHistory()
@@ -147,11 +155,13 @@ class InvoiceViewModel(application: Application) : AndroidViewModel(application)
                 )
             }
 
-            // Sync with backend API and fetch live stats
-            try {
-                refreshBackendStats()
-                syncAllDataWithBackend()
-            } catch (e: Exception) {}
+            // Sync with backend API and fetch live stats only if user is logged in
+            if (com.example.data.repository.AuthSessionManager.isLoggedIn.value && !com.example.data.api.client.ApiClient.getAuthToken().isNullOrBlank()) {
+                try {
+                    refreshBackendStats()
+                    syncAllDataWithBackend()
+                } catch (e: Exception) {}
+            }
         }
     }
 
@@ -615,11 +625,22 @@ class InvoiceViewModel(application: Application) : AndroidViewModel(application)
         }
     }
 
-    fun resetSampleData() {
-        viewModelScope.launch {
+    fun clearAllLocalData() {
+        viewModelScope.launch(kotlinx.coroutines.Dispatchers.IO) {
             invoiceRepository.deleteAllInvoices()
             clientRepository.deleteAllClients()
-            AppDatabase.populateInitialData(database)
+            expenseRepository.deleteAllExpenses()
+            businessRepository.clearProfile()
+        }
+    }
+
+    fun resyncFromCloudDatabase(onComplete: ((Boolean, String) -> Unit)? = null) {
+        viewModelScope.launch(kotlinx.coroutines.Dispatchers.IO) {
+            invoiceRepository.deleteAllInvoices()
+            clientRepository.deleteAllClients()
+            expenseRepository.deleteAllExpenses()
+            businessRepository.clearProfile()
+            syncAllDataWithBackend(onComplete)
         }
     }
 
@@ -779,14 +800,6 @@ class InvoiceViewModel(application: Application) : AndroidViewModel(application)
     // =========================================================================
     // GEMINI AI CHAT & CONVERSATIONAL ASSISTANT (PERSISTENT & CONTEXT-AWARE)
     // =========================================================================
-    private val geminiService = GeminiAiService()
-    val chatHistoryManager = AiChatHistoryManager(application.applicationContext)
-
-    private val _chatMessages = MutableStateFlow<List<ChatMessage>>(emptyList())
-    val chatMessages: StateFlow<List<ChatMessage>> = _chatMessages.asStateFlow()
-
-    private val _isAiThinking = MutableStateFlow(false)
-    val isAiThinking: StateFlow<Boolean> = _isAiThinking.asStateFlow()
 
     val dynamicPredictions: StateFlow<List<String>> = combine(
         allInvoices,

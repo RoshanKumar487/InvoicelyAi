@@ -44,6 +44,29 @@ object InvoicelyApiManager {
     // SAFE API EXECUTION WRAPPER
     // =========================================================================
 
+    private fun parseErrorBody(code: Int, errorBodyStr: String?, fallback: String?): String {
+        if (!errorBodyStr.isNullOrBlank()) {
+            try {
+                val json = org.json.JSONObject(errorBodyStr)
+                val msg = json.optString("message", "")
+                if (msg.isNotBlank()) {
+                    if (msg.contains("Full authentication is required", ignoreCase = true) ||
+                        msg.contains("Unauthorized", ignoreCase = true)) {
+                        return "Authentication required. Please sign in to access cloud features."
+                    }
+                    return msg
+                }
+            } catch (_: Exception) {}
+        }
+        return when (code) {
+            401 -> "Authentication required. Please sign in to access cloud features."
+            403 -> "Access denied: You do not have permission for this resource."
+            404 -> "Requested cloud resource not found."
+            500, 502, 503 -> "Cloud server temporarily busy. Please retry shortly."
+            else -> fallback?.ifBlank { null } ?: "Request failed (HTTP $code)"
+        }
+    }
+
     private suspend fun <T> safeApiCall(
         callName: String,
         apiCall: suspend () -> Response<ApiResponse<T>>
@@ -69,15 +92,24 @@ object InvoicelyApiManager {
                 }
             } else {
                 val errorBodyStr = response.errorBody()?.string()
-                val message = "Server error ${response.code()}: ${errorBodyStr ?: response.message()}"
-                Log.w(TAG, "[$callName] Failed: $message")
-                ApiConfig.recordSyncError(message)
-                Result.failure(Exception(message))
+                val cleanMsg = parseErrorBody(response.code(), errorBodyStr, response.message())
+                Log.w(TAG, "[$callName] Failed HTTP ${response.code()}: $cleanMsg")
+
+                if (response.code() == 401) {
+                    com.example.data.repository.AuthSessionManager.notifySessionExpired()
+                    if (com.example.data.repository.AuthSessionManager.isLoggedIn.value) {
+                        ApiConfig.recordSyncError(cleanMsg)
+                    }
+                } else {
+                    ApiConfig.recordSyncError(cleanMsg)
+                }
+                Result.failure(Exception(cleanMsg))
             }
         } catch (e: Exception) {
             Log.e(TAG, "[$callName] Network Exception: ${e.message}", e)
             ApiConfig.setReachable(false)
-            ApiConfig.recordSyncError(e.localizedMessage ?: "Network connection failed")
+            val netMsg = e.localizedMessage ?: "Network connection failed"
+            ApiConfig.recordSyncError(netMsg)
             Result.failure(e)
         }
     }
@@ -86,21 +118,37 @@ object InvoicelyApiManager {
     // HEALTH CHECK & CONNECTIVITY
     // =========================================================================
 
-    suspend fun checkConnection(): Result<Boolean> {
-        val statsResult = getDashboardStats()
-        return if (statsResult.isSuccess) {
-            ApiConfig.setReachable(true)
-            Result.success(true)
-        } else {
-            // Check auth me if stats requires token
-            val meResult = getMe()
-            if (meResult.isSuccess) {
+    suspend fun checkHealth(): Result<Boolean> = withContext(Dispatchers.IO) {
+        try {
+            val response = ApiClient.getService().checkHealth()
+            if (response.isSuccessful && (response.body()?.success == true || response.code() in 200..204)) {
                 ApiConfig.setReachable(true)
                 Result.success(true)
             } else {
-                Result.failure(statsResult.exceptionOrNull() ?: Exception("Cannot connect to server"))
+                ApiConfig.setReachable(false)
+                Result.failure(Exception("Cloud backend service is waking up or temporarily unavailable"))
+            }
+        } catch (e: Exception) {
+            Log.w(TAG, "Health check failed: ${e.message}")
+            ApiConfig.setReachable(false)
+            Result.failure(e)
+        }
+    }
+
+    suspend fun checkConnection(): Result<Boolean> {
+        val healthResult = checkHealth()
+        if (healthResult.isSuccess) {
+            return Result.success(true)
+        }
+        // If user is authenticated with a token, optionally verify with getMe()
+        if (com.example.data.repository.AuthSessionManager.isLoggedIn.value && !ApiClient.getAuthToken().isNullOrBlank()) {
+            val meResult = getMe()
+            if (meResult.isSuccess) {
+                ApiConfig.setReachable(true)
+                return Result.success(true)
             }
         }
+        return healthResult
     }
 
     // =========================================================================
@@ -333,6 +381,10 @@ object InvoicelyApiManager {
         expenseRepository: ExpenseRepository,
         businessRepository: BusinessRepository
     ): Result<String> = withContext(Dispatchers.IO) {
+        if (!com.example.data.repository.AuthSessionManager.isLoggedIn.value || ApiClient.getAuthToken().isNullOrBlank()) {
+            return@withContext Result.failure(Exception("Authentication required. Please sign in to sync with cloud backend."))
+        }
+
         ApiConfig.setSyncing(true)
         val syncLog = StringBuilder()
 
@@ -347,86 +399,80 @@ object InvoicelyApiManager {
                     businessRepository.saveProfile(mergedProfile)
                     syncLog.append("✓ Profile synced. ")
                 }
-            } else {
-                // If remote profile not set up yet, upload local
-                val localProfile = businessRepository.getProfileDirect()
-                if (localProfile != null) {
-                    updateBusinessProfile(localProfile.toBackendDto())
-                }
             }
 
-            // 2. Sync Clients
+            // 2. Sync Clients (Real Backend Storage)
             val remoteClientsRes = getAllClients()
             if (remoteClientsRes.isSuccess) {
                 val remoteClients = remoteClientsRes.getOrNull() ?: emptyList()
                 val localClients = clientRepository.allClients.firstOrNull() ?: emptyList()
+                val remoteIds = remoteClients.map { it.id }.toSet()
 
-                // Save remote into local if not present
-                val localIds = localClients.map { it.id }.toSet()
+                // Insert/update remote clients
                 for (rc in remoteClients) {
                     val entity = rc.toEntity()
-                    if (entity.id in localIds) {
+                    val exists = localClients.any { it.id == entity.id }
+                    if (exists) {
                         clientRepository.updateClient(entity)
                     } else {
                         clientRepository.insertClient(entity)
                     }
                 }
 
-                // Push any local clients to backend if backend was empty
-                if (remoteClients.isEmpty() && localClients.isNotEmpty()) {
-                    for (lc in localClients) {
-                        createClient(lc.toBackendDto())
+                // Clean up any local client records that no longer exist in real backend storage
+                for (lc in localClients) {
+                    if (lc.id !in remoteIds) {
+                        clientRepository.deleteClient(lc)
                     }
                 }
                 syncLog.append("✓ ${remoteClients.size} clients synced. ")
             }
 
-            // 3. Sync Expenses
+            // 3. Sync Expenses (Real Backend Storage)
             val remoteExpensesRes = getAllExpenses()
             if (remoteExpensesRes.isSuccess) {
                 val remoteExpenses = remoteExpensesRes.getOrNull() ?: emptyList()
                 val localExpenses = expenseRepository.allExpenses.firstOrNull() ?: emptyList()
+                val remoteExpIds = remoteExpenses.map { it.id }.toSet()
 
-                val localExpIds = localExpenses.map { it.id }.toSet()
                 for (re in remoteExpenses) {
                     val entity = re.toEntity()
-                    if (entity.id in localExpIds) {
+                    val exists = localExpenses.any { it.id == entity.id }
+                    if (exists) {
                         expenseRepository.updateExpense(entity)
                     } else {
                         expenseRepository.insertExpense(entity)
                     }
                 }
 
-                if (remoteExpenses.isEmpty() && localExpenses.isNotEmpty()) {
-                    for (le in localExpenses) {
-                        createExpense(le.toBackendDto())
+                for (le in localExpenses) {
+                    if (le.id !in remoteExpIds) {
+                        expenseRepository.deleteExpense(le)
                     }
                 }
                 syncLog.append("✓ ${remoteExpenses.size} expenses synced. ")
             }
 
-            // 4. Sync Invoices
+            // 4. Sync Invoices (Real Backend Storage)
             val remoteInvoicesRes = getAllInvoices()
             if (remoteInvoicesRes.isSuccess) {
                 val remoteInvoices = remoteInvoicesRes.getOrNull() ?: emptyList()
                 val localInvoices = invoiceRepository.allInvoices.firstOrNull() ?: emptyList()
+                val remoteInvNumbers = remoteInvoices.map { it.invoiceNumber }.toSet()
 
-                val localInvNumbers = localInvoices.map { it.invoiceNumber }.toSet()
                 for (ri in remoteInvoices) {
                     val entity = ri.toEntity()
-                    if (entity.invoiceNumber in localInvNumbers) {
-                        val localMatch = localInvoices.find { it.invoiceNumber == entity.invoiceNumber }
-                        if (localMatch != null) {
-                            invoiceRepository.updateInvoice(entity.copy(id = localMatch.id))
-                        }
+                    val localMatch = localInvoices.find { it.invoiceNumber == entity.invoiceNumber }
+                    if (localMatch != null) {
+                        invoiceRepository.updateInvoice(entity.copy(id = localMatch.id))
                     } else {
                         invoiceRepository.insertInvoice(entity)
                     }
                 }
 
-                if (remoteInvoices.isEmpty() && localInvoices.isNotEmpty()) {
-                    for (li in localInvoices) {
-                        createInvoice(li.toBackendDto())
+                for (li in localInvoices) {
+                    if (li.invoiceNumber !in remoteInvNumbers) {
+                        invoiceRepository.deleteInvoice(li)
                     }
                 }
                 syncLog.append("✓ ${remoteInvoices.size} invoices synced.")

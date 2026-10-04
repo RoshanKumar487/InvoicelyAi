@@ -11,14 +11,17 @@ import kotlinx.coroutines.flow.asStateFlow
 object ApiConfig {
     /**
      * Default host URLs:
+     * - Cloud Production (Render): "https://invoicelyai.onrender.com/"
      * - Android Emulator: "http://10.0.2.2:8080/" (maps to host machine's localhost:8080)
      * - Physical Device: "http://<YOUR_LAN_IP>:8080/" (e.g. 192.168.1.100)
      * - Localhost: "http://127.0.0.1:8080/"
      */
+    const val CLOUD_BASE_URL = "https://invoicelyai.onrender.com/"
     const val EMULATOR_BASE_URL = "http://10.0.2.2:8080/"
     const val LOCALHOST_BASE_URL = "http://127.0.0.1:8080/"
 
-    private val _baseUrl = MutableStateFlow(EMULATOR_BASE_URL)
+    // Default to the Cloud Web Service on Render
+    private val _baseUrl = MutableStateFlow(CLOUD_BASE_URL)
     val baseUrl: StateFlow<String> = _baseUrl.asStateFlow()
 
     private val _isBackendReachable = MutableStateFlow(false)
@@ -40,6 +43,10 @@ object ApiConfig {
         ApiClient.resetClient()
     }
 
+    fun resetToDefaultCloudUrl() {
+        updateBaseUrl(CLOUD_BASE_URL)
+    }
+
     fun setReachable(reachable: Boolean) {
         _isBackendReachable.value = reachable
     }
@@ -56,5 +63,9 @@ object ApiConfig {
 
     fun recordSyncError(error: String) {
         _lastErrorMessage.value = error
+    }
+
+    fun clearSyncError() {
+        _lastErrorMessage.value = null
     }
 }

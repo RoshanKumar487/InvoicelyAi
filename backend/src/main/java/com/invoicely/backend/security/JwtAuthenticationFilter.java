@@ -54,9 +54,35 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
 
     private String getJwtFromRequest(HttpServletRequest request) {
         String bearerToken = request.getHeader("Authorization");
-        if (StringUtils.hasText(bearerToken) && bearerToken.startsWith("Bearer ")) {
-            return bearerToken.substring(7);
+        if (StringUtils.hasText(bearerToken)) {
+            String trimmed = bearerToken.trim();
+            if (trimmed.regionMatches(true, 0, "Bearer ", 0, 7)) {
+                return trimmed.substring(7).trim();
+            }
+            // Fallback: If client sent raw JWT token in Authorization header without "Bearer "
+            if (!trimmed.contains(" ") && trimmed.split("\\.").length == 3) {
+                return trimmed;
+            }
         }
+
+        // Support X-Auth-Token header
+        String xAuthToken = request.getHeader("X-Auth-Token");
+        if (StringUtils.hasText(xAuthToken)) {
+            return xAuthToken.trim();
+        }
+
+        // Support X-Session-Id header
+        String xSessionId = request.getHeader("X-Session-Id");
+        if (StringUtils.hasText(xSessionId)) {
+            return xSessionId.trim();
+        }
+
+        // Support token query parameter
+        String queryToken = request.getParameter("token");
+        if (StringUtils.hasText(queryToken)) {
+            return queryToken.trim();
+        }
+
         return null;
     }
 }

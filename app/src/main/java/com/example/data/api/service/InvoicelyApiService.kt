@@ -57,6 +57,9 @@ interface InvoicelyApiService {
     @GET("api/v1/auth/me")
     suspend fun getMe(): Response<ApiResponse<AuthResponseDto>>
 
+    @GET("api/v1/health")
+    suspend fun checkHealth(): Response<ApiResponse<Map<String, Any>>>
+
     // =========================================================================
     // DASHBOARD & ANALYTICS
     // =========================================================================
