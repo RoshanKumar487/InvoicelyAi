@@ -59,6 +59,11 @@ data class RegisterDeveloperRequest(
     val secretKey: String = developerSecretKey
 )
 
+data class ResetPasswordRequest(
+    val identifier: String,
+    val newPassword: String
+)
+
 data class AuthResponseDto(
     val token: String? = null,
     val tokenType: String = "Bearer",

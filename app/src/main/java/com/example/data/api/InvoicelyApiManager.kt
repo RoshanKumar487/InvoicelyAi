@@ -165,6 +165,21 @@ object InvoicelyApiManager {
         return result
     }
 
+    suspend fun resetPassword(identifier: String, newPassword: String): Result<AuthResponseDto> {
+        val result = safeApiCall("resetPassword") {
+            ApiClient.getService().resetPassword(
+                com.example.data.api.model.ResetPasswordRequest(
+                    identifier = identifier.trim(),
+                    newPassword = newPassword.trim()
+                )
+            )
+        }
+        result.onSuccess { auth ->
+            auth.token?.let { ApiClient.setAuthToken(it) }
+        }
+        return result
+    }
+
     suspend fun registerCompany(request: RegisterCompanyRequest): Result<AuthResponseDto> {
         val result = safeApiCall("registerCompany") {
             ApiClient.getService().registerCompany(request)

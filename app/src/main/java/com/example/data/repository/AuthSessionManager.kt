@@ -232,6 +232,41 @@ object AuthSessionManager {
     }
 
     /**
+     * Resets / updates user password via POST /api/v1/auth/reset-password.
+     */
+    suspend fun resetPassword(identifier: String, newPassword: String): Result<UserAccount> {
+        if (identifier.isBlank()) return Result.failure(IllegalArgumentException("Email or mobile number is required"))
+        if (newPassword.length < 6) return Result.failure(IllegalArgumentException("Password must be at least 6 characters"))
+
+        val remoteResult = InvoicelyApiManager.resetPassword(identifier.trim(), newPassword)
+        if (remoteResult.isSuccess) {
+            val authResp = remoteResult.getOrNull()
+            if (authResp != null) {
+                val token = authResp.token ?: ""
+                _jwtToken.value = token
+                ApiClient.setAuthToken(token)
+
+                val compInfo = authResp.company?.toCompanyInfo()
+                val user = authResp.user?.toUserAccount(
+                    companyCode = compInfo?.companyCode,
+                    companyName = compInfo?.companyName
+                ) ?: return Result.failure(Exception("Password reset: Server did not return a valid user profile"))
+
+                _currentUser.value = user
+                _currentCompany.value = compInfo
+                _isLoggedIn.value = true
+
+                saveUserSession(token, user, compInfo)
+                fetchRemoteMetadata()
+                return Result.success(user)
+            }
+        }
+
+        val errorMsg = remoteResult.exceptionOrNull()?.message ?: "Password update failed. Please check your credentials."
+        return Result.failure(Exception(cleanErrorMessage(errorMsg)))
+    }
+
+    /**
      * Registers a new Organization & Admin in PostgreSQL via POST /api/v1/auth/register-company.
      */
     suspend fun registerCompany(

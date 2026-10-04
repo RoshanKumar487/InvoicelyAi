@@ -54,6 +54,11 @@ interface InvoicelyApiService {
         @Body request: LoginRequest
     ): Response<ApiResponse<AuthResponseDto>>
 
+    @POST("api/v1/auth/reset-password")
+    suspend fun resetPassword(
+        @Body request: com.example.data.api.model.ResetPasswordRequest
+    ): Response<ApiResponse<AuthResponseDto>>
+
     @GET("api/v1/auth/me")
     suspend fun getMe(): Response<ApiResponse<AuthResponseDto>>
 

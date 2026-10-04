@@ -211,6 +211,35 @@ public class AuthService {
         );
     }
 
+    @Transactional
+    public AuthResponse resetPassword(ResetPasswordRequest request) {
+        String identifier = request.getIdentifier().trim().toLowerCase(Locale.ROOT);
+        User user = userRepository.findByEmailOrMobile(identifier, identifier)
+                .orElseThrow(() -> new IllegalArgumentException("No registered account found with email/mobile: " + request.getIdentifier()));
+
+        if (user.getStatus() == UserStatus.REJECTED) {
+            throw new IllegalStateException("Your account registration was rejected by the organization admin.");
+        }
+        if (user.getStatus() == UserStatus.INACTIVE) {
+            throw new IllegalStateException("Your account has been deactivated. Please contact your organization administrator.");
+        }
+
+        user.setPassword(passwordEncoder.encode(request.getNewPassword().trim()));
+        user = userRepository.save(user);
+
+        String token = tokenProvider.generateToken(user);
+        Company company = user.getCompanyId() != null
+                ? companyRepository.findById(user.getCompanyId()).orElse(null)
+                : null;
+
+        return new AuthResponse(
+                token,
+                new UserSummaryDto(user),
+                company != null ? new CompanySummaryDto(company) : null,
+                "Password updated successfully. You can now log in with your new password."
+        );
+    }
+
     private String generateUniqueCompanyCode(String companyName) {
         String prefix = companyName.replaceAll("[^a-zA-Z]", "").toUpperCase(Locale.ROOT);
         if (prefix.length() > 4) {

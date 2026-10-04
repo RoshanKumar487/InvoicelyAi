@@ -47,8 +47,10 @@ import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Switch
 import androidx.compose.material3.SwitchDefaults
@@ -70,9 +72,12 @@ import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import androidx.compose.foundation.horizontalScroll
 import com.example.data.model.BusinessProfile
+import com.example.data.model.IndustryTemplates
+import com.example.data.model.InvoiceUtils
 import com.example.ui.components.AdaptiveContainer
+import com.example.ui.components.IndustryTemplateSelectorDialog
 import com.example.ui.components.rememberWindowAdaptiveInfo
 import com.example.ui.theme.PrimaryNavy
 import com.example.ui.viewmodel.InvoiceViewModel
@@ -93,6 +98,10 @@ fun InvoiceSettingsScreen(
     val context = LocalContext.current
     val profile by viewModel.businessProfile.collectAsStateWithLifecycle()
     val adaptiveInfo = rememberWindowAdaptiveInfo()
+
+    // Business Category & Industry Presets
+    var selectedIndustryPresetId by remember(profile.industryPresetId) { mutableStateOf(profile.industryPresetId.ifBlank { "general" }) }
+    var showIndustryDialog by remember { mutableStateOf(false) }
 
     // Local mutable state initialized from business profile
     var showShippingSection by remember(profile.showShippingSection) { mutableStateOf(profile.showShippingSection) }
@@ -147,7 +156,10 @@ fun InvoiceSettingsScreen(
     var signeeTitle by remember(profile.signeeTitle) { mutableStateOf(profile.signeeTitle) }
 
     fun saveAll(notify: Boolean = true) {
+        val activePreset = IndustryTemplates.getPresetById(selectedIndustryPresetId)
         val updated = profile.copy(
+            industryPresetId = selectedIndustryPresetId,
+            businessCategory = activePreset.name,
             showShippingSection = showShippingSection,
             showNotesSection = showNotesSection,
             isTaxApplicable = isTaxApplicable,
@@ -286,6 +298,137 @@ fun InvoiceSettingsScreen(
                             color = Color(0xFF334155),
                             lineHeight = 17.sp
                         )
+                    }
+                }
+            }
+
+            // =================================================================
+            // BLOCK 0: BUSINESS CATEGORY & INDUSTRY WORKFLOW (Configured here only)
+            // =================================================================
+            val activePreset = remember(selectedIndustryPresetId) {
+                IndustryTemplates.getPresetById(selectedIndustryPresetId)
+            }
+
+            Card(
+                modifier = Modifier.fillMaxWidth(),
+                shape = RoundedCornerShape(16.dp),
+                colors = CardDefaults.cardColors(containerColor = Color.White),
+                border = androidx.compose.foundation.BorderStroke(1.5.dp, Color(0xFFBFDBFE))
+            ) {
+                Column(modifier = Modifier.padding(16.dp)) {
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                            Box(
+                                modifier = Modifier
+                                    .size(42.dp)
+                                    .clip(RoundedCornerShape(10.dp))
+                                    .background(Color(0xFFEFF6FF)),
+                                contentAlignment = Alignment.Center
+                            ) {
+                                Icon(activePreset.icon, contentDescription = null, tint = Color(0xFF2563EB), modifier = Modifier.size(24.dp))
+                            }
+                            Column {
+                                Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                                    Text(activePreset.name, fontSize = 16.sp, fontWeight = FontWeight.Bold, color = PrimaryNavy)
+                                    Surface(
+                                        color = Color(0xFFDBEAFE),
+                                        shape = RoundedCornerShape(6.dp)
+                                    ) {
+                                        Text(
+                                            text = activePreset.industryCategory,
+                                            fontSize = 10.sp,
+                                            fontWeight = FontWeight.Bold,
+                                            color = Color(0xFF1D4ED8),
+                                            modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
+                                        )
+                                    }
+                                }
+                                Text(
+                                    text = "Primary Business Category (Inlined across all invoices)",
+                                    fontSize = 11.sp,
+                                    color = Color(0xFF64748B)
+                                )
+                            }
+                        }
+                    }
+
+                    Spacer(modifier = Modifier.height(10.dp))
+                    Text(
+                        text = activePreset.description,
+                        fontSize = 12.sp,
+                        color = Color(0xFF334155),
+                        lineHeight = 16.sp
+                    )
+
+                    Spacer(modifier = Modifier.height(12.dp))
+
+                    Text("Quick Select Business Category:", fontSize = 11.sp, fontWeight = FontWeight.SemiBold, color = Color(0xFF64748B))
+                    Spacer(modifier = Modifier.height(6.dp))
+
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .horizontalScroll(rememberScrollState()),
+                        horizontalArrangement = Arrangement.spacedBy(6.dp)
+                    ) {
+                        IndustryTemplates.allPresets.forEach { preset ->
+                            val isSel = selectedIndustryPresetId == preset.id
+                            Surface(
+                                color = if (isSel) Color(0xFF2563EB) else Color(0xFFF1F5F9),
+                                shape = RoundedCornerShape(12.dp),
+                                border = androidx.compose.foundation.BorderStroke(
+                                    1.dp,
+                                    if (isSel) Color(0xFF1D4ED8) else Color(0xFFCBD5E1)
+                                ),
+                                modifier = Modifier.clickable {
+                                    selectedIndustryPresetId = preset.id
+                                    val serializedCols = InvoiceUtils.serializeColumns(preset.defaultColumns)
+                                    val updated = profile.copy(
+                                        industryPresetId = preset.id,
+                                        businessCategory = preset.name,
+                                        customColumnsJson = serializedCols,
+                                        defaultTemplateId = preset.recommendedTemplateId,
+                                        defaultTerms = preset.defaultTerms.ifBlank { defaultTerms },
+                                        defaultNotes = preset.defaultNotes.ifBlank { defaultNotes }
+                                    )
+                                    if (preset.defaultTerms.isNotBlank()) defaultTerms = preset.defaultTerms
+                                    if (preset.defaultNotes.isNotBlank()) defaultNotes = preset.defaultNotes
+                                    viewModel.saveBusinessProfile(updated)
+                                    Toast.makeText(context, "Switched business category to ${preset.name}", Toast.LENGTH_SHORT).show()
+                                }
+                            ) {
+                                Row(
+                                    modifier = Modifier.padding(horizontal = 10.dp, vertical = 6.dp),
+                                    verticalAlignment = Alignment.CenterVertically,
+                                    horizontalArrangement = Arrangement.spacedBy(4.dp)
+                                ) {
+                                    Icon(preset.icon, contentDescription = null, tint = if (isSel) Color.White else PrimaryNavy, modifier = Modifier.size(14.dp))
+                                    Text(
+                                        text = preset.name,
+                                        fontSize = 11.sp,
+                                        fontWeight = if (isSel) FontWeight.Bold else FontWeight.Medium,
+                                        color = if (isSel) Color.White else PrimaryNavy
+                                    )
+                                }
+                            }
+                        }
+                    }
+
+                    Spacer(modifier = Modifier.height(10.dp))
+
+                    OutlinedButton(
+                        onClick = { showIndustryDialog = true },
+                        modifier = Modifier.fillMaxWidth(),
+                        shape = RoundedCornerShape(10.dp),
+                        border = androidx.compose.foundation.BorderStroke(1.dp, Color(0xFF93C5FD))
+                    ) {
+                        Icon(Icons.Default.Tune, contentDescription = null, modifier = Modifier.size(16.dp), tint = Color(0xFF2563EB))
+                        Spacer(modifier = Modifier.width(6.dp))
+                        Text("Browse All 12 Business Categories & Details", fontSize = 12.sp, color = Color(0xFF2563EB), fontWeight = FontWeight.Bold)
                     }
                 }
             }
@@ -832,6 +975,31 @@ fun InvoiceSettingsScreen(
         }
     }
 }
+
+    // Business Category & Industry Template Selector Dialog (Settings page only)
+    if (showIndustryDialog) {
+        IndustryTemplateSelectorDialog(
+            selectedPresetId = selectedIndustryPresetId,
+            onSelectPreset = { preset ->
+                selectedIndustryPresetId = preset.id
+                if (preset.defaultTerms.isNotBlank()) defaultTerms = preset.defaultTerms
+                if (preset.defaultNotes.isNotBlank()) defaultNotes = preset.defaultNotes
+                val serializedCols = InvoiceUtils.serializeColumns(preset.defaultColumns)
+                val updated = profile.copy(
+                    industryPresetId = preset.id,
+                    businessCategory = preset.name,
+                    customColumnsJson = serializedCols,
+                    defaultTemplateId = preset.recommendedTemplateId,
+                    defaultTerms = defaultTerms,
+                    defaultNotes = defaultNotes
+                )
+                viewModel.saveBusinessProfile(updated)
+                showIndustryDialog = false
+                Toast.makeText(context, "Applied ${preset.name} category to invoices!", Toast.LENGTH_SHORT).show()
+            },
+            onDismiss = { showIndustryDialog = false }
+        )
+    }
 }
 
 /**

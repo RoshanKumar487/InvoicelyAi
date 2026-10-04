@@ -149,31 +149,28 @@ class InvoiceViewModel(application: Application) : AndroidViewModel(application)
                     _backendStats.value = statsRes.getOrNull()
                 }
 
-                // Fetch invoices in real-time
+                // Fetch invoices in real-time (upsert into Room without wiping local invoices)
                 val invoicesRes = InvoicelyApiManager.getAllInvoices(companyId = companyId)
                 if (invoicesRes.isSuccess) {
                     val remoteInvoices = invoicesRes.getOrNull() ?: emptyList()
-                    invoiceRepository.deleteAllInvoices()
                     for (ri in remoteInvoices) {
                         invoiceRepository.insertInvoice(ri.toEntity())
                     }
                 }
 
-                // Fetch expenses in real-time
+                // Fetch expenses in real-time (upsert into Room without wiping local expenses)
                 val expensesRes = InvoicelyApiManager.getAllExpenses(companyId = companyId)
                 if (expensesRes.isSuccess) {
                     val remoteExpenses = expensesRes.getOrNull() ?: emptyList()
-                    expenseRepository.deleteAllExpenses()
                     for (re in remoteExpenses) {
                         expenseRepository.insertExpense(re.toEntity())
                     }
                 }
 
-                // Fetch clients
+                // Fetch clients (upsert into Room without wiping local clients)
                 val clientsRes = InvoicelyApiManager.getAllClients()
                 if (clientsRes.isSuccess) {
                     val remoteClients = clientsRes.getOrNull() ?: emptyList()
-                    clientRepository.deleteAllClients()
                     for (rc in remoteClients) {
                         clientRepository.insertClient(rc.toEntity())
                     }
@@ -555,27 +552,37 @@ class InvoiceViewModel(application: Application) : AndroidViewModel(application)
                 createdByUserId = currentUser?.id,
                 createdByUserName = currentUser?.fullName
             )
-            val id = if (entity.id == 0L) {
+            var finalId = if (entity.id == 0L) {
                 invoiceRepository.insertInvoice(entity)
             } else {
                 invoiceRepository.updateInvoice(entity)
                 entity.id
             }
-            _invoiceFormState.value = _invoiceFormState.value.copy(isSaving = false, invoiceId = id)
 
             // Direct Real-time Backend Sync
             try {
-                val dto = entity.copy(id = id).toBackendDto()
                 if (entity.id == 0L) {
-                    InvoicelyApiManager.createInvoice(dto)
+                    val createDto = entity.copy(id = 0L).toBackendDto()
+                    val res = InvoicelyApiManager.createInvoice(createDto)
+                    if (res.isSuccess) {
+                        val backendInvoice = res.getOrNull()
+                        if (backendInvoice?.id != null && backendInvoice.id > 0) {
+                            invoiceRepository.deleteInvoiceById(finalId)
+                            finalId = backendInvoice.id
+                            invoiceRepository.insertInvoice(backendInvoice.toEntity())
+                        }
+                    }
                 } else {
-                    InvoicelyApiManager.updateInvoice(id, dto)
+                    val updateDto = entity.copy(id = finalId).toBackendDto()
+                    InvoicelyApiManager.updateInvoice(finalId, updateDto)
                 }
                 refreshRealtimeData()
             } catch (_: Exception) {}
 
+            _invoiceFormState.value = _invoiceFormState.value.copy(isSaving = false, invoiceId = finalId)
+
             kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.Main) {
-                onSuccess(id)
+                onSuccess(finalId)
             }
         }
     }
@@ -615,7 +622,7 @@ class InvoiceViewModel(application: Application) : AndroidViewModel(application)
 
     // Invoice CRUD Actions
     fun saveInvoice(invoice: InvoiceEntity, onSaved: (Long) -> Unit = {}) {
-        viewModelScope.launch {
+        viewModelScope.launch(kotlinx.coroutines.Dispatchers.IO) {
             val currentUser = com.example.data.repository.AuthSessionManager.currentUser.value
             val currentCompany = com.example.data.repository.AuthSessionManager.currentCompany.value
             val mappedInvoice = invoice.copy(
@@ -623,23 +630,38 @@ class InvoiceViewModel(application: Application) : AndroidViewModel(application)
                 createdByUserId = invoice.createdByUserId ?: currentUser?.id,
                 createdByUserName = invoice.createdByUserName ?: currentUser?.fullName
             )
-            val finalId: Long
+            var finalId = mappedInvoice.id
             if (mappedInvoice.id == 0L) {
                 finalId = invoiceRepository.insertInvoice(mappedInvoice)
-                onSaved(finalId)
+                try {
+                    val createDto = mappedInvoice.copy(id = 0L).toBackendDto()
+                    val res = InvoicelyApiManager.createInvoice(createDto)
+                    if (res.isSuccess) {
+                        val backendInvoice = res.getOrNull()
+                        if (backendInvoice?.id != null && backendInvoice.id > 0) {
+                            invoiceRepository.deleteInvoiceById(finalId)
+                            finalId = backendInvoice.id
+                            invoiceRepository.insertInvoice(backendInvoice.toEntity())
+                        }
+                    }
+                } catch (e: Exception) {
+                    android.util.Log.w("InvoiceViewModel", "Failed to sync created invoice to backend, saved locally with ID $finalId", e)
+                }
             } else {
-                finalId = mappedInvoice.id
                 invoiceRepository.updateInvoice(mappedInvoice)
+                try {
+                    val updateDto = mappedInvoice.toBackendDto()
+                    InvoicelyApiManager.updateInvoice(finalId, updateDto)
+                } catch (e: Exception) {
+                    android.util.Log.w("InvoiceViewModel", "Failed to sync updated invoice $finalId to backend", e)
+                }
+            }
+
+            kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.Main) {
                 onSaved(finalId)
             }
 
             try {
-                val dto = mappedInvoice.copy(id = finalId).toBackendDto()
-                if (mappedInvoice.id == 0L) {
-                    InvoicelyApiManager.createInvoice(dto)
-                } else {
-                    InvoicelyApiManager.updateInvoice(finalId, dto)
-                }
                 refreshRealtimeData()
             } catch (_: Exception) {}
         }
@@ -679,10 +701,11 @@ class InvoiceViewModel(application: Application) : AndroidViewModel(application)
             val finalId: Long
             if (client.id == 0L) {
                 finalId = clientRepository.insertClient(client)
-                onSaved(finalId)
             } else {
                 finalId = client.id
                 clientRepository.updateClient(client)
+            }
+            kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.Main) {
                 onSaved(finalId)
             }
 
@@ -1041,26 +1064,40 @@ class InvoiceViewModel(application: Application) : AndroidViewModel(application)
                 createdByUserId = expense.createdByUserId ?: currentUser?.id,
                 createdByUserName = expense.createdByUserName ?: currentUser?.fullName
             )
-            val id = if (mappedExpense.id == 0L) {
-                expenseRepository.insertExpense(mappedExpense)
+            var finalId = mappedExpense.id
+            if (mappedExpense.id == 0L) {
+                finalId = expenseRepository.insertExpense(mappedExpense)
+                try {
+                    val createDto = mappedExpense.copy(id = 0L).toBackendDto()
+                    val res = InvoicelyApiManager.createExpense(createDto)
+                    if (res.isSuccess) {
+                        val backendExpense = res.getOrNull()
+                        if (backendExpense?.id != null && backendExpense.id > 0) {
+                            expenseRepository.deleteExpense(mappedExpense.copy(id = finalId))
+                            finalId = backendExpense.id
+                            expenseRepository.insertExpense(backendExpense.toEntity())
+                        }
+                    }
+                } catch (e: Exception) {
+                    android.util.Log.w("InvoiceViewModel", "Failed to sync created expense to backend, saved locally with ID $finalId", e)
+                }
             } else {
                 expenseRepository.updateExpense(mappedExpense)
-                mappedExpense.id
+                try {
+                    val updateDto = mappedExpense.toBackendDto()
+                    InvoicelyApiManager.updateExpense(finalId, updateDto)
+                } catch (e: Exception) {
+                    android.util.Log.w("InvoiceViewModel", "Failed to sync updated expense $finalId to backend", e)
+                }
+            }
+
+            kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.Main) {
+                onSaved(finalId)
             }
 
             try {
-                val dto = mappedExpense.copy(id = id).toBackendDto()
-                if (mappedExpense.id == 0L) {
-                    InvoicelyApiManager.createExpense(dto)
-                } else {
-                    InvoicelyApiManager.updateExpense(id, dto)
-                }
                 refreshRealtimeData()
             } catch (e: Exception) {}
-
-            kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.Main) {
-                onSaved(id)
-            }
         }
     }
 

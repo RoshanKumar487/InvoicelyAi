@@ -314,6 +314,7 @@ fun ClientsScreen(
                                     verticalAlignment = Alignment.Top
                                 ) {
                                     Row(modifier = Modifier.weight(1f), verticalAlignment = Alignment.CenterVertically) {
+                                        val displayTitle = client.companyName.ifBlank { client.name }
                                         Box(
                                             modifier = Modifier
                                                 .size(42.dp)
@@ -322,7 +323,7 @@ fun ClientsScreen(
                                             contentAlignment = Alignment.Center
                                         ) {
                                             Text(
-                                                text = client.name.take(1).uppercase(),
+                                                text = displayTitle.take(1).uppercase(),
                                                 fontWeight = FontWeight.Bold,
                                                 color = PrimaryNavy,
                                                 fontSize = 18.sp
@@ -333,14 +334,14 @@ fun ClientsScreen(
 
                                         Column {
                                             Text(
-                                                text = client.name,
+                                                text = displayTitle,
                                                 style = MaterialTheme.typography.titleMedium,
                                                 fontWeight = FontWeight.Bold,
                                                 color = MaterialTheme.colorScheme.onSurface
                                             )
-                                            if (client.companyName.isNotBlank()) {
+                                            if (client.name.isNotBlank() && !client.name.equals(client.companyName, ignoreCase = true)) {
                                                 Text(
-                                                    text = client.companyName,
+                                                    text = "Contact: ${client.name}",
                                                     style = MaterialTheme.typography.bodySmall,
                                                     color = MaterialTheme.colorScheme.onSurfaceVariant
                                                 )
@@ -528,8 +529,7 @@ fun ClientsScreen(
     // Add / Edit Client Dialog
     if (showAddDialog) {
         val client = clientToEdit
-        var name by remember { mutableStateOf(client?.name ?: "") }
-        var company by remember { mutableStateOf(client?.companyName ?: "") }
+        var company by remember { mutableStateOf(client?.companyName?.ifBlank { client.name } ?: "") }
         var email by remember { mutableStateOf(client?.email ?: "") }
         var phone by remember { mutableStateOf(client?.phone ?: "") }
         var address by remember { mutableStateOf(client?.address ?: "") }
@@ -547,18 +547,11 @@ fun ClientsScreen(
                     verticalArrangement = Arrangement.spacedBy(8.dp)
                 ) {
                     OutlinedTextField(
-                        value = name,
-                        onValueChange = { name = it },
-                        label = { Text("Client Name *") },
-                        modifier = Modifier.fillMaxWidth().testTag("edit_client_name"),
-                        shape = RoundedCornerShape(12.dp),
-                        colors = glassTextFieldColors()
-                    )
-                    OutlinedTextField(
                         value = company,
                         onValueChange = { company = it },
-                        label = { Text("Company Name") },
-                        modifier = Modifier.fillMaxWidth(),
+                        label = { Text("Company Name *") },
+                        placeholder = { Text("e.g. Acme Corporation") },
+                        modifier = Modifier.fillMaxWidth().testTag("edit_client_company"),
                         shape = RoundedCornerShape(12.dp),
                         colors = glassTextFieldColors()
                     )
@@ -610,13 +603,13 @@ fun ClientsScreen(
             confirmButton = {
                 Button(
                     onClick = {
-                        if (name.isBlank()) {
-                            Toast.makeText(context, "Client name cannot be blank", Toast.LENGTH_SHORT).show()
+                        if (company.isBlank()) {
+                            Toast.makeText(context, "Company name cannot be blank", Toast.LENGTH_SHORT).show()
                             return@Button
                         }
                         val toSave = ClientEntity(
                             id = client?.id ?: 0L,
-                            name = name.trim(),
+                            name = company.trim(),
                             companyName = company.trim(),
                             email = email.trim(),
                             phone = phone.trim(),

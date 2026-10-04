@@ -1,6 +1,8 @@
 package com.invoicely.backend.model;
 
 import jakarta.persistence.*;
+import org.hibernate.annotations.JdbcTypeCode;
+import org.hibernate.type.SqlTypes;
 import java.math.BigDecimal;
 
 @Entity
@@ -62,6 +64,7 @@ public class Invoice {
     @Column(name = "currency_symbol")
     private String currencySymbol = "$";
 
+    @JdbcTypeCode(SqlTypes.JSON)
     @Column(name = "items_json", columnDefinition = "JSONB")
     private String itemsJson = "[]";
 
@@ -119,9 +122,11 @@ public class Invoice {
     @Column(name = "reminder_last_sent")
     private Long reminderLastSent;
 
+    @JdbcTypeCode(SqlTypes.JSON)
     @Column(name = "shipping_details_json", columnDefinition = "JSONB")
     private String shippingDetailsJson = "{}";
 
+    @JdbcTypeCode(SqlTypes.JSON)
     @Column(name = "custom_fields_json", columnDefinition = "JSONB")
     private String customFieldsJson = "{}";
 

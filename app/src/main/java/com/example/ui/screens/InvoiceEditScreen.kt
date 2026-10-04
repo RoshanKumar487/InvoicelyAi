@@ -31,6 +31,7 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.Add
+import androidx.compose.material.icons.filled.Business
 import androidx.compose.material.icons.filled.AutoAwesome
 import androidx.compose.material.icons.filled.Calculate
 import androidx.compose.material.icons.filled.CalendarToday
@@ -94,6 +95,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.compose.runtime.LaunchedEffect
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.example.data.model.ClientEntity
 import com.example.data.model.CustomClientField
@@ -104,7 +106,6 @@ import com.example.data.model.InvoiceItem
 import com.example.data.model.InvoiceUtils
 import com.example.data.model.ItemColumnDef
 import com.example.data.model.ShippingDetails
-import com.example.ui.components.IndustryTemplateSelectorDialog
 import com.example.ui.components.InvoiceAccordionSection
 import com.example.ui.components.ItemizationBuilderDialog
 import com.example.ui.components.LiveInvoicePreviewModal
@@ -149,6 +150,11 @@ fun InvoiceEditScreen(
     }
     val isNew = invoiceId == 0L
 
+    // Fetch real-time client data when opening invoice creation / edit
+    LaunchedEffect(Unit) {
+        viewModel.refreshRealtimeData()
+    }
+
     val dateFormat = remember { SimpleDateFormat("yyyy-MM-dd", Locale.US) }
     val today = remember { dateFormat.format(Date()) }
     val defaultDue = remember {
@@ -171,19 +177,18 @@ fun InvoiceEditScreen(
     var isNotesExpanded by remember { mutableStateOf(false) }
 
     // -------------------------------------------------------------------------
-    // Dialog States
+    // Dialog States (No popup on creation; business category configured in Settings)
     // -------------------------------------------------------------------------
-    var showIndustrySelectorDialog by remember { mutableStateOf(isNew) }
     var showItemizationBuilderDialog by remember { mutableStateOf(false) }
     var showLivePreviewModal by remember { mutableStateOf(false) }
-    var selectedIndustryId by remember { mutableStateOf("general") }
+    var selectedIndustryId by remember(profile.industryPresetId) { mutableStateOf(profile.industryPresetId.ifBlank { "general" }) }
 
     // -------------------------------------------------------------------------
-    // Section 1: Client Details
+    // Section 1: Client Details (Primary Key: Company Name)
     // -------------------------------------------------------------------------
     var selectedClientId by remember { mutableStateOf(existingInvoice?.clientId) }
-    var clientName by remember { mutableStateOf(existingInvoice?.clientName ?: "") }
-    var clientCompany by remember { mutableStateOf(existingInvoice?.clientCompany ?: "") }
+    var clientCompany by remember { mutableStateOf(existingInvoice?.clientCompany?.ifBlank { existingInvoice.clientName } ?: "") }
+    var clientName by remember { mutableStateOf(existingInvoice?.clientName?.ifBlank { existingInvoice.clientCompany } ?: "") }
     var clientEmail by remember { mutableStateOf(existingInvoice?.clientEmail ?: "") }
     var clientPhone by remember { mutableStateOf(existingInvoice?.clientPhone ?: "") }
     var clientAddress by remember { mutableStateOf(existingInvoice?.clientAddress ?: "") }
@@ -205,9 +210,7 @@ fun InvoiceEditScreen(
         }
     }
 
-    // Client Display Label Customization
-    var clientLabelTitle by remember { mutableStateOf("Client / Customer Name") }
-    var clientDropdownExpanded by remember { mutableStateOf(false) }
+    var companyDropdownExpanded by remember { mutableStateOf(false) }
 
     // -------------------------------------------------------------------------
     // Section 2: Shipping / Delivery Details
@@ -227,7 +230,7 @@ fun InvoiceEditScreen(
     }
 
     // -------------------------------------------------------------------------
-    // Section 3: Universal Itemization Columns
+    // Section 3: Universal Itemization Columns (Inlined with Invoice Settings)
     // -------------------------------------------------------------------------
     val itemColumns = remember {
         mutableStateListOf<ItemColumnDef>().apply {
@@ -236,7 +239,8 @@ fun InvoiceEditScreen(
             } else if (profile.customColumnsJson.isNotBlank()) {
                 addAll(InvoiceUtils.deserializeColumns(profile.customColumnsJson, profile))
             } else {
-                addAll(IndustryTemplates.getPresetById("general").defaultColumns)
+                val preset = IndustryTemplates.getPresetById(profile.industryPresetId.ifBlank { "general" })
+                addAll(preset.defaultColumns)
             }
         }
     }
@@ -338,25 +342,14 @@ fun InvoiceEditScreen(
         Toast.makeText(context, "Applied $termName (Due: $dueDate)", Toast.LENGTH_SHORT).show()
     }
 
-    // Helper: Save Invoice
-    fun validateAndSave(previewAfter: Boolean) {
-        if (clientName.isBlank()) {
-            Toast.makeText(context, "Please enter client name in Section 1", Toast.LENGTH_SHORT).show()
-            isClientExpanded = true
-            return
-        }
-        if (items.isEmpty()) {
-            Toast.makeText(context, "Please add at least one item in Section 3", Toast.LENGTH_SHORT).show()
-            isItemsExpanded = true
-            return
-        }
-
+    fun saveInvoiceInternal(finalClientId: Long?, previewAfter: Boolean) {
+        val trimmedCompany = clientCompany.trim()
         val invoiceToSave = InvoiceEntity(
             id = if (isNew) 0L else invoiceId,
             invoiceNumber = invoiceNumber.trim(),
-            clientId = selectedClientId,
-            clientName = clientName.trim(),
-            clientCompany = clientCompany.trim(),
+            clientId = finalClientId,
+            clientName = trimmedCompany,
+            clientCompany = trimmedCompany,
             clientEmail = clientEmail.trim(),
             clientPhone = clientPhone.trim(),
             clientAddress = clientAddress.trim(),
@@ -398,6 +391,49 @@ fun InvoiceEditScreen(
                 onSavedAndPreview(savedId)
             } else {
                 onBack()
+            }
+        }
+    }
+
+    // Helper: Save Invoice (auto-creates client profile if not matching)
+    fun validateAndSave(previewAfter: Boolean) {
+        val trimmedCompany = clientCompany.trim()
+        if (trimmedCompany.isBlank()) {
+            Toast.makeText(context, "Please enter Company Name in Section 2", Toast.LENGTH_SHORT).show()
+            isClientExpanded = true
+            return
+        }
+        if (items.isEmpty()) {
+            Toast.makeText(context, "Please add at least one item in Section 3", Toast.LENGTH_SHORT).show()
+            isItemsExpanded = true
+            return
+        }
+
+        // Check if company matches existing client in database
+        val matchedClient = allClients.find {
+            (selectedClientId != null && it.id == selectedClientId) ||
+            it.companyName.trim().equals(trimmedCompany, ignoreCase = true) ||
+            it.name.trim().equals(trimmedCompany, ignoreCase = true)
+        }
+
+        if (matchedClient != null) {
+            selectedClientId = matchedClient.id
+            saveInvoiceInternal(matchedClient.id, previewAfter)
+        } else {
+            // Auto-create client profile and call save API
+            val newClient = ClientEntity(
+                id = 0L,
+                name = trimmedCompany,
+                companyName = trimmedCompany,
+                email = clientEmail.trim(),
+                phone = clientPhone.trim(),
+                address = clientAddress.trim(),
+                taxId = clientTaxId.trim(),
+                defaultPaymentTerms = paymentTerms
+            )
+            viewModel.saveClient(newClient) { newClientId ->
+                selectedClientId = newClientId
+                saveInvoiceInternal(newClientId, previewAfter)
             }
         }
     }
@@ -528,91 +564,76 @@ fun InvoiceEditScreen(
                     verticalArrangement = Arrangement.spacedBy(10.dp)
                 ) {
 
-            // Top Industry Quick Selector Banner
+            // Top Business Category & Workflow Banner (Inlined from Settings, No Popup)
+            val currentPreset = remember(profile.industryPresetId) {
+                IndustryTemplates.getPresetById(profile.industryPresetId.ifBlank { "general" })
+            }
             GlassCard(
                 modifier = Modifier.fillMaxWidth(),
-                shape = RoundedCornerShape(18.dp),
+                shape = RoundedCornerShape(16.dp),
                 elevation = 2.dp
             ) {
-                Column(modifier = Modifier.padding(horizontal = 16.dp, vertical = 12.dp)) {
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(horizontal = 16.dp, vertical = 12.dp),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
                     Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.SpaceBetween,
-                        verticalAlignment = Alignment.CenterVertically
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(10.dp)
                     ) {
-                        Row(
-                            verticalAlignment = Alignment.CenterVertically,
-                            horizontalArrangement = Arrangement.spacedBy(6.dp)
+                        Box(
+                            modifier = Modifier
+                                .size(36.dp)
+                                .clip(RoundedCornerShape(8.dp))
+                                .background(Color(0xFFEFF6FF)),
+                            contentAlignment = Alignment.Center
                         ) {
-                            Icon(Icons.Default.AutoAwesome, contentDescription = null, tint = Color(0xFF2563EB), modifier = Modifier.size(18.dp))
-                            Text(
-                                text = "Business Type & Preset",
-                                fontSize = 13.sp,
-                                fontWeight = FontWeight.Bold,
-                                color = PrimaryNavy
-                            )
+                            Icon(currentPreset.icon, contentDescription = null, tint = Color(0xFF2563EB), modifier = Modifier.size(20.dp))
                         }
-
-                        Surface(
-                            color = Color(0xFFEFF6FF),
-                            shape = RoundedCornerShape(6.dp),
-                            border = androidx.compose.foundation.BorderStroke(1.dp, Color(0xFF93C5FD)),
-                            modifier = Modifier.clickable { showIndustrySelectorDialog = true }
-                        ) {
+                        Column {
+                            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                                Text(
+                                    text = currentPreset.name,
+                                    fontSize = 13.5.sp,
+                                    fontWeight = FontWeight.Bold,
+                                    color = if (isDark) Color.White else PrimaryNavy
+                                )
+                                Surface(
+                                    color = Color(0xFFDBEAFE),
+                                    shape = RoundedCornerShape(4.dp)
+                                ) {
+                                    Text(
+                                        text = currentPreset.industryCategory,
+                                        fontSize = 9.sp,
+                                        fontWeight = FontWeight.Bold,
+                                        color = Color(0xFF1D4ED8),
+                                        modifier = Modifier.padding(horizontal = 5.dp, vertical = 1.dp)
+                                    )
+                                }
+                            }
                             Text(
-                                text = "Browse 12 Industries →",
-                                fontSize = 10.sp,
-                                fontWeight = FontWeight.Bold,
-                                color = Color(0xFF2563EB),
-                                modifier = Modifier.padding(horizontal = 8.dp, vertical = 3.dp)
+                                text = "Columns & workflow inlined from Invoice Settings",
+                                fontSize = 11.sp,
+                                color = if (isDark) Color(0xFF94A3B8) else Color(0xFF64748B)
                             )
                         }
                     }
 
-                    Spacer(modifier = Modifier.height(8.dp))
-
-                    // Quick Chips row for most common presets
-                    Row(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .horizontalScroll(rememberScrollState()),
-                        horizontalArrangement = Arrangement.spacedBy(6.dp)
+                    Surface(
+                        color = if (isDark) Color(0xFF1E293B) else Color(0xFFF1F5F9),
+                        shape = RoundedCornerShape(6.dp),
+                        border = androidx.compose.foundation.BorderStroke(0.5.dp, Color(0xFFCBD5E1))
                     ) {
-                        IndustryTemplates.allPresets.take(6).forEach { preset ->
-                            val isSelected = selectedIndustryId == preset.id
-                            Surface(
-                                color = if (isSelected) Color(0xFF2563EB) else Color(0xFFF1F5F9),
-                                shape = RoundedCornerShape(16.dp),
-                                border = androidx.compose.foundation.BorderStroke(
-                                    1.dp,
-                                    if (isSelected) Color(0xFF1D4ED8) else Color(0xFFCBD5E1)
-                                ),
-                                modifier = Modifier.clickable {
-                                    selectedIndustryId = preset.id
-                                    templateId = preset.recommendedTemplateId
-                                    itemColumns.clear()
-                                    itemColumns.addAll(preset.defaultColumns)
-                                    if (preset.defaultNotes.isNotBlank()) notes = preset.defaultNotes
-                                    if (preset.defaultTerms.isNotBlank()) terms = preset.defaultTerms
-                                    shippingDetails = shippingDetails.copy(sectionTitle = preset.recommendedSectionTitle)
-                                    if (items.isEmpty() || (items.size == 1 && items.first().description.isBlank())) {
-                                        preset.sampleItem?.let { sample ->
-                                            items.clear()
-                                            items.add(sample)
-                                        }
-                                    }
-                                    Toast.makeText(context, "Loaded ${preset.name} template", Toast.LENGTH_SHORT).show()
-                                }
-                            ) {
-                                Text(
-                                    text = preset.name,
-                                    fontSize = 11.sp,
-                                    fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Medium,
-                                    color = if (isSelected) Color.White else PrimaryNavy,
-                                    modifier = Modifier.padding(horizontal = 10.dp, vertical = 5.dp)
-                                )
-                            }
-                        }
+                        Text(
+                            text = "Settings Inlined",
+                            fontSize = 10.sp,
+                            fontWeight = FontWeight.Medium,
+                            color = if (isDark) Color(0xFF93C5FD) else Color(0xFF475569),
+                            modifier = Modifier.padding(horizontal = 8.dp, vertical = 3.dp)
+                        )
                     }
                 }
             }
@@ -746,135 +767,231 @@ fun InvoiceEditScreen(
             }
 
             // =================================================================
-            // ACCORDION 1: CLIENT DETAILS
+            // ACCORDION 2: CLIENT DETAILS (Company Name is Primary Key)
             // =================================================================
+            val matchingClients = remember(clientCompany, allClients) {
+                val q = clientCompany.trim()
+                if (q.isBlank()) emptyList()
+                else allClients.filter {
+                    it.companyName.contains(q, ignoreCase = true) ||
+                        it.name.contains(q, ignoreCase = true)
+                }
+            }
+
+            val matchedClient = remember(selectedClientId, clientCompany, allClients) {
+                allClients.find {
+                    (selectedClientId != null && it.id == selectedClientId) ||
+                        it.companyName.trim().equals(clientCompany.trim(), ignoreCase = true) ||
+                        it.name.trim().equals(clientCompany.trim(), ignoreCase = true)
+                }
+            }
+
             InvoiceAccordionSection(
                 sectionNumber = 2,
-                icon = Icons.Default.Person,
-                title = "Client Details",
-                collapsedSummary = if (clientName.isNotBlank()) {
-                    "Billed to: $clientName ${if (clientCompany.isNotBlank()) "($clientCompany)" else ""} • ${clientEmail.ifBlank { clientPhone.ifBlank { "Contact details added" } }}"
+                icon = Icons.Default.Business,
+                title = "Client Company Details",
+                collapsedSummary = if (clientCompany.isNotBlank()) {
+                    "Billed to: $clientCompany • ${clientEmail.ifBlank { clientPhone.ifBlank { clientAddress.ifBlank { "Client profile attached" } } }}"
                 } else {
-                    "No client specified • Tap to enter details"
+                    "No company specified • Tap to enter details"
                 },
                 isExpanded = isClientExpanded,
                 onToggleExpand = { isClientExpanded = !isClientExpanded },
-                badgeText = if (clientName.isNotBlank()) "Configured" else "Required",
+                badgeText = if (clientCompany.isNotBlank()) "Configured" else "Required",
                 testTag = "accordion_client_details"
             ) {
                 Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                    // Client Name with Dropdown Autocomplete
-                    val matchingClients = remember(clientName, allClients) {
-                        if (clientName.isBlank()) emptyList()
-                        else allClients.filter {
-                            it.name.contains(clientName, ignoreCase = true) ||
-                                it.companyName.contains(clientName, ignoreCase = true)
-                        }
-                    }
-
+                    // Company Name with Dropdown Autocomplete (Non-blocking: allow free typing with suggestions)
                     Box(modifier = Modifier.fillMaxWidth()) {
                         OutlinedTextField(
-                            value = clientName,
-                            onValueChange = {
-                                clientName = it
-                                clientDropdownExpanded = it.isNotBlank()
+                            value = clientCompany,
+                            onValueChange = { newVal ->
+                                clientCompany = newVal
+                                clientName = newVal
+                                companyDropdownExpanded = newVal.isNotBlank()
+                                if (matchedClient != null &&
+                                    !matchedClient.companyName.equals(newVal.trim(), ignoreCase = true) &&
+                                    !matchedClient.name.equals(newVal.trim(), ignoreCase = true)) {
+                                    selectedClientId = null
+                                }
                             },
-                            label = { Text(clientLabelTitle) },
+                            label = { Text("Company Name *") },
+                            placeholder = { Text("Search client directory or enter new company name...") },
                             singleLine = true,
                             modifier = Modifier
                                 .fillMaxWidth()
-                                .testTag("field_client_name"),
+                                .testTag("field_client_company"),
+                            leadingIcon = {
+                                Icon(Icons.Default.Business, contentDescription = null, tint = PrimaryNavy)
+                            },
                             trailingIcon = {
                                 if (allClients.isNotEmpty()) {
-                                    IconButton(onClick = { clientDropdownExpanded = !clientDropdownExpanded }) {
-                                        Icon(Icons.Default.KeyboardArrowDown, contentDescription = "Pick Client")
+                                    IconButton(onClick = { companyDropdownExpanded = !companyDropdownExpanded }) {
+                                        Icon(
+                                            imageVector = if (companyDropdownExpanded) Icons.Default.ExpandLess else Icons.Default.KeyboardArrowDown,
+                                            contentDescription = "Pick Company",
+                                            tint = PrimaryNavy
+                                        )
                                     }
                                 }
                             }
                         )
 
                         DropdownMenu(
-                            expanded = clientDropdownExpanded && matchingClients.isNotEmpty(),
-                            onDismissRequest = { clientDropdownExpanded = false }
+                            expanded = companyDropdownExpanded && matchingClients.isNotEmpty(),
+                            onDismissRequest = { companyDropdownExpanded = false },
+                            properties = androidx.compose.ui.window.PopupProperties(
+                                focusable = false // Allows continuous typing without losing cursor focus or keyboard!
+                            ),
+                            modifier = Modifier
+                                .fillMaxWidth(0.9f)
+                                .background(Color.White)
                         ) {
-                            matchingClients.forEach { c ->
+                            matchingClients.take(6).forEach { c ->
+                                val compTitle = c.companyName.ifBlank { c.name }
                                 DropdownMenuItem(
                                     text = {
-                                        Column {
-                                            Text(text = c.name, fontWeight = FontWeight.Bold, fontSize = 13.sp)
-                                            if (c.companyName.isNotBlank()) Text(text = c.companyName, fontSize = 11.sp, color = Color.Gray)
-                                            if (c.email.isNotBlank()) Text(text = c.email, fontSize = 10.sp, color = Color.Gray)
+                                        Row(
+                                            verticalAlignment = Alignment.CenterVertically,
+                                            horizontalArrangement = Arrangement.spacedBy(10.dp)
+                                        ) {
+                                            Box(
+                                                modifier = Modifier
+                                                    .size(34.dp)
+                                                    .clip(CircleShape)
+                                                    .background(Color(0xFFEFF6FF)),
+                                                contentAlignment = Alignment.Center
+                                            ) {
+                                                Text(
+                                                    text = compTitle.take(1).uppercase(),
+                                                    fontWeight = FontWeight.Bold,
+                                                    color = PrimaryNavy,
+                                                    fontSize = 14.sp
+                                                )
+                                            }
+                                            Column {
+                                                Text(text = compTitle, fontWeight = FontWeight.Bold, fontSize = 13.sp, color = Color(0xFF0F172A))
+                                                val details = listOfNotNull(
+                                                    c.taxId.takeIf { it.isNotBlank() }?.let { "Tax ID: $it" },
+                                                    c.email.takeIf { it.isNotBlank() },
+                                                    c.phone.takeIf { it.isNotBlank() }
+                                                ).joinToString(" • ")
+                                                if (details.isNotBlank()) {
+                                                    Text(text = details, fontSize = 10.sp, color = Color(0xFF64748B))
+                                                }
+                                                if (c.address.isNotBlank()) {
+                                                    Text(text = c.address.replace("\n", ", "), fontSize = 9.5.sp, color = Color(0xFF94A3B8), maxLines = 1)
+                                                }
+                                            }
                                         }
                                     },
                                     onClick = {
                                         selectedClientId = c.id
-                                        clientName = c.name
-                                        clientCompany = c.companyName
-                                        clientEmail = c.email
-                                        clientPhone = c.phone
-                                        clientAddress = c.address
-                                        clientTaxId = c.taxId
-                                        clientDropdownExpanded = false
-                                        Toast.makeText(context, "Filled details for ${c.name}", Toast.LENGTH_SHORT).show()
+                                        clientCompany = compTitle
+                                        clientName = compTitle
+                                        if (c.email.isNotBlank()) clientEmail = c.email
+                                        if (c.phone.isNotBlank()) clientPhone = c.phone
+                                        if (c.address.isNotBlank()) clientAddress = c.address
+                                        if (c.taxId.isNotBlank()) clientTaxId = c.taxId
+                                        if (c.defaultPaymentTerms.isNotBlank()) paymentTerms = c.defaultPaymentTerms
+                                        companyDropdownExpanded = false
+                                        Toast.makeText(context, "Filled details for $compTitle", Toast.LENGTH_SHORT).show()
                                     }
                                 )
                             }
                         }
                     }
 
-                    // Company Name & GST / Tax ID
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.spacedBy(10.dp)
-                    ) {
-                        OutlinedTextField(
-                            value = clientCompany,
-                            onValueChange = { clientCompany = it },
-                            label = { Text("Company Name") },
-                            singleLine = true,
-                            modifier = Modifier.weight(1f).testTag("field_client_company")
-                        )
+                    // Client Status Indicator Pill
+                    if (clientCompany.isNotBlank()) {
+                        Surface(
+                            color = if (matchedClient != null) Color(0xFFDCFCE7) else Color(0xFFEFF6FF),
+                            shape = RoundedCornerShape(8.dp),
+                            border = androidx.compose.foundation.BorderStroke(
+                                1.dp,
+                                if (matchedClient != null) Color(0xFF86EFAC) else Color(0xFFBFDBFE)
+                            ),
+                            modifier = Modifier.fillMaxWidth()
+                        ) {
+                            Row(
+                                modifier = Modifier.padding(horizontal = 10.dp, vertical = 6.dp),
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.spacedBy(6.dp)
+                            ) {
+                                Icon(
+                                    imageVector = if (matchedClient != null) Icons.Default.Check else Icons.Default.AutoAwesome,
+                                    contentDescription = null,
+                                    tint = if (matchedClient != null) Color(0xFF15803D) else Color(0xFF1D4ED8),
+                                    modifier = Modifier.size(14.dp)
+                                )
+                                Text(
+                                    text = if (matchedClient != null) {
+                                        "Linked to Client Directory (#${matchedClient.id} • ${matchedClient.companyName.ifBlank { matchedClient.name }})"
+                                    } else {
+                                        "New Client • Will be auto-saved to client profile upon creating invoice"
+                                    },
+                                    fontSize = 11.sp,
+                                    fontWeight = FontWeight.Medium,
+                                    color = if (matchedClient != null) Color(0xFF166534) else Color(0xFF1E40AF)
+                                )
+                            }
+                        }
+                    }
 
+                    // GSTIN / Tax ID
+                    if (profile.showClientTaxId) {
                         OutlinedTextField(
                             value = clientTaxId,
                             onValueChange = { clientTaxId = it },
                             label = { Text("GSTIN / Tax ID") },
+                            placeholder = { Text("e.g. 29ABCDE1234F1Z5 or US EIN") },
                             singleLine = true,
-                            modifier = Modifier.weight(1f).testTag("field_client_tax_id")
+                            modifier = Modifier.fillMaxWidth().testTag("field_client_tax_id")
                         )
                     }
 
                     // Billing Address
-                    OutlinedTextField(
-                        value = clientAddress,
-                        onValueChange = { clientAddress = it },
-                        label = { Text("Billing Address") },
-                        maxLines = 3,
-                        modifier = Modifier.fillMaxWidth().testTag("field_client_address")
-                    )
+                    if (profile.showClientAddress) {
+                        OutlinedTextField(
+                            value = clientAddress,
+                            onValueChange = { clientAddress = it },
+                            label = { Text("Billing Address") },
+                            placeholder = { Text("Street address, city, postal code, country") },
+                            maxLines = 3,
+                            modifier = Modifier.fillMaxWidth().testTag("field_client_address")
+                        )
+                    }
 
                     // Email & Phone
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.spacedBy(10.dp)
-                    ) {
-                        OutlinedTextField(
-                            value = clientEmail,
-                            onValueChange = { clientEmail = it },
-                            label = { Text("Email Address") },
-                            singleLine = true,
-                            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Email),
-                            modifier = Modifier.weight(1f).testTag("field_client_email")
-                        )
+                    if (profile.showClientEmail || profile.showClientPhone) {
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.spacedBy(10.dp)
+                        ) {
+                            if (profile.showClientEmail) {
+                                OutlinedTextField(
+                                    value = clientEmail,
+                                    onValueChange = { clientEmail = it },
+                                    label = { Text("Email Address") },
+                                    placeholder = { Text("billing@client.com") },
+                                    singleLine = true,
+                                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Email),
+                                    modifier = Modifier.weight(1f).testTag("field_client_email")
+                                )
+                            }
 
-                        OutlinedTextField(
-                            value = clientPhone,
-                            onValueChange = { clientPhone = it },
-                            label = { Text("Phone Number") },
-                            singleLine = true,
-                            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Phone),
-                            modifier = Modifier.weight(1f).testTag("field_client_phone")
-                        )
+                            if (profile.showClientPhone) {
+                                OutlinedTextField(
+                                    value = clientPhone,
+                                    onValueChange = { clientPhone = it },
+                                    label = { Text("Phone Number") },
+                                    placeholder = { Text("+1 (555) 000-0000") },
+                                    singleLine = true,
+                                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Phone),
+                                    modifier = Modifier.weight(1f).testTag("field_client_phone")
+                                )
+                            }
+                        }
                     }
 
                     // Custom Client Fields List
@@ -902,7 +1019,7 @@ fun InvoiceEditScreen(
                         }
                     }
 
-                    // Bottom Row: Add Custom Field & Save to Clients DB
+                    // Bottom Row: Add Custom Field
                     Row(
                         modifier = Modifier.fillMaxWidth(),
                         horizontalArrangement = Arrangement.SpaceBetween,
@@ -918,30 +1035,6 @@ fun InvoiceEditScreen(
                             Icon(Icons.Default.Add, contentDescription = null, modifier = Modifier.size(14.dp))
                             Spacer(modifier = Modifier.width(4.dp))
                             Text("+ Add Custom Field", fontSize = 11.sp)
-                        }
-
-                        if (clientName.isNotBlank() && allClients.none { it.name.equals(clientName, ignoreCase = true) }) {
-                            Button(
-                                onClick = {
-                                    val newClient = ClientEntity(
-                                        name = clientName.trim(),
-                                        companyName = clientCompany.trim(),
-                                        email = clientEmail.trim(),
-                                        phone = clientPhone.trim(),
-                                        address = clientAddress.trim(),
-                                        taxId = clientTaxId.trim()
-                                    )
-                                    viewModel.saveClient(newClient) { newId ->
-                                        selectedClientId = newId
-                                        Toast.makeText(context, "Saved $clientName to client directory", Toast.LENGTH_SHORT).show()
-                                    }
-                                },
-                                colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF16A34A)),
-                                shape = RoundedCornerShape(8.dp),
-                                contentPadding = PaddingValues(horizontal = 10.dp, vertical = 4.dp)
-                            ) {
-                                Text("Save Client to DB", fontSize = 11.sp, fontWeight = FontWeight.Bold)
-                            }
                         }
                     }
                 }
@@ -1778,32 +1871,7 @@ fun InvoiceEditScreen(
         )
     }
 
-    // 2. 12 Industry Preset Selector Dialog
-    if (showIndustrySelectorDialog) {
-        IndustryTemplateSelectorDialog(
-            selectedPresetId = selectedIndustryId,
-            onSelectPreset = { preset ->
-                selectedIndustryId = preset.id
-                templateId = preset.recommendedTemplateId
-                itemColumns.clear()
-                itemColumns.addAll(preset.defaultColumns)
-                if (preset.defaultNotes.isNotBlank()) notes = preset.defaultNotes
-                if (preset.defaultTerms.isNotBlank()) terms = preset.defaultTerms
-                shippingDetails = shippingDetails.copy(sectionTitle = preset.recommendedSectionTitle)
-                if (items.isEmpty() || (items.size == 1 && items.first().description.isBlank())) {
-                    preset.sampleItem?.let { sample ->
-                        items.clear()
-                        items.add(sample)
-                    }
-                }
-                Toast.makeText(context, "Loaded ${preset.name} template", Toast.LENGTH_SHORT).show()
-                showIndustrySelectorDialog = false
-            },
-            onDismiss = { showIndustrySelectorDialog = false }
-        )
-    }
-
-    // 3. Live Full Invoice Preview Modal
+    // 2. Live Full Invoice Preview Modal
     if (showLivePreviewModal) {
         LiveInvoicePreviewModal(
             invoiceNumber = invoiceNumber,

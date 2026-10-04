@@ -47,6 +47,10 @@ data class BusinessProfile(
     val defaultCurrencySymbol: String = "₹",
     val defaultCurrencyFormat: String = "before", // "before" (₹100) or "after" (100 ₹)
 
+    // Business Category & Industry Presets (configured in Invoice Settings)
+    val industryPresetId: String = "general",
+    val businessCategory: String = "General Business",
+
     // Default Template selection
     val defaultTemplateId: String = "gst_tax", // "gst_tax", "zoho_elegance", "vyapar_classic", "modern", "corporate", etc.
 

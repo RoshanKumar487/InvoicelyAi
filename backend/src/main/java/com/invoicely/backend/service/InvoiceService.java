@@ -117,6 +117,9 @@ public class InvoiceService {
 
     @Transactional
     public Invoice createInvoice(Invoice invoice, Long companyId, Long createdByUserId, String createdByUserName) {
+        if (invoice.getId() != null && invoice.getId() <= 0) {
+            invoice.setId(null);
+        }
         if (companyId != null && invoice.getCompanyId() == null) {
             invoice.setCompanyId(companyId);
         }
@@ -126,7 +129,8 @@ public class InvoiceService {
         if (createdByUserName != null && (invoice.getCreatedByUserName() == null || invoice.getCreatedByUserName().isBlank())) {
             invoice.setCreatedByUserName(createdByUserName);
         }
-        if (invoice.getInvoiceNumber() == null || invoice.getInvoiceNumber().trim().isEmpty()) {
+        if (invoice.getInvoiceNumber() == null || invoice.getInvoiceNumber().trim().isEmpty() ||
+            invoiceRepository.findByInvoiceNumber(invoice.getInvoiceNumber().trim()).isPresent()) {
             invoice.setInvoiceNumber(generateNextInvoiceNumber(invoice.getCompanyId()));
         }
         if (invoice.getCreatedAt() == null) {
@@ -234,6 +238,13 @@ public class InvoiceService {
         long count = (companyId != null)
                 ? invoiceRepository.countByCompanyId(companyId) + 1
                 : invoiceRepository.count() + 1;
-        return String.format("INV-%d-%04d", currentYear, count);
+        String candidate = String.format("INV-%d-%04d", currentYear, count);
+        int attempt = 0;
+        while (invoiceRepository.findByInvoiceNumber(candidate).isPresent() && attempt < 100) {
+            count++;
+            attempt++;
+            candidate = String.format("INV-%d-%04d", currentYear, count);
+        }
+        return candidate;
     }
 }
