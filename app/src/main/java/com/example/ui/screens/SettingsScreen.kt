@@ -1801,9 +1801,20 @@ fun SettingsScreen(
                     ) {
                         OutlinedButton(
                             onClick = {
-                                serverUrlInput = "http://10.0.2.2:8080/"
+                                serverUrlInput = ApiConfig.CLOUD_BASE_URL
                                 ApiConfig.updateBaseUrl(serverUrlInput)
-                                Toast.makeText(context, "Set to Emulator URL", Toast.LENGTH_SHORT).show()
+                                Toast.makeText(context, "Set to Cloud (Render)", Toast.LENGTH_SHORT).show()
+                            },
+                            modifier = Modifier.weight(1f),
+                            shape = RoundedCornerShape(8.dp)
+                        ) {
+                            Text("Cloud", fontSize = 11.sp)
+                        }
+                        OutlinedButton(
+                            onClick = {
+                                serverUrlInput = ApiConfig.EMULATOR_BASE_URL
+                                ApiConfig.updateBaseUrl(serverUrlInput)
+                                Toast.makeText(context, "Set to Emulator", Toast.LENGTH_SHORT).show()
                             },
                             modifier = Modifier.weight(1f),
                             shape = RoundedCornerShape(8.dp)
@@ -1812,14 +1823,14 @@ fun SettingsScreen(
                         }
                         OutlinedButton(
                             onClick = {
-                                serverUrlInput = "http://localhost:8080/"
+                                serverUrlInput = ApiConfig.LOCALHOST_BASE_URL
                                 ApiConfig.updateBaseUrl(serverUrlInput)
                                 Toast.makeText(context, "Set to Localhost", Toast.LENGTH_SHORT).show()
                             },
                             modifier = Modifier.weight(1f),
                             shape = RoundedCornerShape(8.dp)
                         ) {
-                            Text("Localhost", fontSize = 11.sp)
+                            Text("Local", fontSize = 11.sp)
                         }
                         Button(
                             onClick = {
@@ -1829,7 +1840,7 @@ fun SettingsScreen(
                             shape = RoundedCornerShape(8.dp),
                             colors = ButtonDefaults.buttonColors(containerColor = PrimaryNavy)
                         ) {
-                            Text("Save URL", fontSize = 11.sp)
+                            Text("Save", fontSize = 11.sp)
                         }
                     }
 
