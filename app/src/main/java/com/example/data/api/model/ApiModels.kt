@@ -20,6 +20,42 @@ data class ApiResponse<T>(
     val timestamp: Long = System.currentTimeMillis()
 )
 
+data class AiChatRequest(
+    val message: String
+)
+
+data class AiChatResponseDto(
+    val answer: String,
+    val groundedSources: List<String> = emptyList(),
+    val readOnly: Boolean = true,
+    val pendingCommandId: String? = null,
+    val actionType: String? = null,
+    val resourceType: String? = null,
+    val resourceId: Long? = null
+)
+
+data class AiInvoiceDraftResponseDto(
+    val message: String,
+    val invoice: BackendInvoiceDto? = null
+)
+
+data class ReceiptScanRequest(
+    val imageBase64: String,
+    val mimeType: String
+)
+
+data class ReceiptScanResponseDto(
+    val vendor: String = "",
+    val title: String = "",
+    val amount: Double = 0.0,
+    val taxAmount: Double = 0.0,
+    val category: String = "",
+    val paymentMethod: String = "",
+    val date: String = "",
+    val currency: String = "",
+    val notes: String = ""
+)
+
 // =========================================================================
 // AUTH REQUEST & RESPONSE MODELS
 // =========================================================================

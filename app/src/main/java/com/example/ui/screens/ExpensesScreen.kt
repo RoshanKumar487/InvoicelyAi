@@ -29,13 +29,17 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardOptions
-import com.example.ai.GeminiAiService
 import com.example.ai.ScannedBillData
+import com.example.data.api.InvoicelyApiManager
 import androidx.compose.material.icons.filled.AutoAwesome
 import androidx.compose.runtime.rememberCoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import android.util.Base64
+import java.text.SimpleDateFormat
+import java.util.Date
+import java.util.Locale
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.AttachMoney
@@ -110,9 +114,52 @@ import com.example.ui.components.AdaptiveContainer
 import com.example.ui.components.GlassCard
 import com.example.ui.components.glassTextFieldColors
 import com.example.ui.components.rememberWindowAdaptiveInfo
-import java.text.SimpleDateFormat
-import java.util.Date
-import java.util.Locale
+
+private fun sampleBillPreset(type: String): ScannedBillData {
+    val today = SimpleDateFormat("yyyy-MM-dd", Locale.US).format(Date())
+    val preset = when (type.lowercase(Locale.US)) {
+        "petrol", "fuel" -> ScannedBillData(
+            vendor = "Example fuel station",
+            title = "Vehicle fuel",
+            amount = 3250.0,
+            taxAmount = 325.0,
+            category = "Travel & Transport",
+            paymentMethod = "UPI",
+            date = today
+        )
+        "cafe", "coffee", "meeting" -> ScannedBillData(
+            vendor = "Example cafe",
+            title = "Client discussion",
+            amount = 940.0,
+            taxAmount = 47.0,
+            category = "Meals & Entertainment",
+            paymentMethod = "Credit Card",
+            date = today
+        )
+        "office", "supplies" -> ScannedBillData(
+            vendor = "Example office supplies",
+            title = "Office supplies",
+            amount = 1850.0,
+            taxAmount = 282.20,
+            category = "Hardware & Equipment",
+            paymentMethod = "Credit Card",
+            date = today
+        )
+        else -> ScannedBillData(
+            vendor = "Example restaurant",
+            title = "Team meal",
+            amount = 4680.0,
+            taxAmount = 234.0,
+            category = "Meals & Entertainment",
+            paymentMethod = "UPI",
+            date = today
+        )
+    }
+    return preset.copy(
+        notes = "Example only. Replace with actual receipt details before saving.",
+        isAiExtracted = false
+    )
+}
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -136,8 +183,6 @@ fun ExpensesScreen(
     var scannedBillData by remember { mutableStateOf<ScannedBillData?>(null) }
 
     val coroutineScope = rememberCoroutineScope()
-    val geminiService = remember { GeminiAiService() }
-
     // Photo picker for bill scanning (zero-permission compliant) with Gemini AI
     val photoPickerLauncher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.PickVisualMedia()
@@ -151,13 +196,33 @@ fun ExpensesScreen(
                     val bytes = withContext(Dispatchers.IO) {
                         context.contentResolver.openInputStream(uri)?.use { it.readBytes() }
                     }
-                    val scanned = geminiService.scanReceiptWithGemini(bytes)
-                    scannedBillData = scanned
+                    val image = bytes ?: throw IllegalStateException("Unable to read the selected receipt image.")
+                    val mimeType = context.contentResolver.getType(uri) ?: "image/jpeg"
+                    if (mimeType !in setOf("image/jpeg", "image/png", "image/webp")) {
+                        throw IllegalArgumentException("Choose a JPEG, PNG, or WebP image.")
+                    }
+                    val result = InvoicelyApiManager.scanAiReceipt(
+                        Base64.encodeToString(image, Base64.NO_WRAP),
+                        mimeType
+                    ).getOrElse { throw it }
+                    scannedBillData = ScannedBillData(
+                        vendor = result.vendor,
+                        title = result.title,
+                        amount = result.amount,
+                        taxAmount = result.taxAmount,
+                        category = result.category.ifBlank { "General Business" },
+                        paymentMethod = result.paymentMethod.ifBlank { "Other" },
+                        date = result.date,
+                        notes = result.notes,
+                        isAiExtracted = true
+                    )
                     showScannedReceiptDialog = true
                 } catch (e: Exception) {
-                    val fallback = geminiService.scanReceiptWithGemini(null, sampleType = "Team Lunch")
-                    scannedBillData = fallback
-                    showScannedReceiptDialog = true
+                    Toast.makeText(
+                        context,
+                        "Receipt scan failed: ${e.localizedMessage ?: "Please try again."}",
+                        Toast.LENGTH_LONG
+                    ).show()
                 } finally {
                     isScanningBill = false
                 }
@@ -169,8 +234,7 @@ fun ExpensesScreen(
         isScanningBill = true
         scanningBillMessage = "Gemini AI extracting $presetType details..."
         coroutineScope.launch {
-            kotlinx.coroutines.delay(500)
-            val scanned = geminiService.scanReceiptWithGemini(null, sampleType = presetType)
+            val scanned = sampleBillPreset(presetType)
             scannedBillData = scanned
             showScannedReceiptDialog = true
             isScanningBill = false
@@ -1092,7 +1156,7 @@ fun ScannedReceiptResultDialog(
     var paymentMethod by remember(scannedData) { mutableStateOf(scannedData?.paymentMethod ?: "UPI") }
     var dateStr by remember(scannedData) { mutableStateOf(scannedData?.date?.ifBlank { null } ?: today) }
     var taxDeductible by remember(scannedData) { mutableStateOf(scannedData?.taxDeductible ?: true) }
-    var notes by remember(scannedData) { mutableStateOf(scannedData?.notes ?: "Scanned via Gemini AI") }
+    var notes by remember(scannedData) { mutableStateOf(scannedData?.notes ?: "Scanned with AI") }
 
     val categories = listOf(
         "Meals & Entertainment",

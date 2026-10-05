@@ -24,6 +24,10 @@ public interface ExpenseRepository extends JpaRepository<Expense, Long> {
     // Multi-tenant company queries
     List<Expense> findByCompanyIdOrderByCreatedAtDesc(Long companyId);
 
+    List<Expense> findTop12ByCompanyIdOrderByCreatedAtDesc(Long companyId);
+
+    List<Expense> findTop12ByCompanyIdAndCreatedByUserIdOrderByCreatedAtDesc(Long companyId, Long createdByUserId);
+
     List<Expense> findByCompanyIdAndCategoryIgnoreCaseOrderByCreatedAtDesc(Long companyId, String category);
 
     java.util.Optional<Expense> findByIdAndCompanyId(Long id, Long companyId);
@@ -32,6 +36,9 @@ public interface ExpenseRepository extends JpaRepository<Expense, Long> {
 
     @Query("SELECT COALESCE(SUM(e.amount), 0) FROM Expense e WHERE e.companyId = :companyId")
     BigDecimal sumTotalExpensesByCompanyId(@org.springframework.data.repository.query.Param("companyId") Long companyId);
+
+    @Query("SELECT e.currency AS currency, COALESCE(SUM(e.amount), 0) AS total FROM Expense e WHERE e.companyId = :companyId GROUP BY e.currency")
+    List<CurrencyAmount> sumExpensesByCurrencyByCompanyId(@org.springframework.data.repository.query.Param("companyId") Long companyId);
 
     @Query("SELECT COALESCE(SUM(e.taxAmount), 0) FROM Expense e WHERE e.companyId = :companyId AND e.taxDeductible = true")
     BigDecimal sumTotalTaxDeductibleByCompanyId(@org.springframework.data.repository.query.Param("companyId") Long companyId);
@@ -48,4 +55,8 @@ public interface ExpenseRepository extends JpaRepository<Expense, Long> {
     @Query("SELECT COALESCE(SUM(e.amount), 0) FROM Expense e WHERE e.companyId = :companyId AND e.createdByUserId = :createdByUserId")
     BigDecimal sumTotalExpensesByCompanyIdAndCreatedByUserId(@org.springframework.data.repository.query.Param("companyId") Long companyId,
                                                              @org.springframework.data.repository.query.Param("createdByUserId") Long createdByUserId);
+
+    @Query("SELECT e.currency AS currency, COALESCE(SUM(e.amount), 0) AS total FROM Expense e WHERE e.companyId = :companyId AND e.createdByUserId = :createdByUserId GROUP BY e.currency")
+    List<CurrencyAmount> sumExpensesByCurrencyByCompanyIdAndCreatedByUserId(@org.springframework.data.repository.query.Param("companyId") Long companyId,
+                                                                            @org.springframework.data.repository.query.Param("createdByUserId") Long createdByUserId);
 }

@@ -137,6 +137,52 @@ See [DOCKER.md](file:///c:/Users/ADMIN/Documents/InvocielyAi/InvoicelyAi-main/In
 
 ---
 
+## AI Assistant: Voice, Commands, and Company Knowledge
+
+Typed and voice chat both use the authenticated Spring backend. Speech is transcribed on Android and
+left editable for review before it is sent. The Android build no longer contains Gemini API calls or
+loads a Gemini key from `.env`; configure `GEMINI_API_KEY` only in the backend deployment environment.
+`GEMINI_MODEL` optionally selects the chat/vision model; `GEMINI_EMBEDDING_MODEL` defaults to
+`gemini-embedding-001`.
+
+The `/api/v1/ai/chat` endpoint answers using tenant-scoped live database summaries and recent
+invoice/expense/client records, plus semantically retrieved company reference text. It can prepare
+new client, expense, and invoice records. Each proposed command is bound to its user and company,
+expires after 15 minutes, and has to be explicitly confirmed in the app before it writes. Invoice
+commands only create `Draft` invoices; they never send invoices or change payment status. Current
+operations do not include edits, deletes, sending, or payments. Permissions are rechecked when the
+command is proposed and when it is confirmed.
+
+The invoice editor's natural-language draft helper and receipt-image scanner also call the backend.
+Invoice extraction only populates an editable, unsaved form. Receipt fields are extracted into a
+review screen; users must still confirm the expense save.
+
+### Enable semantic RAG
+
+Run `src/main/resources/schema.sql` in the Supabase SQL editor after setting up the application
+database. The script enables PostgreSQL `vector` and creates tenant-scoped `company_knowledge_chunks`
+with 768-dimensional Gemini embeddings and a cosine HNSW index. Confirm that the Supabase project
+has the `vector` extension available before applying the schema. Without the schema, knowledge
+indexing/search returns an explicit service-unavailable error.
+
+Company administrators can index or replace a plain-text document with:
+
+```http
+POST /api/v1/ai/knowledge
+Authorization: Bearer <JWT>
+Content-Type: application/json
+
+{"title":"Payment policy","content":"Invoices are due within 30 days..."}
+```
+
+Text up to 50,000 characters is chunked and embedded. At answer time, retrieval is scoped to the
+authenticated company and supplies a small number of relevant chunks. Retrieved text is treated as
+untrusted reference material, not instructions. Current financial facts continue to come from live,
+permission-checked PostgreSQL queries—not model training or document embeddings.
+
+The current knowledge ingestion endpoint accepts text content; it does not yet extract PDF/DOCX
+files or provide a document-management screen. Never index secrets or unrelated customer data.
+
 ## 📖 Interactive API Documentation (Swagger UI)
 
 Once running, open your web browser:

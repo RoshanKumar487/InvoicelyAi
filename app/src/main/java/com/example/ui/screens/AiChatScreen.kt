@@ -148,6 +148,7 @@ fun AiChatScreen(
     val isAiThinking by viewModel.isAiThinking.collectAsStateWithLifecycle()
 
     var inputPrompt by remember { mutableStateOf("") }
+    var pendingVoiceInput by remember { mutableStateOf(false) }
     val listState = rememberLazyListState()
 
     // -------------------------------------------------------------------------
@@ -254,10 +255,10 @@ fun AiChatScreen(
             val recognizedText = spokenMatches?.firstOrNull()
             if (!recognizedText.isNullOrBlank()) {
                 inputPrompt = recognizedText
+                pendingVoiceInput = true
                 latestUserTranscript = recognizedText
                 userSpokeLastPrompt = true
                 stopSpeaking()
-                viewModel.sendAiChatMessage(recognizedText, isVoiceInput = true)
             }
         }
     }
@@ -502,6 +503,11 @@ fun AiChatScreen(
                         onOpenPreview = { invoiceId -> onNavigateToInvoicePreview(invoiceId) },
                         onOpenEdit = { invoiceId -> onNavigateToInvoiceEdit(invoiceId) },
                         onNavigateToDashboard = onNavigateToDashboard,
+                        onConfirmCommand = { commandId ->
+                            viewModel.confirmAiCommand(commandId) { invoiceId ->
+                                onNavigateToInvoicePreview(invoiceId)
+                            }
+                        },
                         onUseClientForInvoice = { client ->
                             inputPrompt = "Generate invoice for ${client.name}, 10 hours of consulting at $100/hr"
                         }
@@ -626,13 +632,20 @@ fun AiChatScreen(
                             onSend = {
                                 if (inputPrompt.isNotBlank() && !isAiThinking) {
                                     val promptToSend = inputPrompt
+                                    val wasVoiceInput = pendingVoiceInput
                                     inputPrompt = ""
+                                    pendingVoiceInput = false
                                     latestUserTranscript = promptToSend
                                     stopSpeaking()
-                                    viewModel.sendAiChatMessage(promptToSend)
+                                    viewModel.sendAiChatMessage(promptToSend, isVoiceInput = wasVoiceInput)
                                 }
                             }
-                        )
+                        ),
+                        label = if (pendingVoiceInput) {
+                            { Text("Review transcript · voice assistant is read-only") }
+                        } else {
+                            null
+                        }
                     )
 
                     // Send Button
@@ -640,10 +653,12 @@ fun AiChatScreen(
                         onClick = {
                             if (inputPrompt.isNotBlank() && !isAiThinking) {
                                 val promptToSend = inputPrompt
+                                val wasVoiceInput = pendingVoiceInput
                                 inputPrompt = ""
+                                pendingVoiceInput = false
                                 latestUserTranscript = promptToSend
                                 stopSpeaking()
-                                viewModel.sendAiChatMessage(promptToSend)
+                                viewModel.sendAiChatMessage(promptToSend, isVoiceInput = wasVoiceInput)
                             }
                         },
                         enabled = inputPrompt.isNotBlank() && !isAiThinking,
@@ -1010,6 +1025,7 @@ fun ChatMessageItem(
     onOpenPreview: (Long) -> Unit,
     onOpenEdit: (Long) -> Unit,
     onNavigateToDashboard: () -> Unit,
+    onConfirmCommand: (String) -> Unit,
     onUseClientForInvoice: (ClientEntity) -> Unit,
     modifier: Modifier = Modifier
 ) {
@@ -1142,6 +1158,24 @@ fun ChatMessageItem(
                             text = message.text,
                             isDark = isDark
                         )
+
+                        if (message.pendingCommandId != null) {
+                            Spacer(modifier = Modifier.height(10.dp))
+                            Button(
+                                onClick = { onConfirmCommand(message.pendingCommandId) },
+                                modifier = Modifier.fillMaxWidth()
+                            ) {
+                                Icon(Icons.Default.CheckCircle, contentDescription = null)
+                                Spacer(modifier = Modifier.width(8.dp))
+                                Text("Confirm and save")
+                            }
+                            Text(
+                                text = "This action will be saved to your business account. It will not be sent to a client.",
+                                fontSize = 11.sp,
+                                color = if (isDark) Color(0xFF94A3B8) else Color(0xFF64748B),
+                                modifier = Modifier.padding(top = 4.dp)
+                            )
+                        }
 
                         // ChatGPT Style Actions Bar: Copy, Voice Speak, Share
                         Row(
