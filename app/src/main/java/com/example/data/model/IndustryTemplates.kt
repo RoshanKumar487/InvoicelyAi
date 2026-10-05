@@ -7,8 +7,10 @@ import androidx.compose.material.icons.filled.Business
 import androidx.compose.material.icons.filled.Code
 import androidx.compose.material.icons.filled.LocalHospital
 import androidx.compose.material.icons.filled.LocalShipping
+import androidx.compose.material.icons.filled.Person
 import androidx.compose.material.icons.filled.Restaurant
 import androidx.compose.material.icons.filled.School
+import androidx.compose.material.icons.filled.Security
 import androidx.compose.material.icons.filled.ShoppingBag
 import androidx.compose.material.icons.filled.ShoppingCart
 import androidx.compose.material.icons.filled.Tune
@@ -32,6 +34,66 @@ data class IndustryTemplatePreset(
 object IndustryTemplates {
 
     val allPresets: List<IndustryTemplatePreset> = listOf(
+        IndustryTemplatePreset(
+            id = "security_agency",
+            name = "Security Agency & Guard Services",
+            industryCategory = "Security & Facility",
+            description = "Security Guards (12h/8h shifts), Gunman, Supervisor, Days, Shift, Rate/Day, SAC 998525",
+            icon = Icons.Default.Security,
+            recommendedTemplateId = "corporate",
+            sampleItem = InvoiceItem(
+                description = "Security Guard Deployment (12 Hours Shift - 26 Days)",
+                quantity = 26.0,
+                unitPrice = 750.0,
+                unit = "days",
+                taxRate = 18.0,
+                customFields = mapOf("sac" to "998525", "shift" to "12 Hours Day/Night")
+            ),
+            defaultColumns = listOf(
+                ItemColumnDef(id = "col_sec_desc", label = "Designation / Deployment", key = "description", dataType = "text", isVisible = true, order = 0, widthWeight = 2.0f, isRequired = true),
+                ItemColumnDef(id = "col_sec_sac", label = "SAC Code", key = "hsn", dataType = "hsn", isVisible = true, order = 1, widthWeight = 0.9f),
+                ItemColumnDef(id = "col_sec_shift", label = "Shift / Hours", key = "shift", dataType = "text", isVisible = true, order = 2, widthWeight = 1.0f),
+                ItemColumnDef(id = "col_sec_days", label = "No. of Days", key = "quantity", dataType = "quantity", isVisible = true, order = 3, widthWeight = 0.8f),
+                ItemColumnDef(id = "col_sec_unit", label = "Unit", key = "unit", dataType = "unit", isVisible = true, order = 4, widthWeight = 0.7f),
+                ItemColumnDef(id = "col_sec_rate", label = "Rate / Day", key = "unitPrice", dataType = "currency", isVisible = true, order = 5, widthWeight = 1.1f),
+                ItemColumnDef(id = "col_sec_tax", label = "GST (18%)", key = "taxRate", dataType = "tax", isVisible = true, order = 6, widthWeight = 0.8f),
+                ItemColumnDef(id = "col_sec_total", label = "Amount", key = "total", dataType = "formula", isVisible = true, order = 7, widthWeight = 1.2f, calculationType = "formula", formula = "Days * Rate")
+            ),
+            defaultNotes = "Security attendance log verified by client site supervisor. Statutory EPF & ESIC challans enclosed.",
+            defaultTerms = "Payment due within 15 days of bill submission. RCM compliance as per GST notification.",
+            recommendedSectionTitle = "Site / Deployment Location"
+        ),
+
+        IndustryTemplatePreset(
+            id = "hr_staffing",
+            name = "Employee Salary & HR Staffing",
+            industryCategory = "Human Resources & Payroll",
+            description = "Monthly Staff Salary Reimbursement, Days Worked, Hours, Overtime, Recruitment, SAC 998519",
+            icon = Icons.Default.Person,
+            recommendedTemplateId = "corporate",
+            sampleItem = InvoiceItem(
+                description = "Monthly Staff Salary Reimbursement - Operations Team",
+                quantity = 26.0,
+                unitPrice = 1200.0,
+                unit = "days",
+                taxRate = 18.0,
+                customFields = mapOf("sac" to "998519", "employee_id" to "EMP-104", "hours" to "208")
+            ),
+            defaultColumns = listOf(
+                ItemColumnDef(id = "col_hr_desc", label = "Employee Name / Role", key = "description", dataType = "text", isVisible = true, order = 0, widthWeight = 2.0f, isRequired = true),
+                ItemColumnDef(id = "col_hr_sac", label = "SAC Code", key = "hsn", dataType = "hsn", isVisible = true, order = 1, widthWeight = 0.9f),
+                ItemColumnDef(id = "col_hr_empid", label = "Emp ID", key = "employee_id", dataType = "text", isVisible = true, order = 2, widthWeight = 0.9f),
+                ItemColumnDef(id = "col_hr_days", label = "Days Worked", key = "quantity", dataType = "quantity", isVisible = true, order = 3, widthWeight = 0.8f),
+                ItemColumnDef(id = "col_hr_unit", label = "Unit", key = "unit", dataType = "unit", isVisible = true, order = 4, widthWeight = 0.7f),
+                ItemColumnDef(id = "col_hr_rate", label = "Daily / Monthly Rate", key = "unitPrice", dataType = "currency", isVisible = true, order = 5, widthWeight = 1.1f),
+                ItemColumnDef(id = "col_hr_tax", label = "GST (18%)", key = "taxRate", dataType = "tax", isVisible = true, order = 6, widthWeight = 0.8f),
+                ItemColumnDef(id = "col_hr_total", label = "Total Salary Due", key = "total", dataType = "formula", isVisible = true, order = 7, widthWeight = 1.2f, calculationType = "formula", formula = "Days * Rate")
+            ),
+            defaultNotes = "Salary attendance muster roll attached. Net salaries disbursed to designated employee bank accounts.",
+            defaultTerms = "Monthly reimbursement payable by 5th of every calendar month.",
+            recommendedSectionTitle = "Client Office / Branch"
+        ),
+
         IndustryTemplatePreset(
             id = "general",
             name = "General Business",

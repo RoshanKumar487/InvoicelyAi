@@ -45,6 +45,7 @@ import androidx.compose.material.icons.filled.Event
 import androidx.compose.material.icons.filled.ExpandLess
 import androidx.compose.material.icons.filled.ExpandMore
 import androidx.compose.material.icons.filled.FactCheck
+import androidx.compose.material.icons.filled.History
 import androidx.compose.material.icons.filled.KeyboardArrowDown
 import androidx.compose.material.icons.filled.LocalShipping
 import androidx.compose.material.icons.filled.Menu
@@ -112,6 +113,11 @@ import com.example.data.model.ShippingDetails
 import com.example.ui.components.InvoiceAccordionSection
 import com.example.ui.components.ItemizationBuilderDialog
 import com.example.ui.components.LiveInvoicePreviewModal
+import com.example.ui.components.AutofillItemDescriptionField
+import com.example.ui.components.AutofillUnitField
+import com.example.ui.components.DomainItemCatalogDialog
+import com.example.util.IndustryItemCatalog
+import com.example.util.InvoiceAutofillCache
 import com.example.ui.theme.PrimaryNavy
 import com.example.ui.theme.StatusPaidGreen
 import com.example.ui.viewmodel.InvoiceViewModel
@@ -314,6 +320,7 @@ fun InvoiceEditScreen(
     var copyWatermark by remember { mutableStateOf("Original for Recipient") }
     var isAutoRoundOff by remember { mutableStateOf(existingInvoice?.roundOff != 0.0 || isNew) }
     var showAiDraftDialog by remember { mutableStateOf(false) }
+    var showDomainCatalogDialog by remember { mutableStateOf(false) }
 
     // -------------------------------------------------------------------------
     // Calculations
@@ -593,74 +600,7 @@ fun InvoiceEditScreen(
                     verticalArrangement = Arrangement.spacedBy(10.dp)
                 ) {
 
-            // AI Smart Invoice Draft Quick Action
-            Card(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .clip(RoundedCornerShape(14.dp))
-                    .clickable { showAiDraftDialog = true },
-                colors = CardDefaults.cardColors(
-                    containerColor = if (isDark) Color(0xFF1E1B4B) else Color(0xFFEEF2FF)
-                ),
-                border = androidx.compose.foundation.BorderStroke(1.dp, if (isDark) Color(0xFF4338CA) else Color(0xFFC7D2FE))
-            ) {
-                Row(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(12.dp),
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(10.dp)
-                ) {
-                    Box(
-                        modifier = Modifier
-                            .size(36.dp)
-                            .clip(CircleShape)
-                            .background(Color(0xFF4F46E5)),
-                        contentAlignment = Alignment.Center
-                    ) {
-                        Icon(Icons.Default.AutoAwesome, contentDescription = null, tint = Color.White, modifier = Modifier.size(18.dp))
-                    }
-                    Column(modifier = Modifier.weight(1f)) {
-                        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                            Text(
-                                text = "AI Smart Invoice Assistant",
-                                fontSize = 13.sp,
-                                fontWeight = FontWeight.Bold,
-                                color = if (isDark) Color(0xFFC7D2FE) else Color(0xFF312E81)
-                            )
-                            Surface(
-                                color = Color(0xFF4F46E5),
-                                shape = RoundedCornerShape(4.dp)
-                            ) {
-                                Text(
-                                    text = "GEMINI 2.0",
-                                    fontSize = 8.sp,
-                                    fontWeight = FontWeight.Bold,
-                                    color = Color.White,
-                                    modifier = Modifier.padding(horizontal = 4.dp, vertical = 1.dp)
-                                )
-                            }
-                        }
-                        Text(
-                            text = "Speak or type natural language to auto-populate items, client, and taxes",
-                            fontSize = 11.sp,
-                            color = if (isDark) Color(0xFFA5B4FC) else Color(0xFF4338CA)
-                        )
-                    }
-                    Surface(
-                        color = Color(0xFF4F46E5),
-                        shape = RoundedCornerShape(8.dp)
-                    ) {
-                        Text(
-                            text = "Auto-Draft",
-                            fontSize = 11.sp,
-                            fontWeight = FontWeight.Bold,
-                            color = Color.White,
-                            modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp)
-                        )
-                    }
-                }
-            }
+
 
             if (showAiDraftDialog) {
                 var draftPrompt by remember { mutableStateOf("") }
@@ -984,13 +924,10 @@ fun InvoiceEditScreen(
             // =================================================================
             // ACCORDION 2: CLIENT DETAILS (Company Name is Primary Key)
             // =================================================================
-            val matchingClients = remember(clientCompany, allClients) {
+            val matchingClients = remember(clientCompany, allClients, allInvoices) {
                 val q = clientCompany.trim()
                 if (q.isBlank()) emptyList()
-                else allClients.filter {
-                    it.companyName.contains(q, ignoreCase = true) ||
-                        it.name.contains(q, ignoreCase = true)
-                }
+                else InvoiceAutofillCache.getCompanySuggestions(q, allClients, allInvoices)
             }
 
             val matchedClient = remember(selectedClientId, clientCompany, allClients) {
@@ -1500,6 +1437,77 @@ fun InvoiceEditScreen(
                         }
                     }
 
+                    // Quick Industry Domain Presets & Catalog Row
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .horizontalScroll(rememberScrollState()),
+                        horizontalArrangement = Arrangement.spacedBy(6.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Surface(
+                            color = Color(0xFFEFF6FF),
+                            shape = RoundedCornerShape(20.dp),
+                            border = androidx.compose.foundation.BorderStroke(1.dp, Color(0xFFBFDBFE)),
+                            modifier = Modifier.clickable { showDomainCatalogDialog = true }
+                        ) {
+                            Row(
+                                modifier = Modifier.padding(horizontal = 9.dp, vertical = 5.dp),
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.spacedBy(4.dp)
+                            ) {
+                                Icon(Icons.Default.Tune, contentDescription = null, tint = Color(0xFF2563EB), modifier = Modifier.size(13.dp))
+                                Text("Domain Catalog", fontSize = 11.sp, fontWeight = FontWeight.Bold, color = Color(0xFF1D4ED8))
+                            }
+                        }
+
+                        IndustryItemCatalog.categories.take(3).forEach { domainCat ->
+                            Surface(
+                                color = Color(0xFFF8FAFC),
+                                shape = RoundedCornerShape(20.dp),
+                                border = androidx.compose.foundation.BorderStroke(1.dp, Color(0xFFE2E8F0)),
+                                modifier = Modifier.clickable { showDomainCatalogDialog = true }
+                            ) {
+                                Row(
+                                    modifier = Modifier.padding(horizontal = 8.dp, vertical = 5.dp),
+                                    verticalAlignment = Alignment.CenterVertically,
+                                    horizontalArrangement = Arrangement.spacedBy(4.dp)
+                                ) {
+                                    Icon(domainCat.icon, contentDescription = null, tint = Color(domainCat.colorHex), modifier = Modifier.size(12.dp))
+                                    Text(domainCat.shortLabel, fontSize = 10.5.sp, fontWeight = FontWeight.Medium, color = Color(0xFF334155))
+                                }
+                            }
+                        }
+
+                        val lastCompanyInvoice = remember(clientCompany, selectedClientId, allInvoices) {
+                            InvoiceAutofillCache.getLastInvoiceForCompany(clientCompany, selectedClientId, allInvoices)
+                        }
+                        if (lastCompanyInvoice != null && lastCompanyInvoice.id != (existingInvoice?.id ?: -1L)) {
+                            Surface(
+                                color = Color(0xFFFEF3C7),
+                                shape = RoundedCornerShape(20.dp),
+                                border = androidx.compose.foundation.BorderStroke(1.dp, Color(0xFFFDE68A)),
+                                modifier = Modifier.clickable {
+                                    val lastItems = InvoiceUtils.deserializeInvoiceItems(lastCompanyInvoice.itemsJson)
+                                    if (lastItems.isNotEmpty()) {
+                                        items.clear()
+                                        items.addAll(lastItems)
+                                        Toast.makeText(context, "Filled ${lastItems.size} items from last invoice for ${clientCompany.ifBlank { "client" }}", Toast.LENGTH_SHORT).show()
+                                    }
+                                }
+                            ) {
+                                Row(
+                                    modifier = Modifier.padding(horizontal = 8.dp, vertical = 5.dp),
+                                    verticalAlignment = Alignment.CenterVertically,
+                                    horizontalArrangement = Arrangement.spacedBy(4.dp)
+                                ) {
+                                    Icon(Icons.Default.History, contentDescription = null, tint = Color(0xFFD97706), modifier = Modifier.size(12.dp))
+                                    Text("Repeat Last Bill Items", fontSize = 10.5.sp, fontWeight = FontWeight.Bold, color = Color(0xFF92400E))
+                                }
+                            }
+                        }
+                    }
+
                     // Mobile-first Item Cards (Sleek, matching Client accordion elegance)
                     items.forEachIndexed { itemIndex, item ->
                         val isItemDetailsExpanded = expandedItemIndexSet.contains(itemIndex)
@@ -1535,14 +1543,30 @@ fun InvoiceEditScreen(
                                         )
                                     }
 
-                                    OutlinedTextField(
+                                    AutofillItemDescriptionField(
                                         value = item.description,
                                         onValueChange = { items[itemIndex] = item.copy(description = it) },
-                                        label = { Text(descCol?.label ?: "Description / Service / Product") },
-                                        singleLine = true,
-                                        modifier = Modifier
-                                            .weight(1f)
-                                            .testTag("item_desc_$itemIndex")
+                                        onSuggestionSelected = { sug ->
+                                            val updatedFields = item.customFields.toMutableMap()
+                                            if (sug.hsnOrSac.isNotBlank()) {
+                                                updatedFields["hsn"] = sug.hsnOrSac
+                                                updatedFields["sac"] = sug.hsnOrSac
+                                            }
+                                            updatedFields.putAll(sug.customFields)
+                                            items[itemIndex] = item.copy(
+                                                description = sug.description,
+                                                unit = sug.unit.ifBlank { item.unit },
+                                                unitPrice = if (sug.unitPrice > 0.0) sug.unitPrice else item.unitPrice,
+                                                taxRate = if (sug.taxRate > 0.0) sug.taxRate else item.taxRate,
+                                                customFields = updatedFields
+                                            )
+                                        },
+                                        clientCompany = clientCompany,
+                                        clientId = selectedClientId,
+                                        allInvoices = allInvoices,
+                                        label = descCol?.label ?: "Description / Service / Product",
+                                        modifier = Modifier.weight(1f),
+                                        testTag = "item_desc_$itemIndex"
                                     )
 
                                     IconButton(
@@ -1591,12 +1615,12 @@ fun InvoiceEditScreen(
                                     )
 
                                     val unitCol = itemColumns.find { it.key == "unit" }
-                                    OutlinedTextField(
+                                    AutofillUnitField(
                                         value = item.unit,
                                         onValueChange = { items[itemIndex] = item.copy(unit = it) },
-                                        label = { Text(unitCol?.label ?: "Unit", fontSize = 10.sp) },
-                                        singleLine = true,
-                                        modifier = Modifier.weight(0.8f).testTag("item_unit_$itemIndex")
+                                        label = unitCol?.label ?: "Unit",
+                                        modifier = Modifier.weight(0.85f),
+                                        testTag = "item_unit_$itemIndex"
                                     )
 
                                     val rateCol = itemColumns.find { it.key == "unitPrice" }
@@ -2192,6 +2216,29 @@ fun InvoiceEditScreen(
                 showItemizationBuilderDialog = false
             },
             onDismiss = { showItemizationBuilderDialog = false }
+        )
+    }
+
+    // Domain & Industry Item Catalog Dialog (Security Agency, Employee Salary/HR, IT, etc.)
+    if (showDomainCatalogDialog) {
+        DomainItemCatalogDialog(
+            onDismissRequest = { showDomainCatalogDialog = false },
+            onAddItem = { newItem ->
+                if (items.size == 1 && items.first().description.isBlank() && items.first().unitPrice == 0.0) {
+                    items[0] = newItem
+                } else {
+                    items.add(newItem)
+                }
+                Toast.makeText(context, "Added ${newItem.description}", Toast.LENGTH_SHORT).show()
+            },
+            onAddMultipleItems = { newItems ->
+                if (items.size == 1 && items.first().description.isBlank() && items.first().unitPrice == 0.0) {
+                    items.clear()
+                }
+                items.addAll(newItems)
+                Toast.makeText(context, "Added ${newItems.size} domain items to invoice", Toast.LENGTH_SHORT).show()
+            },
+            currencySymbol = currencySymbol
         )
     }
 

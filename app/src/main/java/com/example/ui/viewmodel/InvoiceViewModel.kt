@@ -21,6 +21,7 @@ import com.example.data.api.ApiConfig
 import com.example.data.api.InvoicelyApiManager
 import com.example.data.api.model.DashboardStatsResponse
 import com.example.data.api.model.toBackendDto
+import com.example.util.InvoiceAutofillCache
 import com.example.data.repository.BusinessRepository
 import com.example.data.repository.ClientRepository
 import com.example.data.repository.ExpenseRepository
@@ -661,6 +662,11 @@ class InvoiceViewModel(application: Application) : AndroidViewModel(application)
                     android.util.Log.w("InvoiceViewModel", "Failed to sync updated invoice $finalId to backend", e)
                 }
             }
+
+            try {
+                val deserializedItems = InvoiceUtils.deserializeInvoiceItems(mappedInvoice.itemsJson)
+                InvoiceAutofillCache.recordInvoiceSaved(getApplication(), mappedInvoice, deserializedItems)
+            } catch (_: Exception) {}
 
             kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.Main) {
                 onSaved(finalId)
