@@ -16,7 +16,7 @@ import com.example.data.model.InvoiceEntity
         BusinessProfile::class,
         ExpenseEntity::class
     ],
-    version = 10,
+    version = 11,
     exportSchema = false
 )
 abstract class AppDatabase : RoomDatabase() {

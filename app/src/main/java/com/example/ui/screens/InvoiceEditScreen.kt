@@ -76,6 +76,7 @@ import androidx.compose.material3.Surface
 import androidx.compose.material3.Switch
 import androidx.compose.material3.SwitchDefaults
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
@@ -232,7 +233,7 @@ fun InvoiceEditScreen(
     // -------------------------------------------------------------------------
     // Section 3: Universal Itemization Columns (Inlined with Invoice Settings)
     // -------------------------------------------------------------------------
-    val itemColumns = remember {
+    val itemColumns = remember(profile.customColumnsJson, existingInvoice?.itemColumnsJson) {
         mutableStateListOf<ItemColumnDef>().apply {
             if (existingInvoice != null && existingInvoice.itemColumnsJson.isNotBlank()) {
                 addAll(InvoiceUtils.deserializeColumns(existingInvoice.itemColumnsJson, profile))
@@ -275,6 +276,7 @@ fun InvoiceEditScreen(
     var taxLabel by remember { mutableStateOf(existingInvoice?.taxLabel ?: profile.defaultTaxLabel) }
     var taxType by remember { mutableStateOf(existingInvoice?.taxType ?: "GST") }
     var isTaxInclusive by remember { mutableStateOf(existingInvoice?.isTaxInclusive ?: false) }
+    var isRcm by remember { mutableStateOf(existingInvoice?.isRcm ?: profile.defaultIsRcm) }
     val defaultDiscPct = profile.defaultDiscountType == "percentage"
     var discountPercent by remember { mutableDoubleStateOf(existingInvoice?.discountPercent ?: if (defaultDiscPct) profile.defaultDiscountValue else 0.0) }
     var discountAmount by remember { mutableDoubleStateOf(existingInvoice?.discountAmount ?: if (!defaultDiscPct) profile.defaultDiscountValue else 0.0) }
@@ -382,7 +384,8 @@ fun InvoiceEditScreen(
             additionalCharges = additionalCharges,
             roundOff = roundOff,
             isTaxInclusive = isTaxInclusive,
-            taxType = taxType
+            taxType = taxType,
+            isRcm = isRcm
         )
 
         viewModel.saveInvoice(invoiceToSave) { savedId ->
@@ -563,80 +566,6 @@ fun InvoiceEditScreen(
                         .verticalScroll(rememberScrollState()),
                     verticalArrangement = Arrangement.spacedBy(10.dp)
                 ) {
-
-            // Top Business Category & Workflow Banner (Inlined from Settings, No Popup)
-            val currentPreset = remember(profile.industryPresetId) {
-                IndustryTemplates.getPresetById(profile.industryPresetId.ifBlank { "general" })
-            }
-            GlassCard(
-                modifier = Modifier.fillMaxWidth(),
-                shape = RoundedCornerShape(16.dp),
-                elevation = 2.dp
-            ) {
-                Row(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(horizontal = 16.dp, vertical = 12.dp),
-                    horizontalArrangement = Arrangement.SpaceBetween,
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    Row(
-                        verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.spacedBy(10.dp)
-                    ) {
-                        Box(
-                            modifier = Modifier
-                                .size(36.dp)
-                                .clip(RoundedCornerShape(8.dp))
-                                .background(Color(0xFFEFF6FF)),
-                            contentAlignment = Alignment.Center
-                        ) {
-                            Icon(currentPreset.icon, contentDescription = null, tint = Color(0xFF2563EB), modifier = Modifier.size(20.dp))
-                        }
-                        Column {
-                            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                                Text(
-                                    text = currentPreset.name,
-                                    fontSize = 13.5.sp,
-                                    fontWeight = FontWeight.Bold,
-                                    color = if (isDark) Color.White else PrimaryNavy
-                                )
-                                Surface(
-                                    color = Color(0xFFDBEAFE),
-                                    shape = RoundedCornerShape(4.dp)
-                                ) {
-                                    Text(
-                                        text = currentPreset.industryCategory,
-                                        fontSize = 9.sp,
-                                        fontWeight = FontWeight.Bold,
-                                        color = Color(0xFF1D4ED8),
-                                        modifier = Modifier.padding(horizontal = 5.dp, vertical = 1.dp)
-                                    )
-                                }
-                            }
-                            Text(
-                                text = "Columns & workflow inlined from Invoice Settings",
-                                fontSize = 11.sp,
-                                color = if (isDark) Color(0xFF94A3B8) else Color(0xFF64748B)
-                            )
-                        }
-                    }
-
-                    Surface(
-                        color = if (isDark) Color(0xFF1E293B) else Color(0xFFF1F5F9),
-                        shape = RoundedCornerShape(6.dp),
-                        border = androidx.compose.foundation.BorderStroke(0.5.dp, Color(0xFFCBD5E1))
-                    ) {
-                        Text(
-                            text = "Settings Inlined",
-                            fontSize = 10.sp,
-                            fontWeight = FontWeight.Medium,
-                            color = if (isDark) Color(0xFF93C5FD) else Color(0xFF475569),
-                            modifier = Modifier.padding(horizontal = 8.dp, vertical = 3.dp)
-                        )
-                    }
-                }
-            }
 
             // =================================================================
             // ACCORDION 1: INVOICE DETAILS (compact)
@@ -1421,7 +1350,7 @@ fun InvoiceEditScreen(
 
                                 // Row 3: Extra columns
                                 val extraCustomCols = itemColumns.filter {
-                                    it.key != "description" && it.key != "quantity" && it.key != "unit" && it.key != "unitPrice" && it.key != "total"
+                                    it.isVisible && it.key != "description" && it.key != "quantity" && it.key != "unit" && it.key != "unitPrice" && it.key != "total"
                                 }
 
                                 if (extraCustomCols.isNotEmpty()) {
@@ -1616,6 +1545,73 @@ fun InvoiceEditScreen(
                                 modifier = Modifier.height(24.dp),
                                 colors = SwitchDefaults.colors(checkedThumbColor = Color.White, checkedTrackColor = Color(0xFF2563EB))
                             )
+                        }
+                    }
+
+                    // Reverse Charge Mechanism (RCM) Toggle
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Column(modifier = Modifier.weight(1f)) {
+                            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                                Text("Reverse Charge (RCM)", fontSize = 11.5.sp, fontWeight = FontWeight.SemiBold, color = if (isDark) Color.White else PrimaryNavy)
+                                if (isRcm) {
+                                    Surface(
+                                        color = Color(0xFFFEF3C7),
+                                        shape = RoundedCornerShape(4.dp),
+                                        border = androidx.compose.foundation.BorderStroke(1.dp, Color(0xFFFDE68A))
+                                    ) {
+                                        Text(
+                                            text = "RCM ACTIVE",
+                                            fontSize = 9.sp,
+                                            fontWeight = FontWeight.Bold,
+                                            color = Color(0xFFB45309),
+                                            modifier = Modifier.padding(horizontal = 4.dp, vertical = 1.dp)
+                                        )
+                                    }
+                                }
+                            }
+                            Text(
+                                text = if (isRcm) "Tax is payable by recipient on reverse charge basis" else "Standard billing (Tax charged by supplier)",
+                                fontSize = 10.sp,
+                                color = if (isDark) Color(0xFF94A3B8) else Color(0xFF64748B)
+                            )
+                        }
+                        Switch(
+                            checked = isRcm,
+                            onCheckedChange = { isRcm = it },
+                            modifier = Modifier.height(24.dp).testTag("switch_rcm_toggle"),
+                            colors = SwitchDefaults.colors(checkedThumbColor = Color.White, checkedTrackColor = Color(0xFFD97706))
+                        )
+                    }
+
+                    if (isRcm) {
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .clip(RoundedCornerShape(8.dp))
+                                .background(Color(0xFFFFFBEB))
+                                .padding(horizontal = 10.dp, vertical = 6.dp),
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Text(
+                                text = "⚡ Tax is payable on reverse charge basis",
+                                fontSize = 10.5.sp,
+                                color = Color(0xFF92400E),
+                                fontWeight = FontWeight.Medium
+                            )
+                            TextButton(
+                                onClick = {
+                                    viewModel.saveBusinessProfile(profile.copy(defaultIsRcm = true))
+                                    Toast.makeText(context, "RCM set as default in Invoice Settings!", Toast.LENGTH_SHORT).show()
+                                },
+                                contentPadding = PaddingValues(horizontal = 6.dp, vertical = 2.dp)
+                            ) {
+                                Text("Set as Default", fontSize = 10.sp, fontWeight = FontWeight.Bold, color = Color(0xFFB45309))
+                            }
                         }
                     }
 
@@ -1865,7 +1861,10 @@ fun InvoiceEditScreen(
             onSaveColumns = { updatedCols ->
                 itemColumns.clear()
                 itemColumns.addAll(updatedCols)
-                Toast.makeText(context, "Itemization structure applied!", Toast.LENGTH_SHORT).show()
+                val serialized = InvoiceUtils.serializeColumns(updatedCols)
+                viewModel.saveBusinessProfile(profile.copy(customColumnsJson = serialized))
+                Toast.makeText(context, "Itemization structure applied and saved as default!", Toast.LENGTH_SHORT).show()
+                showItemizationBuilderDialog = false
             },
             onDismiss = { showItemizationBuilderDialog = false }
         )

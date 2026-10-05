@@ -28,6 +28,7 @@ import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material.icons.automirrored.filled.ArrowForward
 import androidx.compose.material.icons.filled.AccountBalance
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.AutoAwesome
@@ -96,14 +97,10 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.example.data.model.BusinessProfile
-import com.example.data.model.IndustryTemplates
 import com.example.data.model.InvoiceUtils
-import com.example.docx.DocxTemplatePreset
 import com.example.ui.components.AdaptiveContainer
 import com.example.ui.components.rememberWindowAdaptiveInfo
 import com.example.ui.components.BusinessCustomIcon
-import com.example.ui.components.IndustryTemplateSelectorDialog
-import com.example.ui.components.ItemizationBuilderDialog
 import com.example.ui.theme.PrimaryNavy
 import com.example.ui.theme.StatusPaidGreen
 import com.example.ui.viewmodel.InvoiceViewModel
@@ -120,6 +117,7 @@ fun SettingsScreen(
     onViewTemplates: () -> Unit = {},
     onViewExpenses: () -> Unit = {},
     onViewAiChat: () -> Unit = {},
+    onOpenInvoiceSettings: () -> Unit = {},
     onOpenMenu: () -> Unit = {},
     modifier: Modifier = Modifier
 ) {
@@ -134,7 +132,7 @@ fun SettingsScreen(
     var profileState by remember(currentProfile) { mutableStateOf(currentProfile) }
 
     // Card Expand/Collapse States for Zoho-style card navigation
-    var expandedCard by remember { mutableStateOf<String?>("columns") }
+    var expandedCard by remember { mutableStateOf<String?>("profile") }
 
     val isBackendOnline by viewModel.isBackendOnline.collectAsStateWithLifecycle()
     val isSyncing by viewModel.isSyncing.collectAsStateWithLifecycle()
@@ -146,8 +144,6 @@ fun SettingsScreen(
 
     var showResetDialog by remember { mutableStateOf(false) }
     var showClearInvoicesDialog by remember { mutableStateOf(false) }
-    var showSettingsItemBuilder by remember { mutableStateOf(false) }
-    var showSettingsIndustrySelector by remember { mutableStateOf(false) }
 
     val presetColors = listOf(
         "#1E3A8A" to "Navy",
@@ -493,367 +489,77 @@ fun SettingsScreen(
             )
 
             // =========================================================================
-            // CARD 1: EDITABLE ITEM COLUMN NAMES & COLUMN VISIBILITY (USER REQUEST #4)
+            // INVOICE SETTINGS CENTRAL GATEWAY BANNER (ONE-TIME ACTIVITY)
             // =========================================================================
-            SettingAccordionCard(
-                title = "Item Table Columns & Field Names",
-                subtitle = "Rename columns (e.g. Price to Salary, Qty to Hours) & toggle Unit/Rate",
-                icon = Icons.Default.TableChart,
-                isExpanded = expandedCard == "columns",
-                onToggle = { expandedCard = if (expandedCard == "columns") null else "columns" },
-                badge = "Custom Columns"
+            Card(
+                colors = CardDefaults.cardColors(containerColor = Color(0xFFF0FDF4)),
+                shape = RoundedCornerShape(16.dp),
+                border = androidx.compose.foundation.BorderStroke(1.dp, Color(0xFFBBF7D0)),
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .clickable { onOpenInvoiceSettings() }
+                    .testTag("business_settings_invoice_settings_gateway")
             ) {
-                Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                Row(
+                    modifier = Modifier.padding(16.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
                     Box(
                         modifier = Modifier
-                            .fillMaxWidth()
-                            .clip(RoundedCornerShape(8.dp))
-                            .background(Color(0xFFEFF6FF))
-                            .padding(10.dp)
+                            .size(46.dp)
+                            .clip(CircleShape)
+                            .background(Color(0xFFDCFCE7)),
+                        contentAlignment = Alignment.Center
                     ) {
-                        Text(
-                            text = "💡 Change any column name to match your industry (e.g. 'Salary' for payroll, 'Hours' for freelancing, 'Sessions' for clinic, or remove Unit). Changes apply to invoice forms, preview, and DOCX exports!",
-                            fontSize = 11.sp,
-                            color = PrimaryNavy
+                        Icon(
+                            imageVector = Icons.Default.Tune,
+                            contentDescription = null,
+                            tint = Color(0xFF16A34A),
+                            modifier = Modifier.size(24.dp)
                         )
                     }
 
-                    // Column Names Inputs
-                    OutlinedTextField(
-                        value = profileState.colHeaderItem,
-                        onValueChange = { profileState = profileState.copy(colHeaderItem = it) },
-                        label = { Text("Item / Description Column Title") },
-                        placeholder = { Text("e.g. Description / Service, Employee Name, Task") },
-                        modifier = Modifier.fillMaxWidth().testTag("col_header_item_input"),
-                        shape = RoundedCornerShape(10.dp)
-                    )
+                    Spacer(modifier = Modifier.width(14.dp))
 
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.spacedBy(10.dp)
-                    ) {
-                        OutlinedTextField(
-                            value = profileState.colHeaderQty,
-                            onValueChange = { profileState = profileState.copy(colHeaderQty = it) },
-                            label = { Text("Qty Column Title") },
-                            placeholder = { Text("e.g. Qty, Hours, Days") },
-                            modifier = Modifier.weight(1f).testTag("col_header_qty_input"),
-                            shape = RoundedCornerShape(10.dp)
-                        )
-
-                        OutlinedTextField(
-                            value = profileState.colHeaderUnit,
-                            onValueChange = { profileState = profileState.copy(colHeaderUnit = it) },
-                            label = { Text("Unit Column Title") },
-                            placeholder = { Text("e.g. Unit, UOM, Type") },
-                            modifier = Modifier.weight(1f).testTag("col_header_unit_input"),
-                            shape = RoundedCornerShape(10.dp)
-                        )
-                    }
-
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.spacedBy(10.dp)
-                    ) {
-                        OutlinedTextField(
-                            value = profileState.colHeaderRate,
-                            onValueChange = { profileState = profileState.copy(colHeaderRate = it) },
-                            label = { Text("Price / Rate Column Title") },
-                            placeholder = { Text("e.g. Salary, Rate, Price, Wage, Fee") },
-                            modifier = Modifier.weight(1f).testTag("col_header_rate_input"),
-                            shape = RoundedCornerShape(10.dp)
-                        )
-
-                        OutlinedTextField(
-                            value = profileState.colHeaderAmount,
-                            onValueChange = { profileState = profileState.copy(colHeaderAmount = it) },
-                            label = { Text("Total Column Title") },
-                            placeholder = { Text("e.g. Amount, Total, Net Payout") },
-                            modifier = Modifier.weight(1f).testTag("col_header_amount_input"),
-                            shape = RoundedCornerShape(10.dp)
-                        )
-                    }
-
-                    // Column Visibility Toggles
-                    Text("Column Visibility Toggles:", fontSize = 12.sp, fontWeight = FontWeight.Bold, color = PrimaryNavy)
-
-                    FieldToggleRow(
-                        title = "Show Unit Column",
-                        description = "Display Unit of measurement (hrs, pcs, days). Turn off if not needed.",
-                        checked = profileState.showItemUnit,
-                        onCheckedChange = { profileState = profileState.copy(showItemUnit = it) }
-                    )
-
-                    FieldToggleRow(
-                        title = "Show Quantity Column",
-                        description = "Display quantity / hours field. Turn off for flat fee services.",
-                        checked = profileState.showItemQty,
-                        onCheckedChange = { profileState = profileState.copy(showItemQty = it) }
-                    )
-
-                    FieldToggleRow(
-                        title = "Show Rate / Unit Price Column",
-                        description = "Display per-unit rate/price column.",
-                        checked = profileState.showItemRate,
-                        onCheckedChange = { profileState = profileState.copy(showItemRate = it) }
-                    )
-
-                    // Quick Column Preset Buttons
-                    Text("Quick Industry Column Presets:", fontSize = 12.sp, fontWeight = FontWeight.Bold, color = PrimaryNavy)
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.spacedBy(8.dp)
-                    ) {
-                        FilterChip(
-                            selected = false,
-                            onClick = {
-                                profileState = profileState.copy(
-                                    colHeaderItem = "Description / Item",
-                                    colHeaderQty = "Qty",
-                                    colHeaderUnit = "Unit",
-                                    colHeaderRate = "Rate",
-                                    colHeaderAmount = "Amount",
-                                    showItemUnit = true,
-                                    showItemQty = true,
-                                    showItemRate = true
-                                )
-                                Toast.makeText(context, "Standard Retail columns applied", Toast.LENGTH_SHORT).show()
-                            },
-                            label = { Text("Standard Goods", fontSize = 11.sp) }
-                        )
-
-                        FilterChip(
-                            selected = false,
-                            onClick = {
-                                profileState = profileState.copy(
-                                    colHeaderItem = "Employee Name / Role",
-                                    colHeaderQty = "Days / Month",
-                                    colHeaderUnit = "Period",
-                                    colHeaderRate = "Salary",
-                                    colHeaderAmount = "Net Pay",
-                                    showItemUnit = false,
-                                    showItemQty = true,
-                                    showItemRate = true
-                                )
-                                Toast.makeText(context, "Payroll / Salary columns applied (Price -> Salary)", Toast.LENGTH_SHORT).show()
-                            },
-                            label = { Text("Salary / Payroll", fontSize = 11.sp) }
-                        )
-
-                        FilterChip(
-                            selected = false,
-                            onClick = {
-                                profileState = profileState.copy(
-                                    colHeaderItem = "Scope of Work / Deliverable",
-                                    colHeaderQty = "Hours",
-                                    colHeaderUnit = "Hrs",
-                                    colHeaderRate = "Hourly Rate",
-                                    colHeaderAmount = "Line Total",
-                                    showItemUnit = false,
-                                    showItemQty = true,
-                                    showItemRate = true
-                                )
-                                Toast.makeText(context, "Freelance & Consulting columns applied", Toast.LENGTH_SHORT).show()
-                            },
-                            label = { Text("Consulting", fontSize = 11.sp) }
-                        )
-                    }
-
-                    // Live Table Header Preview Box
-                    Text("Live Table Header Preview:", fontSize = 11.sp, fontWeight = FontWeight.SemiBold, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                    Row(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .clip(RoundedCornerShape(8.dp))
-                            .background(Color(android.graphics.Color.parseColor(profileState.brandColorHex)))
-                            .padding(horizontal = 10.dp, vertical = 8.dp),
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        Text(
-                            text = profileState.colHeaderItem.ifBlank { "Description" },
-                            color = Color.White,
-                            fontSize = 11.sp,
-                            fontWeight = FontWeight.Bold,
-                            modifier = Modifier.weight(if (profileState.showItemUnit) 1.6f else 2.0f)
-                        )
-                        if (profileState.showItemQty) {
+                    Column(modifier = Modifier.weight(1f)) {
+                        Row(verticalAlignment = Alignment.CenterVertically) {
                             Text(
-                                text = profileState.colHeaderQty.ifBlank { "Qty" },
-                                color = Color.White,
-                                fontSize = 11.sp,
+                                text = "Invoice Layout & Rules Settings",
+                                style = MaterialTheme.typography.titleMedium,
                                 fontWeight = FontWeight.Bold,
-                                modifier = Modifier.weight(0.7f)
+                                color = Color(0xFF14532D)
                             )
-                        }
-                        if (profileState.showItemUnit) {
-                            Text(
-                                text = profileState.colHeaderUnit.ifBlank { "Unit" },
-                                color = Color.White,
-                                fontSize = 11.sp,
-                                fontWeight = FontWeight.Bold,
-                                modifier = Modifier.weight(0.7f)
-                            )
-                        }
-                        if (profileState.showItemRate) {
-                            Text(
-                                text = profileState.colHeaderRate.ifBlank { "Rate" },
-                                color = Color.White,
-                                fontSize = 11.sp,
-                                fontWeight = FontWeight.Bold,
-                                modifier = Modifier.weight(1.0f)
-                            )
-                        }
-                        Text(
-                            text = profileState.colHeaderAmount.ifBlank { "Amount" },
-                            color = Color.White,
-                            fontSize = 11.sp,
-                            fontWeight = FontWeight.Bold,
-                            modifier = Modifier.weight(1.0f)
-                        )
-                    }
-
-                    Spacer(modifier = Modifier.height(4.dp))
-
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.spacedBy(8.dp)
-                    ) {
-                        Button(
-                            onClick = { showSettingsItemBuilder = true },
-                            colors = ButtonDefaults.buttonColors(containerColor = PrimaryNavy),
-                            shape = RoundedCornerShape(8.dp),
-                            modifier = Modifier.weight(1.1f).testTag("settings_open_item_builder_btn")
-                        ) {
-                            Text("Universal Itemization ⚙️", fontSize = 11.sp, fontWeight = FontWeight.Bold)
-                        }
-
-                        OutlinedButton(
-                            onClick = { showSettingsIndustrySelector = true },
-                            shape = RoundedCornerShape(8.dp),
-                            modifier = Modifier.weight(0.9f).testTag("settings_browse_industries_btn")
-                        ) {
-                            Text("12 Industries", fontSize = 11.sp, fontWeight = FontWeight.Bold)
-                        }
-                    }
-                }
-            }
-
-            // =========================================================================
-            // CARD 2: INVOICE TEMPLATES & DEFAULT DESIGN (10 TEMPLATES IN SETTINGS MENU)
-            // =========================================================================
-            SettingAccordionCard(
-                title = "Invoice Templates & Default Design",
-                subtitle = "Select from 10 distinct templates (GST Indian Biz, Zoho Style, etc.) & set default",
-                icon = Icons.Default.Description,
-                isExpanded = expandedCard == "templates",
-                onToggle = { expandedCard = if (expandedCard == "templates") null else "templates" },
-                badge = "${DocxTemplatePreset.getById(profileState.defaultTemplateId).templateName} (Default)"
-            ) {
-                Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
-                    Text(
-                        text = "Choose your organization's default template. All new invoices and exports will automatically use this layout:",
-                        fontSize = 12.sp,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
-                    )
-
-                    // 10 Templates Cards
-                    DocxTemplatePreset.allTemplates.forEach { template ->
-                        val isDefault = profileState.defaultTemplateId == template.templateId
-                        Card(
-                            colors = CardDefaults.cardColors(
-                                containerColor = if (isDefault) Color(0xFFEFF6FF) else Color(0xFFF8FAFC)
-                            ),
-                            shape = RoundedCornerShape(12.dp),
-                            border = if (isDefault) androidx.compose.foundation.BorderStroke(2.dp, PrimaryNavy) else androidx.compose.foundation.BorderStroke(1.dp, Color(0xFFE2E8F0)),
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .testTag("template_card_${template.templateId}")
-                        ) {
-                            Row(
+                            Spacer(modifier = Modifier.width(6.dp))
+                            Box(
                                 modifier = Modifier
-                                    .fillMaxWidth()
-                                    .padding(12.dp),
-                                horizontalArrangement = Arrangement.SpaceBetween,
-                                verticalAlignment = Alignment.CenterVertically
+                                    .clip(RoundedCornerShape(6.dp))
+                                    .background(Color(0xFF22C55E))
+                                    .padding(horizontal = 6.dp, vertical = 2.dp)
                             ) {
-                                Row(modifier = Modifier.weight(1f), verticalAlignment = Alignment.CenterVertically) {
-                                    Box(
-                                        modifier = Modifier
-                                            .size(36.dp)
-                                            .clip(RoundedCornerShape(8.dp))
-                                            .background(Color(android.graphics.Color.parseColor(template.primaryColorHex))),
-                                        contentAlignment = Alignment.Center
-                                    ) {
-                                        Text(
-                                            text = template.docxTitle.take(3),
-                                            color = Color.White,
-                                            fontWeight = FontWeight.Bold,
-                                            fontSize = 9.sp
-                                        )
-                                    }
-
-                                    Spacer(modifier = Modifier.width(10.dp))
-
-                                    Column {
-                                        Row(verticalAlignment = Alignment.CenterVertically) {
-                                            Text(
-                                                text = template.templateName,
-                                                fontWeight = FontWeight.Bold,
-                                                fontSize = 13.sp,
-                                                color = Color(0xFF0F172A)
-                                            )
-                                            Spacer(modifier = Modifier.width(6.dp))
-                                            Box(
-                                                modifier = Modifier
-                                                    .clip(RoundedCornerShape(4.dp))
-                                                    .background(Color(0xFFE0E7FF))
-                                                    .padding(horizontal = 5.dp, vertical = 2.dp)
-                                            ) {
-                                                Text(template.categoryBadge, fontSize = 9.sp, fontWeight = FontWeight.Bold, color = Color(0xFF3730A3))
-                                            }
-                                        }
-                                        Text(
-                                            text = "Title: ${template.docxTitle} • Font: ${template.fontStyle}",
-                                            fontSize = 10.sp,
-                                            color = MaterialTheme.colorScheme.onSurfaceVariant
-                                        )
-                                    }
-                                }
-
-                                if (isDefault) {
-                                    Row(
-                                        verticalAlignment = Alignment.CenterVertically,
-                                        modifier = Modifier
-                                            .clip(RoundedCornerShape(20.dp))
-                                            .background(Color(0xFFDCFCE7))
-                                            .padding(horizontal = 8.dp, vertical = 4.dp)
-                                    ) {
-                                        Icon(Icons.Default.Check, contentDescription = null, tint = StatusPaidGreen, modifier = Modifier.size(14.dp))
-                                        Spacer(modifier = Modifier.width(4.dp))
-                                        Text("Default", fontSize = 11.sp, fontWeight = FontWeight.Bold, color = StatusPaidGreen)
-                                    }
-                                } else {
-                                    OutlinedButton(
-                                        onClick = {
-                                            profileState = profileState.copy(
-                                                defaultTemplateId = template.templateId,
-                                                brandColorHex = template.primaryColorHex
-                                            )
-                                            viewModel.setDefaultTemplate(template.templateId)
-                                            Toast.makeText(context, "${template.templateName} set as Default", Toast.LENGTH_SHORT).show()
-                                        },
-                                        shape = RoundedCornerShape(8.dp),
-                                        contentPadding = androidx.compose.foundation.layout.PaddingValues(horizontal = 10.dp, vertical = 4.dp),
-                                        modifier = Modifier.testTag("set_default_${template.templateId}")
-                                    ) {
-                                        Text("Set Default", fontSize = 11.sp)
-                                    }
-                                }
+                                Text("All-in-One", fontSize = 9.sp, fontWeight = FontWeight.Bold, color = Color.White)
                             }
                         }
+                        Spacer(modifier = Modifier.height(3.dp))
+                        Text(
+                            text = "Item column headers (rename/reorder/hide), 10 templates, RCM reverse charge default, taxes, notes & field toggles. Configure once and save time on every invoice.",
+                            fontSize = 11.sp,
+                            color = Color(0xFF166534),
+                            lineHeight = 15.sp
+                        )
                     }
+
+                    Spacer(modifier = Modifier.width(8.dp))
+
+                    Icon(
+                        imageVector = Icons.AutoMirrored.Filled.ArrowForward,
+                        contentDescription = "Open Invoice Settings",
+                        tint = Color(0xFF16A34A),
+                        modifier = Modifier.size(20.dp)
+                    )
                 }
             }
+
+
 
             // =========================================================================
             // CARD 3: GST & INDIAN BUSINESS INVOICING (ZOHO STYLE)
@@ -957,132 +663,7 @@ fun SettingsScreen(
                 }
             }
 
-            // =========================================================================
-            // CARD 4: INVOICE FIELD VISIBILITY CUSTOMIZER (ZOHO STYLE)
-            // =========================================================================
-            SettingAccordionCard(
-                title = "Invoice Field Customization",
-                subtitle = "Remove or enable fields (Due Date, Issue Date, Status, PO #, etc.)",
-                icon = Icons.Default.Tune,
-                isExpanded = expandedCard == "fields",
-                onToggle = { expandedCard = if (expandedCard == "fields") null else "fields" },
-                badge = "Field Toggles"
-            ) {
-                Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                    Text(
-                        text = "Fields turned OFF will be omitted from invoice forms and output documents:",
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
-                    )
 
-                    HorizontalDivider()
-
-                    FieldToggleRow(
-                        title = "Invoice Status",
-                        description = "Display Draft, Sent, Paid, Overdue badge",
-                        checked = profileState.showStatus,
-                        onCheckedChange = { profileState = profileState.copy(showStatus = it) }
-                    )
-
-                    FieldToggleRow(
-                        title = "Due Date",
-                        description = "Show payment deadline and due date alerts",
-                        checked = profileState.showDueDate,
-                        onCheckedChange = { profileState = profileState.copy(showDueDate = it) }
-                    )
-
-                    FieldToggleRow(
-                        title = "Issue Date",
-                        description = "Show invoice issuance date",
-                        checked = profileState.showIssueDate,
-                        onCheckedChange = { profileState = profileState.copy(showIssueDate = it) }
-                    )
-
-                    FieldToggleRow(
-                        title = "Purchase Order (PO #)",
-                        description = "Track client's purchase order reference number",
-                        checked = profileState.showPoNumber,
-                        onCheckedChange = { profileState = profileState.copy(showPoNumber = it) }
-                    )
-
-                    FieldToggleRow(
-                        title = "Payment Terms",
-                        description = "Display terms such as Net 15, Net 30, Due on Receipt",
-                        checked = profileState.showPaymentTerms,
-                        onCheckedChange = { profileState = profileState.copy(showPaymentTerms = it) }
-                    )
-
-                    FieldToggleRow(
-                        title = "Client Company Name",
-                        description = "Show organization/company under client name",
-                        checked = profileState.showClientCompany,
-                        onCheckedChange = { profileState = profileState.copy(showClientCompany = it) }
-                    )
-
-                    FieldToggleRow(
-                        title = "Client Billing Address",
-                        description = "Display client's physical/mailing address",
-                        checked = profileState.showClientAddress,
-                        onCheckedChange = { profileState = profileState.copy(showClientAddress = it) }
-                    )
-
-                    FieldToggleRow(
-                        title = "Client Tax / GSTIN ID",
-                        description = "Show client's tax registration number",
-                        checked = profileState.showClientTaxId,
-                        onCheckedChange = { profileState = profileState.copy(showClientTaxId = it) }
-                    )
-
-                    FieldToggleRow(
-                        title = "Line Item Discount",
-                        description = "Allow per-item discount percentages",
-                        checked = profileState.showItemDiscount,
-                        onCheckedChange = { profileState = profileState.copy(showItemDiscount = it) }
-                    )
-
-                    FieldToggleRow(
-                        title = "Tax Rate & Calculation",
-                        description = "Include tax computation (GST, VAT, Sales Tax)",
-                        checked = profileState.showItemTax,
-                        onCheckedChange = { profileState = profileState.copy(showItemTax = it) }
-                    )
-
-                    FieldToggleRow(
-                        title = "Shipping & Handling Fee",
-                        description = "Include shipping and freight charges",
-                        checked = profileState.showShippingFee,
-                        onCheckedChange = { profileState = profileState.copy(showShippingFee = it) }
-                    )
-
-                    FieldToggleRow(
-                        title = "Bank Payment Instructions",
-                        description = "Display bank account, routing, and payment link",
-                        checked = profileState.showPaymentInstructions,
-                        onCheckedChange = { profileState = profileState.copy(showPaymentInstructions = it) }
-                    )
-
-                    FieldToggleRow(
-                        title = "Notes to Client",
-                        description = "Show client message and closing greetings",
-                        checked = profileState.showNotes,
-                        onCheckedChange = { profileState = profileState.copy(showNotes = it) }
-                    )
-
-                    FieldToggleRow(
-                        title = "Terms & Conditions",
-                        description = "Display contractual payment terms and late fee policies",
-                        checked = profileState.showTerms,
-                        onCheckedChange = { profileState = profileState.copy(showTerms = it) }
-                    )
-
-                    FieldToggleRow(
-                        title = "Authorized Signature Block",
-                        description = "Display signature line with signee name and title",
-                        checked = profileState.showSignature,
-                        onCheckedChange = { profileState = profileState.copy(showSignature = it) }
-                    )
-                }
-            }
 
             // =========================================================================
             // CARD 5: DEFAULT CURRENCY & PRICING (SET IN SETTINGS ONLY)
@@ -1474,85 +1055,7 @@ fun SettingsScreen(
                 }
             }
 
-            // =========================================================================
-            // CARD 8: TAXES, NOTES & SIGNATURE
-            // =========================================================================
-            SettingAccordionCard(
-                title = "Taxes, Notes & Signature",
-                subtitle = "Default tax rates, client notes, terms and authorized signee",
-                icon = Icons.Default.Receipt,
-                isExpanded = expandedCard == "taxes",
-                onToggle = { expandedCard = if (expandedCard == "taxes") null else "taxes" }
-            ) {
-                Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.spacedBy(10.dp)
-                    ) {
-                        OutlinedTextField(
-                            value = profileState.defaultTaxLabel,
-                            onValueChange = { profileState = profileState.copy(defaultTaxLabel = it) },
-                            label = { Text("Tax Label") },
-                            modifier = Modifier.weight(1.2f),
-                            shape = RoundedCornerShape(10.dp)
-                        )
-                        OutlinedTextField(
-                            value = if (profileState.defaultTaxRate == 0.0) "" else profileState.defaultTaxRate.toString(),
-                            onValueChange = { profileState = profileState.copy(defaultTaxRate = it.toDoubleOrNull() ?: 0.0) },
-                            label = { Text("Tax Rate (%)") },
-                            modifier = Modifier.weight(1f),
-                            shape = RoundedCornerShape(10.dp),
-                            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal)
-                        )
-                    }
 
-                    OutlinedTextField(
-                        value = profileState.defaultPaymentTerms,
-                        onValueChange = { profileState = profileState.copy(defaultPaymentTerms = it) },
-                        label = { Text("Default Payment Terms (e.g. Net 30)") },
-                        modifier = Modifier.fillMaxWidth(),
-                        shape = RoundedCornerShape(10.dp)
-                    )
-
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.spacedBy(10.dp)
-                    ) {
-                        OutlinedTextField(
-                            value = profileState.signeeName,
-                            onValueChange = { profileState = profileState.copy(signeeName = it) },
-                            label = { Text("Signee Name") },
-                            modifier = Modifier.weight(1.2f),
-                            shape = RoundedCornerShape(10.dp)
-                        )
-                        OutlinedTextField(
-                            value = profileState.signeeTitle,
-                            onValueChange = { profileState = profileState.copy(signeeTitle = it) },
-                            label = { Text("Signee Title") },
-                            modifier = Modifier.weight(1f),
-                            shape = RoundedCornerShape(10.dp)
-                        )
-                    }
-
-                    OutlinedTextField(
-                        value = profileState.defaultNotes,
-                        onValueChange = { profileState = profileState.copy(defaultNotes = it) },
-                        label = { Text("Default Notes") },
-                        modifier = Modifier.fillMaxWidth(),
-                        shape = RoundedCornerShape(10.dp),
-                        maxLines = 3
-                    )
-
-                    OutlinedTextField(
-                        value = profileState.defaultTerms,
-                        onValueChange = { profileState = profileState.copy(defaultTerms = it) },
-                        label = { Text("Default Terms & Conditions") },
-                        modifier = Modifier.fillMaxWidth(),
-                        shape = RoundedCornerShape(10.dp),
-                        maxLines = 3
-                    )
-                }
-            }
 
             // =========================================================================
             // CARD 9: OFFLINE ROOM DATABASE & LOCAL STORAGE
@@ -1991,39 +1494,7 @@ fun SettingsScreen(
         )
     }
 
-    if (showSettingsItemBuilder) {
-        val currentCols = InvoiceUtils.deserializeColumns(profileState.customColumnsJson, profileState)
-        ItemizationBuilderDialog(
-            initialColumns = currentCols,
-            onSaveColumns = { updatedCols ->
-                profileState = profileState.copy(
-                    customColumnsJson = InvoiceUtils.serializeColumns(updatedCols)
-                )
-                viewModel.saveBusinessProfile(profileState)
-                Toast.makeText(context, "Global itemization columns saved!", Toast.LENGTH_SHORT).show()
-                showSettingsItemBuilder = false
-            },
-            onDismiss = { showSettingsItemBuilder = false }
-        )
-    }
 
-    if (showSettingsIndustrySelector) {
-        IndustryTemplateSelectorDialog(
-            selectedPresetId = "general",
-            onSelectPreset = { preset ->
-                profileState = profileState.copy(
-                    customColumnsJson = InvoiceUtils.serializeColumns(preset.defaultColumns),
-                    colHeaderItem = preset.defaultColumns.find { it.key == "description" }?.label ?: profileState.colHeaderItem,
-                    defaultNotes = if (preset.defaultNotes.isNotBlank()) preset.defaultNotes else profileState.defaultNotes,
-                    defaultTerms = if (preset.defaultTerms.isNotBlank()) preset.defaultTerms else profileState.defaultTerms
-                )
-                viewModel.saveBusinessProfile(profileState)
-                Toast.makeText(context, "Loaded ${preset.name} itemization preset!", Toast.LENGTH_SHORT).show()
-                showSettingsIndustrySelector = false
-            },
-            onDismiss = { showSettingsIndustrySelector = false }
-        )
-    }
 }
 
 @Composable

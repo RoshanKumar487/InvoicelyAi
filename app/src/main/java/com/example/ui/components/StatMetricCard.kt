@@ -2,7 +2,9 @@ package com.example.ui.components
 
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.isSystemInDarkTheme
+import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -14,6 +16,8 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.ChevronRight
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
@@ -37,14 +41,25 @@ fun StatMetricCard(
     iconTint: Color,
     iconBgColor: Color,
     modifier: Modifier = Modifier,
-    testTag: String = "stat_card"
+    testTag: String = "stat_card",
+    onClick: (() -> Unit)? = null
 ) {
     val isDark = isSystemInDarkTheme()
 
-    GlassCard(
-        modifier = modifier
+    val cardModifier = if (onClick != null) {
+        modifier
             .testTag(testTag)
-            .fillMaxWidth(),
+            .fillMaxWidth()
+            .clip(RoundedCornerShape(20.dp))
+            .clickable { onClick() }
+    } else {
+        modifier
+            .testTag(testTag)
+            .fillMaxWidth()
+    }
+
+    GlassCard(
+        modifier = cardModifier,
         shape = RoundedCornerShape(20.dp),
         elevation = 6.dp
     ) {
@@ -52,31 +67,47 @@ fun StatMetricCard(
             modifier = Modifier.padding(18.dp)
         ) {
             Row(
-                verticalAlignment = Alignment.CenterVertically
+                modifier = Modifier.fillMaxWidth(),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.SpaceBetween
             ) {
-                Box(
-                    modifier = Modifier
-                        .size(42.dp)
-                        .clip(CircleShape)
-                        .background(iconBgColor.copy(alpha = if (isDark) 0.25f else 0.18f))
-                        .border(1.dp, iconTint.copy(alpha = 0.35f), CircleShape),
-                    contentAlignment = Alignment.Center
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    modifier = Modifier.weight(1f, fill = false)
                 ) {
-                    Icon(
-                        imageVector = icon,
-                        contentDescription = null,
-                        tint = iconTint,
-                        modifier = Modifier.size(20.dp)
+                    Box(
+                        modifier = Modifier
+                            .size(42.dp)
+                            .clip(CircleShape)
+                            .background(iconBgColor.copy(alpha = if (isDark) 0.25f else 0.18f))
+                            .border(1.dp, iconTint.copy(alpha = 0.35f), CircleShape),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Icon(
+                            imageVector = icon,
+                            contentDescription = null,
+                            tint = iconTint,
+                            modifier = Modifier.size(20.dp)
+                        )
+                    }
+                    Spacer(modifier = Modifier.width(12.dp))
+                    Text(
+                        text = title,
+                        style = MaterialTheme.typography.labelMedium,
+                        color = if (isDark) Color(0xFF94A3B8) else Color(0xFF475569),
+                        fontWeight = FontWeight.SemiBold,
+                        fontSize = 12.sp
                     )
                 }
-                Spacer(modifier = Modifier.width(12.dp))
-                Text(
-                    text = title,
-                    style = MaterialTheme.typography.labelMedium,
-                    color = if (isDark) Color(0xFF94A3B8) else Color(0xFF475569),
-                    fontWeight = FontWeight.SemiBold,
-                    fontSize = 12.sp
-                )
+
+                if (onClick != null) {
+                    Icon(
+                        imageVector = Icons.Default.ChevronRight,
+                        contentDescription = "View Details",
+                        tint = if (isDark) Color(0xFF64748B) else Color(0xFF94A3B8),
+                        modifier = Modifier.size(18.dp)
+                    )
+                }
             }
 
             Spacer(modifier = Modifier.height(14.dp))

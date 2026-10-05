@@ -66,7 +66,8 @@ data class Invoice(
     val additionalCharges: Double = 0.0,
     val roundOff: Double = 0.0,
     val isTaxInclusive: Boolean = false,
-    val taxType: String = "GST"
+    val taxType: String = "GST",
+    val isRcm: Boolean = false
 ) {
     // =========================================================================
     // Dynamic Calculation Helpers
@@ -163,7 +164,8 @@ data class Invoice(
             additionalCharges = additionalCharges,
             roundOff = roundOff,
             isTaxInclusive = isTaxInclusive,
-            taxType = taxType
+            taxType = taxType,
+            isRcm = isRcm
         )
     }
 
@@ -210,7 +212,8 @@ data class Invoice(
                 additionalCharges = entity.additionalCharges,
                 roundOff = entity.roundOff,
                 isTaxInclusive = entity.isTaxInclusive,
-                taxType = entity.taxType
+                taxType = entity.taxType,
+                isRcm = entity.isRcm
             )
         }
     }

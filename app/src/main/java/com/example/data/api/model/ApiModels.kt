@@ -338,7 +338,8 @@ data class BackendInvoiceDto(
     val roundOff: Double = 0.0,
     val amountPaid: Double = 0.0,
     val status: String = "Draft",
-    val templateId: String = "gst_tax"
+    val templateId: String = "gst_tax",
+    val isRcm: Boolean = false
 ) {
     fun toEntity(): InvoiceEntity {
         return InvoiceEntity(
@@ -373,6 +374,7 @@ data class BackendInvoiceDto(
             amountPaid = amountPaid,
             status = status,
             templateId = templateId,
+            isRcm = isRcm,
             companyId = companyId,
             createdByUserId = createdByUserId,
             createdByUserName = createdByUserName
@@ -415,7 +417,8 @@ fun InvoiceEntity.toBackendDto(): BackendInvoiceDto {
         roundOff = roundOff,
         amountPaid = amountPaid,
         status = status,
-        templateId = templateId
+        templateId = templateId,
+        isRcm = isRcm
     )
 }
 
@@ -449,6 +452,7 @@ data class BackendBusinessProfileDto(
     val defaultCurrencyFormat: String = "before",
     val defaultTaxRate: Double = 0.0,
     val defaultTaxLabel: String = "Tax",
+    val defaultIsRcm: Boolean = false,
     val defaultPaymentTerms: String = "Net 30",
     val defaultNotes: String = "",
     val defaultTerms: String = "",
@@ -482,6 +486,7 @@ data class BackendBusinessProfileDto(
             defaultCurrencyFormat = defaultCurrencyFormat.ifBlank { base.defaultCurrencyFormat },
             defaultTaxRate = defaultTaxRate,
             defaultTaxLabel = defaultTaxLabel.ifBlank { base.defaultTaxLabel },
+            defaultIsRcm = defaultIsRcm,
             defaultPaymentTerms = defaultPaymentTerms.ifBlank { base.defaultPaymentTerms },
             defaultNotes = defaultNotes.ifBlank { base.defaultNotes },
             defaultTerms = defaultTerms.ifBlank { base.defaultTerms },
@@ -518,6 +523,7 @@ fun BusinessProfile.toBackendDto(): BackendBusinessProfileDto {
         defaultCurrencyFormat = defaultCurrencyFormat,
         defaultTaxRate = defaultTaxRate,
         defaultTaxLabel = defaultTaxLabel,
+        defaultIsRcm = defaultIsRcm,
         defaultPaymentTerms = defaultPaymentTerms,
         defaultNotes = defaultNotes,
         defaultTerms = defaultTerms,

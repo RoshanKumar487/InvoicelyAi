@@ -75,10 +75,13 @@ import androidx.compose.ui.unit.sp
 import androidx.compose.foundation.horizontalScroll
 import com.example.data.model.BusinessProfile
 import com.example.data.model.IndustryTemplates
+import com.example.data.model.IndustryTemplatePreset
 import com.example.data.model.InvoiceUtils
 import com.example.ui.components.AdaptiveContainer
-import com.example.ui.components.IndustryTemplateSelectorDialog
 import com.example.ui.components.rememberWindowAdaptiveInfo
+import com.example.data.model.ItemColumnDef
+import com.example.ui.components.ItemizationBuilderDialog
+import com.example.ui.components.IndustryTemplateSelectorDialog
 import com.example.ui.theme.PrimaryNavy
 import com.example.ui.viewmodel.InvoiceViewModel
 
@@ -102,6 +105,15 @@ fun InvoiceSettingsScreen(
     // Business Category & Industry Presets
     var selectedIndustryPresetId by remember(profile.industryPresetId) { mutableStateOf(profile.industryPresetId.ifBlank { "general" }) }
     var showIndustryDialog by remember { mutableStateOf(false) }
+
+    // Column Headers & Item Settings
+    var currentColumns by remember(profile.customColumnsJson, profile.industryPresetId) {
+        mutableStateOf(InvoiceUtils.deserializeColumns(profile.customColumnsJson, profile))
+    }
+    var showItemBuilderDialog by remember { mutableStateOf(false) }
+
+    // RCM (Reverse Charge Mechanism) Default
+    var defaultIsRcm by remember(profile.defaultIsRcm) { mutableStateOf(profile.defaultIsRcm) }
 
     // Local mutable state initialized from business profile
     var showShippingSection by remember(profile.showShippingSection) { mutableStateOf(profile.showShippingSection) }
@@ -157,9 +169,19 @@ fun InvoiceSettingsScreen(
 
     fun saveAll(notify: Boolean = true) {
         val activePreset = IndustryTemplates.getPresetById(selectedIndustryPresetId)
+        val serializedCols = InvoiceUtils.serializeColumns(currentColumns)
         val updated = profile.copy(
             industryPresetId = selectedIndustryPresetId,
             businessCategory = activePreset.name,
+            customColumnsJson = serializedCols,
+            colHeaderItem = currentColumns.find { it.key == "description" }?.label ?: profile.colHeaderItem,
+            colHeaderQty = currentColumns.find { it.key == "quantity" }?.label ?: profile.colHeaderQty,
+            colHeaderUnit = currentColumns.find { it.key == "unit" }?.label ?: profile.colHeaderUnit,
+            colHeaderRate = currentColumns.find { it.key == "unitPrice" }?.label ?: profile.colHeaderRate,
+            colHeaderAmount = currentColumns.find { it.key == "total" }?.label ?: profile.colHeaderAmount,
+            colHeaderTax = currentColumns.find { it.key == "taxRate" }?.label ?: profile.colHeaderTax,
+            colHeaderDiscount = currentColumns.find { it.key == "discountRate" }?.label ?: profile.colHeaderDiscount,
+            defaultIsRcm = defaultIsRcm,
             showShippingSection = showShippingSection,
             showNotesSection = showNotesSection,
             isTaxApplicable = isTaxApplicable,
@@ -434,6 +456,115 @@ fun InvoiceSettingsScreen(
             }
 
             // =================================================================
+            // BLOCK 0.5: ITEM TABLE COLUMNS & FIELD CUSTOMIZER (ITEM SETTINGS)
+            // =================================================================
+            Card(
+                modifier = Modifier.fillMaxWidth(),
+                shape = RoundedCornerShape(16.dp),
+                colors = CardDefaults.cardColors(containerColor = Color.White),
+                border = androidx.compose.foundation.BorderStroke(1.5.dp, Color(0xFFBFDBFE))
+            ) {
+                Column(modifier = Modifier.padding(16.dp)) {
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                            Box(
+                                modifier = Modifier
+                                    .size(40.dp)
+                                    .clip(RoundedCornerShape(10.dp))
+                                    .background(Color(0xFFEFF6FF)),
+                                contentAlignment = Alignment.Center
+                            ) {
+                                Icon(Icons.Default.TableChart, contentDescription = null, tint = Color(0xFF2563EB), modifier = Modifier.size(22.dp))
+                            }
+                            Column {
+                                Text("Item Table Columns & Field Settings", fontSize = 15.sp, fontWeight = FontWeight.Bold, color = PrimaryNavy)
+                                Text("Arrange, remove, or rename column headers", fontSize = 11.sp, color = Color.Gray)
+                            }
+                        }
+
+                        Surface(
+                            color = Color(0xFFEFF6FF),
+                            shape = RoundedCornerShape(6.dp),
+                            border = androidx.compose.foundation.BorderStroke(1.dp, Color(0xFFBFDBFE))
+                        ) {
+                            Text(
+                                text = "${currentColumns.count { it.isVisible }} Columns Active",
+                                fontSize = 10.sp,
+                                fontWeight = FontWeight.Bold,
+                                color = Color(0xFF1D4ED8),
+                                modifier = Modifier.padding(horizontal = 7.dp, vertical = 3.dp)
+                            )
+                        }
+                    }
+
+                    Spacer(modifier = Modifier.height(10.dp))
+                    Text(
+                        text = "💡 Control how line items are displayed across invoice forms, PDF/DOCX templates, and exports. You can reorder columns, rename headers (e.g., Salary vs Rate, Hours vs Qty), or remove unneeded fields.",
+                        fontSize = 11.5.sp,
+                        color = Color(0xFF334155),
+                        lineHeight = 16.sp
+                    )
+
+                    Spacer(modifier = Modifier.height(12.dp))
+
+                    // Horizontal preview of current columns in order
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .horizontalScroll(rememberScrollState()),
+                        horizontalArrangement = Arrangement.spacedBy(6.dp)
+                    ) {
+                        currentColumns.sortedBy { it.order }.forEachIndexed { idx, col ->
+                            Surface(
+                                color = if (col.isVisible) Color(0xFFF1F5F9) else Color(0xFFFEE2E2),
+                                shape = RoundedCornerShape(8.dp),
+                                border = androidx.compose.foundation.BorderStroke(1.dp, if (col.isVisible) Color(0xFFCBD5E1) else Color(0xFFFCA5A5))
+                            ) {
+                                Row(
+                                    modifier = Modifier.padding(horizontal = 8.dp, vertical = 5.dp),
+                                    verticalAlignment = Alignment.CenterVertically,
+                                    horizontalArrangement = Arrangement.spacedBy(4.dp)
+                                ) {
+                                    Text(
+                                        text = "${idx + 1}.",
+                                        fontSize = 10.sp,
+                                        fontWeight = FontWeight.Bold,
+                                        color = Color(0xFF64748B)
+                                    )
+                                    Text(
+                                        text = col.label,
+                                        fontSize = 11.sp,
+                                        fontWeight = FontWeight.SemiBold,
+                                        color = if (col.isVisible) PrimaryNavy else Color(0xFF991B1B)
+                                    )
+                                    if (!col.isVisible) {
+                                        Text("(Hidden)", fontSize = 9.sp, color = Color(0xFFDC2626), fontWeight = FontWeight.Bold)
+                                    }
+                                }
+                            }
+                        }
+                    }
+
+                    Spacer(modifier = Modifier.height(14.dp))
+
+                    Button(
+                        onClick = { showItemBuilderDialog = true },
+                        modifier = Modifier.fillMaxWidth().testTag("open_item_builder_settings_btn"),
+                        colors = ButtonDefaults.buttonColors(containerColor = PrimaryNavy),
+                        shape = RoundedCornerShape(10.dp)
+                    ) {
+                        Icon(Icons.Default.Tune, contentDescription = null, modifier = Modifier.size(16.dp))
+                        Spacer(modifier = Modifier.width(6.dp))
+                        Text("Customize, Arrange & Rename Columns", fontSize = 12.5.sp, fontWeight = FontWeight.Bold)
+                    }
+                }
+            }
+
+            // =================================================================
             // 4-SECTION DEFAULT WORKFLOW INFO
             // =================================================================
             Surface(
@@ -663,6 +794,54 @@ fun InvoiceSettingsScreen(
                                 keyboardOptions = androidx.compose.foundation.text.KeyboardOptions(keyboardType = androidx.compose.ui.text.input.KeyboardType.Decimal),
                                 singleLine = true,
                                 modifier = Modifier.weight(0.8f)
+                            )
+                        }
+
+                        Spacer(modifier = Modifier.height(12.dp))
+                        HorizontalDivider(color = Color(0xFFF1F5F9))
+                        Spacer(modifier = Modifier.height(10.dp))
+
+                        // Reverse Charge Mechanism (RCM) Default Toggle
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Column(modifier = Modifier.weight(1f)) {
+                                Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                                    Text("Reverse Charge (RCM) Default", fontSize = 13.sp, fontWeight = FontWeight.SemiBold, color = PrimaryNavy)
+                                    if (defaultIsRcm) {
+                                        Surface(
+                                            color = Color(0xFFFEF3C7),
+                                            shape = RoundedCornerShape(4.dp),
+                                            border = androidx.compose.foundation.BorderStroke(1.dp, Color(0xFFFDE68A))
+                                        ) {
+                                            Text(
+                                                text = "RCM ACTIVE",
+                                                fontSize = 9.sp,
+                                                fontWeight = FontWeight.Bold,
+                                                color = Color(0xFFB45309),
+                                                modifier = Modifier.padding(horizontal = 4.dp, vertical = 1.dp)
+                                            )
+                                        }
+                                    }
+                                }
+                                Text(
+                                    "When enabled, tax is payable by the recipient on reverse charge basis by default on all newly created invoices.",
+                                    fontSize = 11.sp,
+                                    color = Color.Gray,
+                                    lineHeight = 15.sp
+                                )
+                            }
+                            Spacer(modifier = Modifier.width(12.dp))
+                            Switch(
+                                checked = defaultIsRcm,
+                                onCheckedChange = {
+                                    defaultIsRcm = it
+                                    saveAll(notify = false)
+                                },
+                                colors = SwitchDefaults.colors(checkedThumbColor = Color.White, checkedTrackColor = Color(0xFFD97706)),
+                                modifier = Modifier.testTag("switch_default_rcm_settings")
                             )
                         }
                     }
@@ -998,6 +1177,30 @@ fun InvoiceSettingsScreen(
                 Toast.makeText(context, "Applied ${preset.name} category to invoices!", Toast.LENGTH_SHORT).show()
             },
             onDismiss = { showIndustryDialog = false }
+        )
+    }
+
+    if (showItemBuilderDialog) {
+        ItemizationBuilderDialog(
+            initialColumns = currentColumns,
+            onSaveColumns = { updatedCols ->
+                currentColumns = updatedCols
+                val serialized = InvoiceUtils.serializeColumns(updatedCols)
+                val updated = profile.copy(
+                    customColumnsJson = serialized,
+                    colHeaderItem = updatedCols.find { it.key == "description" }?.label ?: profile.colHeaderItem,
+                    colHeaderQty = updatedCols.find { it.key == "quantity" }?.label ?: profile.colHeaderQty,
+                    colHeaderUnit = updatedCols.find { it.key == "unit" }?.label ?: profile.colHeaderUnit,
+                    colHeaderRate = updatedCols.find { it.key == "unitPrice" }?.label ?: profile.colHeaderRate,
+                    colHeaderAmount = updatedCols.find { it.key == "total" }?.label ?: profile.colHeaderAmount,
+                    colHeaderTax = updatedCols.find { it.key == "taxRate" }?.label ?: profile.colHeaderTax,
+                    colHeaderDiscount = updatedCols.find { it.key == "discountRate" }?.label ?: profile.colHeaderDiscount
+                )
+                viewModel.saveBusinessProfile(updated)
+                Toast.makeText(context, "Itemization columns applied to all invoices!", Toast.LENGTH_SHORT).show()
+                showItemBuilderDialog = false
+            },
+            onDismiss = { showItemBuilderDialog = false }
         )
     }
 }

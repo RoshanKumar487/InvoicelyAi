@@ -255,7 +255,12 @@ class InvoiceViewModel(application: Application) : AndroidViewModel(application)
         _invoiceStatusFilter
     ) { invoices, query, filter ->
         invoices.filter { inv ->
-            val matchesFilter = if (filter == "All") true else inv.status.equals(filter, ignoreCase = true)
+            val matchesFilter = when {
+                filter.equals("All", ignoreCase = true) -> true
+                filter.equals("Pending", ignoreCase = true) || filter.equals("Outstanding", ignoreCase = true) ->
+                    inv.status.equals("Sent", ignoreCase = true) || inv.status.equals("Pending", ignoreCase = true)
+                else -> inv.status.equals(filter, ignoreCase = true)
+            }
             val matchesQuery = query.isBlank() ||
                     inv.invoiceNumber.contains(query, ignoreCase = true) ||
                     inv.clientName.contains(query, ignoreCase = true) ||
