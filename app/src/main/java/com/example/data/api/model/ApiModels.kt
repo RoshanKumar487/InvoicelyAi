@@ -20,6 +20,42 @@ data class ApiResponse<T>(
     val timestamp: Long = System.currentTimeMillis()
 )
 
+data class AiChatRequest(
+    val message: String
+)
+
+data class AiChatResponseDto(
+    val answer: String,
+    val groundedSources: List<String> = emptyList(),
+    val readOnly: Boolean = true,
+    val pendingCommandId: String? = null,
+    val actionType: String? = null,
+    val resourceType: String? = null,
+    val resourceId: Long? = null
+)
+
+data class AiInvoiceDraftResponseDto(
+    val message: String,
+    val invoice: BackendInvoiceDto? = null
+)
+
+data class ReceiptScanRequest(
+    val imageBase64: String,
+    val mimeType: String
+)
+
+data class ReceiptScanResponseDto(
+    val vendor: String = "",
+    val title: String = "",
+    val amount: Double = 0.0,
+    val taxAmount: Double = 0.0,
+    val category: String = "",
+    val paymentMethod: String = "",
+    val date: String = "",
+    val currency: String = "",
+    val notes: String = ""
+)
+
 // =========================================================================
 // AUTH REQUEST & RESPONSE MODELS
 // =========================================================================
@@ -338,7 +374,8 @@ data class BackendInvoiceDto(
     val roundOff: Double = 0.0,
     val amountPaid: Double = 0.0,
     val status: String = "Draft",
-    val templateId: String = "gst_tax"
+    val templateId: String = "gst_tax",
+    val isRcm: Boolean = false
 ) {
     fun toEntity(): InvoiceEntity {
         return InvoiceEntity(
@@ -373,6 +410,7 @@ data class BackendInvoiceDto(
             amountPaid = amountPaid,
             status = status,
             templateId = templateId,
+            isRcm = isRcm,
             companyId = companyId,
             createdByUserId = createdByUserId,
             createdByUserName = createdByUserName
@@ -415,7 +453,8 @@ fun InvoiceEntity.toBackendDto(): BackendInvoiceDto {
         roundOff = roundOff,
         amountPaid = amountPaid,
         status = status,
-        templateId = templateId
+        templateId = templateId,
+        isRcm = isRcm
     )
 }
 
@@ -449,6 +488,7 @@ data class BackendBusinessProfileDto(
     val defaultCurrencyFormat: String = "before",
     val defaultTaxRate: Double = 0.0,
     val defaultTaxLabel: String = "Tax",
+    val defaultIsRcm: Boolean = false,
     val defaultPaymentTerms: String = "Net 30",
     val defaultNotes: String = "",
     val defaultTerms: String = "",
@@ -482,6 +522,7 @@ data class BackendBusinessProfileDto(
             defaultCurrencyFormat = defaultCurrencyFormat.ifBlank { base.defaultCurrencyFormat },
             defaultTaxRate = defaultTaxRate,
             defaultTaxLabel = defaultTaxLabel.ifBlank { base.defaultTaxLabel },
+            defaultIsRcm = defaultIsRcm,
             defaultPaymentTerms = defaultPaymentTerms.ifBlank { base.defaultPaymentTerms },
             defaultNotes = defaultNotes.ifBlank { base.defaultNotes },
             defaultTerms = defaultTerms.ifBlank { base.defaultTerms },
@@ -518,6 +559,7 @@ fun BusinessProfile.toBackendDto(): BackendBusinessProfileDto {
         defaultCurrencyFormat = defaultCurrencyFormat,
         defaultTaxRate = defaultTaxRate,
         defaultTaxLabel = defaultTaxLabel,
+        defaultIsRcm = defaultIsRcm,
         defaultPaymentTerms = defaultPaymentTerms,
         defaultNotes = defaultNotes,
         defaultTerms = defaultTerms,

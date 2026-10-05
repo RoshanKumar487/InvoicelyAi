@@ -91,6 +91,7 @@ data class BusinessProfile(
     val isTaxApplicable: Boolean = true,
     val defaultTaxRate: Double = 18.0,
     val defaultTaxLabel: String = "GST (18%)",
+    val defaultIsRcm: Boolean = false,
     val defaultDiscountType: String = "percentage", // "percentage" or "flat"
     val defaultDiscountValue: Double = 0.0,
     val additionalChargeLabel: String = "Additional Charges",

@@ -448,6 +448,9 @@ fun MainAppContainer(
                             currentTab = MainTab.AI_AGENT
                             currentScreen = AppScreen.TabScreen(MainTab.AI_AGENT)
                         },
+                        onOpenInvoiceSettings = {
+                            currentScreen = AppScreen.InvoiceSettings
+                        },
                         onOpenMenu = { showMenuSheet = true }
                     )
                 }

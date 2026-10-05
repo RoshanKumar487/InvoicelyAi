@@ -3,6 +3,11 @@ package com.example.data.api
 import android.util.Log
 import com.example.data.api.client.ApiClient
 import com.example.data.api.model.ApiResponse
+import com.example.data.api.model.AiChatRequest
+import com.example.data.api.model.AiChatResponseDto
+import com.example.data.api.model.AiInvoiceDraftResponseDto
+import com.example.data.api.model.ReceiptScanRequest
+import com.example.data.api.model.ReceiptScanResponseDto
 import com.example.data.api.model.AuthResponseDto
 import com.example.data.api.model.BackendBusinessProfileDto
 import com.example.data.api.model.BackendClientDto
@@ -154,6 +159,26 @@ object InvoicelyApiManager {
     // =========================================================================
     // AUTHENTICATION APIS
     // =========================================================================
+
+    suspend fun askAi(message: String): Result<AiChatResponseDto> =
+        safeApiCall("askAi") {
+            ApiClient.getService().askAi(AiChatRequest(message))
+        }
+
+    suspend fun confirmAiCommand(commandId: String): Result<AiChatResponseDto> =
+        safeApiCall("confirmAiCommand") {
+            ApiClient.getService().confirmAiCommand(commandId)
+        }
+
+    suspend fun prepareAiInvoiceDraft(message: String): Result<AiInvoiceDraftResponseDto> =
+        safeApiCall("prepareAiInvoiceDraft") {
+            ApiClient.getService().prepareAiInvoiceDraft(AiChatRequest(message))
+        }
+
+    suspend fun scanAiReceipt(imageBase64: String, mimeType: String): Result<ReceiptScanResponseDto> =
+        safeApiCall("scanAiReceipt") {
+            ApiClient.getService().scanAiReceipt(ReceiptScanRequest(imageBase64, mimeType))
+        }
 
     suspend fun login(identifier: String, password: String): Result<AuthResponseDto> {
         val result = safeApiCall("login") {

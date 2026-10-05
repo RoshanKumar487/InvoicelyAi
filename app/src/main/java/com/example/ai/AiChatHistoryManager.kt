@@ -63,7 +63,8 @@ class AiChatHistoryManager(private val context: Context) {
                         timestamp = obj.optLong("timestamp", System.currentTimeMillis()),
                         generatedInvoiceId = if (obj.has("generatedInvoiceId") && !obj.isNull("generatedInvoiceId")) obj.optLong("generatedInvoiceId") else null,
                         isError = obj.optBoolean("isError", false),
-                        isVoiceInput = obj.optBoolean("isVoiceInput", false)
+                        isVoiceInput = obj.optBoolean("isVoiceInput", false),
+                        pendingCommandId = obj.optString("pendingCommandId").takeIf { it.isNotBlank() }
                     )
                 )
             }
@@ -92,6 +93,7 @@ class AiChatHistoryManager(private val context: Context) {
                 }
                 obj.put("isError", msg.isError)
                 obj.put("isVoiceInput", msg.isVoiceInput)
+                msg.pendingCommandId?.let { obj.put("pendingCommandId", it) }
                 array.put(obj)
             }
             val file = File(context.filesDir, CHAT_FILE)

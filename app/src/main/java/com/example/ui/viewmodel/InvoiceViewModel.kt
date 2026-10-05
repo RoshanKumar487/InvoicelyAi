@@ -7,7 +7,6 @@ import androidx.lifecycle.viewModelScope
 import com.example.ai.AiBusinessMemory
 import com.example.ai.AiChatHistoryManager
 import com.example.ai.ChatMessage
-import com.example.ai.GeminiAiService
 import com.example.data.local.AppDatabase
 import com.example.data.model.BusinessProfile
 import com.example.data.model.ClientEntity
@@ -21,6 +20,7 @@ import com.example.data.api.ApiConfig
 import com.example.data.api.InvoicelyApiManager
 import com.example.data.api.model.DashboardStatsResponse
 import com.example.data.api.model.toBackendDto
+import com.example.util.InvoiceAutofillCache
 import com.example.data.repository.BusinessRepository
 import com.example.data.repository.ClientRepository
 import com.example.data.repository.ExpenseRepository
@@ -68,7 +68,6 @@ class InvoiceViewModel(application: Application) : AndroidViewModel(application)
     private val clientRepository = ClientRepository(database.clientDao())
     private val businessRepository = BusinessRepository(database.businessProfileDao())
     private val expenseRepository = ExpenseRepository(database.expenseDao())
-    private val geminiService = GeminiAiService()
     val chatHistoryManager = AiChatHistoryManager(application.applicationContext)
     private val _chatMessages = MutableStateFlow<List<ChatMessage>>(emptyList())
     val chatMessages: StateFlow<List<ChatMessage>> = _chatMessages.asStateFlow()
@@ -255,7 +254,12 @@ class InvoiceViewModel(application: Application) : AndroidViewModel(application)
         _invoiceStatusFilter
     ) { invoices, query, filter ->
         invoices.filter { inv ->
-            val matchesFilter = if (filter == "All") true else inv.status.equals(filter, ignoreCase = true)
+            val matchesFilter = when {
+                filter.equals("All", ignoreCase = true) -> true
+                filter.equals("Pending", ignoreCase = true) || filter.equals("Outstanding", ignoreCase = true) ->
+                    inv.status.equals("Sent", ignoreCase = true) || inv.status.equals("Pending", ignoreCase = true)
+                else -> inv.status.equals(filter, ignoreCase = true)
+            }
             val matchesQuery = query.isBlank() ||
                     inv.invoiceNumber.contains(query, ignoreCase = true) ||
                     inv.clientName.contains(query, ignoreCase = true) ||
@@ -657,6 +661,11 @@ class InvoiceViewModel(application: Application) : AndroidViewModel(application)
                 }
             }
 
+            try {
+                val deserializedItems = InvoiceUtils.deserializeInvoiceItems(mappedInvoice.itemsJson)
+                InvoiceAutofillCache.recordInvoiceSaved(getApplication(), mappedInvoice, deserializedItems)
+            } catch (_: Exception) {}
+
             kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.Main) {
                 onSaved(finalId)
             }
@@ -953,88 +962,64 @@ class InvoiceViewModel(application: Application) : AndroidViewModel(application)
         _chatMessages.value = updatedList
         _isAiThinking.value = true
 
-        viewModelScope.launch(kotlinx.coroutines.Dispatchers.IO) {
-            val memory = chatHistoryManager.loadMemory()
-            val result = geminiService.processUserPrompt(
-                prompt = trimmed,
-                profile = businessProfile.value,
-                existingClients = allClients.value,
-                invoices = allInvoices.value,
-                expenses = allExpenses.value,
-                nextInvoiceNumber = generateNextInvoiceNumber(),
-                conversationHistory = updatedList,
-                businessMemory = memory
-            )
-
-            // Learn user habits, language tone, frequent clients from this turn
-            chatHistoryManager.learnFromTurn(
-                userPrompt = trimmed,
-                isVoice = isVoiceInput,
-                aiResult = result,
-                existingClients = allClients.value
-            )
-
-            var createdInvoiceId: Long? = null
-            var finalInvoice: InvoiceEntity? = null
-            var savedClient: ClientEntity? = null
-
-            // If action is SAVE_CLIENT
-            if (result.clientToSave != null) {
-                val newClientId = clientRepository.insertClient(result.clientToSave)
-                savedClient = result.clientToSave.copy(id = newClientId)
-            }
-
-            // If action is GENERATE_INVOICE
-            if (result.invoiceToGenerate != null) {
-                val currentUser = com.example.data.repository.AuthSessionManager.currentUser.value
-                val currentCompany = com.example.data.repository.AuthSessionManager.currentCompany.value
-                val taggedInvoice = result.invoiceToGenerate.copy(
-                    companyId = currentCompany?.id ?: currentUser?.companyId,
-                    createdByUserId = currentUser?.id,
-                    createdByUserName = currentUser?.fullName
-                )
-                val newInvoiceId = invoiceRepository.insertInvoice(taggedInvoice)
-                createdInvoiceId = newInvoiceId
-                finalInvoice = taggedInvoice.copy(id = newInvoiceId)
-                try {
-                    InvoicelyApiManager.createInvoice(finalInvoice.toBackendDto())
-                    refreshRealtimeData()
-                } catch (_: Exception) {}
-                kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.Main) {
-                    onInvoiceCreated?.invoke(newInvoiceId)
+        viewModelScope.launch {
+            val response = InvoicelyApiManager.askAi(trimmed)
+            val botMessage = response.fold(
+                onSuccess = { aiResponse ->
+                    ChatMessage(
+                        text = buildString {
+                            append(aiResponse.answer)
+                            if (aiResponse.groundedSources.isNotEmpty()) {
+                                append("\n\nGrounded in: ")
+                                append(aiResponse.groundedSources.joinToString())
+                            }
+                        },
+                        isUser = false,
+                        isVoiceInput = false,
+                        pendingCommandId = aiResponse.pendingCommandId
+                    )
+                },
+                onFailure = { error ->
+                    ChatMessage(
+                        text = error.localizedMessage ?: "The secure AI assistant could not complete the request. Please try again.",
+                        isUser = false,
+                        isError = true
+                    )
                 }
-            }
-
-            var savedExpense: ExpenseEntity? = null
-            // If action is SAVE_EXPENSE
-            if (result.expenseToSave != null) {
-                val currentUser = com.example.data.repository.AuthSessionManager.currentUser.value
-                val currentCompany = com.example.data.repository.AuthSessionManager.currentCompany.value
-                val taggedExpense = result.expenseToSave.copy(
-                    companyId = currentCompany?.id ?: currentUser?.companyId,
-                    createdByUserId = currentUser?.id,
-                    createdByUserName = currentUser?.fullName
-                )
-                val newExpenseId = expenseRepository.insertExpense(taggedExpense)
-                savedExpense = taggedExpense.copy(id = newExpenseId)
-                try {
-                    InvoicelyApiManager.createExpense(savedExpense.toBackendDto())
-                    refreshRealtimeData()
-                } catch (_: Exception) {}
-            }
-
-            val botMessage = ChatMessage(
-                text = result.conversationalReply,
-                isUser = false,
-                generatedInvoiceId = createdInvoiceId,
-                generatedInvoice = finalInvoice,
-                generatedClient = savedClient,
-                generatedExpense = savedExpense,
-                financialSummary = result.financialSummary,
-                matchedInvoices = result.matchedInvoices
             )
-
             val finalList = _chatMessages.value + botMessage
+            _chatMessages.value = finalList
+            chatHistoryManager.saveChatHistory(finalList)
+            _isAiThinking.value = false
+        }
+    }
+
+    fun confirmAiCommand(commandId: String, onInvoiceCreated: ((Long) -> Unit)? = null) {
+        if (_isAiThinking.value) return
+        _isAiThinking.value = true
+        viewModelScope.launch {
+            val response = InvoicelyApiManager.confirmAiCommand(commandId)
+            val confirmation = response.fold(
+                onSuccess = { result ->
+                    _chatMessages.value = _chatMessages.value.map { message ->
+                        if (message.pendingCommandId == commandId) message.copy(pendingCommandId = null) else message
+                    }
+                    refreshRealtimeData { success, _ ->
+                        if (success && result.resourceType == "invoice") {
+                            result.resourceId?.let { onInvoiceCreated?.invoke(it) }
+                        }
+                    }
+                    ChatMessage(text = result.answer, isUser = false)
+                },
+                onFailure = { error ->
+                    ChatMessage(
+                        text = error.localizedMessage ?: "The draft could not be confirmed. Please try again.",
+                        isUser = false,
+                        isError = true
+                    )
+                }
+            )
+            val finalList = _chatMessages.value + confirmation
             _chatMessages.value = finalList
             chatHistoryManager.saveChatHistory(finalList)
             _isAiThinking.value = false
@@ -1049,6 +1034,27 @@ class InvoiceViewModel(application: Application) : AndroidViewModel(application)
                 invoices = allInvoices.value,
                 clients = allClients.value
             )
+        )
+    }
+
+    suspend fun parseInvoiceDraftWithAi(prompt: String): com.example.ai.AiActionResult {
+        return InvoicelyApiManager.prepareAiInvoiceDraft(prompt).fold(
+            onSuccess = { response ->
+                val invoice = response.invoice?.toEntity()
+                if (invoice == null) {
+                    com.example.ai.AiActionResult(
+                        actionType = com.example.ai.AiActionType.GENERAL_CHAT,
+                        conversationalReply = response.message
+                    )
+                } else {
+                    com.example.ai.AiActionResult(
+                        actionType = com.example.ai.AiActionType.GENERATE_INVOICE,
+                        conversationalReply = response.message,
+                        invoiceToGenerate = invoice
+                    )
+                }
+            },
+            onFailure = { throw it }
         )
     }
 

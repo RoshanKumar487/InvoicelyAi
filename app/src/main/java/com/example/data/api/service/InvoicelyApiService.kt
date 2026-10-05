@@ -1,6 +1,11 @@
 package com.example.data.api.service
 
 import com.example.data.api.model.ApiResponse
+import com.example.data.api.model.AiChatRequest
+import com.example.data.api.model.AiChatResponseDto
+import com.example.data.api.model.AiInvoiceDraftResponseDto
+import com.example.data.api.model.ReceiptScanRequest
+import com.example.data.api.model.ReceiptScanResponseDto
 import com.example.data.api.model.AuthResponseDto
 import com.example.data.api.model.BackendBusinessProfileDto
 import com.example.data.api.model.BackendClientDto
@@ -29,6 +34,30 @@ import retrofit2.http.Query
  * Retrofit REST API interface defining all Spring Boot endpoints for InvoicelyAi.
  */
 interface InvoicelyApiService {
+
+    // =========================================================================
+    // AI ASSISTANT
+    // =========================================================================
+
+    @POST("api/v1/ai/chat")
+    suspend fun askAi(
+        @Body request: AiChatRequest
+    ): Response<ApiResponse<AiChatResponseDto>>
+
+    @POST("api/v1/ai/commands/{commandId}/confirm")
+    suspend fun confirmAiCommand(
+        @Path("commandId") commandId: String
+    ): Response<ApiResponse<AiChatResponseDto>>
+
+    @POST("api/v1/ai/invoice-draft")
+    suspend fun prepareAiInvoiceDraft(
+        @Body request: AiChatRequest
+    ): Response<ApiResponse<AiInvoiceDraftResponseDto>>
+
+    @POST("api/v1/ai/receipt-scan")
+    suspend fun scanAiReceipt(
+        @Body request: ReceiptScanRequest
+    ): Response<ApiResponse<ReceiptScanResponseDto>>
 
     // =========================================================================
     // AUTHENTICATION & MULTI-TENANT ONBOARDING

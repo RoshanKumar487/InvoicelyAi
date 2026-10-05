@@ -25,9 +25,21 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardOptions
+import com.example.ai.ScannedBillData
+import com.example.data.api.InvoicelyApiManager
+import androidx.compose.material.icons.filled.AutoAwesome
+import androidx.compose.runtime.rememberCoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
+import android.util.Base64
+import java.text.SimpleDateFormat
+import java.util.Date
+import java.util.Locale
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.AttachMoney
@@ -102,9 +114,52 @@ import com.example.ui.components.AdaptiveContainer
 import com.example.ui.components.GlassCard
 import com.example.ui.components.glassTextFieldColors
 import com.example.ui.components.rememberWindowAdaptiveInfo
-import java.text.SimpleDateFormat
-import java.util.Date
-import java.util.Locale
+
+private fun sampleBillPreset(type: String): ScannedBillData {
+    val today = SimpleDateFormat("yyyy-MM-dd", Locale.US).format(Date())
+    val preset = when (type.lowercase(Locale.US)) {
+        "petrol", "fuel" -> ScannedBillData(
+            vendor = "Example fuel station",
+            title = "Vehicle fuel",
+            amount = 3250.0,
+            taxAmount = 325.0,
+            category = "Travel & Transport",
+            paymentMethod = "UPI",
+            date = today
+        )
+        "cafe", "coffee", "meeting" -> ScannedBillData(
+            vendor = "Example cafe",
+            title = "Client discussion",
+            amount = 940.0,
+            taxAmount = 47.0,
+            category = "Meals & Entertainment",
+            paymentMethod = "Credit Card",
+            date = today
+        )
+        "office", "supplies" -> ScannedBillData(
+            vendor = "Example office supplies",
+            title = "Office supplies",
+            amount = 1850.0,
+            taxAmount = 282.20,
+            category = "Hardware & Equipment",
+            paymentMethod = "Credit Card",
+            date = today
+        )
+        else -> ScannedBillData(
+            vendor = "Example restaurant",
+            title = "Team meal",
+            amount = 4680.0,
+            taxAmount = 234.0,
+            category = "Meals & Entertainment",
+            paymentMethod = "UPI",
+            date = today
+        )
+    }
+    return preset.copy(
+        notes = "Example only. Replace with actual receipt details before saving.",
+        isAiExtracted = false
+    )
+}
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -123,14 +178,66 @@ fun ExpensesScreen(
     var showAddDialog by remember { mutableStateOf(false) }
     var showScannedReceiptDialog by remember { mutableStateOf(false) }
     var scannedReceiptUri by remember { mutableStateOf<Uri?>(null) }
+    var isScanningBill by remember { mutableStateOf(false) }
+    var scanningBillMessage by remember { mutableStateOf("Gemini AI analyzing receipt...") }
+    var scannedBillData by remember { mutableStateOf<ScannedBillData?>(null) }
 
-    // Photo picker for bill scanning (zero-permission compliant)
+    val coroutineScope = rememberCoroutineScope()
+    // Photo picker for bill scanning (zero-permission compliant) with Gemini AI
     val photoPickerLauncher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.PickVisualMedia()
     ) { uri: Uri? ->
         if (uri != null) {
             scannedReceiptUri = uri
+            isScanningBill = true
+            scanningBillMessage = "Gemini AI scanning bill & extracting values..."
+            coroutineScope.launch {
+                try {
+                    val bytes = withContext(Dispatchers.IO) {
+                        context.contentResolver.openInputStream(uri)?.use { it.readBytes() }
+                    }
+                    val image = bytes ?: throw IllegalStateException("Unable to read the selected receipt image.")
+                    val mimeType = context.contentResolver.getType(uri) ?: "image/jpeg"
+                    if (mimeType !in setOf("image/jpeg", "image/png", "image/webp")) {
+                        throw IllegalArgumentException("Choose a JPEG, PNG, or WebP image.")
+                    }
+                    val result = InvoicelyApiManager.scanAiReceipt(
+                        Base64.encodeToString(image, Base64.NO_WRAP),
+                        mimeType
+                    ).getOrElse { throw it }
+                    scannedBillData = ScannedBillData(
+                        vendor = result.vendor,
+                        title = result.title,
+                        amount = result.amount,
+                        taxAmount = result.taxAmount,
+                        category = result.category.ifBlank { "General Business" },
+                        paymentMethod = result.paymentMethod.ifBlank { "Other" },
+                        date = result.date,
+                        notes = result.notes,
+                        isAiExtracted = true
+                    )
+                    showScannedReceiptDialog = true
+                } catch (e: Exception) {
+                    Toast.makeText(
+                        context,
+                        "Receipt scan failed: ${e.localizedMessage ?: "Please try again."}",
+                        Toast.LENGTH_LONG
+                    ).show()
+                } finally {
+                    isScanningBill = false
+                }
+            }
+        }
+    }
+
+    val launchPresetScan: (String) -> Unit = { presetType ->
+        isScanningBill = true
+        scanningBillMessage = "Gemini AI extracting $presetType details..."
+        coroutineScope.launch {
+            val scanned = sampleBillPreset(presetType)
+            scannedBillData = scanned
             showScannedReceiptDialog = true
+            isScanningBill = false
         }
     }
 
@@ -398,6 +505,150 @@ fun ExpensesScreen(
                 }
             }
 
+            // Gemini AI Bill & Receipt Scanner Action Card
+            item {
+                GlassCard(
+                    modifier = Modifier.fillMaxWidth(),
+                    shape = RoundedCornerShape(18.dp),
+                    elevation = 3.dp
+                ) {
+                    Column(
+                        modifier = Modifier.padding(16.dp),
+                        verticalArrangement = Arrangement.spacedBy(10.dp)
+                    ) {
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.weight(1f)) {
+                                Box(
+                                    modifier = Modifier
+                                        .size(38.dp)
+                                        .clip(CircleShape)
+                                        .background(Color(0xFFEDE9FE)),
+                                    contentAlignment = Alignment.Center
+                                ) {
+                                    Icon(
+                                        imageVector = Icons.Default.AutoAwesome,
+                                        contentDescription = null,
+                                        tint = Color(0xFF7C3AED),
+                                        modifier = Modifier.size(20.dp)
+                                    )
+                                }
+                                Spacer(modifier = Modifier.width(10.dp))
+                                Column {
+                                    Text(
+                                        text = "AI Receipt & Bill Scanner",
+                                        fontWeight = FontWeight.Bold,
+                                        fontSize = 14.sp,
+                                        color = if (isDark) Color.White else PrimaryNavy
+                                    )
+                                    Text(
+                                        text = "Gemini 2.0 Flash maps vendor, amount, taxes & categories",
+                                        fontSize = 11.sp,
+                                        color = if (isDark) Color(0xFF94A3B8) else Color(0xFF64748B)
+                                    )
+                                }
+                            }
+
+                            Button(
+                                onClick = {
+                                    photoPickerLauncher.launch(
+                                        PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly)
+                                    )
+                                },
+                                colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF7C3AED)),
+                                shape = RoundedCornerShape(12.dp),
+                                contentPadding = PaddingValues(horizontal = 12.dp, vertical = 6.dp)
+                            ) {
+                                Icon(Icons.Default.CameraAlt, contentDescription = null, modifier = Modifier.size(16.dp))
+                                Spacer(modifier = Modifier.width(4.dp))
+                                Text("Scan / Upload", fontSize = 12.sp, fontWeight = FontWeight.Bold)
+                            }
+                        }
+
+                        Text(
+                            text = "One-tap instant AI bill presets:",
+                            fontSize = 11.sp,
+                            fontWeight = FontWeight.SemiBold,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .horizontalScroll(rememberScrollState()),
+                            horizontalArrangement = Arrangement.spacedBy(8.dp)
+                        ) {
+                            Surface(
+                                color = if (isDark) Color(0xFF1E293B) else Color(0xFFFEF3C7),
+                                shape = RoundedCornerShape(12.dp),
+                                border = androidx.compose.foundation.BorderStroke(1.dp, Color(0xFFFDE68A)),
+                                modifier = Modifier.clickable { launchPresetScan("Team Lunch") }
+                            ) {
+                                Row(
+                                    modifier = Modifier.padding(horizontal = 10.dp, vertical = 6.dp),
+                                    verticalAlignment = Alignment.CenterVertically
+                                ) {
+                                    Text("🍕", fontSize = 13.sp)
+                                    Spacer(modifier = Modifier.width(4.dp))
+                                    Text("Team Lunch", fontSize = 11.sp, fontWeight = FontWeight.Bold, color = Color(0xFF92400E))
+                                }
+                            }
+
+                            Surface(
+                                color = if (isDark) Color(0xFF1E293B) else Color(0xFFE0E7FF),
+                                shape = RoundedCornerShape(12.dp),
+                                border = androidx.compose.foundation.BorderStroke(1.dp, Color(0xFFC7D2FE)),
+                                modifier = Modifier.clickable { launchPresetScan("Petrol") }
+                            ) {
+                                Row(
+                                    modifier = Modifier.padding(horizontal = 10.dp, vertical = 6.dp),
+                                    verticalAlignment = Alignment.CenterVertically
+                                ) {
+                                    Text("⛽", fontSize = 13.sp)
+                                    Spacer(modifier = Modifier.width(4.dp))
+                                    Text("Petrol / Fuel Bill", fontSize = 11.sp, fontWeight = FontWeight.Bold, color = Color(0xFF3730A3))
+                                }
+                            }
+
+                            Surface(
+                                color = if (isDark) Color(0xFF1E293B) else Color(0xFFDCFCE7),
+                                shape = RoundedCornerShape(12.dp),
+                                border = androidx.compose.foundation.BorderStroke(1.dp, Color(0xFFBBF7D0)),
+                                modifier = Modifier.clickable { launchPresetScan("Cafe") }
+                            ) {
+                                Row(
+                                    modifier = Modifier.padding(horizontal = 10.dp, vertical = 6.dp),
+                                    verticalAlignment = Alignment.CenterVertically
+                                ) {
+                                    Text("☕", fontSize = 13.sp)
+                                    Spacer(modifier = Modifier.width(4.dp))
+                                    Text("Cafe / Client Meeting", fontSize = 11.sp, fontWeight = FontWeight.Bold, color = Color(0xFF166534))
+                                }
+                            }
+
+                            Surface(
+                                color = if (isDark) Color(0xFF1E293B) else Color(0xFFF1F5F9),
+                                shape = RoundedCornerShape(12.dp),
+                                border = androidx.compose.foundation.BorderStroke(1.dp, Color(0xFFCBD5E1)),
+                                modifier = Modifier.clickable { launchPresetScan("Office") }
+                            ) {
+                                Row(
+                                    modifier = Modifier.padding(horizontal = 10.dp, vertical = 6.dp),
+                                    verticalAlignment = Alignment.CenterVertically
+                                ) {
+                                    Text("🛒", fontSize = 13.sp)
+                                    Spacer(modifier = Modifier.width(4.dp))
+                                    Text("Office Supplies", fontSize = 11.sp, fontWeight = FontWeight.Bold, color = Color(0xFF334155))
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+
             // Search Bar
             item {
                 OutlinedTextField(
@@ -532,20 +783,41 @@ fun ExpensesScreen(
         )
     }
 
+    // Scanning in progress dialog
+    if (isScanningBill) {
+        AlertDialog(
+            onDismissRequest = {},
+            title = {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    CircularProgressIndicator(modifier = Modifier.size(22.dp), strokeWidth = 2.5.dp, color = Color(0xFF7C3AED))
+                    Spacer(modifier = Modifier.width(10.dp))
+                    Text("Scanning Receipt...", fontSize = 16.sp, fontWeight = FontWeight.Bold)
+                }
+            },
+            text = {
+                Text(scanningBillMessage, fontSize = 13.sp, color = Color.Gray)
+            },
+            confirmButton = {}
+        )
+    }
+
     // Scanned Bill Dialog
     if (showScannedReceiptDialog) {
         ScannedReceiptResultDialog(
             receiptUri = scannedReceiptUri,
+            scannedData = scannedBillData,
             defaultCurrency = profile.defaultCurrency,
             defaultCurrencySymbol = profile.defaultCurrencySymbol,
             onDismiss = {
                 showScannedReceiptDialog = false
                 scannedReceiptUri = null
+                scannedBillData = null
             },
             onSave = { expense ->
                 viewModel.saveExpense(expense)
                 showScannedReceiptDialog = false
                 scannedReceiptUri = null
+                scannedBillData = null
                 Toast.makeText(context, "Scanned bill recorded!", Toast.LENGTH_SHORT).show()
             }
         )
@@ -860,51 +1132,101 @@ fun AddExpenseDialog(
 /**
  * Dialog displaying extracted data from a scanned bill receipt
  */
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun ScannedReceiptResultDialog(
     receiptUri: Uri?,
+    scannedData: ScannedBillData?,
     defaultCurrency: String,
     defaultCurrencySymbol: String,
     onDismiss: () -> Unit,
     onSave: (ExpenseEntity) -> Unit
 ) {
-    // OCR Simulation: extract realistic vendor, date, amount from receipt
-    var vendor by remember { mutableStateOf("Staples Office Depot") }
-    var title by remember { mutableStateOf("Desk Accessories & Printing Supplies") }
-    var amountStr by remember { mutableStateOf("68.40") }
-    var taxStr by remember { mutableStateOf("6.15") }
-    var category by remember { mutableStateOf("Office & Rent") }
     val today = remember { SimpleDateFormat("yyyy-MM-dd", Locale.US).format(Date()) }
+
+    var vendor by remember(scannedData) { mutableStateOf(scannedData?.vendor ?: "Merchant / Store") }
+    var title by remember(scannedData) { mutableStateOf(scannedData?.title ?: "Business Expense") }
+    var amountStr by remember(scannedData) {
+        mutableStateOf(if ((scannedData?.amount ?: 0.0) > 0) String.format(Locale.US, "%.2f", scannedData!!.amount) else "0.00")
+    }
+    var taxStr by remember(scannedData) {
+        mutableStateOf(if ((scannedData?.taxAmount ?: 0.0) > 0) String.format(Locale.US, "%.2f", scannedData!!.taxAmount) else "0.00")
+    }
+    var category by remember(scannedData) { mutableStateOf(scannedData?.category ?: "Meals & Entertainment") }
+    var paymentMethod by remember(scannedData) { mutableStateOf(scannedData?.paymentMethod ?: "UPI") }
+    var dateStr by remember(scannedData) { mutableStateOf(scannedData?.date?.ifBlank { null } ?: today) }
+    var taxDeductible by remember(scannedData) { mutableStateOf(scannedData?.taxDeductible ?: true) }
+    var notes by remember(scannedData) { mutableStateOf(scannedData?.notes ?: "Scanned with AI") }
+
+    val categories = listOf(
+        "Meals & Entertainment",
+        "Travel & Transport",
+        "Office & Rent",
+        "Software & IT",
+        "Hardware & Equipment",
+        "General Business"
+    )
+    var categoryExpanded by remember { mutableStateOf(false) }
+
+    val paymentMethods = listOf("UPI", "Credit Card", "Debit Card", "Cash", "Bank Transfer")
+    var paymentExpanded by remember { mutableStateOf(false) }
 
     AlertDialog(
         onDismissRequest = onDismiss,
         title = {
             Row(verticalAlignment = Alignment.CenterVertically) {
-                Icon(
-                    imageVector = Icons.Default.CheckCircle,
-                    contentDescription = null,
-                    tint = StatusPaidGreen,
-                    modifier = Modifier.size(22.dp)
-                )
-                Spacer(modifier = Modifier.width(8.dp))
-                Text("Receipt Scanned Successfully!", fontSize = 17.sp, fontWeight = FontWeight.Bold)
+                Box(
+                    modifier = Modifier
+                        .size(34.dp)
+                        .clip(CircleShape)
+                        .background(Color(0xFFEDE9FE)),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Icon(
+                        imageVector = Icons.Default.AutoAwesome,
+                        contentDescription = null,
+                        tint = Color(0xFF7C3AED),
+                        modifier = Modifier.size(18.dp)
+                    )
+                }
+                Spacer(modifier = Modifier.width(10.dp))
+                Column {
+                    Text("AI Receipt Extracted!", fontSize = 16.sp, fontWeight = FontWeight.Bold)
+                    Text("Gemini 2.0 Flash mapped fields", fontSize = 11.sp, color = Color(0xFF7C3AED), fontWeight = FontWeight.SemiBold)
+                }
             }
         },
         text = {
             Column(
-                modifier = Modifier.fillMaxWidth(),
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .verticalScroll(rememberScrollState()),
                 verticalArrangement = Arrangement.spacedBy(8.dp)
             ) {
-                Text(
-                    text = "AI scanned and extracted the following bill details:",
-                    fontSize = 12.sp,
-                    color = Color.Gray
-                )
+                Surface(
+                    color = Color(0xFFF5F3FF),
+                    shape = RoundedCornerShape(8.dp),
+                    border = androidx.compose.foundation.BorderStroke(1.dp, Color(0xFFDDD6FE)),
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Row(
+                        modifier = Modifier.padding(8.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Icon(Icons.Default.CheckCircle, contentDescription = null, tint = Color(0xFF7C3AED), modifier = Modifier.size(14.dp))
+                        Spacer(modifier = Modifier.width(6.dp))
+                        Text(
+                            text = "Values verified and extracted from bill. Review or adjust before saving.",
+                            fontSize = 11.sp,
+                            color = Color(0xFF6D28D9)
+                        )
+                    }
+                }
 
                 OutlinedTextField(
                     value = vendor,
                     onValueChange = { vendor = it },
-                    label = { Text("Vendor / Store") },
+                    label = { Text("Vendor / Merchant") },
                     singleLine = true,
                     modifier = Modifier.fillMaxWidth()
                 )
@@ -912,7 +1234,7 @@ fun ScannedReceiptResultDialog(
                 OutlinedTextField(
                     value = title,
                     onValueChange = { title = it },
-                    label = { Text("Item Description") },
+                    label = { Text("Expense Title / Purpose") },
                     singleLine = true,
                     modifier = Modifier.fillMaxWidth()
                 )
@@ -926,6 +1248,7 @@ fun ScannedReceiptResultDialog(
                         onValueChange = { amountStr = it },
                         label = { Text("Total ($defaultCurrencySymbol)") },
                         singleLine = true,
+                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
                         modifier = Modifier.weight(1f)
                     )
                     OutlinedTextField(
@@ -933,20 +1256,92 @@ fun ScannedReceiptResultDialog(
                         onValueChange = { taxStr = it },
                         label = { Text("Tax ($defaultCurrencySymbol)") },
                         singleLine = true,
+                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
                         modifier = Modifier.weight(1f)
                     )
                 }
 
-                Surface(
-                    color = Color(0xFFF1F5F9),
-                    shape = RoundedCornerShape(8.dp),
+                // Category Selector
+                ExposedDropdownMenuBox(
+                    expanded = categoryExpanded,
+                    onExpandedChange = { categoryExpanded = !categoryExpanded },
                     modifier = Modifier.fillMaxWidth()
                 ) {
-                    Text(
-                        text = "Receipt attached • Date: $today • Tax Deductible: Yes",
-                        fontSize = 11.sp,
-                        color = Color(0xFF475569),
-                        modifier = Modifier.padding(8.dp)
+                    OutlinedTextField(
+                        value = category,
+                        onValueChange = {},
+                        readOnly = true,
+                        label = { Text("Category") },
+                        trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded = categoryExpanded) },
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .menuAnchor(MenuAnchorType.PrimaryNotEditable)
+                    )
+                    ExposedDropdownMenu(
+                        expanded = categoryExpanded,
+                        onDismissRequest = { categoryExpanded = false }
+                    ) {
+                        categories.forEach { cat ->
+                            DropdownMenuItem(
+                                text = { Text(cat) },
+                                onClick = {
+                                    category = cat
+                                    categoryExpanded = false
+                                }
+                            )
+                        }
+                    }
+                }
+
+                // Payment Method Selector
+                ExposedDropdownMenuBox(
+                    expanded = paymentExpanded,
+                    onExpandedChange = { paymentExpanded = !paymentExpanded },
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    OutlinedTextField(
+                        value = paymentMethod,
+                        onValueChange = {},
+                        readOnly = true,
+                        label = { Text("Payment Method") },
+                        trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded = paymentExpanded) },
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .menuAnchor(MenuAnchorType.PrimaryNotEditable)
+                    )
+                    ExposedDropdownMenu(
+                        expanded = paymentExpanded,
+                        onDismissRequest = { paymentExpanded = false }
+                    ) {
+                        paymentMethods.forEach { pm ->
+                            DropdownMenuItem(
+                                text = { Text(pm) },
+                                onClick = {
+                                    paymentMethod = pm
+                                    paymentExpanded = false
+                                }
+                            )
+                        }
+                    }
+                }
+
+                OutlinedTextField(
+                    value = dateStr,
+                    onValueChange = { dateStr = it },
+                    label = { Text("Date (YYYY-MM-DD)") },
+                    singleLine = true,
+                    modifier = Modifier.fillMaxWidth()
+                )
+
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.SpaceBetween
+                ) {
+                    Text("Tax Deductible Expense", fontSize = 12.5.sp, fontWeight = FontWeight.Medium)
+                    androidx.compose.material3.Switch(
+                        checked = taxDeductible,
+                        onCheckedChange = { taxDeductible = it }
                     )
                 }
             }
@@ -954,27 +1349,27 @@ fun ScannedReceiptResultDialog(
         confirmButton = {
             Button(
                 onClick = {
-                    val amount = amountStr.toDoubleOrNull() ?: 68.40
-                    val tax = taxStr.toDoubleOrNull() ?: 6.15
+                    val amount = amountStr.toDoubleOrNull() ?: 0.0
+                    val tax = taxStr.toDoubleOrNull() ?: 0.0
                     val expense = ExpenseEntity(
-                        title = title,
+                        title = title.ifBlank { "Scanned Expense" },
                         category = category,
                         amount = amount,
                         currency = defaultCurrency,
                         currencySymbol = defaultCurrencySymbol,
-                        date = today,
+                        date = dateStr.ifBlank { today },
                         vendor = vendor,
-                        paymentMethod = "Credit Card",
-                        taxDeductible = true,
+                        paymentMethod = paymentMethod,
+                        taxDeductible = taxDeductible,
                         taxAmount = tax,
                         receiptImageUri = receiptUri?.toString(),
-                        notes = "Auto-scanned receipt"
+                        notes = notes
                     )
                     onSave(expense)
                 },
-                colors = ButtonDefaults.buttonColors(containerColor = PrimaryNavy)
+                colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF7C3AED))
             ) {
-                Text("Confirm & Save")
+                Text("Confirm & Save", fontWeight = FontWeight.Bold)
             }
         },
         dismissButton = {

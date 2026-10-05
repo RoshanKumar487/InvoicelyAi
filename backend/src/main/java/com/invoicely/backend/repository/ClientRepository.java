@@ -13,6 +13,8 @@ public interface ClientRepository extends JpaRepository<Client, Long> {
 
     // Multi-tenant company queries
     List<Client> findByCompanyIdOrderByCreatedAtDesc(Long companyId);
+    List<Client> findTop12ByCompanyIdOrderByCreatedAtDesc(Long companyId);
+    List<Client> findByCompanyIdAndNameContainingIgnoreCase(Long companyId, String name);
     List<Client> findByCompanyIdAndNameContainingIgnoreCaseOrCompanyIdAndCompanyNameContainingIgnoreCase(Long companyId1, String name, Long companyId2, String companyName);
     java.util.Optional<Client> findByIdAndCompanyId(Long id, Long companyId);
     long countByCompanyId(Long companyId);

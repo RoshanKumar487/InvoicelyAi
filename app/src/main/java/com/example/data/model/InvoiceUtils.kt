@@ -114,27 +114,7 @@ object InvoiceUtils {
      * Standard Indian Business / Zoho format.
      */
     fun amountInWords(amount: Double, currencyCode: String = "INR"): String {
-        val wholePart = amount.toLong()
-        val paise = Math.round((amount - wholePart) * 100).toInt()
-        val currencyWord = when (currencyCode.uppercase()) {
-            "INR" -> "Rupees"
-            "USD" -> "US Dollars"
-            "EUR" -> "Euros"
-            "GBP" -> "Pounds"
-            else -> currencyCode
-        }
-
-        if (wholePart == 0L) {
-            return if (paise > 0) "Zero $currencyWord and $paise Cents Only" else "Zero $currencyWord Only"
-        }
-
-        val words = convertNumberToWords(wholePart)
-        val result = StringBuilder(currencyWord).append(" ").append(words)
-        if (paise > 0) {
-            result.append(" and ").append(convertNumberToWords(paise.toLong())).append(if (currencyCode.equals("INR", true)) " Paise" else " Cents")
-        }
-        result.append(" Only")
-        return result.toString()
+        return com.example.util.IndianCurrencyUtils.convertToWords(amount, currencyCode)
     }
 
     private val units = arrayOf(

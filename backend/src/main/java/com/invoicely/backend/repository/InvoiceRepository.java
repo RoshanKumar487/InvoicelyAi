@@ -31,6 +31,10 @@ public interface InvoiceRepository extends JpaRepository<Invoice, Long> {
     // Multi-tenant company queries
     List<Invoice> findByCompanyIdOrderByCreatedAtDesc(Long companyId);
 
+    List<Invoice> findTop12ByCompanyIdOrderByCreatedAtDesc(Long companyId);
+
+    List<Invoice> findTop12ByCompanyIdAndCreatedByUserIdOrderByCreatedAtDesc(Long companyId, Long createdByUserId);
+
     List<Invoice> findByCompanyIdAndStatusIgnoreCaseOrderByCreatedAtDesc(Long companyId, String status);
 
     List<Invoice> findByCompanyIdAndClientIdOrderByCreatedAtDesc(Long companyId, Long clientId);
@@ -45,6 +49,9 @@ public interface InvoiceRepository extends JpaRepository<Invoice, Long> {
 
     @Query("SELECT COALESCE(SUM(i.amountPaid), 0) FROM Invoice i WHERE i.companyId = :companyId")
     BigDecimal sumTotalRevenueByCompanyId(@org.springframework.data.repository.query.Param("companyId") Long companyId);
+
+    @Query("SELECT i.currencyCode AS currency, COALESCE(SUM(i.amountPaid), 0) AS total FROM Invoice i WHERE i.companyId = :companyId GROUP BY i.currencyCode")
+    List<CurrencyAmount> sumPaidByCurrencyByCompanyId(@org.springframework.data.repository.query.Param("companyId") Long companyId);
 
     @Query("SELECT COALESCE(SUM(i.discountAmount), 0) FROM Invoice i WHERE i.companyId = :companyId")
     BigDecimal sumTotalDiscountByCompanyId(@org.springframework.data.repository.query.Param("companyId") Long companyId);
@@ -65,4 +72,8 @@ public interface InvoiceRepository extends JpaRepository<Invoice, Long> {
     @Query("SELECT COALESCE(SUM(i.amountPaid), 0) FROM Invoice i WHERE i.companyId = :companyId AND i.createdByUserId = :createdByUserId")
     BigDecimal sumTotalRevenueByCompanyIdAndCreatedByUserId(@org.springframework.data.repository.query.Param("companyId") Long companyId,
                                                              @org.springframework.data.repository.query.Param("createdByUserId") Long createdByUserId);
+
+    @Query("SELECT i.currencyCode AS currency, COALESCE(SUM(i.amountPaid), 0) AS total FROM Invoice i WHERE i.companyId = :companyId AND i.createdByUserId = :createdByUserId GROUP BY i.currencyCode")
+    List<CurrencyAmount> sumPaidByCurrencyByCompanyIdAndCreatedByUserId(@org.springframework.data.repository.query.Param("companyId") Long companyId,
+                                                                        @org.springframework.data.repository.query.Param("createdByUserId") Long createdByUserId);
 }

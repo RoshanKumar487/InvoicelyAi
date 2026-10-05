@@ -12,16 +12,19 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.Image
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
@@ -1071,6 +1074,48 @@ private fun RenderTotalsSection(
                 Spacer(modifier = Modifier.height(6.dp))
                 Text("PAYMENT INSTRUCTIONS", fontSize = 8.sp, fontWeight = FontWeight.Bold, color = Color(0xFF94A3B8))
                 Text(text = paymentInstructions, fontSize = 8.sp, color = Color(0xFF475569))
+
+                val upiIdMatch = remember(paymentInstructions) {
+                    val m = Regex("UPI:\\s*([^\\n]+)", RegexOption.IGNORE_CASE).find(paymentInstructions)
+                    m?.groupValues?.get(1)?.trim()?.takeIf { it.isNotBlank() && it.contains("@") }
+                }
+
+                if (upiIdMatch != null) {
+                    val upiUri = remember(upiIdMatch, calculations.balanceDue) {
+                        com.example.util.QrCodeGenerator.buildUpiPaymentUri(
+                            upiId = upiIdMatch,
+                            payeeName = "Merchant",
+                            amount = calculations.balanceDue,
+                            invoiceNumber = "Bill",
+                            currency = currencyCode
+                        )
+                    }
+                    val qrBitmap = remember(upiUri) {
+                        com.example.util.QrCodeGenerator.generateQrBitmap(upiUri, sizePx = 140)
+                    }
+                    if (qrBitmap != null) {
+                        Spacer(modifier = Modifier.height(6.dp))
+                        Row(
+                            modifier = Modifier
+                                .clip(RoundedCornerShape(6.dp))
+                                .background(Color(0xFFF1F5F9))
+                                .padding(6.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(8.dp)
+                        ) {
+                            Image(
+                                bitmap = qrBitmap.asImageBitmap(),
+                                contentDescription = "Scan & Pay via UPI",
+                                modifier = Modifier.size(46.dp)
+                            )
+                            Column {
+                                Text("SCAN TO PAY (UPI)", fontSize = 7.5.sp, fontWeight = FontWeight.Bold, color = PrimaryNavy)
+                                Text("GPay • PhonePe • Paytm • BHIM", fontSize = 7.sp, color = Color(0xFF64748B))
+                                Text(upiIdMatch, fontSize = 7.5.sp, fontWeight = FontWeight.SemiBold, color = Color(0xFF2563EB))
+                            }
+                        }
+                    }
+                }
             }
         }
 

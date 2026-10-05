@@ -618,6 +618,7 @@ fun DashboardScreen(
             }
 
             // High Level KPI Stat Cards Grid (Adaptive: 4 across on tablet, 2x2 on phone)
+            // Tap any card to navigate directly to filtered invoices
             item {
                 if (adaptiveInfo.metricColumns == 4) {
                     Row(
@@ -632,7 +633,11 @@ fun DashboardScreen(
                             iconTint = PrimaryNavy,
                             iconBgColor = Color(0xFFEFF6FF),
                             modifier = Modifier.weight(1f),
-                            testTag = "stat_total_invoiced"
+                            testTag = "stat_total_invoiced",
+                            onClick = {
+                                viewModel.setInvoiceStatusFilter("All")
+                                onViewInvoices()
+                            }
                         )
                         StatMetricCard(
                             title = "Paid Collected",
@@ -642,7 +647,11 @@ fun DashboardScreen(
                             iconTint = StatusPaidGreen,
                             iconBgColor = Color(0xFFD1FAE5),
                             modifier = Modifier.weight(1f),
-                            testTag = "stat_total_paid"
+                            testTag = "stat_total_paid",
+                            onClick = {
+                                viewModel.setInvoiceStatusFilter("Paid")
+                                onViewInvoices()
+                            }
                         )
                         StatMetricCard(
                             title = "Outstanding",
@@ -652,7 +661,11 @@ fun DashboardScreen(
                             iconTint = StatusPendingAmber,
                             iconBgColor = Color(0xFFFEF3C7),
                             modifier = Modifier.weight(1f),
-                            testTag = "stat_total_outstanding"
+                            testTag = "stat_total_outstanding",
+                            onClick = {
+                                viewModel.setInvoiceStatusFilter("Sent")
+                                onViewInvoices()
+                            }
                         )
                         StatMetricCard(
                             title = "Overdue",
@@ -662,7 +675,11 @@ fun DashboardScreen(
                             iconTint = StatusOverdueRose,
                             iconBgColor = Color(0xFFFEE2E2),
                             modifier = Modifier.weight(1f),
-                            testTag = "stat_total_overdue"
+                            testTag = "stat_total_overdue",
+                            onClick = {
+                                viewModel.setInvoiceStatusFilter("Overdue")
+                                onViewInvoices()
+                            }
                         )
                     }
                 } else {
@@ -679,7 +696,11 @@ fun DashboardScreen(
                                 iconTint = PrimaryNavy,
                                 iconBgColor = Color(0xFFEFF6FF),
                                 modifier = Modifier.weight(1f),
-                                testTag = "stat_total_invoiced"
+                                testTag = "stat_total_invoiced",
+                                onClick = {
+                                    viewModel.setInvoiceStatusFilter("All")
+                                    onViewInvoices()
+                                }
                             )
                             StatMetricCard(
                                 title = "Paid Collected",
@@ -689,7 +710,11 @@ fun DashboardScreen(
                                 iconTint = StatusPaidGreen,
                                 iconBgColor = Color(0xFFD1FAE5),
                                 modifier = Modifier.weight(1f),
-                                testTag = "stat_total_paid"
+                                testTag = "stat_total_paid",
+                                onClick = {
+                                    viewModel.setInvoiceStatusFilter("Paid")
+                                    onViewInvoices()
+                                }
                             )
                         }
 
@@ -705,7 +730,11 @@ fun DashboardScreen(
                                 iconTint = StatusPendingAmber,
                                 iconBgColor = Color(0xFFFEF3C7),
                                 modifier = Modifier.weight(1f),
-                                testTag = "stat_total_outstanding"
+                                testTag = "stat_total_outstanding",
+                                onClick = {
+                                    viewModel.setInvoiceStatusFilter("Sent")
+                                    onViewInvoices()
+                                }
                             )
                             StatMetricCard(
                                 title = "Overdue",
@@ -715,8 +744,313 @@ fun DashboardScreen(
                                 iconTint = StatusOverdueRose,
                                 iconBgColor = Color(0xFFFEE2E2),
                                 modifier = Modifier.weight(1f),
-                                testTag = "stat_total_overdue"
+                                testTag = "stat_total_overdue",
+                                onClick = {
+                                    viewModel.setInvoiceStatusFilter("Overdue")
+                                    onViewInvoices()
+                                }
                             )
+                        }
+                    }
+                }
+            }
+
+            // Role-Based Performance & Action Center
+            item {
+                val userRole = currentUser?.role ?: com.example.data.model.UserRole.ADMIN
+                val collectionRate = if (analytics.totalInvoiced > 0) {
+                    ((analytics.totalPaid / analytics.totalInvoiced) * 100).toInt().coerceIn(0, 100)
+                } else 100
+
+                GlassCard(
+                    modifier = Modifier.fillMaxWidth(),
+                    shape = RoundedCornerShape(20.dp),
+                    elevation = 6.dp
+                ) {
+                    Column(
+                        modifier = Modifier.padding(18.dp),
+                        verticalArrangement = Arrangement.spacedBy(12.dp)
+                    ) {
+                        when (userRole) {
+                            com.example.data.model.UserRole.ADMIN -> {
+                                // ADMIN / OWNER ANALYTICS
+                                Row(
+                                    modifier = Modifier.fillMaxWidth(),
+                                    horizontalArrangement = Arrangement.SpaceBetween,
+                                    verticalAlignment = Alignment.CenterVertically
+                                ) {
+                                    Row(verticalAlignment = Alignment.CenterVertically) {
+                                        Box(
+                                            modifier = Modifier
+                                                .size(34.dp)
+                                                .clip(CircleShape)
+                                                .background(Color(0xFFDBEAFE)),
+                                            contentAlignment = Alignment.Center
+                                        ) {
+                                            Icon(
+                                                imageVector = Icons.Default.TrendingUp,
+                                                contentDescription = null,
+                                                tint = Color(0xFF1D4ED8),
+                                                modifier = Modifier.size(18.dp)
+                                            )
+                                        }
+                                        Spacer(modifier = Modifier.width(10.dp))
+                                        Column {
+                                            Text(
+                                                text = "Executive Cashflow & Collection",
+                                                fontWeight = FontWeight.Bold,
+                                                fontSize = 14.sp,
+                                                color = if (isDark) Color.White else Color(0xFF0F172A)
+                                            )
+                                            Text(
+                                                text = "Admin Collection Health Score",
+                                                fontSize = 11.sp,
+                                                color = if (isDark) Color(0xFF94A3B8) else Color(0xFF64748B)
+                                            )
+                                        }
+                                    }
+
+                                    Surface(
+                                        color = if (collectionRate >= 70) Color(0xFFDCFCE7) else if (collectionRate >= 40) Color(0xFFFEF3C7) else Color(0xFFFEE2E2),
+                                        shape = RoundedCornerShape(8.dp)
+                                    ) {
+                                        Text(
+                                            text = "$collectionRate% Collected",
+                                            fontWeight = FontWeight.ExtraBold,
+                                            fontSize = 12.sp,
+                                            color = if (collectionRate >= 70) Color(0xFF15803D) else if (collectionRate >= 40) Color(0xFFB45309) else Color(0xFFB91C1C),
+                                            modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp)
+                                        )
+                                    }
+                                }
+
+                                // Linear Progress Bar for Collection
+                                Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                                    androidx.compose.material3.LinearProgressIndicator(
+                                        progress = { collectionRate / 100f },
+                                        modifier = Modifier
+                                            .fillMaxWidth()
+                                            .height(8.dp)
+                                            .clip(RoundedCornerShape(4.dp)),
+                                        color = if (collectionRate >= 70) StatusPaidGreen else if (collectionRate >= 40) StatusPendingAmber else StatusOverdueRose,
+                                        trackColor = if (isDark) Color(0xFF334155) else Color(0xFFE2E8F0)
+                                    )
+                                    Row(
+                                        modifier = Modifier.fillMaxWidth(),
+                                        horizontalArrangement = Arrangement.SpaceBetween
+                                    ) {
+                                        Text(
+                                            "Collected: ${InvoiceUtils.formatMoney(analytics.totalPaid, profile.defaultCurrencySymbol)}",
+                                            fontSize = 10.5.sp,
+                                            color = StatusPaidGreen,
+                                            fontWeight = FontWeight.SemiBold
+                                        )
+                                        Text(
+                                            "Pending: ${InvoiceUtils.formatMoney(analytics.totalOutstanding + analytics.totalOverdue, profile.defaultCurrencySymbol)}",
+                                            fontSize = 10.5.sp,
+                                            color = if (analytics.totalOverdue > 0) StatusOverdueRose else StatusPendingAmber,
+                                            fontWeight = FontWeight.SemiBold
+                                        )
+                                    }
+                                }
+
+                                // Overdue Urgent Action Callout if overdue exists
+                                if (analytics.overdueCount > 0) {
+                                    Surface(
+                                        color = if (isDark) Color(0xFF450A0A) else Color(0xFFFEF2F2),
+                                        shape = RoundedCornerShape(12.dp),
+                                        border = BorderStroke(1.dp, Color(0xFFFECACA)),
+                                        modifier = Modifier
+                                            .fillMaxWidth()
+                                            .clip(RoundedCornerShape(12.dp))
+                                            .clickable {
+                                                viewModel.setInvoiceStatusFilter("Overdue")
+                                                onViewInvoices()
+                                            }
+                                    ) {
+                                        Row(
+                                            modifier = Modifier.padding(12.dp),
+                                            verticalAlignment = Alignment.CenterVertically,
+                                            horizontalArrangement = Arrangement.SpaceBetween
+                                        ) {
+                                            Row(
+                                                verticalAlignment = Alignment.CenterVertically,
+                                                modifier = Modifier.weight(1f)
+                                            ) {
+                                                Icon(
+                                                    imageVector = Icons.Default.Warning,
+                                                    contentDescription = null,
+                                                    tint = StatusOverdueRose,
+                                                    modifier = Modifier.size(20.dp)
+                                                )
+                                                Spacer(modifier = Modifier.width(10.dp))
+                                                Column {
+                                                    Text(
+                                                        text = "Urgent: ${analytics.overdueCount} Invoices Overdue",
+                                                        fontWeight = FontWeight.Bold,
+                                                        fontSize = 12.sp,
+                                                        color = Color(0xFF991B1B)
+                                                    )
+                                                    Text(
+                                                        text = "Tap to review ${InvoiceUtils.formatMoney(analytics.totalOverdue, profile.defaultCurrencySymbol)} in delayed payments",
+                                                        fontSize = 10.5.sp,
+                                                        color = Color(0xFFB91C1C)
+                                                    )
+                                                }
+                                            }
+                                            Icon(
+                                                imageVector = Icons.Default.ArrowForward,
+                                                contentDescription = null,
+                                                tint = StatusOverdueRose,
+                                                modifier = Modifier.size(16.dp)
+                                            )
+                                        }
+                                    }
+                                }
+                            }
+                            com.example.data.model.UserRole.EMPLOYEE -> {
+                                // EMPLOYEE WORKSPACE & PERSONAL SUMMARY
+                                Row(
+                                    modifier = Modifier.fillMaxWidth(),
+                                    horizontalArrangement = Arrangement.SpaceBetween,
+                                    verticalAlignment = Alignment.CenterVertically
+                                ) {
+                                    Row(verticalAlignment = Alignment.CenterVertically) {
+                                        Box(
+                                            modifier = Modifier
+                                                .size(34.dp)
+                                                .clip(CircleShape)
+                                                .background(Color(0xFFDCFCE7)),
+                                            contentAlignment = Alignment.Center
+                                        ) {
+                                            Icon(
+                                                imageVector = Icons.Default.Receipt,
+                                                contentDescription = null,
+                                                tint = Color(0xFF15803D),
+                                                modifier = Modifier.size(18.dp)
+                                            )
+                                        }
+                                        Spacer(modifier = Modifier.width(10.dp))
+                                        Column {
+                                            Text(
+                                                text = "Staff Operational Workspace",
+                                                fontWeight = FontWeight.Bold,
+                                                fontSize = 14.sp,
+                                                color = if (isDark) Color.White else Color(0xFF0F172A)
+                                            )
+                                            Text(
+                                                text = "Logged as ${currentUser?.fullName} (${currentUser?.role?.title})",
+                                                fontSize = 11.sp,
+                                                color = if (isDark) Color(0xFF94A3B8) else Color(0xFF64748B)
+                                            )
+                                        }
+                                    }
+                                    Surface(
+                                        color = Color(0xFFD1FAE5),
+                                        shape = RoundedCornerShape(8.dp)
+                                    ) {
+                                        Text(
+                                            text = "Active Staff",
+                                            fontWeight = FontWeight.Bold,
+                                            fontSize = 11.sp,
+                                            color = Color(0xFF065F46),
+                                            modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp)
+                                        )
+                                    }
+                                }
+
+                                Row(
+                                    modifier = Modifier.fillMaxWidth(),
+                                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                                ) {
+                                    Surface(
+                                        color = if (isDark) Color(0xFF1E293B) else Color(0xFFF8FAFC),
+                                        shape = RoundedCornerShape(10.dp),
+                                        border = BorderStroke(1.dp, if (isDark) Color(0xFF334155) else Color(0xFFE2E8F0)),
+                                        modifier = Modifier
+                                            .weight(1f)
+                                            .clip(RoundedCornerShape(10.dp))
+                                            .clickable {
+                                                viewModel.setInvoiceStatusFilter("Sent")
+                                                onViewInvoices()
+                                            }
+                                    ) {
+                                        Column(modifier = Modifier.padding(10.dp)) {
+                                            Text("Pending Invoices", fontSize = 10.5.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                                            Text("${analytics.pendingCount}", fontWeight = FontWeight.ExtraBold, fontSize = 16.sp, color = StatusPendingAmber)
+                                        }
+                                    }
+
+                                    Surface(
+                                        color = if (isDark) Color(0xFF1E293B) else Color(0xFFF8FAFC),
+                                        shape = RoundedCornerShape(10.dp),
+                                        border = BorderStroke(1.dp, if (isDark) Color(0xFF334155) else Color(0xFFE2E8F0)),
+                                        modifier = Modifier
+                                            .weight(1f)
+                                            .clip(RoundedCornerShape(10.dp))
+                                            .clickable {
+                                                viewModel.setInvoiceStatusFilter("Paid")
+                                                onViewInvoices()
+                                            }
+                                    ) {
+                                        Column(modifier = Modifier.padding(10.dp)) {
+                                            Text("Settled Bills", fontSize = 10.5.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                                            Text("${analytics.paidCount}", fontWeight = FontWeight.ExtraBold, fontSize = 16.sp, color = StatusPaidGreen)
+                                        }
+                                    }
+                                }
+                            }
+                            com.example.data.model.UserRole.DEVELOPER -> {
+                                // DEVELOPER PLATFORM METRICS
+                                Row(
+                                    modifier = Modifier.fillMaxWidth(),
+                                    horizontalArrangement = Arrangement.SpaceBetween,
+                                    verticalAlignment = Alignment.CenterVertically
+                                ) {
+                                    Row(verticalAlignment = Alignment.CenterVertically) {
+                                        Box(
+                                            modifier = Modifier
+                                                .size(34.dp)
+                                                .clip(CircleShape)
+                                                .background(Color(0xFFF3E8FF)),
+                                            contentAlignment = Alignment.Center
+                                        ) {
+                                            Icon(
+                                                imageVector = Icons.Default.Business,
+                                                contentDescription = null,
+                                                tint = Color(0xFF7E22CE),
+                                                modifier = Modifier.size(18.dp)
+                                            )
+                                        }
+                                        Spacer(modifier = Modifier.width(10.dp))
+                                        Column {
+                                            Text(
+                                                text = "Developer Platform Diagnostics",
+                                                fontWeight = FontWeight.Bold,
+                                                fontSize = 14.sp,
+                                                color = if (isDark) Color.White else Color(0xFF0F172A)
+                                            )
+                                            Text(
+                                                text = "Multi-tenant persistence & backend sync status",
+                                                fontSize = 11.sp,
+                                                color = if (isDark) Color(0xFF94A3B8) else Color(0xFF64748B)
+                                            )
+                                        }
+                                    }
+                                    Surface(
+                                        color = if (isOnline) Color(0xFFDCFCE7) else Color(0xFFFEF3C7),
+                                        shape = RoundedCornerShape(8.dp)
+                                    ) {
+                                        Text(
+                                            text = if (isOnline) "CLOUD SYNCED" else "OFFLINE LOCAL",
+                                            fontWeight = FontWeight.Bold,
+                                            fontSize = 10.sp,
+                                            color = if (isOnline) Color(0xFF15803D) else Color(0xFFB45309),
+                                            modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp)
+                                        )
+                                    }
+                                }
+                            }
                         }
                     }
                 }

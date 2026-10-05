@@ -374,6 +374,26 @@ fun InvoicesListScreen(
                                         )
                                         Spacer(modifier = Modifier.width(8.dp))
                                         InvoiceStatusBadge(status = invoice.status)
+
+                                        val docType = invoice.docxTemplateTitle.ifBlank { "Tax Invoice" }
+                                        val isQuote = docType.contains("quotation", true) || docType.contains("estimate", true)
+                                        if (!docType.equals("Tax Invoice", ignoreCase = true) && !docType.equals("INVOICE", ignoreCase = true)) {
+                                            Spacer(modifier = Modifier.width(6.dp))
+                                            Box(
+                                                modifier = Modifier
+                                                    .clip(RoundedCornerShape(4.dp))
+                                                    .background(if (isQuote) Color(0xFFFEF3C7) else Color(0xFFF3E8FF))
+                                                    .border(1.dp, if (isQuote) Color(0xFFFDE68A) else Color(0xFFE9D5FF), RoundedCornerShape(4.dp))
+                                                    .padding(horizontal = 4.dp, vertical = 1.dp)
+                                            ) {
+                                                Text(
+                                                    text = if (isQuote) "ESTIMATE" else docType.take(8).uppercase(),
+                                                    fontSize = 8.5.sp,
+                                                    fontWeight = FontWeight.Bold,
+                                                    color = if (isQuote) Color(0xFFB45309) else Color(0xFF7E22CE)
+                                                )
+                                            }
+                                        }
                                     }
 
                                     Box {
@@ -384,6 +404,17 @@ fun InvoicesListScreen(
                                             expanded = menuExpanded,
                                             onDismissRequest = { menuExpanded = false }
                                         ) {
+                                            val isQuote = invoice.docxTemplateTitle.contains("quotation", true) || invoice.docxTemplateTitle.contains("estimate", true)
+                                            if (isQuote) {
+                                                DropdownMenuItem(
+                                                    text = { Text("Convert to Tax Invoice", color = Color(0xFF15803D), fontWeight = FontWeight.Bold) },
+                                                    leadingIcon = { Icon(Icons.Default.Receipt, contentDescription = null, tint = Color(0xFF15803D)) },
+                                                    onClick = {
+                                                        menuExpanded = false
+                                                        viewModel.saveInvoice(invoice.copy(docxTemplateTitle = "Tax Invoice", status = "Sent"))
+                                                    }
+                                                )
+                                            }
                                             DropdownMenuItem(
                                                 text = { Text("Preview & DOCX") },
                                                 leadingIcon = { Icon(Icons.Default.Visibility, contentDescription = null) },
