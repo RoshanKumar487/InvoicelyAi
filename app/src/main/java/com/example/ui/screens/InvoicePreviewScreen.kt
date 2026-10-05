@@ -235,7 +235,9 @@ fun InvoicePreviewScreen(
                 "${context.packageName}.fileprovider",
                 file
             )
-            val shareText = "Invoice ${invoice.invoiceNumber} from ${profile.businessName}\nAmount Due: ${InvoiceUtils.formatMoney(calculations.balanceDue, invoice.currencySymbol)}\nDue Date: ${invoice.dueDate}"
+            val upiNote = if (profile.upiId.isNotBlank()) "\nPay via UPI: ${profile.upiId}" else ""
+            val docType = invoice.docxTemplateTitle.ifBlank { "Invoice" }
+            val shareText = "$docType #${invoice.invoiceNumber} from ${profile.businessName}\nAmount Due: ${InvoiceUtils.formatMoney(calculations.balanceDue, invoice.currencySymbol)}\nDue Date: ${invoice.dueDate}$upiNote\nThank you for your business!"
             val whatsappIntent = Intent(Intent.ACTION_SEND).apply {
                 type = "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
                 putExtra(Intent.EXTRA_STREAM, uri)
@@ -581,15 +583,62 @@ fun InvoicePreviewScreen(
                     .padding(horizontal = 8.dp, vertical = 14.dp),
                 contentAlignment = Alignment.TopCenter
             ) {
-                Box(
+                Column(
                     modifier = Modifier
                         .graphicsLayer(
                             scaleX = zoomScale,
                             scaleY = zoomScale,
                             transformOrigin = TransformOrigin(0.5f, 0f)
                         )
-                        .widthIn(max = 680.dp)
+                        .widthIn(max = 680.dp),
+                    horizontalAlignment = Alignment.CenterHorizontally
                 ) {
+                    val isQuotation = invoice.docxTemplateTitle.contains("quotation", ignoreCase = true) || invoice.docxTemplateTitle.contains("estimate", ignoreCase = true)
+                    if (isQuotation) {
+                        Card(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(bottom = 12.dp),
+                            shape = RoundedCornerShape(12.dp),
+                            colors = CardDefaults.cardColors(containerColor = Color(0xFF064E3B)),
+                            border = androidx.compose.foundation.BorderStroke(1.dp, Color(0xFF059669))
+                        ) {
+                            Row(
+                                modifier = Modifier.padding(12.dp).fillMaxWidth(),
+                                horizontalArrangement = Arrangement.SpaceBetween,
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Column(modifier = Modifier.weight(1f)) {
+                                    Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                                        Text("📑 Quotation / Estimate", fontWeight = FontWeight.Bold, fontSize = 13.sp, color = Color.White)
+                                        Surface(
+                                            color = Color(0xFF10B981),
+                                            shape = RoundedCornerShape(4.dp)
+                                        ) {
+                                            Text("ESTIMATE", fontSize = 8.5.sp, fontWeight = FontWeight.Bold, color = Color.White, modifier = Modifier.padding(horizontal = 4.dp, vertical = 1.dp))
+                                        }
+                                    }
+                                    Text("Ready to finalize this estimate into a bill?", fontSize = 11.sp, color = Color(0xFFA7F3D0))
+                                }
+                                Button(
+                                    onClick = {
+                                        val updated = invoice.copy(
+                                            docxTemplateTitle = "Tax Invoice",
+                                            status = "Sent"
+                                        )
+                                        viewModel.saveInvoice(updated) {
+                                            Toast.makeText(context, "Quotation converted to Tax Invoice!", Toast.LENGTH_SHORT).show()
+                                        }
+                                    },
+                                    colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF10B981)),
+                                    shape = RoundedCornerShape(8.dp)
+                                ) {
+                                    Text("Convert to Tax Invoice", fontSize = 11.5.sp, fontWeight = FontWeight.Bold)
+                                }
+                            }
+                        }
+                    }
+
                     InvoiceDocumentPaper(
                         invoice = invoice,
                         items = items,

@@ -9,12 +9,15 @@ import android.graphics.Rect
 import android.graphics.RectF
 import android.graphics.Typeface
 import android.graphics.pdf.PdfDocument
+import android.graphics.Bitmap
 import com.example.data.model.BusinessProfile
 import com.example.data.model.InvoiceCalculations
 import com.example.data.model.InvoiceEntity
 import com.example.data.model.InvoiceItem
 import com.example.data.model.InvoiceUtils
 import com.example.data.model.TemplateConfig
+import com.example.util.IndianCurrencyUtils
+import com.example.util.QrCodeGenerator
 import java.io.File
 import java.io.FileOutputStream
 import java.text.SimpleDateFormat
@@ -209,9 +212,31 @@ object PdfInvoiceGenerator {
             bY += 12f
         }
 
-        // Right: Invoice #, Date, Due Date, Status Badge
-        var rY = metaBoxY + 12f
-        textPaint.textSize = 14f
+        // Right: Document Type, Watermark, Invoice #, Date, Due Date, Status Badge
+        var rY = metaBoxY + 8f
+        val docTypeTitle = invoice.docxTemplateTitle.ifBlank { templateConfig.docxTitle }.uppercase()
+        textPaint.textSize = 9.5f
+        textPaint.typeface = Typeface.create(Typeface.SANS_SERIF, Typeface.BOLD)
+        textPaint.color = primaryColorInt
+        val docTypeWidth = textPaint.measureText(docTypeTitle)
+        canvas.drawText(docTypeTitle, metaColRight - docTypeWidth, rY, textPaint)
+
+        rY += 10f
+        val copyWatermark = if (invoice.notes.contains("DUPLICATE", ignoreCase = true)) {
+            "DUPLICATE FOR TRANSPORTER"
+        } else if (invoice.notes.contains("TRIPLICATE", ignoreCase = true)) {
+            "TRIPLICATE FOR SUPPLIER"
+        } else {
+            "ORIGINAL FOR RECIPIENT"
+        }
+        textPaint.textSize = 6f
+        textPaint.typeface = Typeface.create(Typeface.SANS_SERIF, Typeface.NORMAL)
+        textPaint.color = Color.parseColor("#64748B")
+        val copyWidth = textPaint.measureText(copyWatermark)
+        canvas.drawText(copyWatermark, metaColRight - copyWidth, rY, textPaint)
+
+        rY += 14f
+        textPaint.textSize = 13f
         textPaint.typeface = Typeface.create(Typeface.SANS_SERIF, Typeface.BOLD)
         textPaint.color = primaryColorInt
         val invNumText = "#${invoice.invoiceNumber}"
@@ -495,11 +520,17 @@ object PdfInvoiceGenerator {
         }
 
         if (calculations.taxTotal > 0) {
-            drawTotalLine("${invoice.taxLabel} (${invoice.taxRate}%)", "${invoice.currencySymbol}${String.format(Locale.US, "%,.2f", calculations.taxTotal)}")
+            val rcmTag = if (invoice.isRcm) " (RCM)" else ""
+            drawTotalLine("${invoice.taxLabel} (${invoice.taxRate}%)$rcmTag", "${invoice.currencySymbol}${String.format(Locale.US, "%,.2f", calculations.taxTotal)}")
         }
 
         if (calculations.shipping > 0) {
             drawTotalLine("Shipping Fee", "${invoice.currencySymbol}${String.format(Locale.US, "%,.2f", calculations.shipping)}")
+        }
+
+        if (calculations.roundOff != 0.0) {
+            val sign = if (calculations.roundOff > 0) "+" else ""
+            drawTotalLine("Round Off", "$sign${invoice.currencySymbol}${String.format(Locale.US, "%,.2f", calculations.roundOff)}")
         }
 
         // Grand Total Box
@@ -512,6 +543,47 @@ object PdfInvoiceGenerator {
         if (calculations.amountPaid > 0) {
             drawTotalLine("Amount Paid", "-${invoice.currencySymbol}${String.format(Locale.US, "%,.2f", calculations.amountPaid)}")
             drawTotalLine("Balance Due", "${invoice.currencySymbol}${String.format(Locale.US, "%,.2f", calculations.balanceDue)}", isBold = true)
+        }
+
+        // Dynamic UPI QR Code in Payment Section
+        if (profile.upiId.isNotBlank()) {
+            val upiUri = QrCodeGenerator.buildUpiPaymentUri(
+                upiId = profile.upiId,
+                payeeName = profile.businessName.ifBlank { profile.legalName },
+                amount = calculations.balanceDue,
+                invoiceNumber = invoice.invoiceNumber,
+                currency = invoice.currencyCode
+            )
+            val qrBmp = QrCodeGenerator.generateQrBitmap(upiUri, sizePx = 180)
+            if (qrBmp != null) {
+                val qrSize = 46f
+                val qrX = MARGIN_X
+                val qrY = noteY + 2f
+                canvas.drawBitmap(Bitmap.createScaledBitmap(qrBmp, qrSize.toInt(), qrSize.toInt(), true), qrX, qrY, null)
+
+                textPaint.textSize = 7f
+                textPaint.typeface = Typeface.create(Typeface.SANS_SERIF, Typeface.BOLD)
+                textPaint.color = primaryColorInt
+                canvas.drawText("SCAN & PAY VIA UPI", qrX + qrSize + 6f, qrY + 11f, textPaint)
+
+                textPaint.textSize = 6f
+                textPaint.typeface = Typeface.create(Typeface.SANS_SERIF, Typeface.NORMAL)
+                textPaint.color = Color.parseColor("#64748B")
+                canvas.drawText("GPay • PhonePe • Paytm • BHIM", qrX + qrSize + 6f, qrY + 22f, textPaint)
+                canvas.drawText("UPI ID: ${profile.upiId}", qrX + qrSize + 6f, qrY + 33f, textPaint)
+
+                noteY = qrY + qrSize + 6f
+            }
+        }
+
+        // Amount in Words
+        if (profile.showAmountInWords) {
+            val words = IndianCurrencyUtils.convertToWords(calculations.grandTotal, invoice.currencyCode)
+            textPaint.textSize = 7f
+            textPaint.typeface = Typeface.create(Typeface.SANS_SERIF, Typeface.ITALIC)
+            textPaint.color = Color.parseColor("#334155")
+            val wordsY = maxOf(totY + 14f, noteY + 14f)
+            canvas.drawText("Total in Words: $words", MARGIN_X, wordsY, textPaint)
         }
 
         // 8. Footer Section: Signatory & Terms

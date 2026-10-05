@@ -1057,6 +1057,17 @@ class InvoiceViewModel(application: Application) : AndroidViewModel(application)
         )
     }
 
+    suspend fun parseInvoiceDraftWithAi(prompt: String): com.example.ai.AiActionResult {
+        return geminiService.processUserPrompt(
+            prompt = prompt,
+            profile = businessProfile.value,
+            existingClients = allClients.value,
+            invoices = allInvoices.value,
+            expenses = allExpenses.value,
+            nextInvoiceNumber = generateNextInvoiceNumber()
+        )
+    }
+
     // =========================================================================
     // EXPENSE MANAGEMENT ACTIONS
     // =========================================================================
