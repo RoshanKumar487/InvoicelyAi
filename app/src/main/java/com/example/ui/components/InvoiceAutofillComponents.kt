@@ -28,6 +28,7 @@ import androidx.compose.material.icons.filled.Business
 import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.History
+import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.Star
 import androidx.compose.material.icons.filled.Work
 import androidx.compose.material3.Button
@@ -307,8 +308,22 @@ fun DomainItemCatalogDialog(
     currencySymbol: String = "₹"
 ) {
     var selectedCategoryId by remember { mutableStateOf("security_agency") }
+    var searchQuery by remember { mutableStateOf("") }
     val categories = IndustryItemCatalog.categories
     val activeCategory = categories.find { it.id == selectedCategoryId } ?: categories.first()
+
+    val filteredItems = remember(searchQuery, selectedCategoryId) {
+        if (searchQuery.isBlank()) {
+            activeCategory.items
+        } else {
+            val q = searchQuery.trim().lowercase()
+            IndustryItemCatalog.getAllItems().filter {
+                it.description.lowercase().contains(q) ||
+                it.subtitle.lowercase().contains(q) ||
+                it.hsnOrSac.contains(q)
+            }
+        }
+    }
 
     Dialog(
         onDismissRequest = onDismissRequest,
@@ -350,6 +365,28 @@ fun DomainItemCatalogDialog(
                         Icon(Icons.Default.Close, contentDescription = "Close", tint = Color(0xFF64748B))
                     }
                 }
+
+                Spacer(modifier = Modifier.height(8.dp))
+
+                // Search Bar
+                OutlinedTextField(
+                    value = searchQuery,
+                    onValueChange = { searchQuery = it },
+                    placeholder = { Text("Search services, items, SAC codes...", fontSize = 11.sp, color = Color(0xFF94A3B8)) },
+                    leadingIcon = { Icon(Icons.Default.Search, contentDescription = null, tint = Color(0xFF64748B), modifier = Modifier.size(16.dp)) },
+                    trailingIcon = {
+                        if (searchQuery.isNotEmpty()) {
+                            IconButton(onClick = { searchQuery = "" }) {
+                                Icon(Icons.Default.Close, contentDescription = "Clear", tint = Color(0xFF64748B), modifier = Modifier.size(15.dp))
+                            }
+                        }
+                    },
+                    singleLine = true,
+                    shape = RoundedCornerShape(10.dp),
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(48.dp)
+                )
 
                 Spacer(modifier = Modifier.height(10.dp))
 
@@ -442,7 +479,7 @@ fun DomainItemCatalogDialog(
                     modifier = Modifier.weight(1f),
                     verticalArrangement = Arrangement.spacedBy(8.dp)
                 ) {
-                    items(activeCategory.items) { catItem ->
+                    items(filteredItems) { catItem ->
                         Card(
                             modifier = Modifier.fillMaxWidth(),
                             shape = RoundedCornerShape(10.dp),

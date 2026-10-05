@@ -116,6 +116,9 @@ import com.example.ui.components.LiveInvoicePreviewModal
 import com.example.ui.components.AutofillItemDescriptionField
 import com.example.ui.components.AutofillUnitField
 import com.example.ui.components.DomainItemCatalogDialog
+import com.example.ui.components.InvoiceFormConfig
+import com.example.ui.components.InvoiceFormCustomizerSheet
+import androidx.compose.foundation.layout.navigationBarsPadding
 import com.example.util.IndustryItemCatalog
 import com.example.util.InvoiceAutofillCache
 import com.example.ui.theme.PrimaryNavy
