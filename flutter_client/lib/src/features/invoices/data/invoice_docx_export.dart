@@ -48,6 +48,12 @@ class InvoiceDocxExport {
     if (show('showPoNumber') && invoice.poNumber.isNotEmpty) {
       body.write(_paragraph('PO: ${invoice.poNumber}'));
     }
+    final shipping = _shippingLines(invoice.shippingDetailsJson);
+    if (shipping.isNotEmpty) {
+      body
+        ..write(_paragraph('Shipping details', bold: true))
+        ..writeAll(shipping.map(_paragraph));
+    }
     body
       ..write(_paragraph(''))
       ..write(_paragraph(
@@ -95,22 +101,19 @@ class InvoiceDocxExport {
       ..write(_paragraph(
           'Balance due: ${invoice.currencySymbol}${invoice.balanceDue.toStringAsFixed(2)}',
           bold: true));
-    if (show('showNotesSection') &&
-        show('showNotes') &&
+    if (show('showNotes') &&
         invoice.notes.isNotEmpty) {
       body
         ..write(_paragraph('Notes', bold: true))
         ..write(_paragraph(invoice.notes));
     }
-    if (show('showNotesSection') &&
-        show('showTerms') &&
+    if (show('showTerms') &&
         invoice.terms.isNotEmpty) {
       body
         ..write(_paragraph('Terms and conditions', bold: true))
         ..write(_paragraph(invoice.terms));
     }
-    if (show('showNotesSection') &&
-        show('showPaymentInstructions') &&
+    if (show('showPaymentInstructions') &&
         template?.showPaymentInstructions != false &&
         invoice.paymentInstructions.isNotEmpty) {
       body
@@ -151,6 +154,27 @@ class InvoiceDocxExport {
   static ArchiveFile _file(String name, String content) {
     final data = utf8.encode(content);
     return ArchiveFile(name, data.length, data);
+  }
+
+  static List<String> _shippingLines(String json) {
+    if (json.trim().isEmpty || json.trim() == '{}') return const [];
+    final decoded = jsonDecode(json);
+    if (decoded is! Map<String, dynamic> || decoded['isEnabled'] != true) {
+      return const [];
+    }
+    const fields = <String, String>{
+      'shippingAddress': 'Shipping address',
+      'deliveryAddress': 'Delivery address',
+      'shippingMethod': 'Shipping method',
+      'courier': 'Carrier',
+      'trackingNumber': 'Tracking',
+      'expectedDelivery': 'Expected delivery',
+    };
+    return fields.entries
+        .where((entry) =>
+            decoded[entry.key]?.toString().trim().isNotEmpty == true)
+        .map((entry) => '${entry.value}: ${decoded[entry.key]}')
+        .toList(growable: false);
   }
 
   static String _paragraph(String text, {bool bold = false, int size = 22}) {

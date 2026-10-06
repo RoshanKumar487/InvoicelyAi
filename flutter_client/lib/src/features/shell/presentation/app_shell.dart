@@ -56,6 +56,7 @@ class AppShell extends StatefulWidget {
 class _AppShellState extends State<AppShell> {
   _Destination _destination = _Destination.dashboard;
   String? _moreSection;
+  String _invoiceStatusFilter = 'All';
   late final LocalPreferences _localPreferences;
   TemplateConfig? _preferredTemplate;
   Map<String, Object?> _invoiceLocalSettings = <String, Object?>{};
@@ -131,6 +132,9 @@ class _AppShellState extends State<AppShell> {
           onDestinationSelected: (index) => setState(() {
             _destination = _Destination.values[index];
             _moreSection = null;
+            if (_destination == _Destination.invoices) {
+              _invoiceStatusFilter = 'All';
+            }
           }),
           destinations: [
             for (final item in _Destination.values)
@@ -151,6 +155,9 @@ class _AppShellState extends State<AppShell> {
             onDestinationSelected: (index) => setState(() {
               _destination = _Destination.values[index];
               _moreSection = null;
+              if (_destination == _Destination.invoices) {
+                _invoiceStatusFilter = 'All';
+              }
             }),
             labelType: NavigationRailLabelType.all,
             leading: const Padding(
@@ -182,12 +189,14 @@ class _AppShellState extends State<AppShell> {
           session: widget.session,
           repository: widget.dashboardRepository,
           onLogout: widget.onLogout,
-          onCreateInvoice: () => setState(
-            () => _destination = _Destination.invoices,
-          ),
-          onViewInvoices: () => setState(
-            () => _destination = _Destination.invoices,
-          ),
+          onCreateInvoice: () => setState(() {
+            _invoiceStatusFilter = 'All';
+            _destination = _Destination.invoices;
+          }),
+          onViewInvoices: (status) => setState(() {
+            _invoiceStatusFilter = status;
+            _destination = _Destination.invoices;
+          }),
           onViewClients: () => setState(() {
             _destination = _Destination.menu;
             _moreSection = 'Clients';
@@ -198,11 +207,15 @@ class _AppShellState extends State<AppShell> {
           onOpenAiChat: () => setState(
             () => _destination = _Destination.aiAgent,
           ),
+          onOpenTemplates: () => _openMoreSection('Templates'),
         ),
       _Destination.invoices => InvoiceFeatureScreen(
+          key: ValueKey('invoices-$_invoiceStatusFilter'),
           apiClient: widget.apiClient,
           preferredTemplate: _preferredTemplate,
           localSettings: _invoiceLocalSettings,
+          onOpenBusinessSettings: _openBusinessSettings,
+          initialStatusFilter: _invoiceStatusFilter,
         ),
       _Destination.aiAgent => AiChatScreen(
           apiClient: widget.apiClient,
@@ -237,7 +250,15 @@ class _AppShellState extends State<AppShell> {
           onBack: onBack,
           onSave: _saveTemplate,
         ),
-      'Settings' => SettingsScreen(apiClient: widget.apiClient, onBack: onBack),
+      'Settings' => SettingsScreen(
+          apiClient: widget.apiClient,
+          localPreferences: _localPreferences,
+          initialLocalSettings: _invoiceLocalSettings,
+          onSaveLocalSettings: (settings) => setState(
+            () => _invoiceLocalSettings = Map<String, Object?>.from(settings),
+          ),
+          onBack: onBack,
+        ),
       'Invoice settings' => InvoiceSettingsScreen(
           apiClient: widget.apiClient,
           initialLocalSettings: _invoiceLocalSettings,
@@ -254,6 +275,25 @@ class _AppShellState extends State<AppShell> {
         ),
     };
   }
+
+  void _openMoreSection(String section) => setState(() {
+        _destination = _Destination.menu;
+        _moreSection = section;
+      });
+
+  Future<void> _openBusinessSettings() => Navigator.of(context).push<void>(
+        MaterialPageRoute<void>(
+          builder: (routeContext) => SettingsScreen(
+            apiClient: widget.apiClient,
+            localPreferences: _localPreferences,
+            initialLocalSettings: _invoiceLocalSettings,
+            onSaveLocalSettings: (settings) => setState(
+              () => _invoiceLocalSettings = Map<String, Object?>.from(settings),
+            ),
+            onBack: () => Navigator.of(routeContext).pop(),
+          ),
+        ),
+      );
 
   Widget _buildExpenses() => ExpensesScreen(
         repository: ExpensesRepository(apiClient: widget.apiClient),

@@ -50,6 +50,11 @@ from the existing REST API. Mutations are not queued offline, and this client
 does not connect directly to the database or add a custom Kotlin method
 channel.
 
+The dashboard presents role-scoped invoice health and revenue/spending
+analytics. Reports provides searchable invoice, expense, and client grids with
+date-range, invoice-status, and creator filters, plus multi-sheet Excel and PDF
+exports of the filtered data.
+
 Receipt scanning uses the platform image picker and the existing backend scan
 endpoint. Speech recognition requires microphone/speech permissions, and iOS
 builds and web speech behavior still need verification on their respective

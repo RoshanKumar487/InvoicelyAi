@@ -84,6 +84,7 @@ class Invoice {
     this.notes = '',
     this.terms = '',
     this.paymentInstructions = '',
+    this.shippingDetailsJson = '{}',
     this.taxRate = 0,
     this.taxLabel = 'Tax',
     this.taxType = 'GST',
@@ -119,6 +120,7 @@ class Invoice {
   final String notes;
   final String terms;
   final String paymentInstructions;
+  final String shippingDetailsJson;
   final double taxRate;
   final String taxLabel;
   final String taxType;
@@ -199,6 +201,7 @@ class Invoice {
       notes: _string(json['notes']),
       terms: _string(json['terms']),
       paymentInstructions: _string(json['paymentInstructions']),
+      shippingDetailsJson: _string(json['shippingDetailsJson'], fallback: '{}'),
       taxRate: _number(json['taxRate']),
       taxLabel: _string(json['taxLabel'], fallback: 'Tax'),
       taxType: _string(json['taxType'], fallback: 'GST'),
@@ -236,6 +239,7 @@ class Invoice {
         'notes': notes,
         'terms': terms,
         'paymentInstructions': paymentInstructions,
+        'shippingDetailsJson': shippingDetailsJson,
         'taxRate': taxRate,
         'taxLabel': taxLabel,
         'taxType': taxType,

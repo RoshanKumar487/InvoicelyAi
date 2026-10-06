@@ -28,6 +28,10 @@
 	<string>Invoicely AI uses the microphone to transcribe your voice into editable chat messages.</string>
 	<key>NSSpeechRecognitionUsageDescription</key>
 	<string>Invoicely AI uses speech recognition to transcribe your voice into editable chat messages.</string>
+	<key>NSPhotoLibraryUsageDescription</key>
+	<string>Choose a logo or company stamp to include on your invoices.</string>
+	<key>NSCameraUsageDescription</key>
+	<string>Take a photo of a business receipt to scan and record the expense.</string>
 	<key>LSRequiresIPhoneOS</key>
 	<true/>
 	<key>UIApplicationSceneManifest</key>

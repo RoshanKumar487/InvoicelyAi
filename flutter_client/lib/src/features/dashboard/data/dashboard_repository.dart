@@ -1,4 +1,5 @@
 import '../../../core/api/api_client.dart';
+import '../../invoices/data/invoice.dart';
 import 'developer_overview.dart';
 import 'dashboard_statistics.dart';
 
@@ -18,6 +19,11 @@ class DashboardRepository {
       queryParameters: queryParameters,
     );
     return DashboardStatistics.fromJson(data);
+  }
+
+  Future<List<Invoice>> loadInvoices() async {
+    final records = await _apiClient.getListJson('api/v1/invoices');
+    return records.map(Invoice.fromJson).toList(growable: false);
   }
 
   Future<DeveloperOverview> loadDeveloperOverview() async {

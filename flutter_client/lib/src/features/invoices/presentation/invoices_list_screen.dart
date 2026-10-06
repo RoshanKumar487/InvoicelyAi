@@ -12,6 +12,7 @@ class InvoicesListScreen extends StatefulWidget {
     required this.onCreate,
     required this.onOpen,
     required this.onEdit,
+    this.initialFilter = 'All',
     super.key,
   });
 
@@ -19,6 +20,7 @@ class InvoicesListScreen extends StatefulWidget {
   final VoidCallback onCreate;
   final ValueChanged<Invoice> onOpen;
   final ValueChanged<Invoice> onEdit;
+  final String initialFilter;
 
   @override
   State<InvoicesListScreen> createState() => _InvoicesListScreenState();
@@ -44,6 +46,7 @@ class _InvoicesListScreenState extends State<InvoicesListScreen> {
   @override
   void initState() {
     super.initState();
+    _filter = _filters.contains(widget.initialFilter) ? widget.initialFilter : 'All';
     _load();
   }
 
@@ -179,8 +182,6 @@ class _InvoicesListScreenState extends State<InvoicesListScreen> {
         child: ListView(
           padding: const EdgeInsets.fromLTRB(20, 8, 20, 100),
           children: [
-            _OverviewCards(invoices: _invoices),
-            const SizedBox(height: 20),
             TextField(
               controller: _searchController,
               onChanged: (_) => setState(() {}),
@@ -284,93 +285,6 @@ class _InvoicesListScreenState extends State<InvoicesListScreen> {
       ),
     );
   }
-}
-
-class _OverviewCards extends StatelessWidget {
-  const _OverviewCards({required this.invoices});
-
-  final List<Invoice> invoices;
-
-  @override
-  Widget build(BuildContext context) {
-    final outstanding = invoices
-        .where((invoice) => invoice.status.toLowerCase() != 'paid')
-        .fold<double>(0, (sum, invoice) => sum + invoice.balanceDue);
-    final paid = invoices
-        .where((invoice) => invoice.status.toLowerCase() == 'paid')
-        .length;
-    return LayoutBuilder(
-      builder: (context, constraints) {
-        final compact = constraints.maxWidth < 560;
-        final cards = [
-          _SummaryCard(
-            label: 'Invoices',
-            value: '${invoices.length}',
-            icon: Icons.receipt_long_outlined,
-          ),
-          _SummaryCard(
-            label: 'Paid',
-            value: '$paid',
-            icon: Icons.check_circle_outline,
-          ),
-          _SummaryCard(
-            label: 'Outstanding',
-            value: _money(
-              outstanding,
-              invoices.isEmpty ? r'$' : invoices.first.currencySymbol,
-            ),
-            icon: Icons.account_balance_wallet_outlined,
-          ),
-        ];
-        return Wrap(
-          spacing: 12,
-          runSpacing: 12,
-          children: [
-            for (final card in cards)
-              SizedBox(
-                width: compact
-                    ? (constraints.maxWidth - 12) / 2
-                    : (constraints.maxWidth - 24) / 3,
-                child: card,
-              ),
-          ],
-        );
-      },
-    );
-  }
-}
-
-class _SummaryCard extends StatelessWidget {
-  const _SummaryCard({
-    required this.label,
-    required this.value,
-    required this.icon,
-  });
-
-  final String label;
-  final String value;
-  final IconData icon;
-
-  @override
-  Widget build(BuildContext context) => AppCard(
-        padding: const EdgeInsets.all(16),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Icon(icon, color: Theme.of(context).colorScheme.primary),
-            const SizedBox(height: 12),
-            Text(
-              value,
-              maxLines: 1,
-              overflow: TextOverflow.ellipsis,
-              style: Theme.of(context).textTheme.titleLarge?.copyWith(
-                    fontWeight: FontWeight.w800,
-                  ),
-            ),
-            Text(label, style: Theme.of(context).textTheme.bodySmall),
-          ],
-        ),
-      );
 }
 
 class _InvoiceCard extends StatelessWidget {
