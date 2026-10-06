@@ -162,9 +162,27 @@ class _InvoiceSettingsScreenState extends State<InvoiceSettingsScreen> {
     }
     setState(() => _saving = true);
     try {
+      final localSettings = Map<String, Object?>.from(_localSettings)
+        ..addAll({
+          'defaultTaxRate': rate,
+          'defaultTaxLabel':
+              _profile['defaultTaxLabel']?.toString().trim().isNotEmpty == true
+                  ? _profile['defaultTaxLabel']
+                  : 'Tax',
+          'defaultCurrency': _profile['defaultCurrency'] ?? 'INR',
+          'defaultCurrencySymbol': _profile['defaultCurrencySymbol'] ?? '₹',
+          'defaultPaymentTerms':
+              _profile['defaultPaymentTerms']?.toString().trim().isNotEmpty ==
+                      true
+                  ? _profile['defaultPaymentTerms']
+                  : 'Net 30',
+          'defaultNotes': _profile['defaultNotes'] ?? '',
+          'defaultTerms': _profile['defaultTerms'] ?? '',
+        });
       await widget.onSaveLocalSettings?.call(
-        Map<String, Object?>.unmodifiable(_localSettings),
+        Map<String, Object?>.unmodifiable(localSettings),
       );
+      setState(() => _localSettings = localSettings);
       final payload = <String, Object?>{
         for (final entry in _profile.entries)
           if (_supportedBackendFields.contains(entry.key))
@@ -300,6 +318,46 @@ class _InvoiceSettingsScreenState extends State<InvoiceSettingsScreen> {
                               },
                             ),
                             const SizedBox(height: 10),
+                            DropdownButtonFormField<String>(
+                              initialValue: const [
+                                        'GST',
+                                        'VAT',
+                                        'Sales tax',
+                                        'Other',
+                                      ].contains(
+                                      _localSettings['defaultTaxType'])
+                                  ? _localSettings['defaultTaxType'] as String
+                                  : 'Other',
+                              decoration: const InputDecoration(
+                                labelText: 'Default tax type',
+                              ),
+                              items: const [
+                                'GST',
+                                'VAT',
+                                'Sales tax',
+                                'Other',
+                              ]
+                                  .map((type) => DropdownMenuItem(
+                                        value: type,
+                                        child: Text(type),
+                                      ))
+                                  .toList(),
+                              onChanged: (value) {
+                                if (value != null) {
+                                  setState(() =>
+                                      _localSettings['defaultTaxType'] = value);
+                                }
+                              },
+                            ),
+                            SwitchListTile.adaptive(
+                              contentPadding: EdgeInsets.zero,
+                              title: const Text('Prices include tax by default'),
+                              value:
+                                  _localSettings['defaultTaxInclusive'] == true,
+                              onChanged: (value) => setState(() =>
+                                  _localSettings['defaultTaxInclusive'] = value),
+                            ),
+                            const SizedBox(height: 10),
                             TextFormField(
                               initialValue:
                                   _profile['defaultPaymentTerms']?.toString() ??
@@ -331,6 +389,19 @@ class _InvoiceSettingsScreenState extends State<InvoiceSettingsScreen> {
                               maxLines: 3,
                               onChanged: (value) =>
                                   _profile['defaultTerms'] = value,
+                            ),
+                            const SizedBox(height: 10),
+                            TextFormField(
+                              initialValue: _localSettings[
+                                          'defaultPaymentInstructions']
+                                      ?.toString() ??
+                                  '',
+                              decoration: const InputDecoration(
+                                labelText: 'Default payment instructions',
+                              ),
+                              maxLines: 3,
+                              onChanged: (value) => _localSettings[
+                                  'defaultPaymentInstructions'] = value,
                             ),
                             SwitchListTile(
                               contentPadding: EdgeInsets.zero,

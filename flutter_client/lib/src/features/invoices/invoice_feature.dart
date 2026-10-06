@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 
 import '../../core/api/api_client.dart';
+import '../clients/data/clients_repository.dart';
 import '../templates/data/template_config.dart';
 import 'data/invoice.dart';
 import 'data/invoice_repository.dart';
@@ -24,6 +25,8 @@ class InvoiceFeatureScreen extends StatefulWidget {
     this.repository,
     this.preferredTemplate,
     this.localSettings = const <String, Object?>{},
+    this.onOpenBusinessSettings,
+    this.initialStatusFilter = 'All',
     super.key,
   });
 
@@ -31,6 +34,8 @@ class InvoiceFeatureScreen extends StatefulWidget {
   final InvoiceRepository? repository;
   final TemplateConfig? preferredTemplate;
   final Map<String, Object?> localSettings;
+  final VoidCallback? onOpenBusinessSettings;
+  final String initialStatusFilter;
 
   @override
   State<InvoiceFeatureScreen> createState() => _InvoiceFeatureScreenState();
@@ -68,8 +73,9 @@ class _InvoiceFeatureScreenState extends State<InvoiceFeatureScreen> {
   @override
   Widget build(BuildContext context) => switch (_page) {
         _InvoicePage.list => InvoicesListScreen(
-            key: const ValueKey('invoice-list'),
+            key: ValueKey('invoice-list-${widget.initialStatusFilter}'),
             repository: _repository,
+            initialFilter: widget.initialStatusFilter,
             onCreate: () => setState(() {
               _selected = null;
               _page = _InvoicePage.editor;
@@ -88,6 +94,8 @@ class _InvoiceFeatureScreenState extends State<InvoiceFeatureScreen> {
             repository: _repository,
             invoice: _selected,
             preferredTemplate: widget.preferredTemplate,
+            initialLocalSettings: widget.localSettings,
+            clientRepository: ClientsRepository(apiClient: widget.apiClient),
             onCancel: _selected == null
                 ? _backToList
                 : () => setState(() => _page = _InvoicePage.preview),
@@ -102,6 +110,7 @@ class _InvoiceFeatureScreenState extends State<InvoiceFeatureScreen> {
             repository: _repository,
             preferredTemplate: widget.preferredTemplate,
             localSettings: widget.localSettings,
+            onOpenBusinessSettings: widget.onOpenBusinessSettings,
             onBack: _backToList,
             onEdit: (invoice) => setState(() {
               _selected = invoice;

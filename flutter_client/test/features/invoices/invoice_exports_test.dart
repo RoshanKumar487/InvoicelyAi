@@ -1,3 +1,5 @@
+import 'dart:convert';
+
 import 'package:archive/archive.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:invoicely_flutter/src/features/invoices/data/invoice.dart';
@@ -40,6 +42,35 @@ void main() {
       archive.files.map((file) => file.name),
       containsAll(['[Content_Types].xml', 'word/document.xml']),
     );
+  });
+
+  test('embeds local branding and shipping details in invoice PDFs', () async {
+    const onePixelPng =
+        'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAAAXNSR0IArs4c6QAAAARnQU1BAACxjwv8YQUAAAAJcEhZcwAADsMAAA7DAcdvqGQAAAANSURBVBhXY2Bg+P8fAAMCAf/Jsq3uAAAAAElFTkSuQmCC';
+    final brandedInvoice = Invoice(
+      invoiceNumber: invoice.invoiceNumber,
+      clientName: invoice.clientName,
+      issueDate: invoice.issueDate,
+      dueDate: invoice.dueDate,
+      shippingDetailsJson: jsonEncode({
+        'isEnabled': true,
+        'deliveryAddress': '123 Main Street',
+        'courier': 'Example Carrier',
+      }),
+      items: invoice.items,
+    );
+
+    final bytes = await InvoicePdfExport.build(
+      brandedInvoice,
+      localSettings: {
+        'invoiceLogo': onePixelPng,
+        'invoiceSignature': onePixelPng,
+        'invoiceStamp': onePixelPng,
+      },
+    );
+
+    expect(String.fromCharCodes(bytes.take(5)), '%PDF-');
+    expect(bytes.length, greaterThan(700));
   });
 
   test('round-trips saved template configuration', () {

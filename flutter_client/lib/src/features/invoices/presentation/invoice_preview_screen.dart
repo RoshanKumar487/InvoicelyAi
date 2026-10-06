@@ -1,3 +1,5 @@
+import 'dart:convert';
+
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:printing/printing.dart';
@@ -18,6 +20,7 @@ class InvoicePreviewScreen extends StatefulWidget {
     required this.onBack,
     required this.onEdit,
     required this.onDeleted,
+    this.onOpenBusinessSettings,
     this.preferredTemplate,
     this.localSettings = const <String, Object?>{},
     super.key,
@@ -28,6 +31,7 @@ class InvoicePreviewScreen extends StatefulWidget {
   final VoidCallback onBack;
   final ValueChanged<Invoice> onEdit;
   final VoidCallback onDeleted;
+  final VoidCallback? onOpenBusinessSettings;
   final TemplateConfig? preferredTemplate;
   final Map<String, Object?> localSettings;
 
@@ -37,9 +41,69 @@ class InvoicePreviewScreen extends StatefulWidget {
 
 class _InvoicePreviewScreenState extends State<InvoicePreviewScreen> {
   late Invoice _invoice = widget.invoice;
+  final TransformationController _zoomController = TransformationController();
+  String? _selectedTemplateId;
+  double _zoomScale = 1;
   bool _busy = false;
 
+  @override
+  void dispose() {
+    _zoomController.dispose();
+    super.dispose();
+  }
+
+  void _setZoom(double scale) {
+    final boundedScale = scale.clamp(0.6, 2.5).toDouble();
+    _zoomController.value = Matrix4.diagonal3Values(
+      boundedScale,
+      boundedScale,
+      boundedScale,
+    );
+    setState(() => _zoomScale = boundedScale);
+  }
+
   bool _show(String key) => widget.localSettings[key] != false;
+
+  Image? _brandImage(String key, {double height = 72}) {
+    final encoded = widget.localSettings[key]?.toString() ?? '';
+    if (encoded.isEmpty) return null;
+    try {
+      return Image.memory(
+        base64Decode(encoded),
+        height: height,
+        fit: BoxFit.contain,
+        errorBuilder: (_, __, ___) => const SizedBox.shrink(),
+      );
+    } on FormatException {
+      return null;
+    }
+  }
+
+  List<String> _shippingLines() {
+    final json = _invoice.shippingDetailsJson;
+    if (json.trim().isEmpty || json.trim() == '{}') return const [];
+    try {
+      final decoded = jsonDecode(json);
+      if (decoded is! Map<String, dynamic> || decoded['isEnabled'] != true) {
+        return const [];
+      }
+      const fields = <String, String>{
+        'shippingAddress': 'Shipping address',
+        'deliveryAddress': 'Delivery address',
+        'shippingMethod': 'Shipping method',
+        'courier': 'Carrier',
+        'trackingNumber': 'Tracking',
+        'expectedDelivery': 'Expected delivery',
+      };
+      return fields.entries
+          .where((entry) =>
+              decoded[entry.key]?.toString().trim().isNotEmpty == true)
+          .map((entry) => '${entry.value}: ${decoded[entry.key]}')
+          .toList(growable: false);
+    } on FormatException {
+      return const ['Shipping details could not be displayed.'];
+    }
+  }
 
   Future<void> _changeStatus(String status) async {
     final id = _invoice.id;
@@ -97,13 +161,35 @@ class _InvoicePreviewScreenState extends State<InvoicePreviewScreen> {
   }
 
   TemplateConfig? get _template {
+    final selectedId = _selectedTemplateId ?? _invoice.templateId;
     for (final preset in templatePresets) {
-      if (preset.id == _invoice.templateId) return preset;
+      if (preset.id == selectedId) return preset;
     }
-    if (widget.preferredTemplate?.id == _invoice.templateId) {
+    if (widget.preferredTemplate?.id == selectedId) {
       return widget.preferredTemplate;
     }
-    return null;
+    return templatePresets.first;
+  }
+
+  Future<void> _sendPaymentReminder() async {
+    final invoice = _invoice;
+    final text = 'Payment reminder for invoice ${invoice.invoiceNumber}\n'
+        'Amount due: ${_money(invoice.balanceDue, invoice.currencySymbol)}\n'
+        'Due date: ${invoice.dueDate}\n'
+        'Please let us know if you have any questions. Thank you.';
+    try {
+      final result = await SharePlus.instance.share(
+        ShareParams(
+          text: text,
+          subject: 'Payment reminder - ${invoice.invoiceNumber}',
+        ),
+      );
+      if (mounted && result.status == ShareResultStatus.unavailable) {
+        _showMessage('Sharing is unavailable on this platform.');
+      }
+    } catch (error) {
+      if (mounted) _showMessage('Could not share payment reminder: $error');
+    }
   }
 
   String get _safeFileName =>
@@ -225,6 +311,13 @@ class _InvoicePreviewScreenState extends State<InvoicePreviewScreen> {
   @override
   Widget build(BuildContext context) {
     final invoice = _invoice;
+    final templateColor = _templateColor(
+      _template?.color,
+      Theme.of(context).colorScheme.primary,
+    );
+    final signatureImage =
+        _show('showSignature') ? _brandImage('invoiceSignature') : null;
+    final stampImage = _show('showStamp') ? _brandImage('invoiceStamp') : null;
     return Scaffold(
       appBar: AppBar(
         leading: IconButton(
@@ -234,6 +327,12 @@ class _InvoicePreviewScreenState extends State<InvoicePreviewScreen> {
         ),
         title: Text(invoice.invoiceNumber),
         actions: [
+          if (widget.onOpenBusinessSettings != null)
+            IconButton(
+              tooltip: 'Manage business branding',
+              onPressed: widget.onOpenBusinessSettings,
+              icon: const Icon(Icons.branding_watermark_outlined),
+            ),
           IconButton(
             tooltip: 'Copy invoice details',
             onPressed: _busy ? null : _copySummary,
@@ -284,6 +383,13 @@ class _InvoicePreviewScreenState extends State<InvoicePreviewScreen> {
             onPressed: _busy ? null : () => widget.onEdit(_invoice),
             icon: const Icon(Icons.edit_outlined),
           ),
+          if (_invoice.balanceDue > 0 &&
+              _invoice.status.toLowerCase() != 'paid')
+            IconButton(
+              tooltip: 'Share payment reminder',
+              onPressed: _busy ? null : _sendPaymentReminder,
+              icon: const Icon(Icons.notifications_active_outlined),
+            ),
           PopupMenuButton<String>(
             tooltip: 'Change status',
             enabled: !_busy,
@@ -328,164 +434,302 @@ class _InvoicePreviewScreenState extends State<InvoicePreviewScreen> {
                     ],
                   ),
                   const SizedBox(height: 14),
-                  AppCard(
-                    padding: const EdgeInsets.all(28),
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Row(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            Expanded(
-                              child: Text(
-                                'INVOICE',
-                                style: Theme.of(context)
-                                    .textTheme
-                                    .headlineMedium
-                                    ?.copyWith(
-                                      color:
-                                          Theme.of(context).colorScheme.primary,
-                                      fontWeight: FontWeight.w900,
-                                      letterSpacing: 1.2,
-                                    ),
+                  Wrap(
+                    spacing: 8,
+                    runSpacing: 8,
+                    crossAxisAlignment: WrapCrossAlignment.center,
+                    children: [
+                      const Text(
+                        'Template',
+                        style: TextStyle(fontWeight: FontWeight.w700),
+                      ),
+                      SizedBox(
+                        width: 240,
+                        child: DropdownButton<String>(
+                          isExpanded: true,
+                          value: templatePresets.any(
+                            (preset) => preset.id == _template?.id,
+                          )
+                              ? _template!.id
+                              : templatePresets.first.id,
+                          items: [
+                            for (final preset in templatePresets)
+                              DropdownMenuItem(
+                                value: preset.id,
+                                child: Text(
+                                  preset.name,
+                                  overflow: TextOverflow.ellipsis,
+                                ),
+                              ),
+                          ],
+                          onChanged: _busy
+                              ? null
+                              : (id) {
+                                  if (id != null) {
+                                    setState(() => _selectedTemplateId = id);
+                                  }
+                                },
+                        ),
+                      ),
+                      IconButton(
+                        tooltip: 'Zoom out',
+                        onPressed: _zoomScale <= 0.6
+                            ? null
+                            : () => _setZoom(_zoomScale - 0.2),
+                        icon: const Icon(Icons.zoom_out),
+                      ),
+                      TextButton(
+                        onPressed: () => _setZoom(1),
+                        child: Text('${(_zoomScale * 100).round()}% · Reset'),
+                      ),
+                      IconButton(
+                        tooltip: 'Zoom in',
+                        onPressed: _zoomScale >= 2.5
+                            ? null
+                            : () => _setZoom(_zoomScale + 0.2),
+                        icon: const Icon(Icons.zoom_in),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 10),
+                  SizedBox(
+                    height: 650,
+                    child: LayoutBuilder(
+                      builder: (context, constraints) {
+                        final fitScale = (constraints.maxWidth / 680)
+                            .clamp(0.35, 1.0)
+                            .toDouble();
+                        return ClipRect(
+                          child: InteractiveViewer(
+                            transformationController: _zoomController,
+                            minScale: 0.6,
+                            maxScale: 2.5,
+                            constrained: false,
+                            onInteractionUpdate: (_) {
+                              final scale =
+                                  _zoomController.value.getMaxScaleOnAxis();
+                              if ((scale - _zoomScale).abs() > 0.01) {
+                                setState(() => _zoomScale = scale);
+                              }
+                            },
+                            child: Transform.scale(
+                              scale: fitScale,
+                              alignment: Alignment.topCenter,
+                              child: SizedBox(
+                                width: 680,
+                                child: AppCard(
+                                  padding: const EdgeInsets.all(28),
+                                  child: Column(
+                                    crossAxisAlignment:
+                                        CrossAxisAlignment.start,
+                                    children: [
+                                      Row(
+                                        crossAxisAlignment:
+                                            CrossAxisAlignment.start,
+                                        children: [
+                                          Expanded(
+                                            child: Column(
+                                              crossAxisAlignment:
+                                                  CrossAxisAlignment.start,
+                                              children: [
+                                                if (_brandImage('invoiceLogo')
+                                                    case final logo?)
+                                                  logo,
+                                                Text(
+                                                  _template?.title ?? 'INVOICE',
+                                                  style: Theme.of(context)
+                                                      .textTheme
+                                                      .headlineMedium
+                                                      ?.copyWith(
+                                                        color: templateColor,
+                                                        fontWeight:
+                                                            FontWeight.w900,
+                                                        letterSpacing: 1.2,
+                                                      ),
+                                                ),
+                                              ],
+                                            ),
+                                          ),
+                                          Column(
+                                            crossAxisAlignment:
+                                                CrossAxisAlignment.end,
+                                            children: [
+                                              Text(
+                                                invoice.invoiceNumber,
+                                                style: Theme.of(context)
+                                                    .textTheme
+                                                    .titleMedium
+                                                    ?.copyWith(
+                                                        fontWeight:
+                                                            FontWeight.w800),
+                                              ),
+                                              const SizedBox(height: 6),
+                                              if (_show('showIssueDate'))
+                                                Text(
+                                                    'Issued ${invoice.issueDate}'),
+                                              if (_show('showDueDate'))
+                                                Text('Due ${invoice.dueDate}'),
+                                            ],
+                                          ),
+                                        ],
+                                      ),
+                                      const Divider(height: 32),
+                                      _ClientSummary(
+                                        invoice: invoice,
+                                        localSettings: widget.localSettings,
+                                      ),
+                                      if (_shippingLines().isNotEmpty) ...[
+                                        const SizedBox(height: 14),
+                                        _TextBlock(
+                                          title: 'Shipping details',
+                                          text: _shippingLines().join('\n'),
+                                        ),
+                                      ],
+                                      const SizedBox(height: 28),
+                                      _LineItemsTable(
+                                        invoice: invoice,
+                                        localSettings: widget.localSettings,
+                                        template: _template,
+                                      ),
+                                      const SizedBox(height: 20),
+                                      Align(
+                                        alignment: Alignment.centerRight,
+                                        child: ConstrainedBox(
+                                          constraints: const BoxConstraints(
+                                              maxWidth: 350),
+                                          child: Column(
+                                            children: [
+                                              _TotalLine(
+                                                label: 'Subtotal',
+                                                value: _money(
+                                                  invoice.subtotal,
+                                                  invoice.currencySymbol,
+                                                ),
+                                              ),
+                                              if (invoice.totalDiscount > 0)
+                                                _TotalLine(
+                                                  label: 'Discount',
+                                                  value:
+                                                      '−${_money(invoice.totalDiscount, invoice.currencySymbol)}',
+                                                ),
+                                              if (_template?.showTaxBreakdown !=
+                                                  false)
+                                                _TotalLine(
+                                                  label:
+                                                      '${invoice.taxLabel} (${invoice.taxRate}%)',
+                                                  value: _money(
+                                                    invoice.taxAmount,
+                                                    invoice.currencySymbol,
+                                                  ),
+                                                ),
+                                              if (invoice.shippingFee > 0)
+                                                _TotalLine(
+                                                  label: 'Shipping',
+                                                  value: _money(
+                                                    invoice.shippingFee,
+                                                    invoice.currencySymbol,
+                                                  ),
+                                                ),
+                                              if (invoice.additionalCharges > 0)
+                                                _TotalLine(
+                                                  label: 'Additional charges',
+                                                  value: _money(
+                                                    invoice.additionalCharges,
+                                                    invoice.currencySymbol,
+                                                  ),
+                                                ),
+                                              if (invoice.roundOff != 0)
+                                                _TotalLine(
+                                                  label: 'Round off',
+                                                  value: _money(
+                                                    invoice.roundOff,
+                                                    invoice.currencySymbol,
+                                                  ),
+                                                ),
+                                              const Divider(),
+                                              _TotalLine(
+                                                label: 'Total',
+                                                value: _money(
+                                                  invoice.total,
+                                                  invoice.currencySymbol,
+                                                ),
+                                                bold: true,
+                                              ),
+                                              _TotalLine(
+                                                label: 'Amount paid',
+                                                value: _money(
+                                                  invoice.amountPaid,
+                                                  invoice.currencySymbol,
+                                                ),
+                                              ),
+                                              _TotalLine(
+                                                label: 'Balance due',
+                                                value: _money(
+                                                  invoice.balanceDue,
+                                                  invoice.currencySymbol,
+                                                ),
+                                                bold: true,
+                                              ),
+                                            ],
+                                          ),
+                                        ),
+                                      ),
+                                      if ((_show('showNotes') &&
+                                              invoice.notes.isNotEmpty) ||
+                                          (_show('showTerms') &&
+                                              invoice.terms.isNotEmpty) ||
+                                          (_show('showPaymentInstructions') &&
+                                              invoice.paymentInstructions
+                                                  .isNotEmpty)) ...[
+                                        const Divider(height: 32),
+                                        if (_show('showNotes') &&
+                                            invoice.notes.isNotEmpty)
+                                          _TextBlock(
+                                              title: 'Notes',
+                                              text: invoice.notes),
+                                        if (_show('showTerms') &&
+                                            invoice.terms.isNotEmpty)
+                                          _TextBlock(
+                                            title: 'Terms and conditions',
+                                            text: invoice.terms,
+                                          ),
+                                        if (_show('showPaymentInstructions') &&
+                                            _template
+                                                    ?.showPaymentInstructions !=
+                                                false &&
+                                            invoice
+                                                .paymentInstructions.isNotEmpty)
+                                          _TextBlock(
+                                            title: 'Payment instructions',
+                                            text: invoice.paymentInstructions,
+                                          ),
+                                      ],
+                                      if (signatureImage != null ||
+                                          stampImage != null) ...[
+                                        const Divider(height: 32),
+                                        Row(
+                                          mainAxisAlignment:
+                                              MainAxisAlignment.end,
+                                          children: [
+                                            if (signatureImage != null)
+                                              signatureImage,
+                                            if (stampImage != null)
+                                              Padding(
+                                                padding: const EdgeInsets.only(
+                                                    left: 12),
+                                                child: stampImage,
+                                              ),
+                                          ],
+                                        ),
+                                      ],
+                                    ],
+                                  ),
+                                ),
                               ),
                             ),
-                            Column(
-                              crossAxisAlignment: CrossAxisAlignment.end,
-                              children: [
-                                Text(
-                                  invoice.invoiceNumber,
-                                  style: Theme.of(context)
-                                      .textTheme
-                                      .titleMedium
-                                      ?.copyWith(fontWeight: FontWeight.w800),
-                                ),
-                                const SizedBox(height: 6),
-                                if (_show('showIssueDate'))
-                                  Text('Issued ${invoice.issueDate}'),
-                                if (_show('showDueDate'))
-                                  Text('Due ${invoice.dueDate}'),
-                              ],
-                            ),
-                          ],
-                        ),
-                        const Divider(height: 32),
-                        _ClientSummary(
-                          invoice: invoice,
-                          localSettings: widget.localSettings,
-                        ),
-                        const SizedBox(height: 28),
-                        _LineItemsTable(
-                          invoice: invoice,
-                          localSettings: widget.localSettings,
-                        ),
-                        const SizedBox(height: 20),
-                        Align(
-                          alignment: Alignment.centerRight,
-                          child: ConstrainedBox(
-                            constraints: const BoxConstraints(maxWidth: 350),
-                            child: Column(
-                              children: [
-                                _TotalLine(
-                                  label: 'Subtotal',
-                                  value: _money(
-                                    invoice.subtotal,
-                                    invoice.currencySymbol,
-                                  ),
-                                ),
-                                if (invoice.totalDiscount > 0)
-                                  _TotalLine(
-                                    label: 'Discount',
-                                    value:
-                                        '−${_money(invoice.totalDiscount, invoice.currencySymbol)}',
-                                  ),
-                                if (_template?.showTaxBreakdown != false)
-                                  _TotalLine(
-                                    label:
-                                        '${invoice.taxLabel} (${invoice.taxRate}%)',
-                                    value: _money(
-                                      invoice.taxAmount,
-                                      invoice.currencySymbol,
-                                    ),
-                                  ),
-                                if (_show('showShippingSection') &&
-                                    invoice.shippingFee > 0)
-                                  _TotalLine(
-                                    label: 'Shipping',
-                                    value: _money(
-                                      invoice.shippingFee,
-                                      invoice.currencySymbol,
-                                    ),
-                                  ),
-                                if (_show('showShippingSection') &&
-                                    invoice.additionalCharges > 0)
-                                  _TotalLine(
-                                    label: 'Additional charges',
-                                    value: _money(
-                                      invoice.additionalCharges,
-                                      invoice.currencySymbol,
-                                    ),
-                                  ),
-                                if (invoice.roundOff != 0)
-                                  _TotalLine(
-                                    label: 'Round off',
-                                    value: _money(
-                                      invoice.roundOff,
-                                      invoice.currencySymbol,
-                                    ),
-                                  ),
-                                const Divider(),
-                                _TotalLine(
-                                  label: 'Total',
-                                  value: _money(
-                                    invoice.total,
-                                    invoice.currencySymbol,
-                                  ),
-                                  bold: true,
-                                ),
-                                _TotalLine(
-                                  label: 'Amount paid',
-                                  value: _money(
-                                    invoice.amountPaid,
-                                    invoice.currencySymbol,
-                                  ),
-                                ),
-                                _TotalLine(
-                                  label: 'Balance due',
-                                  value: _money(
-                                    invoice.balanceDue,
-                                    invoice.currencySymbol,
-                                  ),
-                                  bold: true,
-                                ),
-                              ],
-                            ),
                           ),
-                        ),
-                        if ((_show('showNotesSection') &&
-                            ((_show('showNotes') && invoice.notes.isNotEmpty) ||
-                                (_show('showTerms') &&
-                                    invoice.terms.isNotEmpty) ||
-                                (_show('showPaymentInstructions') &&
-                                    invoice
-                                        .paymentInstructions.isNotEmpty)))) ...[
-                          const Divider(height: 32),
-                          if (_show('showNotes') && invoice.notes.isNotEmpty)
-                            _TextBlock(title: 'Notes', text: invoice.notes),
-                          if (_show('showTerms') && invoice.terms.isNotEmpty)
-                            _TextBlock(
-                              title: 'Terms and conditions',
-                              text: invoice.terms,
-                            ),
-                          if (_show('showPaymentInstructions') &&
-                              _template?.showPaymentInstructions != false &&
-                              invoice.paymentInstructions.isNotEmpty)
-                            _TextBlock(
-                              title: 'Payment instructions',
-                              text: invoice.paymentInstructions,
-                            ),
-                        ],
-                      ],
+                        );
+                      },
                     ),
                   ),
                   const SizedBox(height: 12),
@@ -557,10 +801,12 @@ class _LineItemsTable extends StatelessWidget {
   const _LineItemsTable({
     required this.invoice,
     required this.localSettings,
+    required this.template,
   });
 
   final Invoice invoice;
   final Map<String, Object?> localSettings;
+  final TemplateConfig? template;
 
   bool _show(String key) => localSettings[key] != false;
 
@@ -569,34 +815,58 @@ class _LineItemsTable extends StatelessWidget {
     if (invoice.items.isEmpty) {
       return const Text('This invoice has no line items.');
     }
+    final headerColor = _templateColor(
+      template?.color,
+      Theme.of(context).colorScheme.primary,
+    );
     return Column(
       children: [
         Container(
           padding: const EdgeInsets.symmetric(vertical: 10, horizontal: 8),
-          color: Theme.of(context).colorScheme.surfaceContainerHighest,
-          child: Row(
-            children: [
-              const Expanded(flex: 5, child: Text('Description')),
-              if (_show('showItemQty'))
-                const Expanded(child: Text('Qty', textAlign: TextAlign.end)),
-              if (_show('showItemRate'))
-                const Expanded(
+          color: headerColor,
+          child: DefaultTextStyle.merge(
+            style: const TextStyle(
+              color: Colors.white,
+              fontWeight: FontWeight.w700,
+            ),
+            child: Row(
+              children: [
+                Expanded(
+                  flex: 5,
+                  child: Text(template?.itemHeader ?? 'Description'),
+                ),
+                if (_show('showItemQty'))
+                  Expanded(
+                    child: Text(
+                      template?.quantityHeader ?? 'Qty',
+                      textAlign: TextAlign.end,
+                    ),
+                  ),
+                if (_show('showItemRate'))
+                  Expanded(
+                    flex: 2,
+                    child: Text(
+                      template?.rateHeader ?? 'Rate',
+                      textAlign: TextAlign.end,
+                    ),
+                  ),
+                if (_show('showItemDiscount'))
+                  const Expanded(
+                    child: Text('Discount', textAlign: TextAlign.end),
+                  ),
+                if (_show('showItemTax'))
+                  const Expanded(
+                    child: Text('Tax', textAlign: TextAlign.end),
+                  ),
+                Expanded(
                   flex: 2,
-                  child: Text('Rate', textAlign: TextAlign.end),
+                  child: Text(
+                    template?.amountHeader ?? 'Amount',
+                    textAlign: TextAlign.end,
+                  ),
                 ),
-              if (_show('showItemDiscount'))
-                const Expanded(
-                  child: Text('Discount', textAlign: TextAlign.end),
-                ),
-              if (_show('showItemTax'))
-                const Expanded(
-                  child: Text('Tax', textAlign: TextAlign.end),
-                ),
-              const Expanded(
-                flex: 2,
-                child: Text('Amount', textAlign: TextAlign.end),
-              ),
-            ],
+              ],
+            ),
           ),
         ),
         for (final item in invoice.items)
@@ -755,3 +1025,11 @@ String _quantity(double quantity) => quantity == quantity.truncateToDouble()
 
 String _money(double amount, String symbol) =>
     '$symbol${amount.toStringAsFixed(2)}';
+
+Color _templateColor(String? hex, Color fallback) {
+  final value = hex?.replaceFirst('#', '');
+  if (value == null || !RegExp(r'^[0-9A-Fa-f]{6}$').hasMatch(value)) {
+    return fallback;
+  }
+  return Color(0xFF000000 | int.parse(value, radix: 16));
+}

@@ -1,3 +1,4 @@
+import 'dart:convert';
 import 'dart:typed_data';
 
 import 'package:flutter/material.dart' show Color;
@@ -16,6 +17,12 @@ class InvoicePdfExport {
     Map<String, Object?> localSettings = const <String, Object?>{},
   }) async {
     bool show(String key) => localSettings[key] != false;
+    final logo = _memoryImage(localSettings['invoiceLogo']);
+    final stamp =
+        show('showStamp') ? _memoryImage(localSettings['invoiceStamp']) : null;
+    final signature = show('showSignature')
+        ? _memoryImage(localSettings['invoiceSignature'])
+        : null;
     final document = pw.Document(
       title: 'Invoice ${invoice.invoiceNumber}',
       author: invoice.clientName,
@@ -38,6 +45,14 @@ class InvoicePdfExport {
                 child: pw.Column(
                   crossAxisAlignment: pw.CrossAxisAlignment.start,
                   children: [
+                    if (logo != null) ...[
+                      pw.SizedBox(
+                        height: 48,
+                        width: 150,
+                        child: pw.Image(logo, fit: pw.BoxFit.contain),
+                      ),
+                      pw.SizedBox(height: 8),
+                    ],
                     pw.Text(
                       title,
                       style: pw.TextStyle(
@@ -92,6 +107,7 @@ class InvoicePdfExport {
             pw.Text(invoice.clientAddress),
           if (show('showClientTaxId') && invoice.clientTaxId.isNotEmpty)
             pw.Text('Tax ID: ${invoice.clientTaxId}'),
+          ..._shippingWidgets(invoice.shippingDetailsJson),
           pw.SizedBox(height: 18),
           pw.TableHelper.fromTextArray(
             headers: [
@@ -156,13 +172,12 @@ class InvoicePdfExport {
                       '${invoice.taxLabel} (${invoice.taxRate}%)',
                       _money(invoice.taxAmount, invoice.currencySymbol),
                     ),
-                  if (show('showShippingSection') && invoice.shippingFee != 0)
+                  if (invoice.shippingFee != 0)
                     _line(
                       'Shipping',
                       _money(invoice.shippingFee, invoice.currencySymbol),
                     ),
-                  if (show('showShippingSection') &&
-                      invoice.additionalCharges != 0)
+                  if (invoice.additionalCharges != 0)
                     _line(
                       'Additional charges',
                       _money(invoice.additionalCharges, invoice.currencySymbol),
@@ -191,8 +206,7 @@ class InvoicePdfExport {
               ),
             ),
           ),
-          if (show('showNotesSection') &&
-              show('showNotes') &&
+          if (show('showNotes') &&
               invoice.notes.isNotEmpty) ...[
             pw.SizedBox(height: 18),
             pw.Text('Notes',
@@ -200,8 +214,7 @@ class InvoicePdfExport {
             pw.SizedBox(height: 4),
             pw.Text(invoice.notes),
           ],
-          if (show('showNotesSection') &&
-              show('showTerms') &&
+          if (show('showTerms') &&
               invoice.terms.isNotEmpty) ...[
             pw.SizedBox(height: 12),
             pw.Text(
@@ -211,8 +224,7 @@ class InvoicePdfExport {
             pw.SizedBox(height: 4),
             pw.Text(invoice.terms),
           ],
-          if (show('showNotesSection') &&
-              show('showPaymentInstructions') &&
+          if (show('showPaymentInstructions') &&
               template?.showPaymentInstructions != false &&
               invoice.paymentInstructions.isNotEmpty) ...[
             pw.SizedBox(height: 12),
@@ -222,6 +234,29 @@ class InvoicePdfExport {
             ),
             pw.SizedBox(height: 4),
             pw.Text(invoice.paymentInstructions),
+          ],
+          if (signature != null || stamp != null) ...[
+            pw.SizedBox(height: 24),
+            pw.Row(
+              mainAxisAlignment: pw.MainAxisAlignment.end,
+              crossAxisAlignment: pw.CrossAxisAlignment.end,
+              children: [
+                if (signature != null)
+                  pw.Container(
+                    width: 150,
+                    height: 65,
+                    child: pw.Image(signature, fit: pw.BoxFit.contain),
+                  ),
+                if (stamp != null) ...[
+                  pw.SizedBox(width: 16),
+                  pw.Container(
+                    width: 90,
+                    height: 90,
+                    child: pw.Image(stamp, fit: pw.BoxFit.contain),
+                  ),
+                ],
+              ],
+            ),
           ],
           if (template?.footer.isNotEmpty == true) ...[
             pw.SizedBox(height: 20),
@@ -268,6 +303,41 @@ class InvoicePdfExport {
 
   static String _money(double amount, String symbol) =>
       '$symbol${amount.toStringAsFixed(2)}';
+
+  static pw.MemoryImage? _memoryImage(Object? value) {
+    final encoded = value?.toString() ?? '';
+    if (encoded.isEmpty) return null;
+    return pw.MemoryImage(base64Decode(encoded));
+  }
+
+  static List<pw.Widget> _shippingWidgets(String json) {
+    if (json.trim().isEmpty || json.trim() == '{}') return const [];
+    final decoded = jsonDecode(json);
+    if (decoded is! Map<String, dynamic>) {
+      throw const FormatException('Invoice shipping details are invalid.');
+    }
+    if (decoded['isEnabled'] != true) return const [];
+    const fields = <String, String>{
+      'shippingAddress': 'Shipping address',
+      'deliveryAddress': 'Delivery address',
+      'shippingMethod': 'Shipping method',
+      'courier': 'Carrier',
+      'trackingNumber': 'Tracking',
+      'expectedDelivery': 'Expected delivery',
+    };
+    return [
+      pw.SizedBox(height: 8),
+      pw.Text(
+        decoded['sectionTitle']?.toString().trim().isNotEmpty == true
+            ? decoded['sectionTitle'].toString()
+            : 'Shipping details',
+        style: pw.TextStyle(fontWeight: pw.FontWeight.bold),
+      ),
+      for (final entry in fields.entries)
+        if (decoded[entry.key]?.toString().trim().isNotEmpty == true)
+          pw.Text('${entry.value}: ${decoded[entry.key]}'),
+    ];
+  }
 
   static int _parseColor(String value) {
     final normalized = value.replaceFirst('#', '');

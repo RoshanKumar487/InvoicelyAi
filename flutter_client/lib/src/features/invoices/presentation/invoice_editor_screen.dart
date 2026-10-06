@@ -1,8 +1,14 @@
+import 'dart:async';
+import 'dart:convert';
+
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
 import '../../../core/api/api_exception.dart';
 import '../../../shared/widgets/app_card.dart';
+import '../../clients/data/client.dart';
+import '../../clients/data/clients_repository.dart';
+import '../../../theme/app_theme.dart';
 import '../../templates/data/template_config.dart';
 import '../data/invoice.dart';
 import '../data/invoice_repository.dart';
@@ -14,12 +20,16 @@ class InvoiceEditorScreen extends StatefulWidget {
     required this.onSaved,
     this.invoice,
     this.preferredTemplate,
+    this.initialLocalSettings = const <String, Object?>{},
+    this.clientRepository,
     super.key,
   });
 
   final InvoiceRepository repository;
   final Invoice? invoice;
   final TemplateConfig? preferredTemplate;
+  final Map<String, Object?> initialLocalSettings;
+  final ClientsRepository? clientRepository;
   final VoidCallback onCancel;
   final ValueChanged<Invoice> onSaved;
 
@@ -50,6 +60,8 @@ class _InvoiceEditorScreenState extends State<InvoiceEditorScreen> {
   late final TextEditingController _notes;
   late final TextEditingController _terms;
   late final TextEditingController _paymentInstructions;
+  late final TextEditingController _shippingDetails;
+  late final Map<String, Object?> _localSettings;
   late String _issueDate;
   late String _dueDate;
   late String _paymentTerms;
@@ -57,6 +69,15 @@ class _InvoiceEditorScreenState extends State<InvoiceEditorScreen> {
   late String _template;
   late bool _taxInclusive;
   late List<InvoiceItem> _items;
+  List<Client> _clients = const [];
+  int? _selectedClientId;
+  bool _loadingClients = false;
+  bool _loadingPreviousItems = false;
+  bool _showClientSuggestions = false;
+  bool _showNotesSection = false;
+  bool _showShippingSection = false;
+  bool _showPaymentSection = false;
+  String? _clientLoadError;
   bool _saving = false;
   String? _error;
 
@@ -64,9 +85,14 @@ class _InvoiceEditorScreenState extends State<InvoiceEditorScreen> {
   void initState() {
     super.initState();
     final invoice = widget.invoice;
+    _localSettings = Map<String, Object?>.from(widget.initialLocalSettings);
     final now = DateTime.now();
     final today = _dateString(now);
-    final defaultDue = _dateString(now.add(const Duration(days: 30)));
+    final defaultPaymentTerms =
+        _settingString(_localSettings['defaultPaymentTerms'], 'Net 30');
+    final defaultDue = _dateString(
+      now.add(Duration(days: _paymentTermDays(defaultPaymentTerms))),
+    );
     _number = TextEditingController(
       text: invoice?.invoiceNumber ??
           'INV-${now.year}-${now.millisecondsSinceEpoch % 100000}',
@@ -78,8 +104,15 @@ class _InvoiceEditorScreenState extends State<InvoiceEditorScreen> {
     _address = TextEditingController(text: invoice?.clientAddress ?? '');
     _clientTaxId = TextEditingController(text: invoice?.clientTaxId ?? '');
     _poNumber = TextEditingController(text: invoice?.poNumber ?? '');
-    _taxRate = TextEditingController(text: _num(invoice?.taxRate ?? 0));
-    _taxLabel = TextEditingController(text: invoice?.taxLabel ?? 'Tax');
+    _taxRate = TextEditingController(
+      text: _num(
+        invoice?.taxRate ?? _settingNumber(_localSettings['defaultTaxRate']),
+      ),
+    );
+    _taxLabel = TextEditingController(
+      text: invoice?.taxLabel ??
+          _settingString(_localSettings['defaultTaxLabel'], 'Tax'),
+    );
     _discountPercent =
         TextEditingController(text: _num(invoice?.discountPercent ?? 0));
     _discountAmount =
@@ -89,19 +122,52 @@ class _InvoiceEditorScreenState extends State<InvoiceEditorScreen> {
         TextEditingController(text: _num(invoice?.additionalCharges ?? 0));
     _roundOff = TextEditingController(text: _num(invoice?.roundOff ?? 0));
     _amountPaid = TextEditingController(text: _num(invoice?.amountPaid ?? 0));
-    _currencyCode = TextEditingController(text: invoice?.currencyCode ?? 'USD');
-    _currencySymbol =
-        TextEditingController(text: invoice?.currencySymbol ?? r'$');
-    _notes = TextEditingController(text: invoice?.notes ?? '');
-    _terms = TextEditingController(text: invoice?.terms ?? '');
-    _paymentInstructions =
-        TextEditingController(text: invoice?.paymentInstructions ?? '');
+    final defaultCurrency =
+        _settingString(_localSettings['defaultCurrency'], 'USD');
+    _currencyCode = TextEditingController(
+      text: invoice?.currencyCode ?? defaultCurrency,
+    );
+    _currencySymbol = TextEditingController(
+      text: invoice?.currencySymbol ??
+          _settingString(
+            _localSettings['defaultCurrencySymbol'],
+            _currencySymbolFor(defaultCurrency),
+          ),
+    );
+    _notes = TextEditingController(
+      text:
+          invoice?.notes ?? _settingString(_localSettings['defaultNotes'], ''),
+    );
+    _terms = TextEditingController(
+      text:
+          invoice?.terms ?? _settingString(_localSettings['defaultTerms'], ''),
+    );
+    _paymentInstructions = TextEditingController(
+      text: invoice?.paymentInstructions ??
+          _settingString(_localSettings['defaultPaymentInstructions'], ''),
+    );
+    _shippingDetails = TextEditingController(
+      text: _readShippingDetails(invoice?.shippingDetailsJson),
+    );
     _issueDate = invoice?.issueDate ?? today;
     _dueDate = invoice?.dueDate ?? defaultDue;
-    _paymentTerms = invoice?.paymentTerms ?? 'Net 30';
-    _taxType = invoice?.taxType ?? 'GST';
+    _paymentTerms = invoice?.paymentTerms ?? defaultPaymentTerms;
+    _taxType = invoice?.taxType ??
+        _settingString(_localSettings['defaultTaxType'], 'GST');
     _template = invoice?.templateId ?? widget.preferredTemplate?.id ?? 'modern';
-    _taxInclusive = invoice?.isTaxInclusive ?? false;
+    _taxInclusive = invoice?.isTaxInclusive ??
+        (_localSettings['defaultTaxInclusive'] == true);
+    _selectedClientId = invoice?.clientId;
+    _showNotesSection = invoice != null ||
+        _localSettings['showNotesSection'] == true ||
+        _notes.text.isNotEmpty ||
+        _terms.text.isNotEmpty;
+    _showShippingSection = invoice != null ||
+        _localSettings['showShippingSection'] == true ||
+        _shippingDetails.text.isNotEmpty;
+    _showPaymentSection = invoice != null ||
+        _localSettings['showPaymentInstructions'] == true ||
+        _paymentInstructions.text.isNotEmpty;
     _items = List<InvoiceItem>.of(invoice?.items ?? const []);
     _items = [
       for (var index = 0; index < _items.length; index++)
@@ -114,6 +180,7 @@ class _InvoiceEditorScreenState extends State<InvoiceEditorScreen> {
     if (_items.isEmpty) {
       _items.add(_newLineItem());
     }
+    unawaited(_loadClients());
   }
 
   @override
@@ -139,16 +206,195 @@ class _InvoiceEditorScreenState extends State<InvoiceEditorScreen> {
     _notes.dispose();
     _terms.dispose();
     _paymentInstructions.dispose();
+    _shippingDetails.dispose();
     super.dispose();
   }
 
   double _value(TextEditingController controller) =>
       double.tryParse(controller.text.trim()) ?? 0;
 
+  Future<void> _loadClients() async {
+    final repository = widget.clientRepository;
+    if (repository == null) return;
+    setState(() {
+      _loadingClients = true;
+      _clientLoadError = null;
+    });
+    try {
+      final clients = await repository.list();
+      if (!mounted) return;
+      setState(() {
+        _clients = clients;
+        _loadingClients = false;
+      });
+    } catch (error) {
+      if (!mounted) return;
+      setState(() {
+        _clientLoadError = 'Saved clients could not be loaded: $error';
+        _loadingClients = false;
+      });
+    }
+  }
+
+  List<Client> get _matchingClients {
+    final query = _clientName.text.trim().toLowerCase();
+    if (query.isEmpty) return const [];
+    return _clients
+        .where((client) =>
+            client.name.toLowerCase().contains(query) ||
+            client.companyName.toLowerCase().contains(query) ||
+            client.email.toLowerCase().contains(query))
+        .take(6)
+        .toList(growable: false);
+  }
+
+  bool get _hasExactClientMatch {
+    final query = _clientName.text.trim().toLowerCase();
+    if (query.isEmpty) return false;
+    return _matchingClients.any((client) =>
+        client.name.trim().toLowerCase() == query ||
+        client.companyName.trim().toLowerCase() == query);
+  }
+
+  void _applyClient(Client client) {
+    setState(() {
+      _selectedClientId = client.id;
+      _clientName.text = client.name;
+      _company.text = client.companyName;
+      _email.text = client.email;
+      _phone.text = client.phone;
+      _address.text = client.address;
+      _clientTaxId.text = client.taxId;
+      if (widget.invoice == null) {
+        _paymentTerms = client.defaultPaymentTerms;
+        _dueDate = _dateString(
+          (DateTime.tryParse(_issueDate) ?? DateTime.now()).add(
+            Duration(days: _paymentTermDays(_paymentTerms)),
+          ),
+        );
+        if (client.preferredCurrency.trim().isNotEmpty) {
+          _currencyCode.text = client.preferredCurrency.toUpperCase();
+          _currencySymbol.text =
+              _currencySymbolFor(client.preferredCurrency);
+        }
+      }
+      _showClientSuggestions = false;
+    });
+  }
+
+  Future<void> _createClientFromInvoice() async {
+    final repository = widget.clientRepository;
+    final name = _clientName.text.trim();
+    if (repository == null || name.isEmpty) return;
+    FocusScope.of(context).unfocus();
+    try {
+      final client = await repository.create(
+        Client(
+          name: name,
+          companyName: _company.text.trim(),
+          email: _email.text.trim(),
+          phone: _phone.text.trim(),
+          address: _address.text.trim(),
+          taxId: _clientTaxId.text.trim(),
+          preferredCurrency: _currencyCode.text.trim().isEmpty
+              ? 'USD'
+              : _currencyCode.text.trim().toUpperCase(),
+          defaultPaymentTerms: _paymentTerms,
+        ),
+      );
+      if (!mounted) return;
+      setState(() {
+        _clients = [..._clients, client];
+        _selectedClientId = client.id;
+        _showClientSuggestions = false;
+      });
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('${client.name} saved to clients.')),
+      );
+    } on ApiException catch (error) {
+      if (mounted) setState(() => _error = error.message);
+    } catch (error) {
+      if (mounted) setState(() => _error = 'Could not save client: $error');
+    }
+  }
+
+  Future<void> _copyPreviousItems() async {
+    final clientId = _selectedClientId;
+    if (clientId == null) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Select a saved client first.')),
+      );
+      return;
+    }
+    if (_items.any(
+        (item) => item.description.trim().isNotEmpty || item.unitPrice != 0)) {
+      final replace = await showDialog<bool>(
+        context: context,
+        builder: (context) => AlertDialog(
+          title: const Text('Replace current items?'),
+          content: const Text(
+            'The line items on this invoice will be replaced with items from the client’s latest invoice.',
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(context, false),
+              child: const Text('Keep current items'),
+            ),
+            FilledButton(
+              onPressed: () => Navigator.pop(context, true),
+              child: const Text('Replace items'),
+            ),
+          ],
+        ),
+      );
+      if (replace != true || !mounted) return;
+    }
+    setState(() => _loadingPreviousItems = true);
+    try {
+      final invoices = await widget.repository.getInvoices();
+      final previous = invoices
+          .where((invoice) =>
+              invoice.clientId == clientId &&
+              invoice.id != widget.invoice?.id &&
+              invoice.items.isNotEmpty)
+          .toList()
+        ..sort((left, right) =>
+            (right.createdAt ?? 0).compareTo(left.createdAt ?? 0));
+      if (!mounted) return;
+      if (previous.isEmpty) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('No previous invoice items found for this client.'),
+          ),
+        );
+        return;
+      }
+      setState(() {
+        _items = [
+          for (var index = 0; index < previous.first.items.length; index++)
+            previous.first.items[index].copyWith(
+              id: 'local-${DateTime.now().microsecondsSinceEpoch}-$index',
+            ),
+        ];
+      });
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Previous invoice items copied.')),
+      );
+    } on ApiException catch (error) {
+      if (mounted) setState(() => _error = error.message);
+    } catch (error) {
+      if (mounted) {
+        setState(() => _error = 'Could not load previous invoice: $error');
+      }
+    } finally {
+      if (mounted) setState(() => _loadingPreviousItems = false);
+    }
+  }
+
   Invoice get _draft => Invoice(
         id: widget.invoice?.id,
         invoiceNumber: _number.text.trim(),
-        clientId: widget.invoice?.clientId,
+        clientId: _selectedClientId,
         clientName: _clientName.text.trim(),
         clientCompany: _company.text.trim(),
         clientEmail: _email.text.trim(),
@@ -165,9 +411,13 @@ class _InvoiceEditorScreenState extends State<InvoiceEditorScreen> {
         currencySymbol:
             _currencySymbol.text.trim().isEmpty ? r'$' : _currencySymbol.text,
         items: _items,
-        notes: _notes.text.trim(),
-        terms: _terms.text.trim(),
-        paymentInstructions: _paymentInstructions.text.trim(),
+        notes: _showNotesSection ? _notes.text.trim() : '',
+        terms: _showNotesSection ? _terms.text.trim() : '',
+        paymentInstructions:
+            _showPaymentSection ? _paymentInstructions.text.trim() : '',
+        shippingDetailsJson: _serializeShippingDetails(
+          _showShippingSection ? _shippingDetails.text : '',
+        ),
         taxRate: _value(_taxRate),
         taxLabel: _taxLabel.text.trim().isEmpty ? 'Tax' : _taxLabel.text.trim(),
         taxType: _taxType,
@@ -249,6 +499,15 @@ class _InvoiceEditorScreenState extends State<InvoiceEditorScreen> {
   @override
   Widget build(BuildContext context) {
     final draft = _draft;
+    final paymentTermOptions = <String>[
+      'Due on Receipt',
+      'Net 15',
+      'Net 30',
+      'Net 60',
+      if (!const ['Due on Receipt', 'Net 15', 'Net 30', 'Net 60']
+          .contains(_paymentTerms))
+        _paymentTerms,
+    ];
     return Scaffold(
       appBar: AppBar(
         leading: IconButton(
@@ -308,18 +567,27 @@ class _InvoiceEditorScreenState extends State<InvoiceEditorScreen> {
                     ),
                     DropdownButtonFormField<String>(
                       initialValue: _paymentTerms,
+                      isExpanded: true,
                       decoration:
                           const InputDecoration(labelText: 'Payment terms'),
-                      items: const [
-                        'Due on Receipt',
-                        'Net 15',
-                        'Net 30',
-                        'Net 60',
-                        'Custom',
-                      ]
+                      items: paymentTermOptions
                           .map((value) => DropdownMenuItem(
                                 value: value,
-                                child: Text(value),
+                                child: Text(
+                                  value,
+                                  maxLines: 1,
+                                  overflow: TextOverflow.ellipsis,
+                                ),
+                              ))
+                          .toList(),
+                      selectedItemBuilder: (context) => paymentTermOptions
+                          .map((value) => Align(
+                                alignment: Alignment.centerLeft,
+                                child: Text(
+                                  value,
+                                  maxLines: 1,
+                                  overflow: TextOverflow.ellipsis,
+                                ),
                               ))
                           .toList(),
                       onChanged: (value) =>
@@ -332,6 +600,7 @@ class _InvoiceEditorScreenState extends State<InvoiceEditorScreen> {
                     ),
                     DropdownButtonFormField<String>(
                       initialValue: _template,
+                      isExpanded: true,
                       decoration:
                           const InputDecoration(labelText: 'Invoice style'),
                       items: [
@@ -343,13 +612,43 @@ class _InvoiceEditorScreenState extends State<InvoiceEditorScreen> {
                               widget.preferredTemplate?.id == _template
                                   ? widget.preferredTemplate!.name
                                   : _template,
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
                             ),
                           ),
                         ...templatePresets
                             .map((template) => DropdownMenuItem<String>(
                                   value: template.id,
-                                  child: Text(template.name),
+                                  child: Text(
+                                    template.name,
+                                    maxLines: 1,
+                                    overflow: TextOverflow.ellipsis,
+                                  ),
                                 )),
+                      ],
+                      selectedItemBuilder: (context) => [
+                        if (!templatePresets
+                            .any((item) => item.id == _template))
+                          Align(
+                            alignment: Alignment.centerLeft,
+                            child: Text(
+                              widget.preferredTemplate?.id == _template
+                                  ? widget.preferredTemplate!.name
+                                  : _template,
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                            ),
+                          ),
+                        ...templatePresets.map(
+                          (template) => Align(
+                            alignment: Alignment.centerLeft,
+                            child: Text(
+                              template.name,
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                            ),
+                          ),
+                        ),
                       ],
                       onChanged: (value) =>
                           setState(() => _template = value ?? 'modern'),
@@ -365,10 +664,128 @@ class _InvoiceEditorScreenState extends State<InvoiceEditorScreen> {
               children: [
                 _ResponsiveFields(
                   children: [
-                    _textField(
-                      controller: _clientName,
-                      label: 'Client name',
-                      validator: _required,
+                    Column(
+                      crossAxisAlignment: CrossAxisAlignment.stretch,
+                      children: [
+                        TextFormField(
+                          controller: _clientName,
+                          decoration: InputDecoration(
+                            labelText: 'Client name',
+                            prefixIcon: const Icon(Icons.person_outline),
+                            suffixIcon: _loadingClients
+                                ? const Padding(
+                                    padding: EdgeInsets.all(14),
+                                    child: SizedBox(
+                                      width: 16,
+                                      height: 16,
+                                      child: CircularProgressIndicator(
+                                        strokeWidth: 2,
+                                      ),
+                                    ),
+                                  )
+                                : _selectedClientId == null
+                                    ? null
+                                    : IconButton(
+                                        tooltip: 'Clear selected client',
+                                        onPressed: () => setState(() {
+                                          _selectedClientId = null;
+                                          _clientName.clear();
+                                          _company.clear();
+                                          _email.clear();
+                                          _phone.clear();
+                                          _address.clear();
+                                          _clientTaxId.clear();
+                                        }),
+                                        icon: const Icon(Icons.close),
+                                      ),
+                          ),
+                          validator: _required,
+                          onChanged: (_) => setState(() {
+                            _selectedClientId = null;
+                            _showClientSuggestions = true;
+                          }),
+                          onTap: () => setState(() {
+                            _showClientSuggestions =
+                                _clientName.text.isNotEmpty;
+                          }),
+                        ),
+                        if (_showClientSuggestions &&
+                            _selectedClientId == null &&
+                            _clientName.text.trim().isNotEmpty) ...[
+                          const SizedBox(height: 4),
+                          Material(
+                            elevation: 2,
+                            borderRadius: BorderRadius.circular(12),
+                            clipBehavior: Clip.antiAlias,
+                            child: Column(
+                              children: [
+                                for (final client in _matchingClients)
+                                  ListTile(
+                                    dense: true,
+                                    leading: const CircleAvatar(
+                                      radius: 17,
+                                      child:
+                                          Icon(Icons.person_outline, size: 18),
+                                    ),
+                                    title: Text(
+                                      client.name,
+                                      maxLines: 1,
+                                      overflow: TextOverflow.ellipsis,
+                                    ),
+                                    subtitle: Text(
+                                      [
+                                        client.companyName,
+                                        client.email,
+                                        client.phone,
+                                      ]
+                                          .where((value) => value.isNotEmpty)
+                                          .join(' • '),
+                                      maxLines: 1,
+                                      overflow: TextOverflow.ellipsis,
+                                    ),
+                                    onTap: () => _applyClient(client),
+                                  ),
+                                if (_matchingClients.isEmpty)
+                                  const ListTile(
+                                    dense: true,
+                                    leading: Icon(Icons.search_off_outlined),
+                                    title: Text('No saved client matches yet'),
+                                  ),
+                                if (widget.clientRepository != null &&
+                                    !_hasExactClientMatch)
+                                  ListTile(
+                                    dense: true,
+                                    leading: const Icon(
+                                      Icons.person_add_alt_1,
+                                      color: AppColors.blue,
+                                    ),
+                                    title: Text(
+                                      'Save "${_clientName.text.trim()}" as a new client',
+                                      maxLines: 1,
+                                      overflow: TextOverflow.ellipsis,
+                                      style: const TextStyle(
+                                        color: AppColors.blue,
+                                        fontWeight: FontWeight.w700,
+                                      ),
+                                    ),
+                                    onTap: _createClientFromInvoice,
+                                  ),
+                              ],
+                            ),
+                          ),
+                        ],
+                        if (_clientLoadError != null)
+                          Padding(
+                            padding: const EdgeInsets.only(top: 4),
+                            child: Text(
+                              _clientLoadError!,
+                              style: TextStyle(
+                                color: Theme.of(context).colorScheme.error,
+                                fontSize: 11,
+                              ),
+                            ),
+                          ),
+                      ],
                     ),
                     _textField(
                       controller: _company,
@@ -415,14 +832,27 @@ class _InvoiceEditorScreenState extends State<InvoiceEditorScreen> {
             _SectionCard(
               title: 'Line items',
               subtitle: 'Quantities, rates and optional line discounts',
-              trailing: TextButton.icon(
-                onPressed: () => setState(
-                  () => _items.add(_newLineItem()),
-                ),
-                icon: const Icon(Icons.add),
-                label: const Text('Add item'),
+              trailing: IconButton(
+                tooltip: 'Add item',
+                onPressed: () => setState(() => _items.add(_newLineItem())),
+                icon: const Icon(Icons.add_circle_outline),
               ),
               children: [
+                Align(
+                  alignment: Alignment.centerRight,
+                  child: TextButton.icon(
+                    onPressed:
+                        _loadingPreviousItems ? null : _copyPreviousItems,
+                    icon: _loadingPreviousItems
+                        ? const SizedBox(
+                            width: 16,
+                            height: 16,
+                            child: CircularProgressIndicator(strokeWidth: 2),
+                          )
+                        : const Icon(Icons.history),
+                    label: const Text('Use items from previous invoice'),
+                  ),
+                ),
                 for (var index = 0; index < _items.length; index++) ...[
                   _LineItemEditor(
                     key: ValueKey(_items[index].id),
@@ -438,47 +868,18 @@ class _InvoiceEditorScreenState extends State<InvoiceEditorScreen> {
             ),
             const SizedBox(height: 14),
             _SectionCard(
-              title: 'Totals & tax',
-              subtitle: 'Invoice-wide tax, discount and payment details',
+              title: 'Invoice adjustments',
+              subtitle: 'Tax and currency use your saved invoice defaults',
               children: [
+                Text(
+                  '${_taxLabel.text} ${_num(_value(_taxRate))}% · $_taxType'
+                  '${_taxInclusive ? ' · tax included in prices' : ''}'
+                  ' · ${_currencyCode.text}',
+                  style: Theme.of(context).textTheme.bodySmall,
+                ),
+                const SizedBox(height: 14),
                 _ResponsiveFields(
                   children: [
-                    _textField(
-                      controller: _currencyCode,
-                      label: 'Currency code',
-                      validator: _required,
-                      textCapitalization: TextCapitalization.characters,
-                    ),
-                    _textField(
-                      controller: _currencySymbol,
-                      label: 'Currency symbol',
-                      validator: _required,
-                      onChanged: (_) => setState(() {}),
-                    ),
-                    _textField(
-                      controller: _taxLabel,
-                      label: 'Tax label',
-                      isRequired: false,
-                    ),
-                    _decimalField(
-                      controller: _taxRate,
-                      label: 'Tax rate (%)',
-                      min: 0,
-                      max: 100,
-                      onChanged: () => setState(() {}),
-                    ),
-                    DropdownButtonFormField<String>(
-                      initialValue: _taxType,
-                      decoration: const InputDecoration(labelText: 'Tax type'),
-                      items: const ['GST', 'VAT', 'Sales tax', 'Other']
-                          .map((value) => DropdownMenuItem(
-                                value: value,
-                                child: Text(value),
-                              ))
-                          .toList(),
-                      onChanged: (value) =>
-                          setState(() => _taxType = value ?? 'GST'),
-                    ),
                     _decimalField(
                       controller: _discountPercent,
                       label: 'Discount (%)',
@@ -519,44 +920,74 @@ class _InvoiceEditorScreenState extends State<InvoiceEditorScreen> {
                     ),
                   ],
                 ),
-                SwitchListTile.adaptive(
-                  contentPadding: EdgeInsets.zero,
-                  title: const Text('Prices include tax'),
-                  subtitle: const Text(
-                    'Extract the tax amount from the entered item prices.',
-                  ),
-                  value: _taxInclusive,
-                  onChanged: (value) => setState(() => _taxInclusive = value),
-                ),
                 const SizedBox(height: 8),
                 _TotalsPreview(invoice: draft),
               ],
             ),
             const SizedBox(height: 14),
             _SectionCard(
-              title: 'Notes & payment',
-              subtitle: 'Optional text shown with the invoice',
+              title: 'Optional details',
+              subtitle: 'Only add the sections needed for this invoice',
               children: [
-                _textField(
-                  controller: _notes,
-                  label: 'Notes to client',
-                  isRequired: false,
-                  maxLines: 3,
+                Wrap(
+                  spacing: 8,
+                  runSpacing: 8,
+                  children: [
+                    FilterChip(
+                      label: const Text('Notes & terms'),
+                      selected: _showNotesSection,
+                      onSelected: (value) =>
+                          setState(() => _showNotesSection = value),
+                    ),
+                    FilterChip(
+                      label: const Text('Delivery details'),
+                      selected: _showShippingSection,
+                      onSelected: (value) =>
+                          setState(() => _showShippingSection = value),
+                    ),
+                    FilterChip(
+                      label: const Text('Payment instructions'),
+                      selected: _showPaymentSection,
+                      onSelected: (value) =>
+                          setState(() => _showPaymentSection = value),
+                    ),
+                  ],
                 ),
-                const SizedBox(height: 12),
-                _textField(
-                  controller: _terms,
-                  label: 'Terms and conditions',
-                  isRequired: false,
-                  maxLines: 3,
-                ),
-                const SizedBox(height: 12),
-                _textField(
-                  controller: _paymentInstructions,
-                  label: 'Payment instructions',
-                  isRequired: false,
-                  maxLines: 3,
-                ),
+                if (_showNotesSection) ...[
+                  const SizedBox(height: 14),
+                  _textField(
+                    controller: _notes,
+                    label: 'Notes to client',
+                    isRequired: false,
+                    maxLines: 3,
+                  ),
+                  const SizedBox(height: 12),
+                  _textField(
+                    controller: _terms,
+                    label: 'Terms and conditions',
+                    isRequired: false,
+                    maxLines: 3,
+                  ),
+                ],
+                if (_showShippingSection) ...[
+                  const SizedBox(height: 12),
+                  _textField(
+                    controller: _shippingDetails,
+                    label: 'Delivery / shipping details',
+                    hintText: 'Address, delivery date, carrier or tracking',
+                    isRequired: false,
+                    maxLines: 3,
+                  ),
+                ],
+                if (_showPaymentSection) ...[
+                  const SizedBox(height: 12),
+                  _textField(
+                    controller: _paymentInstructions,
+                    label: 'Payment instructions',
+                    isRequired: false,
+                    maxLines: 3,
+                  ),
+                ],
               ],
             ),
             const SizedBox(height: 20),
@@ -854,9 +1285,14 @@ class _ResponsiveFields extends StatelessWidget {
   @override
   Widget build(BuildContext context) => LayoutBuilder(
         builder: (context, constraints) {
-          final columns = constraints.maxWidth >= 720 ? 3 : 2;
+          final responsiveColumns = constraints.maxWidth >= 960
+              ? 3
+              : constraints.maxWidth >= 600
+                  ? 2
+                  : 1;
           final gap = 12.0;
-          final width = (constraints.maxWidth - (columns - 1) * gap) / columns;
+          final width = (constraints.maxWidth - (responsiveColumns - 1) * gap) /
+              responsiveColumns;
           return Wrap(
             spacing: gap,
             runSpacing: 12,
@@ -874,6 +1310,7 @@ Widget _textField({
   required String label,
   bool isRequired = true,
   int maxLines = 1,
+  String? hintText,
   TextInputType? keyboardType,
   TextCapitalization textCapitalization = TextCapitalization.none,
   String? Function(String?)? validator,
@@ -884,7 +1321,7 @@ Widget _textField({
       keyboardType: keyboardType,
       textCapitalization: textCapitalization,
       maxLines: maxLines,
-      decoration: InputDecoration(labelText: label),
+      decoration: InputDecoration(labelText: label, hintText: hintText),
       validator: validator ?? (isRequired ? _required : null),
       onChanged: onChanged,
     );
@@ -983,8 +1420,103 @@ String _dateString(DateTime date) => '${date.year.toString().padLeft(4, '0')}-'
     '${date.month.toString().padLeft(2, '0')}-'
     '${date.day.toString().padLeft(2, '0')}';
 
+int _paymentTermDays(String terms) {
+  if (terms.toLowerCase().contains('receipt')) return 0;
+  final days = RegExp(r'net\s*(\d+)', caseSensitive: false)
+      .firstMatch(terms)
+      ?.group(1);
+  return int.tryParse(days ?? '') ?? 30;
+}
+
 String _num(double value) =>
     value == value.truncateToDouble() ? value.toInt().toString() : '$value';
 
 String _money(double value, String symbol) =>
     '$symbol${value.toStringAsFixed(2)}';
+
+double _settingNumber(Object? value) {
+  if (value is num) return value.toDouble();
+  return double.tryParse(value?.toString() ?? '') ?? 0;
+}
+
+String _settingString(Object? value, String fallback) {
+  final string = value?.toString().trim() ?? '';
+  return string.isEmpty ? fallback : string;
+}
+
+String _currencySymbolFor(String currency) => switch (currency.toUpperCase()) {
+      'USD' => r'$',
+      'EUR' => '€',
+      'GBP' => '£',
+      'INR' => '₹',
+      'JPY' => '¥',
+      'CAD' || 'AUD' || 'NZD' => r'$',
+      _ => currency.toUpperCase(),
+    };
+
+String _readShippingDetails(String? value) {
+  if (value == null || value.trim().isEmpty || value.trim() == '{}') return '';
+  try {
+    final decoded = jsonDecode(value);
+    if (decoded is! Map<String, dynamic>) return value;
+    const labels = <String, String>{
+      'shippingAddress': 'Shipping address',
+      'deliveryAddress': 'Delivery address',
+      'shippingMethod': 'Shipping method',
+      'courier': 'Carrier',
+      'trackingNumber': 'Tracking',
+      'expectedDelivery': 'Expected delivery',
+      'warehouse': 'Warehouse',
+      'deliveryContact': 'Delivery contact',
+      'vehicleNumber': 'Vehicle number',
+      'dispatchDate': 'Dispatch date',
+    };
+    return labels.entries
+        .where(
+            (entry) => decoded[entry.key]?.toString().trim().isNotEmpty == true)
+        .map((entry) => '${entry.value}: ${decoded[entry.key]}')
+        .join('\n');
+  } on FormatException {
+    return value;
+  }
+}
+
+String _serializeShippingDetails(String value) {
+  if (value.trim().isEmpty) return '{}';
+  const keys = <String, String>{
+    'shipping address': 'shippingAddress',
+    'delivery address': 'deliveryAddress',
+    'shipping method': 'shippingMethod',
+    'carrier': 'courier',
+    'tracking': 'trackingNumber',
+    'expected delivery': 'expectedDelivery',
+    'warehouse': 'warehouse',
+    'delivery contact': 'deliveryContact',
+    'vehicle number': 'vehicleNumber',
+    'dispatch date': 'dispatchDate',
+  };
+  final details = <String, Object?>{
+    'isEnabled': true,
+    'sameAsBilling': false,
+    'sectionTitle': 'Shipping Details',
+  };
+  final unmatchedLines = <String>[];
+  for (final line in value.split('\n')) {
+    final separator = line.indexOf(':');
+    final label =
+        separator < 0 ? '' : line.substring(0, separator).trim().toLowerCase();
+    final content =
+        separator < 0 ? line.trim() : line.substring(separator + 1).trim();
+    if (content.isEmpty) continue;
+    final key = keys[label];
+    if (key == null) {
+      unmatchedLines.add(content);
+    } else {
+      details[key] = content;
+    }
+  }
+  if (unmatchedLines.isNotEmpty && details['deliveryAddress'] == null) {
+    details['deliveryAddress'] = unmatchedLines.join('\n');
+  }
+  return jsonEncode(details);
+}

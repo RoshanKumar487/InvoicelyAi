@@ -1,7 +1,13 @@
+import 'dart:convert';
+import 'dart:typed_data';
+import 'dart:ui' as ui;
+
 import 'package:flutter/material.dart';
+import 'package:image_picker/image_picker.dart';
 
 import '../../../core/api/api_client.dart';
 import '../../../core/api/api_exception.dart';
+import '../../../core/storage/local_preferences.dart';
 import '../../../shared/widgets/app_card.dart';
 import '../../../theme/app_theme.dart';
 import '../data/settings_repository.dart';
@@ -9,11 +15,17 @@ import '../data/settings_repository.dart';
 class SettingsScreen extends StatefulWidget {
   const SettingsScreen({
     required this.apiClient,
+    this.localPreferences,
+    this.initialLocalSettings = const <String, Object?>{},
+    this.onSaveLocalSettings,
     this.onBack,
     super.key,
   });
 
   final ApiClient apiClient;
+  final LocalPreferences? localPreferences;
+  final Map<String, Object?> initialLocalSettings;
+  final ValueChanged<Map<String, Object?>>? onSaveLocalSettings;
   final VoidCallback? onBack;
 
   @override
@@ -26,7 +38,9 @@ class _SettingsScreenState extends State<SettingsScreen> {
   Map<String, dynamic> _profile = <String, dynamic>{};
   bool _loading = true;
   bool _saving = false;
+  bool _savingBranding = false;
   String? _error;
+  late Map<String, Object?> _localSettings;
 
   static const _editableStringFields = <String, String>{
     'businessName': 'Business name',
@@ -56,6 +70,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
   @override
   void initState() {
     super.initState();
+    _localSettings = Map<String, Object?>.from(widget.initialLocalSettings);
     _repository = SettingsRepository(apiClient: widget.apiClient);
     _load();
   }
@@ -104,6 +119,77 @@ class _SettingsScreenState extends State<SettingsScreen> {
     } finally {
       if (mounted) setState(() => _saving = false);
     }
+  }
+
+  Future<void> _saveBranding() async {
+    final preferences = widget.localPreferences;
+    if (preferences == null) {
+      _showError('Local settings are unavailable on this device.');
+      return;
+    }
+    setState(() => _savingBranding = true);
+    try {
+      await preferences.writeMap('invoice_settings', _localSettings);
+      widget.onSaveLocalSettings?.call(
+        Map<String, Object?>.from(_localSettings),
+      );
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Invoice branding saved on this device.')),
+        );
+      }
+    } catch (error) {
+      if (mounted) _showError('Could not save invoice branding: $error');
+    } finally {
+      if (mounted) setState(() => _savingBranding = false);
+    }
+  }
+
+  Future<void> _pickBrandImage(String key, String label) async {
+    try {
+      final image = await ImagePicker().pickImage(
+        source: ImageSource.gallery,
+        maxWidth: 1000,
+        imageQuality: 70,
+      );
+      if (image == null) return;
+      final bytes = await image.readAsBytes();
+      if (!mounted) return;
+      setState(() => _localSettings[key] = base64Encode(bytes));
+    } catch (error) {
+      if (mounted) _showError('Could not select $label: $error');
+    }
+  }
+
+  Future<void> _captureSignature() async {
+    final points = await showDialog<List<Offset?>>(
+      context: context,
+      builder: (context) => const _SignatureDialog(),
+    );
+    if (points == null || points.isEmpty) return;
+    try {
+      final recorder = ui.PictureRecorder();
+      final canvas = Canvas(recorder);
+      canvas.drawColor(Colors.white, BlendMode.src);
+      const size = Size(700, 220);
+      _SignaturePainter(points).paint(canvas, size);
+      final picture = recorder.endRecording();
+      final image = await picture.toImage(size.width.toInt(), size.height.toInt());
+      final data = await image.toByteData(format: ui.ImageByteFormat.png);
+      image.dispose();
+      picture.dispose();
+      if (data == null) throw StateError('Could not render the signature.');
+      if (mounted) {
+        setState(() => _localSettings['invoiceSignature'] =
+            base64Encode(data.buffer.asUint8List()));
+      }
+    } catch (error) {
+      if (mounted) _showError('Could not save signature: $error');
+    }
+  }
+
+  void _removeBrandingAsset(String key) {
+    setState(() => _localSettings.remove(key));
   }
 
   void _showError(String message) {
@@ -174,6 +260,72 @@ class _SettingsScreenState extends State<SettingsScreen> {
                                     onChanged: (value) =>
                                         _profile[field.key] = value,
                                   ),
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                        const SizedBox(height: 12),
+                        AppCard(
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Text(
+                                'Invoice branding',
+                                style: Theme.of(context).textTheme.titleMedium,
+                              ),
+                              const SizedBox(height: 4),
+                              Text(
+                                'Assets are stored on this device and included in invoice previews and PDFs.',
+                                style: Theme.of(context).textTheme.bodySmall,
+                              ),
+                              const SizedBox(height: 16),
+                              _BrandingAssetTile(
+                                label: 'Company logo',
+                                base64:
+                                    _localSettings['invoiceLogo']?.toString(),
+                                onPick: () =>
+                                    _pickBrandImage('invoiceLogo', 'logo'),
+                                onRemove: () =>
+                                    _removeBrandingAsset('invoiceLogo'),
+                              ),
+                              const SizedBox(height: 10),
+                              _BrandingAssetTile(
+                                label: 'Company stamp',
+                                base64:
+                                    _localSettings['invoiceStamp']?.toString(),
+                                onPick: () =>
+                                    _pickBrandImage('invoiceStamp', 'stamp'),
+                                onRemove: () =>
+                                    _removeBrandingAsset('invoiceStamp'),
+                              ),
+                              const SizedBox(height: 10),
+                              _BrandingAssetTile(
+                                label: 'Authorized signature',
+                                base64: _localSettings['invoiceSignature']
+                                    ?.toString(),
+                                onPick: _captureSignature,
+                                onRemove: () =>
+                                    _removeBrandingAsset('invoiceSignature'),
+                                pickLabel: 'Draw',
+                              ),
+                              const SizedBox(height: 16),
+                              Align(
+                                alignment: Alignment.centerRight,
+                                child: FilledButton.icon(
+                                  onPressed: _savingBranding
+                                      ? null
+                                      : _saveBranding,
+                                  icon: _savingBranding
+                                      ? const SizedBox(
+                                          width: 18,
+                                          height: 18,
+                                          child: CircularProgressIndicator(
+                                            strokeWidth: 2,
+                                          ),
+                                        )
+                                      : const Icon(Icons.save_outlined),
+                                  label: const Text('Save branding'),
                                 ),
                               ),
                             ],
@@ -384,6 +536,218 @@ const _currencySymbols = <String, String>{
   'SGD': 'S\$',
   'SAR': 'SAR',
 };
+
+class _BrandingAssetTile extends StatelessWidget {
+  const _BrandingAssetTile({
+    required this.label,
+    required this.base64,
+    required this.onPick,
+    required this.onRemove,
+    this.pickLabel = 'Choose',
+  });
+
+  final String label;
+  final String? base64;
+  final VoidCallback onPick;
+  final VoidCallback onRemove;
+  final String pickLabel;
+
+  @override
+  Widget build(BuildContext context) {
+    Uint8List? bytes;
+    try {
+      if (base64 != null && base64!.isNotEmpty) {
+        bytes = base64Decode(base64!);
+      }
+    } on FormatException {
+      bytes = null;
+    }
+    return Row(
+      children: [
+        Container(
+          width: 64,
+          height: 54,
+          alignment: Alignment.center,
+          decoration: BoxDecoration(
+            color: Theme.of(context).colorScheme.surfaceContainerHighest,
+            borderRadius: BorderRadius.circular(10),
+          ),
+          child: bytes == null
+              ? const Icon(Icons.image_outlined)
+              : ClipRRect(
+                  borderRadius: BorderRadius.circular(8),
+                  child: Image.memory(
+                    bytes,
+                    width: 62,
+                    height: 52,
+                    fit: BoxFit.contain,
+                    errorBuilder: (_, __, ___) =>
+                        const Icon(Icons.broken_image_outlined),
+                  ),
+                ),
+        ),
+        const SizedBox(width: 12),
+        Expanded(
+          child: Text(
+            label,
+            style: const TextStyle(fontWeight: FontWeight.w600),
+            maxLines: 2,
+            overflow: TextOverflow.ellipsis,
+          ),
+        ),
+        if (bytes != null)
+          IconButton(
+            tooltip: 'Remove $label',
+            onPressed: onRemove,
+            icon: const Icon(Icons.delete_outline),
+          ),
+        OutlinedButton(
+          onPressed: onPick,
+          child: Text(pickLabel),
+        ),
+      ],
+    );
+  }
+}
+
+class _SignatureDialog extends StatefulWidget {
+  const _SignatureDialog();
+
+  @override
+  State<_SignatureDialog> createState() => _SignatureDialogState();
+}
+
+class _SignatureDialogState extends State<_SignatureDialog> {
+  final List<Offset?> _points = [];
+
+  @override
+  Widget build(BuildContext context) => AlertDialog(
+        title: const Text('Draw your signature'),
+        content: SizedBox(
+          width: (MediaQuery.sizeOf(context).width - 80).clamp(280, 520),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Row(
+                children: [
+                  const Expanded(
+                    child: Text('Sign using your finger or mouse.'),
+                  ),
+                  IconButton(
+                    tooltip: 'Undo last stroke',
+                    onPressed: _points.whereType<Offset>().isEmpty
+                        ? null
+                        : () => setState(_undoStroke),
+                    icon: const Icon(Icons.undo),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 12),
+              AspectRatio(
+                aspectRatio: 3.2,
+                child: LayoutBuilder(
+                  builder: (context, constraints) => GestureDetector(
+                    onPanStart: (event) => setState(
+                      () => _points.add(_normalize(
+                        event.localPosition,
+                        constraints.biggest,
+                      )),
+                    ),
+                    onPanUpdate: (event) => setState(
+                      () => _points.add(_normalize(
+                        event.localPosition,
+                        constraints.biggest,
+                      )),
+                    ),
+                    onPanEnd: (_) => setState(() => _points.add(null)),
+                    child: DecoratedBox(
+                      decoration: BoxDecoration(
+                        color: Colors.white,
+                        border: Border.all(color: AppColors.border),
+                        borderRadius: BorderRadius.circular(10),
+                      ),
+                      child: CustomPaint(
+                        foregroundPainter: _SignaturePainter(_points),
+                        child: const SizedBox.expand(),
+                      ),
+                    ),
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => setState(_points.clear),
+            child: const Text('Clear'),
+          ),
+          TextButton(
+            onPressed: () => Navigator.of(context).pop(),
+            child: const Text('Cancel'),
+          ),
+          FilledButton(
+            onPressed: _points.whereType<Offset>().isEmpty
+                ? null
+                : () => Navigator.of(context).pop(_points),
+            child: const Text('Use signature'),
+          ),
+        ],
+      );
+
+  Offset _normalize(Offset point, Size size) => Offset(
+        point.dx / size.width * 700,
+        point.dy / size.height * 220,
+      );
+
+  void _undoStroke() {
+    if (_points.isEmpty) return;
+    if (_points.last == null) _points.removeLast();
+    while (_points.isNotEmpty && _points.last != null) {
+      _points.removeLast();
+    }
+    if (_points.isNotEmpty) _points.removeLast();
+  }
+}
+
+class _SignaturePainter extends CustomPainter {
+  const _SignaturePainter(this.points);
+
+  final List<Offset?> points;
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    final paint = Paint()
+      ..color = const Color(0xFF172554)
+      ..strokeWidth = 3
+      ..strokeCap = StrokeCap.round
+      ..strokeJoin = StrokeJoin.round
+      ..style = PaintingStyle.stroke;
+    final path = Path();
+    var drawing = false;
+    for (final point in points) {
+      if (point == null) {
+        drawing = false;
+        continue;
+      }
+      final scaled = Offset(
+        point.dx * size.width / 700,
+        point.dy * size.height / 220,
+      );
+      if (!drawing) {
+        path.moveTo(scaled.dx, scaled.dy);
+        drawing = true;
+      } else {
+        path.lineTo(scaled.dx, scaled.dy);
+      }
+    }
+    canvas.drawPath(path, paint);
+  }
+
+  @override
+  bool shouldRepaint(covariant _SignaturePainter oldDelegate) =>
+      !identical(points, oldDelegate.points);
+}
 
 class _SettingsError extends StatelessWidget {
   const _SettingsError({required this.message, required this.onRetry});

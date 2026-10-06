@@ -1,4 +1,5 @@
 import 'dart:convert';
+import 'dart:typed_data';
 
 import 'package:flutter/material.dart';
 import 'package:image_picker/image_picker.dart';
@@ -121,16 +122,36 @@ class _ExpensesScreenState extends State<ExpensesScreen> {
 
   Future<void> _scanReceipt() async {
     if (_isScanningReceipt) return;
+    final source = await showModalBottomSheet<ImageSource>(
+      context: context,
+      builder: (context) => SafeArea(
+        child: Wrap(
+          children: [
+            ListTile(
+              leading: const Icon(Icons.camera_alt_outlined),
+              title: const Text('Take a photo'),
+              onTap: () => Navigator.pop(context, ImageSource.camera),
+            ),
+            ListTile(
+              leading: const Icon(Icons.photo_library_outlined),
+              title: const Text('Choose from gallery'),
+              onTap: () => Navigator.pop(context, ImageSource.gallery),
+            ),
+          ],
+        ),
+      ),
+    );
+    if (source == null || !mounted) return;
     XFile? image;
     try {
       image = await _imagePicker.pickImage(
-        source: ImageSource.gallery,
+        source: source,
         imageQuality: 85,
         maxWidth: 2048,
       );
-    } catch (_) {
+    } catch (error) {
       if (mounted) {
-        _showMessage('Could not open the image picker. Please try again.');
+        _showMessage('Could not open the camera or gallery: $error');
       }
       return;
     }
@@ -162,9 +183,30 @@ class _ExpensesScreenState extends State<ExpensesScreen> {
         mimeType: mimeType,
       );
       if (!mounted) return;
+      final scannedDraft = Expense(
+        id: draft.id,
+        companyId: draft.companyId,
+        createdByUserId: draft.createdByUserId,
+        createdByUserName: draft.createdByUserName,
+        title: draft.title,
+        category: draft.category,
+        amount: draft.amount,
+        currency: draft.currency,
+        currencySymbol: draft.currencySymbol,
+        date: draft.date,
+        vendor: draft.vendor,
+        paymentMethod: draft.paymentMethod,
+        taxDeductible: draft.taxDeductible,
+        taxAmount: draft.taxAmount,
+        receiptImageUri: image.path,
+        notes: draft.notes,
+      );
       final confirmedDraft = await showDialog<Expense>(
         context: context,
-        builder: (context) => _ExpenseEditorDialog(initialValues: draft),
+        builder: (context) => _ExpenseEditorDialog(
+          initialValues: scannedDraft,
+          receiptImageBytes: bytes,
+        ),
       );
       if (confirmedDraft == null || !mounted) return;
       await widget.repository.create(confirmedDraft);
@@ -254,13 +296,6 @@ class _ExpensesScreenState extends State<ExpensesScreen> {
   @override
   Widget build(BuildContext context) {
     final visibleExpenses = _visibleExpenses;
-    final total = visibleExpenses.fold<double>(
-      0,
-      (sum, expense) => sum + expense.amount,
-    );
-    final deductible = visibleExpenses
-        .where((expense) => expense.taxDeductible)
-        .fold<double>(0, (sum, expense) => sum + expense.amount);
     return Scaffold(
       appBar: AppBar(
         title: const Text('Expenses & Bills'),
@@ -309,25 +344,6 @@ class _ExpensesScreenState extends State<ExpensesScreen> {
                   style: Theme.of(context).textTheme.bodyLarge?.copyWith(
                         color: AppColors.muted,
                       ),
-                ),
-                const SizedBox(height: 18),
-                Wrap(
-                  spacing: 12,
-                  runSpacing: 12,
-                  children: [
-                    _SummaryCard(
-                      label: 'Filtered expenses',
-                      amount: total,
-                      currencySymbol: _currencySymbol(visibleExpenses),
-                      icon: Icons.receipt_long_outlined,
-                    ),
-                    _SummaryCard(
-                      label: 'Tax deductible',
-                      amount: deductible,
-                      currencySymbol: _currencySymbol(visibleExpenses),
-                      icon: Icons.request_quote_outlined,
-                    ),
-                  ],
                 ),
                 const SizedBox(height: 18),
                 TextField(
@@ -428,54 +444,6 @@ class _ExpensesScreenState extends State<ExpensesScreen> {
     );
   }
 
-  String _currencySymbol(List<Expense> expenses) =>
-      expenses.isEmpty ? r'$' : expenses.first.currencySymbol;
-}
-
-class _SummaryCard extends StatelessWidget {
-  const _SummaryCard({
-    required this.label,
-    required this.amount,
-    required this.currencySymbol,
-    required this.icon,
-  });
-
-  final String label;
-  final double amount;
-  final String currencySymbol;
-  final IconData icon;
-
-  @override
-  Widget build(BuildContext context) {
-    return SizedBox(
-      width: 250,
-      child: AppCard(
-        padding: const EdgeInsets.all(16),
-        child: Row(
-          children: [
-            Icon(icon, color: AppColors.blue),
-            const SizedBox(width: 12),
-            Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(label, style: Theme.of(context).textTheme.bodySmall),
-                  const SizedBox(height: 4),
-                  Text(
-                    '$currencySymbol${amount.toStringAsFixed(2)}',
-                    style: Theme.of(context)
-                        .textTheme
-                        .titleLarge
-                        ?.copyWith(fontWeight: FontWeight.w800),
-                  ),
-                ],
-              ),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
 }
 
 class _ExpenseCard extends StatelessWidget {
@@ -622,10 +590,15 @@ class _ExpenseDetail extends StatelessWidget {
 }
 
 class _ExpenseEditorDialog extends StatefulWidget {
-  const _ExpenseEditorDialog({this.expense, this.initialValues});
+  const _ExpenseEditorDialog({
+    this.expense,
+    this.initialValues,
+    this.receiptImageBytes,
+  });
 
   final Expense? expense;
   final Expense? initialValues;
+  final Uint8List? receiptImageBytes;
 
   @override
   State<_ExpenseEditorDialog> createState() => _ExpenseEditorDialogState();
@@ -731,7 +704,7 @@ class _ExpenseEditorDialogState extends State<_ExpenseEditorDialog> {
 
   void _save() {
     if (!_formKey.currentState!.validate()) return;
-    final previous = widget.expense;
+    final previous = widget.expense ?? widget.initialValues;
     final symbol = _currencySymbol(_currency.text.trim());
     Navigator.pop(
       context,
@@ -771,6 +744,25 @@ class _ExpenseEditorDialogState extends State<_ExpenseEditorDialog> {
               children: [
                 _field(_title, 'Description *', validator: _required),
                 _field(_vendor, 'Vendor / merchant'),
+                if (widget.receiptImageBytes != null) ...[
+                  const SizedBox(height: 12),
+                  ClipRRect(
+                    borderRadius: BorderRadius.circular(12),
+                    child: Image.memory(
+                      widget.receiptImageBytes!,
+                      height: 150,
+                      width: double.infinity,
+                      fit: BoxFit.cover,
+                    ),
+                  ),
+                  const Align(
+                    alignment: Alignment.centerLeft,
+                    child: Padding(
+                      padding: EdgeInsets.only(top: 6),
+                      child: Text('Receipt attached'),
+                    ),
+                  ),
+                ],
                 Row(
                   children: [
                     Expanded(
