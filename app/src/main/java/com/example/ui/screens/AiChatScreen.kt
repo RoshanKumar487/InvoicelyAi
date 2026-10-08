@@ -47,17 +47,22 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.Send
 import androidx.compose.material.icons.filled.AccountBalanceWallet
 import androidx.compose.material.icons.filled.AutoAwesome
+import androidx.compose.material.icons.filled.ArrowDownward
 import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.filled.Close
+import androidx.compose.material.icons.filled.ContentCopy
 import androidx.compose.material.icons.filled.DeleteSweep
 import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.GraphicEq
+import androidx.compose.material.icons.filled.KeyboardArrowDown
+import androidx.compose.material.icons.filled.Menu
 import androidx.compose.material.icons.filled.Mic
 import androidx.compose.material.icons.filled.People
 import androidx.compose.material.icons.filled.Person
 import androidx.compose.material.icons.filled.Receipt
 import androidx.compose.material.icons.filled.ReceiptLong
 import androidx.compose.material.icons.filled.RecordVoiceOver
+import androidx.compose.material.icons.filled.Share
 import androidx.compose.material.icons.filled.SmartToy
 import androidx.compose.material.icons.filled.Stop
 import androidx.compose.material.icons.filled.TrendingUp
@@ -96,11 +101,16 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.scale
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.LocalClipboardManager
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.testTag
+import androidx.compose.ui.text.AnnotatedString
+import androidx.compose.ui.text.SpanStyle
+import androidx.compose.ui.text.buildAnnotatedString
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.text.withStyle
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.window.Dialog
@@ -108,6 +118,8 @@ import androidx.compose.ui.window.DialogProperties
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.example.ai.ChatMessage
 import com.example.ai.FinancialSummaryData
+import com.example.ui.components.AdaptiveContainer
+import com.example.ui.components.rememberWindowAdaptiveInfo
 import com.example.data.model.ClientEntity
 import com.example.data.model.ExpenseEntity
 import com.example.data.model.InvoiceEntity
@@ -115,6 +127,10 @@ import com.example.data.model.InvoiceUtils
 import com.example.ui.theme.PrimaryNavy
 import com.example.ui.theme.StatusPaidGreen
 import com.example.ui.viewmodel.InvoiceViewModel
+import androidx.compose.foundation.isSystemInDarkTheme
+import com.example.ui.components.AmbientGlassBackdrop
+import com.example.ui.components.GlassCard
+import com.example.ui.components.glassTextFieldColors
 import java.util.Locale
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -124,6 +140,7 @@ fun AiChatScreen(
     onNavigateToInvoicePreview: (Long) -> Unit,
     onNavigateToInvoiceEdit: (Long) -> Unit,
     onNavigateToDashboard: () -> Unit = {},
+    onOpenMenu: () -> Unit = {},
     modifier: Modifier = Modifier
 ) {
     val context = LocalContext.current
@@ -131,6 +148,7 @@ fun AiChatScreen(
     val isAiThinking by viewModel.isAiThinking.collectAsStateWithLifecycle()
 
     var inputPrompt by remember { mutableStateOf("") }
+    var pendingVoiceInput by remember { mutableStateOf(false) }
     val listState = rememberLazyListState()
 
     // -------------------------------------------------------------------------
@@ -141,9 +159,7 @@ fun AiChatScreen(
     var isSpeaking by remember { mutableStateOf(false) }
     var currentlySpeakingId by remember { mutableStateOf<String?>(null) }
     var autoSpeakEnabled by remember { mutableStateOf(true) }
-
-    // Live Talk Mode Dialog State
-    var isLiveTalkModeOpen by remember { mutableStateOf(false) }
+    var userSpokeLastPrompt by remember { mutableStateOf(false) }
     var latestUserTranscript by remember { mutableStateOf("") }
     var latestAiSpokenReply by remember { mutableStateOf("") }
 
@@ -184,6 +200,22 @@ fun AiChatScreen(
     fun speakText(text: String, messageId: String? = null) {
         if (tts != null && isTtsReady) {
             currentlySpeakingId = messageId
+
+            // Dynamic Hindi voice detection for native Indian speech flow
+            val hasHindiChars = text.any { it in '\u0900'..'\u097F' } ||
+                    text.contains("नमस्ते", true) || text.contains("जी सर", true) ||
+                    text.contains("हाँजी", true) || text.contains("धन्यवाद", true) ||
+                    text.contains("पेंडिंग", true)
+            if (hasHindiChars) {
+                val hindiLocale = Locale("hi", "IN")
+                val isAvailable = tts?.isLanguageAvailable(hindiLocale) ?: TextToSpeech.LANG_NOT_SUPPORTED
+                if (isAvailable >= TextToSpeech.LANG_AVAILABLE) {
+                    tts?.language = hindiLocale
+                }
+            } else {
+                tts?.language = Locale.US
+            }
+
             // Clean markdown syntax, tags, and bullet points for clean, natural speech
             val cleanText = text
                 .replace(Regex("<.*?>"), "")
@@ -202,18 +234,19 @@ fun AiChatScreen(
         currentlySpeakingId = null
     }
 
-    // Auto-speak newly received AI message
+    // Auto-speak newly received AI message natively
     LaunchedEffect(chatMessages.size) {
         val lastMsg = chatMessages.lastOrNull()
         if (lastMsg != null && !lastMsg.isUser) {
             latestAiSpokenReply = lastMsg.text
-            if (autoSpeakEnabled || isLiveTalkModeOpen) {
+            if (autoSpeakEnabled || userSpokeLastPrompt) {
                 speakText(lastMsg.text, lastMsg.id)
+                userSpokeLastPrompt = false
             }
         }
     }
 
-    // Speech-to-Text Recognition Launcher
+    // Speech-to-Text Recognition Launcher (Native voice interaction)
     val speechRecognizerLauncher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.StartActivityForResult()
     ) { result ->
@@ -222,9 +255,10 @@ fun AiChatScreen(
             val recognizedText = spokenMatches?.firstOrNull()
             if (!recognizedText.isNullOrBlank()) {
                 inputPrompt = recognizedText
+                pendingVoiceInput = true
                 latestUserTranscript = recognizedText
+                userSpokeLastPrompt = true
                 stopSpeaking()
-                viewModel.sendAiChatMessage(recognizedText)
             }
         }
     }
@@ -247,19 +281,15 @@ fun AiChatScreen(
         }
     }
 
-    val promptSuggestions = listOf(
-        "🎙️ Start Gemini Talk System",
-        "💰 How much money is pending right now?",
-        "📊 Summarize my revenue & finances",
-        "👥 Who are my active clients?",
-        "💸 Record expense: $65 for client lunch",
-        "⚡ Invoice Acme Corp, 10 hrs Dev @ $80/hr with 18% GST",
-        "💡 What are tips to recover overdue payments?",
-        "❓ Which GST rate applies to digital consulting?"
-    )
+    val dynamicPredictions by viewModel.dynamicPredictions.collectAsStateWithLifecycle()
 
-    Scaffold(
-        modifier = modifier.fillMaxSize(),
+    val isDark = isSystemInDarkTheme()
+
+    AmbientGlassBackdrop {
+        Scaffold(
+            contentWindowInsets = androidx.compose.foundation.layout.WindowInsets(0, 0, 0, 0),
+            modifier = modifier.fillMaxSize(),
+            containerColor = Color.Transparent,
         topBar = {
             TopAppBar(
                 title = {
@@ -273,7 +303,7 @@ fun AiChatScreen(
                                 .clip(CircleShape)
                                 .background(
                                     Brush.linearGradient(
-                                        colors = listOf(Color(0xFF3B82F6), Color(0xFF8B5CF6))
+                                        colors = listOf(Color(0xFF2563EB), Color(0xFF7C3AED))
                                     )
                                 ),
                             contentAlignment = Alignment.Center
@@ -289,66 +319,44 @@ fun AiChatScreen(
                             Row(verticalAlignment = Alignment.CenterVertically) {
                                 Text(
                                     text = "Invoicely AI",
-                                    fontSize = 17.sp,
+                                    fontSize = 16.sp,
                                     fontWeight = FontWeight.Bold,
-                                    color = PrimaryNavy
+                                    color = if (isDark) Color.White else PrimaryNavy
                                 )
                                 Spacer(modifier = Modifier.width(6.dp))
                                 Surface(
-                                    color = Color(0xFFEFF6FF),
+                                    color = if (isDark) Color(0xFF1E3A8A).copy(alpha = 0.6f) else Color(0xFFEFF6FF),
                                     shape = RoundedCornerShape(12.dp),
-                                    border = androidx.compose.foundation.BorderStroke(1.dp, Color(0xFFBFDBFE))
+                                    border = androidx.compose.foundation.BorderStroke(1.dp, if (isDark) Color(0xFF3B82F6) else Color(0xFFBFDBFE))
                                 ) {
                                     Text(
-                                        text = "Gemini 3.5 Flash",
-                                        fontSize = 10.sp,
-                                        fontWeight = FontWeight.SemiBold,
-                                        color = Color(0xFF1D4ED8),
+                                        text = "Employee Agent • Gemini 3.8",
+                                        fontSize = 9.5.sp,
+                                        fontWeight = FontWeight.Bold,
+                                        color = if (isDark) Color(0xFF93C5FD) else Color(0xFF1D4ED8),
                                         modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
                                     )
                                 }
                             }
-                            Text(
-                                text = if (isSpeaking) "🔊 Speaking your data..." else "Voice talk & data assistant",
-                                fontSize = 11.sp,
-                                color = if (isSpeaking) Color(0xFF16A34A) else Color.Gray,
-                                fontWeight = if (isSpeaking) FontWeight.SemiBold else FontWeight.Normal
-                            )
+                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                Box(
+                                    modifier = Modifier
+                                        .size(6.dp)
+                                        .clip(CircleShape)
+                                        .background(if (isSpeaking) Color(0xFF10B981) else Color(0xFF22C55E))
+                                )
+                                Spacer(modifier = Modifier.width(4.dp))
+                                Text(
+                                    text = if (isSpeaking) "Speaking to you in voice..." else "Online • Speaks Hindi (हिंदी) & English",
+                                    fontSize = 11.sp,
+                                    color = if (isSpeaking) Color(0xFF16A34A) else (if (isDark) Color(0xFF94A3B8) else Color(0xFF64748B)),
+                                    fontWeight = if (isSpeaking) FontWeight.SemiBold else FontWeight.Normal
+                                )
+                            }
                         }
                     }
                 },
                 actions = {
-                    // Launch Gemini Live Talk System
-                    Surface(
-                        color = Color(0xFF7C3AED),
-                        shape = RoundedCornerShape(16.dp),
-                        modifier = Modifier
-                            .clickable {
-                                isLiveTalkModeOpen = true
-                                stopSpeaking()
-                            }
-                            .testTag("launch_talk_mode_btn")
-                    ) {
-                        Row(
-                            modifier = Modifier.padding(horizontal = 10.dp, vertical = 6.dp),
-                            verticalAlignment = Alignment.CenterVertically
-                        ) {
-                            Icon(
-                                imageVector = Icons.Default.RecordVoiceOver,
-                                contentDescription = null,
-                                tint = Color.White,
-                                modifier = Modifier.size(14.dp)
-                            )
-                            Spacer(modifier = Modifier.width(4.dp))
-                            Text(
-                                text = "Talk Mode",
-                                fontSize = 11.sp,
-                                fontWeight = FontWeight.Bold,
-                                color = Color.White
-                            )
-                        }
-                    }
-
                     // Auto-Speak Audio Output Toggle
                     IconButton(
                         onClick = {
@@ -378,60 +386,85 @@ fun AiChatScreen(
                             tint = Color.Gray
                         )
                     }
+
+                    // App Menu
+                    IconButton(
+                        onClick = onOpenMenu,
+                        modifier = Modifier.testTag("ai_chat_menu_button")
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.Menu,
+                            contentDescription = "Menu",
+                            tint = PrimaryNavy
+                        )
+                    }
                 },
                 colors = TopAppBarDefaults.topAppBarColors(
-                    containerColor = MaterialTheme.colorScheme.surface
+                    containerColor = Color.Transparent
                 )
             )
         }
     ) { innerPadding ->
-        Column(
-            modifier = Modifier
-                .fillMaxSize()
-                .padding(innerPadding)
-                .background(Color(0xFFF8FAFC))
-        ) {
+        AdaptiveContainer(maxWidth = 920.dp) {
+            Column(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .padding(innerPadding)
+            ) {
             // Suggested Prompts Carousel
             Row(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .background(Color.White)
                     .horizontalScroll(rememberScrollState())
                     .padding(horizontal = 12.dp, vertical = 8.dp),
                 horizontalArrangement = Arrangement.spacedBy(8.dp)
             ) {
-                promptSuggestions.forEach { suggestion ->
+                dynamicPredictions.forEach { suggestion ->
+                    val isAlert = suggestion.startsWith("⚠️")
+                    val isPending = suggestion.startsWith("💰")
                     Surface(
-                        color = if (suggestion.startsWith("🎙️")) Color(0xFFEDE9FE) else Color(0xFFF1F5F9),
+                        color = when {
+                            isAlert -> if (isDark) Color(0xFF450A0A).copy(alpha = 0.6f) else Color(0xFFFEF2F2)
+                            isPending -> if (isDark) Color(0xFF052E16).copy(alpha = 0.6f) else Color(0xFFF0FDF4)
+                            else -> if (isDark) Color(0xFF1E293B).copy(alpha = 0.7f) else Color(0xF2FFFFFF)
+                        },
                         shape = RoundedCornerShape(16.dp),
                         border = androidx.compose.foundation.BorderStroke(
                             1.dp,
-                            if (suggestion.startsWith("🎙️")) Color(0xFFC4B5FD) else Color(0xFFE2E8F0)
+                            when {
+                                isAlert -> Color(0xFFEF4444).copy(alpha = 0.5f)
+                                isPending -> Color(0xFF22C55E).copy(alpha = 0.5f)
+                                isDark -> Color.White.copy(alpha = 0.15f)
+                                else -> Color(0xFF0F172A).copy(alpha = 0.08f)
+                            }
                         ),
                         modifier = Modifier.clickable {
-                            if (suggestion.startsWith("🎙️")) {
-                                isLiveTalkModeOpen = true
-                            } else {
-                                val cleanPrompt = suggestion.substringAfter(" ").trim()
-                                inputPrompt = cleanPrompt
-                                latestUserTranscript = cleanPrompt
-                                stopSpeaking()
-                                viewModel.sendAiChatMessage(cleanPrompt)
-                            }
+                            val cleanPrompt = suggestion.substringAfter(" ").trim()
+                            inputPrompt = cleanPrompt
+                            latestUserTranscript = cleanPrompt
+                            stopSpeaking()
+                            viewModel.sendAiChatMessage(cleanPrompt)
                         }
                     ) {
                         Text(
                             text = suggestion,
                             fontSize = 12.sp,
                             fontWeight = FontWeight.Medium,
-                            color = if (suggestion.startsWith("🎙️")) Color(0xFF6D28D9) else PrimaryNavy,
+                            color = when {
+                                isAlert -> if (isDark) Color(0xFFFCA5A5) else Color(0xFFDC2626)
+                                isPending -> if (isDark) Color(0xFF86EFAC) else Color(0xFF16A34A)
+                                else -> if (isDark) Color.White else PrimaryNavy
+                            },
                             modifier = Modifier.padding(horizontal = 10.dp, vertical = 6.dp)
                         )
                     }
                 }
             }
 
-            HorizontalDivider(color = Color(0xFFE2E8F0), thickness = 1.dp)
+            HorizontalDivider(
+                color = if (isDark) Color.White.copy(alpha = 0.1f) else Color(0xFF0F172A).copy(alpha = 0.08f),
+                thickness = 1.dp
+            )
 
             // Chat Messages List
             LazyColumn(
@@ -443,6 +476,24 @@ fun AiChatScreen(
                 contentPadding = PaddingValues(vertical = 12.dp),
                 verticalArrangement = Arrangement.spacedBy(12.dp)
             ) {
+                // If fresh chat, show modern ChatGPT Welcome Hero
+                if (chatMessages.size <= 1) {
+                    item {
+                        WelcomeEmployeeHero(
+                            onSelectPrompt = { selectedPrompt ->
+                                inputPrompt = selectedPrompt
+                                latestUserTranscript = selectedPrompt
+                                stopSpeaking()
+                                viewModel.sendAiChatMessage(selectedPrompt)
+                            },
+                            onStartVoice = {
+                                recordAudioPermissionLauncher.launch(android.Manifest.permission.RECORD_AUDIO)
+                            },
+                            isDark = isDark
+                        )
+                    }
+                }
+
                 items(chatMessages, key = { it.id }) { message ->
                     ChatMessageItem(
                         message = message,
@@ -452,6 +503,11 @@ fun AiChatScreen(
                         onOpenPreview = { invoiceId -> onNavigateToInvoicePreview(invoiceId) },
                         onOpenEdit = { invoiceId -> onNavigateToInvoiceEdit(invoiceId) },
                         onNavigateToDashboard = onNavigateToDashboard,
+                        onConfirmCommand = { commandId ->
+                            viewModel.confirmAiCommand(commandId) { invoiceId ->
+                                onNavigateToInvoicePreview(invoiceId)
+                            }
+                        },
                         onUseClientForInvoice = { client ->
                             inputPrompt = "Generate invoice for ${client.name}, 10 hours of consulting at $100/hr"
                         }
@@ -466,15 +522,87 @@ fun AiChatScreen(
                 }
             }
 
+            // Docked Voice Bar: Appears when AI is speaking response aloud natively
+            AnimatedVisibility(
+                visible = isSpeaking,
+                enter = fadeIn(),
+                exit = fadeOut()
+            ) {
+                Surface(
+                    color = if (isDark) Color(0xFF1E293B) else Color(0xFFEFF6FF),
+                    shape = RoundedCornerShape(topStart = 16.dp, topEnd = 16.dp),
+                    border = androidx.compose.foundation.BorderStroke(
+                        1.dp,
+                        if (isDark) Color(0xFF3B82F6).copy(alpha = 0.4f) else Color(0xFFBFDBFE)
+                    ),
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(horizontal = 14.dp, vertical = 8.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.SpaceBetween
+                    ) {
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            modifier = Modifier.weight(1f)
+                        ) {
+                            Box(
+                                modifier = Modifier
+                                    .size(28.dp)
+                                    .clip(CircleShape)
+                                    .background(Color(0xFF2563EB)),
+                                contentAlignment = Alignment.Center
+                            ) {
+                                Icon(
+                                    imageVector = Icons.Default.GraphicEq,
+                                    contentDescription = null,
+                                    tint = Color.White,
+                                    modifier = Modifier.size(16.dp)
+                                )
+                            }
+                            Spacer(modifier = Modifier.width(10.dp))
+                            Column {
+                                Text(
+                                    text = "🔊 AI Employee is speaking response...",
+                                    fontSize = 12.sp,
+                                    fontWeight = FontWeight.Bold,
+                                    color = if (isDark) Color.White else PrimaryNavy
+                                )
+                                Text(
+                                    text = "Native speech audio playing",
+                                    fontSize = 10.sp,
+                                    color = if (isDark) Color(0xFF94A3B8) else Color(0xFF64748B)
+                                )
+                            }
+                        }
+
+                        IconButton(
+                            onClick = { stopSpeaking() },
+                            modifier = Modifier.size(32.dp)
+                        ) {
+                            Icon(
+                                imageVector = Icons.Default.Stop,
+                                contentDescription = "Stop",
+                                tint = Color(0xFFEF4444),
+                                modifier = Modifier.size(20.dp)
+                            )
+                        }
+                    }
+                }
+            }
+
             // Bottom Input Bar
             Surface(
-                color = Color.White,
-                shadowElevation = 6.dp
+                color = if (isDark) Color(0xEE0F172A) else Color(0xF2FFFFFF),
+                shadowElevation = 8.dp,
+                border = androidx.compose.foundation.BorderStroke(1.dp, if (isDark) Color.White.copy(alpha = 0.12f) else Color(0xFF0F172A).copy(alpha = 0.08f))
             ) {
                 Row(
                     modifier = Modifier
                         .fillMaxWidth()
-                        .padding(horizontal = 10.dp, vertical = 8.dp),
+                        .padding(horizontal = 12.dp, vertical = 8.dp),
                     verticalAlignment = Alignment.CenterVertically,
                     horizontalArrangement = Arrangement.spacedBy(8.dp)
                 ) {
@@ -485,23 +613,18 @@ fun AiChatScreen(
                         }
                     )
 
-                    // Text Field
+                    // Text Field with 100% visibility
                     OutlinedTextField(
                         value = inputPrompt,
                         onValueChange = { inputPrompt = it },
                         placeholder = {
-                            Text("Ask about your data, invoices, or talk anything...", fontSize = 13.sp, color = Color.Gray)
+                            Text("Ask anything, make bill, talk in Hindi/English...", fontSize = 13.sp, color = if (isDark) Color(0xFF94A3B8) else Color(0xFF64748B))
                         },
                         modifier = Modifier
                             .weight(1f)
                             .testTag("ai_chat_text_input"),
                         shape = RoundedCornerShape(24.dp),
-                        colors = OutlinedTextFieldDefaults.colors(
-                            focusedBorderColor = Color(0xFF3B82F6),
-                            unfocusedBorderColor = Color(0xFFCBD5E1),
-                            focusedContainerColor = Color(0xFFF8FAFC),
-                            unfocusedContainerColor = Color(0xFFF8FAFC)
-                        ),
+                        colors = glassTextFieldColors(),
                         singleLine = false,
                         maxLines = 3,
                         keyboardOptions = KeyboardOptions(imeAction = ImeAction.Send),
@@ -509,13 +632,20 @@ fun AiChatScreen(
                             onSend = {
                                 if (inputPrompt.isNotBlank() && !isAiThinking) {
                                     val promptToSend = inputPrompt
+                                    val wasVoiceInput = pendingVoiceInput
                                     inputPrompt = ""
+                                    pendingVoiceInput = false
                                     latestUserTranscript = promptToSend
                                     stopSpeaking()
-                                    viewModel.sendAiChatMessage(promptToSend)
+                                    viewModel.sendAiChatMessage(promptToSend, isVoiceInput = wasVoiceInput)
                                 }
                             }
-                        )
+                        ),
+                        label = if (pendingVoiceInput) {
+                            { Text("Review transcript · voice assistant is read-only") }
+                        } else {
+                            null
+                        }
                     )
 
                     // Send Button
@@ -523,10 +653,12 @@ fun AiChatScreen(
                         onClick = {
                             if (inputPrompt.isNotBlank() && !isAiThinking) {
                                 val promptToSend = inputPrompt
+                                val wasVoiceInput = pendingVoiceInput
                                 inputPrompt = ""
+                                pendingVoiceInput = false
                                 latestUserTranscript = promptToSend
                                 stopSpeaking()
-                                viewModel.sendAiChatMessage(promptToSend)
+                                viewModel.sendAiChatMessage(promptToSend, isVoiceInput = wasVoiceInput)
                             }
                         },
                         enabled = inputPrompt.isNotBlank() && !isAiThinking,
@@ -549,36 +681,8 @@ fun AiChatScreen(
             }
         }
     }
-
-    // -------------------------------------------------------------------------
-    // GEMINI LIVE TALK SYSTEM OVERLAY (USER REQUIREMENT: "TALK SYSTEM")
-    // -------------------------------------------------------------------------
-    if (isLiveTalkModeOpen) {
-        GeminiLiveTalkModal(
-            isThinking = isAiThinking,
-            isSpeaking = isSpeaking,
-            latestUserTranscript = latestUserTranscript,
-            latestAiSpokenReply = latestAiSpokenReply,
-            autoSpeakEnabled = autoSpeakEnabled,
-            onToggleAutoSpeak = {
-                autoSpeakEnabled = !autoSpeakEnabled
-                if (!autoSpeakEnabled) stopSpeaking()
-            },
-            onStartListening = {
-                recordAudioPermissionLauncher.launch(android.Manifest.permission.RECORD_AUDIO)
-            },
-            onStopSpeaking = { stopSpeaking() },
-            onSendPrompt = { prompt ->
-                latestUserTranscript = prompt
-                stopSpeaking()
-                viewModel.sendAiChatMessage(prompt)
-            },
-            onDismiss = {
-                isLiveTalkModeOpen = false
-                stopSpeaking()
-            }
-        )
-    }
+}
+}
 }
 
 /**
@@ -633,6 +737,283 @@ fun VoiceInputButton(
 }
 
 /**
+ * Builds rich styled annotated text supporting **bold**, *italic*, and code snippets
+ */
+fun buildAnnotatedMarkdown(rawText: String, isDark: Boolean): AnnotatedString {
+    return buildAnnotatedString {
+        val boldParts = rawText.split("**")
+        var isBold = false
+        boldParts.forEach { part ->
+            if (isBold) {
+                withStyle(
+                    SpanStyle(
+                        fontWeight = FontWeight.Bold,
+                        color = if (isDark) Color(0xFFF8FAFC) else Color(0xFF0F172A)
+                    )
+                ) {
+                    append(part)
+                }
+            } else {
+                val italicParts = part.split("*")
+                var isItalic = false
+                italicParts.forEach { itPart ->
+                    if (isItalic) {
+                        withStyle(
+                            SpanStyle(
+                                fontStyle = androidx.compose.ui.text.font.FontStyle.Italic,
+                                color = if (isDark) Color(0xFF94A3B8) else Color(0xFF475569)
+                            )
+                        ) {
+                            append(itPart)
+                        }
+                    } else {
+                        val codeParts = itPart.split("`")
+                        var isCode = false
+                        codeParts.forEach { codePart ->
+                            if (isCode) {
+                                withStyle(
+                                    SpanStyle(
+                                        fontFamily = androidx.compose.ui.text.font.FontFamily.Monospace,
+                                        fontWeight = FontWeight.SemiBold,
+                                        color = if (isDark) Color(0xFF67E8F9) else Color(0xFF0369A1)
+                                    )
+                                ) {
+                                    append(codePart)
+                                }
+                            } else {
+                                append(codePart)
+                            }
+                            isCode = !isCode
+                        }
+                    }
+                    isItalic = !isItalic
+                }
+            }
+            isBold = !isBold
+        }
+    }
+}
+
+/**
+ * Formats AI responses into structured, elegant paragraphs and bullet data points (ChatGPT flow).
+ */
+@Composable
+fun StructuredAiResponseView(
+    text: String,
+    isDark: Boolean,
+    modifier: Modifier = Modifier
+) {
+    val paragraphs = remember(text) {
+        text.split(Regex("\n+")).map { it.trim() }.filter { it.isNotBlank() }
+    }
+
+    Column(
+        modifier = modifier.fillMaxWidth(),
+        verticalArrangement = Arrangement.spacedBy(8.dp)
+    ) {
+        paragraphs.forEach { paragraph ->
+            val isBullet = paragraph.startsWith("•") ||
+                    paragraph.startsWith("- ") ||
+                    paragraph.startsWith("* ") ||
+                    paragraph.matches(Regex("^\\d+\\..*"))
+
+            if (isBullet) {
+                val cleanLine = paragraph
+                    .removePrefix("•")
+                    .removePrefix("-")
+                    .removePrefix("*")
+                    .trim()
+
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(start = 2.dp, end = 2.dp),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                    verticalAlignment = Alignment.Top
+                ) {
+                    Box(
+                        modifier = Modifier
+                            .padding(top = 7.dp)
+                            .size(6.dp)
+                            .clip(CircleShape)
+                            .background(
+                                Brush.linearGradient(
+                                    listOf(Color(0xFF3B82F6), Color(0xFF8B5CF6))
+                                )
+                            )
+                    )
+                    Text(
+                        text = buildAnnotatedMarkdown(cleanLine, isDark),
+                        fontSize = 13.5.sp,
+                        color = if (isDark) Color(0xFFE2E8F0) else Color(0xFF1E293B),
+                        lineHeight = 20.sp,
+                        modifier = Modifier.weight(1f)
+                    )
+                }
+            } else {
+                Text(
+                    text = buildAnnotatedMarkdown(paragraph, isDark),
+                    fontSize = 14.sp,
+                    color = if (isDark) Color(0xFFF1F5F9) else Color(0xFF0F172A),
+                    lineHeight = 21.sp
+                )
+            }
+        }
+    }
+}
+
+/**
+ * Welcome Hero shown in fresh chats to introduce the Employee Agent persona & quick actions
+ */
+@Composable
+fun WelcomeEmployeeHero(
+    onSelectPrompt: (String) -> Unit,
+    onStartVoice: () -> Unit,
+    isDark: Boolean
+) {
+    Card(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(vertical = 8.dp),
+        shape = RoundedCornerShape(20.dp),
+        colors = CardDefaults.cardColors(
+            containerColor = if (isDark) Color(0xFF1E293B).copy(alpha = 0.85f) else Color.White.copy(alpha = 0.95f)
+        ),
+        border = androidx.compose.foundation.BorderStroke(
+            1.dp,
+            if (isDark) Color.White.copy(alpha = 0.12f) else Color(0xFF3B82F6).copy(alpha = 0.15f)
+        )
+    ) {
+        Column(
+            modifier = Modifier.padding(18.dp),
+            horizontalAlignment = Alignment.CenterHorizontally
+        ) {
+            Box(
+                modifier = Modifier
+                    .size(54.dp)
+                    .clip(CircleShape)
+                    .background(
+                        Brush.linearGradient(
+                            listOf(Color(0xFF2563EB), Color(0xFF7C3AED))
+                        )
+                    ),
+                contentAlignment = Alignment.Center
+            ) {
+                Icon(
+                    imageVector = Icons.Default.AutoAwesome,
+                    contentDescription = null,
+                    tint = Color.White,
+                    modifier = Modifier.size(28.dp)
+                )
+            }
+
+            Spacer(modifier = Modifier.height(12.dp))
+
+            Text(
+                text = "Namaste & Welcome, Sir! 🙏",
+                fontSize = 18.sp,
+                fontWeight = FontWeight.Bold,
+                color = if (isDark) Color.White else PrimaryNavy,
+                textAlign = TextAlign.Center
+            )
+
+            Spacer(modifier = Modifier.height(4.dp))
+
+            Text(
+                text = "I am your 24/7 Smart Business Employee Agent. I manage invoices, compute financial summaries, log expenses, and answer anything in English or Hindi (हिंदी).",
+                fontSize = 13.sp,
+                color = if (isDark) Color(0xFF94A3B8) else Color(0xFF475569),
+                textAlign = TextAlign.Center,
+                lineHeight = 19.sp
+            )
+
+            Spacer(modifier = Modifier.height(16.dp))
+
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
+                Surface(
+                    color = if (isDark) Color(0xFF0F172A) else Color(0xFFEFF6FF),
+                    shape = RoundedCornerShape(12.dp),
+                    border = androidx.compose.foundation.BorderStroke(1.dp, Color(0xFFBFDBFE)),
+                    modifier = Modifier
+                        .weight(1f)
+                        .clickable { onSelectPrompt("Acme Corp के लिए ₹5,000 का इनवॉइस बना दो 18% GST के साथ") }
+                ) {
+                    Column(modifier = Modifier.padding(10.dp)) {
+                        Text("⚡ Create Bill", fontWeight = FontWeight.Bold, fontSize = 12.sp, color = Color(0xFF1D4ED8))
+                        Text("GST & items", fontSize = 10.sp, color = Color(0xFF64748B))
+                    }
+                }
+
+                Surface(
+                    color = if (isDark) Color(0xFF0F172A) else Color(0xFFF0FDF4),
+                    shape = RoundedCornerShape(12.dp),
+                    border = androidx.compose.foundation.BorderStroke(1.dp, Color(0xFFBBF7D0)),
+                    modifier = Modifier
+                        .weight(1f)
+                        .clickable { onSelectPrompt("कितना पेमेंट अभी पेंडिंग है?") }
+                ) {
+                    Column(modifier = Modifier.padding(10.dp)) {
+                        Text("💰 Pending Dues", fontWeight = FontWeight.Bold, fontSize = 12.sp, color = Color(0xFF15803D))
+                        Text("Unpaid balance", fontSize = 10.sp, color = Color(0xFF64748B))
+                    }
+                }
+            }
+
+            Spacer(modifier = Modifier.height(8.dp))
+
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
+                Surface(
+                    color = if (isDark) Color(0xFF0F172A) else Color(0xFFFAF5FF),
+                    shape = RoundedCornerShape(12.dp),
+                    border = androidx.compose.foundation.BorderStroke(1.dp, Color(0xFFE9D5FF)),
+                    modifier = Modifier
+                        .weight(1f)
+                        .clickable { onSelectPrompt("Show my complete revenue, paid, and profit overview") }
+                ) {
+                    Column(modifier = Modifier.padding(10.dp)) {
+                        Text("📊 Revenue Report", fontWeight = FontWeight.Bold, fontSize = 12.sp, color = Color(0xFF7E22CE))
+                        Text("CFO summary", fontSize = 10.sp, color = Color(0xFF64748B))
+                    }
+                }
+
+                Surface(
+                    color = if (isDark) Color(0xFF0F172A) else Color(0xFFFEF2F2),
+                    shape = RoundedCornerShape(12.dp),
+                    border = androidx.compose.foundation.BorderStroke(1.dp, Color(0xFFFECACA)),
+                    modifier = Modifier
+                        .weight(1f)
+                        .clickable { onSelectPrompt("Record expense ₹650 for client lunch") }
+                ) {
+                    Column(modifier = Modifier.padding(10.dp)) {
+                        Text("💸 Log Expense", fontWeight = FontWeight.Bold, fontSize = 12.sp, color = Color(0xFFB91C1C))
+                        Text("Category tracking", fontSize = 10.sp, color = Color(0xFF64748B))
+                    }
+                }
+            }
+
+            Spacer(modifier = Modifier.height(14.dp))
+
+            Button(
+                onClick = onStartVoice,
+                colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF2563EB)),
+                shape = RoundedCornerShape(24.dp),
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                Icon(Icons.Default.Mic, contentDescription = null, modifier = Modifier.size(18.dp))
+                Spacer(modifier = Modifier.width(8.dp))
+                Text("Tap to Talk in Hindi / English", fontSize = 13.sp, fontWeight = FontWeight.Bold)
+            }
+        }
+    }
+}
+
+/**
  * Renders individual messages with interactive voice playback and data cards.
  */
 @Composable
@@ -644,9 +1025,14 @@ fun ChatMessageItem(
     onOpenPreview: (Long) -> Unit,
     onOpenEdit: (Long) -> Unit,
     onNavigateToDashboard: () -> Unit,
+    onConfirmCommand: (String) -> Unit,
     onUseClientForInvoice: (ClientEntity) -> Unit,
     modifier: Modifier = Modifier
 ) {
+    val isDark = isSystemInDarkTheme()
+    val context = LocalContext.current
+    val clipboardManager = LocalClipboardManager.current
+
     if (message.isUser) {
         // User Message (Right-aligned)
         Row(
@@ -665,8 +1051,13 @@ fun ChatMessageItem(
                     )
                     .background(
                         Brush.linearGradient(
-                            colors = listOf(Color(0xFF1E3A8A), Color(0xFF2563EB))
+                            colors = listOf(Color(0xFF1D4ED8), Color(0xFF2563EB))
                         )
+                    )
+                    .border(
+                        1.dp,
+                        Color.White.copy(alpha = 0.3f),
+                        RoundedCornerShape(topStart = 16.dp, topEnd = 4.dp, bottomStart = 16.dp, bottomEnd = 16.dp)
                     )
                     .padding(horizontal = 14.dp, vertical = 10.dp)
             ) {
@@ -687,20 +1078,20 @@ fun ChatMessageItem(
         ) {
             Box(
                 modifier = Modifier
-                    .size(32.dp)
+                    .size(34.dp)
                     .clip(CircleShape)
                     .background(
                         Brush.linearGradient(
-                            colors = listOf(Color(0xFF3B82F6), Color(0xFF8B5CF6))
+                            colors = listOf(Color(0xFF2563EB), Color(0xFF7C3AED))
                         )
                     ),
                 contentAlignment = Alignment.Center
             ) {
                 Icon(
                     imageVector = Icons.Default.SmartToy,
-                    contentDescription = "Gemini",
+                    contentDescription = "Invoicely AI",
                     tint = Color.White,
-                    modifier = Modifier.size(18.dp)
+                    modifier = Modifier.size(19.dp)
                 )
             }
 
@@ -708,43 +1099,107 @@ fun ChatMessageItem(
 
             Column(modifier = Modifier.weight(1f)) {
                 Surface(
-                    color = Color.White,
+                    color = if (isDark) Color(0xEE1E293B) else Color(0xF8FFFFFF),
                     shape = RoundedCornerShape(
                         topStart = 4.dp,
                         topEnd = 16.dp,
                         bottomStart = 16.dp,
                         bottomEnd = 16.dp
                     ),
-                    shadowElevation = 1.dp,
-                    border = androidx.compose.foundation.BorderStroke(1.dp, Color(0xFFE2E8F0))
+                    shadowElevation = 2.dp,
+                    border = androidx.compose.foundation.BorderStroke(
+                        1.dp,
+                        if (isDark) Color.White.copy(alpha = 0.12f) else Color(0xFF0F172A).copy(alpha = 0.08f)
+                    )
                 ) {
-                    Column(modifier = Modifier.padding(12.dp)) {
-                        // AI Header with Model badge + Voice Speaker Button
+                    Column(modifier = Modifier.padding(14.dp)) {
+                        // AI Header: Name + Employee Agent Badge
                         Row(
                             modifier = Modifier.fillMaxWidth(),
                             horizontalArrangement = Arrangement.SpaceBetween,
                             verticalAlignment = Alignment.CenterVertically
                         ) {
-                            Surface(
-                                color = Color(0xFFEFF6FF),
-                                shape = RoundedCornerShape(10.dp)
-                            ) {
-                                Row(
-                                    modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp),
-                                    verticalAlignment = Alignment.CenterVertically
+                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                Text(
+                                    text = "Invoicely AI",
+                                    fontSize = 13.sp,
+                                    fontWeight = FontWeight.Bold,
+                                    color = if (isDark) Color.White else PrimaryNavy
+                                )
+                                Spacer(modifier = Modifier.width(6.dp))
+                                Surface(
+                                    color = if (isDark) Color(0xFF1E3A8A).copy(alpha = 0.5f) else Color(0xFFEFF6FF),
+                                    shape = RoundedCornerShape(8.dp),
+                                    border = androidx.compose.foundation.BorderStroke(1.dp, if (isDark) Color(0xFF3B82F6).copy(alpha = 0.4f) else Color(0xFFBFDBFE))
                                 ) {
-                                    Icon(
-                                        imageVector = Icons.Default.AutoAwesome,
-                                        contentDescription = null,
-                                        tint = Color(0xFF2563EB),
-                                        modifier = Modifier.size(12.dp)
+                                    Text(
+                                        text = "Employee Agent",
+                                        fontSize = 9.sp,
+                                        fontWeight = FontWeight.Bold,
+                                        color = if (isDark) Color(0xFF93C5FD) else Color(0xFF1D4ED8),
+                                        modifier = Modifier.padding(horizontal = 5.dp, vertical = 1.5.dp)
                                     )
-                                    Spacer(modifier = Modifier.width(4.dp))
-                                    Text("Gemini AI", fontSize = 10.sp, fontWeight = FontWeight.Bold, color = Color(0xFF1D4ED8))
                                 }
                             }
 
-                            // Audio Speak / Stop Toggle
+                            // Model pill
+                            Text(
+                                text = "Gemini 3.8",
+                                fontSize = 10.sp,
+                                color = if (isDark) Color(0xFF94A3B8) else Color(0xFF64748B),
+                                fontWeight = FontWeight.Medium
+                            )
+                        }
+
+                        Spacer(modifier = Modifier.height(8.dp))
+
+                        // Structured AI Response rendering (Paragraphs + Bullet Data Points)
+                        StructuredAiResponseView(
+                            text = message.text,
+                            isDark = isDark
+                        )
+
+                        if (message.pendingCommandId != null) {
+                            Spacer(modifier = Modifier.height(10.dp))
+                            Button(
+                                onClick = { onConfirmCommand(message.pendingCommandId) },
+                                modifier = Modifier.fillMaxWidth()
+                            ) {
+                                Icon(Icons.Default.CheckCircle, contentDescription = null)
+                                Spacer(modifier = Modifier.width(8.dp))
+                                Text("Confirm and save")
+                            }
+                            Text(
+                                text = "This action will be saved to your business account. It will not be sent to a client.",
+                                fontSize = 11.sp,
+                                color = if (isDark) Color(0xFF94A3B8) else Color(0xFF64748B),
+                                modifier = Modifier.padding(top = 4.dp)
+                            )
+                        }
+
+                        // ChatGPT Style Actions Bar: Copy, Voice Speak, Share
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(top = 10.dp),
+                            horizontalArrangement = Arrangement.spacedBy(4.dp),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            IconButton(
+                                onClick = {
+                                    clipboardManager.setText(AnnotatedString(message.text))
+                                    Toast.makeText(context, "Copied response to clipboard", Toast.LENGTH_SHORT).show()
+                                },
+                                modifier = Modifier.size(30.dp)
+                            ) {
+                                Icon(
+                                    imageVector = Icons.Default.ContentCopy,
+                                    contentDescription = "Copy response",
+                                    tint = if (isDark) Color(0xFF94A3B8) else Color(0xFF64748B),
+                                    modifier = Modifier.size(15.dp)
+                                )
+                            }
+
                             IconButton(
                                 onClick = {
                                     if (isSpeaking) {
@@ -753,25 +1208,35 @@ fun ChatMessageItem(
                                         onSpeakMessage(message.text, message.id)
                                     }
                                 },
-                                modifier = Modifier.size(28.dp)
+                                modifier = Modifier.size(30.dp)
                             ) {
                                 Icon(
                                     imageVector = if (isSpeaking) Icons.Default.Stop else Icons.Default.VolumeUp,
                                     contentDescription = if (isSpeaking) "Stop voice" else "Speak message",
-                                    tint = if (isSpeaking) Color(0xFFEF4444) else Color(0xFF2563EB),
-                                    modifier = Modifier.size(18.dp)
+                                    tint = if (isSpeaking) Color(0xFFEF4444) else (if (isDark) Color(0xFF94A3B8) else Color(0xFF64748B)),
+                                    modifier = Modifier.size(17.dp)
+                                )
+                            }
+
+                            IconButton(
+                                onClick = {
+                                    val sendIntent = Intent().apply {
+                                        action = Intent.ACTION_SEND
+                                        putExtra(Intent.EXTRA_TEXT, message.text)
+                                        type = "text/plain"
+                                    }
+                                    context.startActivity(Intent.createChooser(sendIntent, "Share AI Response"))
+                                },
+                                modifier = Modifier.size(30.dp)
+                            ) {
+                                Icon(
+                                    imageVector = Icons.Default.Share,
+                                    contentDescription = "Share",
+                                    tint = if (isDark) Color(0xFF94A3B8) else Color(0xFF64748B),
+                                    modifier = Modifier.size(15.dp)
                                 )
                             }
                         }
-
-                        Spacer(modifier = Modifier.height(4.dp))
-
-                        Text(
-                            text = message.text,
-                            fontSize = 14.sp,
-                            color = Color(0xFF1E293B),
-                            lineHeight = 21.sp
-                        )
 
                         // -------------------------------------------------------------
                         // FINANCIAL SUMMARY DATA CARD (CUSTOMER DATA INSIGHT)
@@ -1080,6 +1545,7 @@ fun GeminiLiveTalkModal(
     onStartListening: () -> Unit,
     onStopSpeaking: () -> Unit,
     onSendPrompt: (String) -> Unit,
+    onDropTalkToChat: () -> Unit = {},
     onDismiss: () -> Unit
 ) {
     // Pulse animation for the glowing Gemini orb
@@ -1147,13 +1613,13 @@ fun GeminiLiveTalkModal(
                         Spacer(modifier = Modifier.width(10.dp))
                         Column {
                             Text(
-                                text = "Gemini Live Talk System",
+                                text = "Invoicely AI Employee",
                                 fontWeight = FontWeight.Bold,
                                 color = Color.White,
                                 fontSize = 16.sp
                             )
                             Text(
-                                text = "Google Gemini 3.5 Flash • Real-time Voice",
+                                text = "Live Voice Talk • Speaks Hindi (हिंदी) & English",
                                 color = Color(0xFF94A3B8),
                                 fontSize = 11.sp
                             )
@@ -1161,6 +1627,15 @@ fun GeminiLiveTalkModal(
                     }
 
                     Row(verticalAlignment = Alignment.CenterVertically) {
+                        // Drop Talk to Chat button (Minimizes talk overlay into chat)
+                        IconButton(onClick = onDropTalkToChat) {
+                            Icon(
+                                imageVector = Icons.Default.KeyboardArrowDown,
+                                contentDescription = "Drop to Chat",
+                                tint = Color(0xFF60A5FA)
+                            )
+                        }
+
                         // Speaker mute toggle
                         IconButton(onClick = onToggleAutoSpeak) {
                             Icon(
@@ -1305,9 +1780,9 @@ fun GeminiLiveTalkModal(
                             Spacer(modifier = Modifier.width(8.dp))
                             Text(
                                 text = when {
-                                    isSpeaking -> "Gemini is speaking to you..."
-                                    isThinking -> "Gemini is analyzing your data..."
-                                    else -> "Tap the microphone to speak"
+                                    isSpeaking -> "AI Employee is speaking..."
+                                    isThinking -> "Analyzing your business data..."
+                                    else -> "Tap the microphone below to talk"
                                 },
                                 fontSize = 12.sp,
                                 fontWeight = FontWeight.Bold,
@@ -1316,7 +1791,7 @@ fun GeminiLiveTalkModal(
                         }
                     }
 
-                    Spacer(modifier = Modifier.height(20.dp))
+                    Spacer(modifier = Modifier.height(18.dp))
 
                     // Transcript Cards
                     Column(
@@ -1345,14 +1820,14 @@ fun GeminiLiveTalkModal(
                         }
 
                         Text(
-                            text = "Gemini says:",
+                            text = "AI Employee says:",
                             fontSize = 11.sp,
                             color = Color(0xFF38BDF8),
                             fontWeight = FontWeight.SemiBold
                         )
                         Text(
                             text = latestAiSpokenReply.ifBlank {
-                                "Hello! I can speak to you about your invoices, pending money, clients, expenses, or talk about any business ideas. Just tap the mic below!"
+                                "Namaste Sir! I am your business assistant. I can speak to you about invoices, pending money, clients, expenses, or talk about any business ideas. Just tap the mic below!"
                             },
                             fontSize = 13.sp,
                             color = Color(0xFFE2E8F0),
@@ -1362,11 +1837,38 @@ fun GeminiLiveTalkModal(
                     }
                 }
 
-                // Bottom Controls: Quick Voice Prompts + Big Glowing Talk Button
+                // Bottom Controls: Drop to Chat Button + Quick Voice Prompts + Big Glowing Talk Button
                 Column(
                     horizontalAlignment = Alignment.CenterHorizontally,
                     modifier = Modifier.fillMaxWidth()
                 ) {
+                    // Option to Drop Talk to Chat & View full rich response
+                    Button(
+                        onClick = onDropTalkToChat,
+                        colors = ButtonDefaults.buttonColors(
+                            containerColor = Color(0xFF1E293B)
+                        ),
+                        shape = RoundedCornerShape(20.dp),
+                        border = androidx.compose.foundation.BorderStroke(1.dp, Color(0xFF3B82F6).copy(alpha = 0.6f)),
+                        modifier = Modifier
+                            .fillMaxWidth(0.85f)
+                            .padding(bottom = 12.dp)
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.ArrowDownward,
+                            contentDescription = "Drop Talk to Chat",
+                            tint = Color(0xFF60A5FA),
+                            modifier = Modifier.size(16.dp)
+                        )
+                        Spacer(modifier = Modifier.width(8.dp))
+                        Text(
+                            text = "Drop to Chat & View Response",
+                            color = Color.White,
+                            fontSize = 12.sp,
+                            fontWeight = FontWeight.SemiBold
+                        )
+                    }
+
                     // Quick Prompts Chips Carousel
                     Row(
                         modifier = Modifier
@@ -1375,12 +1877,12 @@ fun GeminiLiveTalkModal(
                         horizontalArrangement = Arrangement.spacedBy(8.dp)
                     ) {
                         listOf(
-                            "💰 How much is pending?",
+                            "⚡ Acme ka bill banao ₹5,000",
+                            "💰 कितना पेंडिंग पेमेंट बाकी है?",
                             "📊 Summarize my revenue",
                             "👥 Who owes me money?",
-                            "💸 What are my expenses?",
-                            "💡 Give me business advice",
-                            "⚡ Create invoice for Acme"
+                            "💸 खर्चा लिखो ₹650 क्लाइंट लंच",
+                            "💡 How to recover overdue dues?"
                         ).forEach { prompt ->
                             Surface(
                                 color = Color(0xFF1E293B),
@@ -1436,7 +1938,7 @@ fun GeminiLiveTalkModal(
                     Spacer(modifier = Modifier.height(10.dp))
 
                     Text(
-                        text = if (isSpeaking) "Tap to Stop Voice" else "Tap to Speak to Gemini",
+                        text = if (isSpeaking) "Tap to Stop Voice" else "Tap to Speak to AI Employee",
                         color = Color(0xFF94A3B8),
                         fontSize = 11.sp
                     )

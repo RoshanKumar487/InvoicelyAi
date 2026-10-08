@@ -17,8 +17,13 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.grid.GridCells
+import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
+import androidx.compose.foundation.lazy.grid.items
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.rememberScrollState
+import com.example.ui.components.AdaptiveContainer
+import com.example.ui.components.rememberWindowAdaptiveInfo
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardOptions
@@ -34,11 +39,13 @@ import androidx.compose.material.icons.filled.Email
 import androidx.compose.material.icons.filled.ExpandLess
 import androidx.compose.material.icons.filled.ExpandMore
 import androidx.compose.material.icons.filled.LocationOn
+import androidx.compose.material.icons.filled.Menu
 import androidx.compose.material.icons.filled.People
 import androidx.compose.material.icons.filled.Phone
 import androidx.compose.material.icons.filled.PostAdd
 import androidx.compose.material.icons.filled.Receipt
 import androidx.compose.material.icons.filled.Search
+import androidx.compose.material.icons.filled.Sync
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
@@ -80,6 +87,10 @@ import com.example.ui.theme.PrimaryNavy
 import com.example.ui.theme.StatusOverdueRose
 import com.example.ui.theme.StatusPaidGreen
 import com.example.ui.viewmodel.InvoiceViewModel
+import androidx.compose.foundation.isSystemInDarkTheme
+import com.example.ui.components.AmbientGlassBackdrop
+import com.example.ui.components.GlassCard
+import com.example.ui.components.glassTextFieldColors
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -88,6 +99,7 @@ fun ClientsScreen(
     onBack: () -> Unit,
     onCreateInvoiceForClient: (ClientEntity) -> Unit,
     onOpenInvoice: (Long) -> Unit,
+    onOpenMenu: () -> Unit = {},
     modifier: Modifier = Modifier
 ) {
     val context = LocalContext.current
@@ -101,59 +113,130 @@ fun ClientsScreen(
     var clientToDelete by remember { mutableStateOf<ClientEntity?>(null) }
     var expandedClientId by remember { mutableStateOf<Long?>(null) }
 
-    Scaffold(
-        modifier = modifier.fillMaxSize(),
-        topBar = {
-            TopAppBar(
-                title = { Text("Clients & Accounts", fontWeight = FontWeight.Bold) },
-                navigationIcon = {
-                    IconButton(onClick = onBack) {
-                        Icon(imageVector = Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back")
-                    }
-                },
-                colors = TopAppBarDefaults.topAppBarColors(containerColor = MaterialTheme.colorScheme.surface)
-            )
-        },
-        floatingActionButton = {
-            FloatingActionButton(
-                onClick = {
-                    clientToEdit = null
-                    showAddDialog = true
-                },
-                containerColor = PrimaryNavy,
-                contentColor = Color.White,
-                shape = RoundedCornerShape(16.dp),
-                modifier = Modifier.testTag("add_client_fab")
-            ) {
-                Icon(imageVector = Icons.Default.Add, contentDescription = "Add Client")
-            }
-        }
-    ) { padding ->
-        Column(
-            modifier = Modifier
-                .fillMaxSize()
-                .padding(padding)
-        ) {
-            // Search Input
-            OutlinedTextField(
-                value = searchQuery,
-                onValueChange = { viewModel.setClientSearchQuery(it) },
-                placeholder = { Text("Search client name, company, email...") },
-                leadingIcon = { Icon(Icons.Default.Search, contentDescription = null) },
-                trailingIcon = {
-                    if (searchQuery.isNotEmpty()) {
-                        IconButton(onClick = { viewModel.setClientSearchQuery("") }) {
-                            Icon(Icons.Default.Clear, contentDescription = "Clear")
+    val isDark = isSystemInDarkTheme()
+    val adaptiveInfo = rememberWindowAdaptiveInfo()
+
+    AmbientGlassBackdrop {
+        Scaffold(
+            contentWindowInsets = androidx.compose.foundation.layout.WindowInsets(0, 0, 0, 0),
+            modifier = modifier.fillMaxSize(),
+            containerColor = Color.Transparent,
+            topBar = {
+                TopAppBar(
+                    title = {
+                        Text(
+                            text = "Clients & Accounts",
+                            fontWeight = FontWeight.Bold,
+                            color = if (isDark) Color.White else PrimaryNavy,
+                            fontSize = adaptiveInfo.titleLargeSize
+                        )
+                    },
+                    navigationIcon = {
+                        IconButton(onClick = onBack) {
+                            Box(
+                                modifier = Modifier
+                                    .size(36.dp)
+                                    .clip(CircleShape)
+                                    .background(if (isDark) Color(0xFF1E293B) else Color(0xFFEFF6FF)),
+                                contentAlignment = Alignment.Center
+                            ) {
+                                Icon(
+                                    imageVector = Icons.AutoMirrored.Filled.ArrowBack,
+                                    contentDescription = "Back",
+                                    tint = if (isDark) Color.White else Color(0xFF1D4ED8),
+                                    modifier = Modifier.size(18.dp)
+                                )
+                            }
                         }
-                    }
-                },
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(horizontal = 16.dp, vertical = 8.dp)
-                    .testTag("client_search_field"),
-                shape = RoundedCornerShape(12.dp),
-                singleLine = true
-            )
+                    },
+                    actions = {
+                        IconButton(
+                            onClick = {
+                                viewModel.refreshClientsFromBackend()
+                                Toast.makeText(context, "Refreshing clients from server...", Toast.LENGTH_SHORT).show()
+                            },
+                            modifier = Modifier.testTag("clients_sync_btn")
+                        ) {
+                            Box(
+                                modifier = Modifier
+                                    .size(36.dp)
+                                    .clip(CircleShape)
+                                    .background(if (isDark) Color(0xFF1E293B) else Color(0xFFEFF6FF)),
+                                contentAlignment = Alignment.Center
+                            ) {
+                                Icon(
+                                    imageVector = Icons.Default.Sync,
+                                    contentDescription = "Sync Clients",
+                                    tint = if (isDark) Color.White else Color(0xFF1D4ED8),
+                                    modifier = Modifier.size(18.dp)
+                                )
+                            }
+                        }
+                        IconButton(
+                            onClick = onOpenMenu,
+                            modifier = Modifier.testTag("clients_menu_btn")
+                        ) {
+                            Box(
+                                modifier = Modifier
+                                    .size(36.dp)
+                                    .clip(CircleShape)
+                                    .background(if (isDark) Color(0xFF1E293B) else Color(0xFFEFF6FF)),
+                                contentAlignment = Alignment.Center
+                            ) {
+                                Icon(
+                                    imageVector = Icons.Default.Menu,
+                                    contentDescription = "Menu",
+                                    tint = if (isDark) Color.White else PrimaryNavy,
+                                    modifier = Modifier.size(20.dp)
+                                )
+                            }
+                        }
+                    },
+                    colors = TopAppBarDefaults.topAppBarColors(containerColor = Color.Transparent)
+                )
+            },
+            floatingActionButton = {
+                FloatingActionButton(
+                    onClick = {
+                        clientToEdit = null
+                        showAddDialog = true
+                    },
+                    containerColor = Color(0xFF1D4ED8),
+                    contentColor = Color.White,
+                    shape = RoundedCornerShape(16.dp),
+                    modifier = Modifier.testTag("add_client_fab")
+                ) {
+                    Icon(imageVector = Icons.Default.Add, contentDescription = "Add Client")
+                }
+            }
+        ) { padding ->
+            AdaptiveContainer(maxWidth = adaptiveInfo.contentMaxWidth) {
+                Column(
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .padding(padding)
+                ) {
+                // Search Input with 100% Crisp Visibility
+                OutlinedTextField(
+                    value = searchQuery,
+                    onValueChange = { viewModel.setClientSearchQuery(it) },
+                    placeholder = { Text("Search client name, company, email...", color = if (isDark) Color(0xFF94A3B8) else Color(0xFF64748B)) },
+                    leadingIcon = { Icon(Icons.Default.Search, contentDescription = null, tint = Color(0xFF2563EB)) },
+                    trailingIcon = {
+                        if (searchQuery.isNotEmpty()) {
+                            IconButton(onClick = { viewModel.setClientSearchQuery("") }) {
+                                Icon(Icons.Default.Clear, contentDescription = "Clear")
+                            }
+                        }
+                    },
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(horizontal = 16.dp, vertical = 8.dp)
+                        .testTag("client_search_field"),
+                    shape = RoundedCornerShape(14.dp),
+                    colors = glassTextFieldColors(),
+                    singleLine = true
+                )
 
             if (clients.isEmpty()) {
                 Box(
@@ -183,9 +266,11 @@ fun ClientsScreen(
                     }
                 }
             } else {
-                LazyColumn(
+                LazyVerticalGrid(
+                    columns = GridCells.Adaptive(minSize = 340.dp),
                     modifier = Modifier.fillMaxSize(),
-                    contentPadding = PaddingValues(start = 16.dp, end = 16.dp, top = 8.dp, bottom = 80.dp),
+                    contentPadding = PaddingValues(start = adaptiveInfo.horizontalPadding, end = adaptiveInfo.horizontalPadding, top = 8.dp, bottom = 80.dp),
+                    horizontalArrangement = Arrangement.spacedBy(12.dp),
                     verticalArrangement = Arrangement.spacedBy(12.dp)
                 ) {
                     items(clients, key = { it.id }) { client ->
@@ -215,13 +300,12 @@ fun ClientsScreen(
 
                         val isExpanded = expandedClientId == client.id
 
-                        Card(
+                        GlassCard(
                             modifier = Modifier
                                 .fillMaxWidth()
                                 .testTag("client_card_${client.id}"),
-                            colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
-                            shape = RoundedCornerShape(14.dp),
-                            elevation = CardDefaults.cardElevation(defaultElevation = 1.dp)
+                            shape = RoundedCornerShape(18.dp),
+                            elevation = 3.dp
                         ) {
                             Column(modifier = Modifier.padding(16.dp)) {
                                 Row(
@@ -230,6 +314,7 @@ fun ClientsScreen(
                                     verticalAlignment = Alignment.Top
                                 ) {
                                     Row(modifier = Modifier.weight(1f), verticalAlignment = Alignment.CenterVertically) {
+                                        val displayTitle = client.companyName.ifBlank { client.name }
                                         Box(
                                             modifier = Modifier
                                                 .size(42.dp)
@@ -238,7 +323,7 @@ fun ClientsScreen(
                                             contentAlignment = Alignment.Center
                                         ) {
                                             Text(
-                                                text = client.name.take(1).uppercase(),
+                                                text = displayTitle.take(1).uppercase(),
                                                 fontWeight = FontWeight.Bold,
                                                 color = PrimaryNavy,
                                                 fontSize = 18.sp
@@ -249,14 +334,14 @@ fun ClientsScreen(
 
                                         Column {
                                             Text(
-                                                text = client.name,
+                                                text = displayTitle,
                                                 style = MaterialTheme.typography.titleMedium,
                                                 fontWeight = FontWeight.Bold,
                                                 color = MaterialTheme.colorScheme.onSurface
                                             )
-                                            if (client.companyName.isNotBlank()) {
+                                            if (client.name.isNotBlank() && !client.name.equals(client.companyName, ignoreCase = true)) {
                                                 Text(
-                                                    text = client.companyName,
+                                                    text = "Contact: ${client.name}",
                                                     style = MaterialTheme.typography.bodySmall,
                                                     color = MaterialTheme.colorScheme.onSurfaceVariant
                                                 )
@@ -438,12 +523,13 @@ fun ClientsScreen(
             }
         }
     }
+}
+}
 
     // Add / Edit Client Dialog
     if (showAddDialog) {
         val client = clientToEdit
-        var name by remember { mutableStateOf(client?.name ?: "") }
-        var company by remember { mutableStateOf(client?.companyName ?: "") }
+        var company by remember { mutableStateOf(client?.companyName?.ifBlank { client.name } ?: "") }
         var email by remember { mutableStateOf(client?.email ?: "") }
         var phone by remember { mutableStateOf(client?.phone ?: "") }
         var address by remember { mutableStateOf(client?.address ?: "") }
@@ -461,25 +547,21 @@ fun ClientsScreen(
                     verticalArrangement = Arrangement.spacedBy(8.dp)
                 ) {
                     OutlinedTextField(
-                        value = name,
-                        onValueChange = { name = it },
-                        label = { Text("Client Name *") },
-                        modifier = Modifier.fillMaxWidth().testTag("edit_client_name"),
-                        shape = RoundedCornerShape(8.dp)
-                    )
-                    OutlinedTextField(
                         value = company,
                         onValueChange = { company = it },
-                        label = { Text("Company Name") },
-                        modifier = Modifier.fillMaxWidth(),
-                        shape = RoundedCornerShape(8.dp)
+                        label = { Text("Company Name *") },
+                        placeholder = { Text("e.g. Acme Corporation") },
+                        modifier = Modifier.fillMaxWidth().testTag("edit_client_company"),
+                        shape = RoundedCornerShape(12.dp),
+                        colors = glassTextFieldColors()
                     )
                     OutlinedTextField(
                         value = email,
                         onValueChange = { email = it },
                         label = { Text("Email") },
                         modifier = Modifier.fillMaxWidth(),
-                        shape = RoundedCornerShape(8.dp),
+                        shape = RoundedCornerShape(12.dp),
+                        colors = glassTextFieldColors(),
                         keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Email)
                     )
                     OutlinedTextField(
@@ -487,7 +569,8 @@ fun ClientsScreen(
                         onValueChange = { phone = it },
                         label = { Text("Phone") },
                         modifier = Modifier.fillMaxWidth(),
-                        shape = RoundedCornerShape(8.dp),
+                        shape = RoundedCornerShape(12.dp),
+                        colors = glassTextFieldColors(),
                         keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Phone)
                     )
                     OutlinedTextField(
@@ -495,7 +578,8 @@ fun ClientsScreen(
                         onValueChange = { address = it },
                         label = { Text("Address") },
                         modifier = Modifier.fillMaxWidth(),
-                        shape = RoundedCornerShape(8.dp),
+                        shape = RoundedCornerShape(12.dp),
+                        colors = glassTextFieldColors(),
                         maxLines = 3
                     )
                     OutlinedTextField(
@@ -503,27 +587,29 @@ fun ClientsScreen(
                         onValueChange = { taxId = it },
                         label = { Text("Tax / VAT ID") },
                         modifier = Modifier.fillMaxWidth(),
-                        shape = RoundedCornerShape(8.dp)
+                        shape = RoundedCornerShape(12.dp),
+                        colors = glassTextFieldColors()
                     )
                     OutlinedTextField(
                         value = terms,
                         onValueChange = { terms = it },
                         label = { Text("Payment Terms (e.g. Net 30)") },
                         modifier = Modifier.fillMaxWidth(),
-                        shape = RoundedCornerShape(8.dp)
+                        shape = RoundedCornerShape(12.dp),
+                        colors = glassTextFieldColors()
                     )
                 }
             },
             confirmButton = {
                 Button(
                     onClick = {
-                        if (name.isBlank()) {
-                            Toast.makeText(context, "Client name cannot be blank", Toast.LENGTH_SHORT).show()
+                        if (company.isBlank()) {
+                            Toast.makeText(context, "Company name cannot be blank", Toast.LENGTH_SHORT).show()
                             return@Button
                         }
                         val toSave = ClientEntity(
                             id = client?.id ?: 0L,
-                            name = name.trim(),
+                            name = company.trim(),
                             companyName = company.trim(),
                             email = email.trim(),
                             phone = phone.trim(),

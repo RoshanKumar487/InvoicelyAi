@@ -4,8 +4,9 @@ import android.app.Application
 import android.content.Context
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
+import com.example.ai.AiBusinessMemory
+import com.example.ai.AiChatHistoryManager
 import com.example.ai.ChatMessage
-import com.example.ai.GeminiAiService
 import com.example.data.local.AppDatabase
 import com.example.data.model.BusinessProfile
 import com.example.data.model.ClientEntity
@@ -15,6 +16,11 @@ import com.example.data.model.InvoiceEntity
 import com.example.data.model.InvoiceItem
 import com.example.data.model.InvoiceUtils
 import com.example.data.model.TemplateConfig
+import com.example.data.api.ApiConfig
+import com.example.data.api.InvoicelyApiManager
+import com.example.data.api.model.DashboardStatsResponse
+import com.example.data.api.model.toBackendDto
+import com.example.util.InvoiceAutofillCache
 import com.example.data.repository.BusinessRepository
 import com.example.data.repository.ClientRepository
 import com.example.data.repository.ExpenseRepository
@@ -27,6 +33,7 @@ import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.firstOrNull
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 import java.io.File
@@ -61,6 +68,11 @@ class InvoiceViewModel(application: Application) : AndroidViewModel(application)
     private val clientRepository = ClientRepository(database.clientDao())
     private val businessRepository = BusinessRepository(database.businessProfileDao())
     private val expenseRepository = ExpenseRepository(database.expenseDao())
+    val chatHistoryManager = AiChatHistoryManager(application.applicationContext)
+    private val _chatMessages = MutableStateFlow<List<ChatMessage>>(emptyList())
+    val chatMessages: StateFlow<List<ChatMessage>> = _chatMessages.asStateFlow()
+    private val _isAiThinking = MutableStateFlow(false)
+    val isAiThinking: StateFlow<Boolean> = _isAiThinking.asStateFlow()
 
     // All Invoices stream
     val allInvoices: StateFlow<List<InvoiceEntity>> = invoiceRepository.allInvoices
@@ -81,13 +93,147 @@ class InvoiceViewModel(application: Application) : AndroidViewModel(application)
         }
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), BusinessProfile())
 
+    // Backend API & Server State Flows
+    val isBackendOnline: StateFlow<Boolean> = ApiConfig.isBackendReachable
+    val lastSyncTime: StateFlow<Long> = ApiConfig.lastSyncTimestamp
+    val syncErrorMessage: StateFlow<String?> = ApiConfig.lastErrorMessage
+
+    private val _isLiveRefreshing = MutableStateFlow(false)
+    val isLiveRefreshing: StateFlow<Boolean> = _isLiveRefreshing.asStateFlow()
+    val isSyncing: StateFlow<Boolean> = _isLiveRefreshing.asStateFlow()
+
+    private val _backendStats = MutableStateFlow<DashboardStatsResponse?>(null)
+    val backendStats: StateFlow<DashboardStatsResponse?> = _backendStats.asStateFlow()
+
+    // Developer Multi-Company Platform Overview State
+    private val _selectedDeveloperCompanyId = MutableStateFlow<Long?>(null)
+    val selectedDeveloperCompanyId: StateFlow<Long?> = _selectedDeveloperCompanyId.asStateFlow()
+
+    private val _developerOverview = MutableStateFlow<com.example.data.api.model.DeveloperOverviewDto?>(null)
+    val developerOverview: StateFlow<com.example.data.api.model.DeveloperOverviewDto?> = _developerOverview.asStateFlow()
+
+    fun setDeveloperSelectedCompany(companyId: Long?) {
+        _selectedDeveloperCompanyId.value = companyId
+        refreshRealtimeData(companyId)
+    }
+
+    fun refreshBackendStats() {
+        refreshRealtimeData()
+    }
+
+    /**
+     * Real-time reactive data fetcher: automatically queries PostgreSQL backend for live
+     * scoped data based on role & company/user mapping, and updates reactive Room cache.
+     */
+    fun refreshRealtimeData(companyId: Long? = _selectedDeveloperCompanyId.value, onComplete: ((Boolean, String) -> Unit)? = null) {
+        if (!com.example.data.repository.AuthSessionManager.isLoggedIn.value || com.example.data.api.client.ApiClient.getAuthToken().isNullOrBlank()) {
+            onComplete?.invoke(false, "Not authenticated")
+            return
+        }
+        val isDev = com.example.data.repository.AuthSessionManager.currentUser.value?.role == com.example.data.model.UserRole.DEVELOPER
+        viewModelScope.launch(kotlinx.coroutines.Dispatchers.IO) {
+            _isLiveRefreshing.value = true
+            try {
+                // If developer, fetch developer platform overview
+                if (isDev) {
+                    val devRes = InvoicelyApiManager.getDeveloperOverview()
+                    if (devRes.isSuccess) {
+                        _developerOverview.value = devRes.getOrNull()
+                    }
+                }
+
+                // Fetch live dashboard stats (scoped to companyId if developer selected one)
+                val statsRes = InvoicelyApiManager.getDashboardStats(companyId)
+                if (statsRes.isSuccess) {
+                    _backendStats.value = statsRes.getOrNull()
+                }
+
+                // Fetch invoices in real-time (upsert into Room without wiping local invoices)
+                val invoicesRes = InvoicelyApiManager.getAllInvoices(companyId = companyId)
+                if (invoicesRes.isSuccess) {
+                    val remoteInvoices = invoicesRes.getOrNull() ?: emptyList()
+                    for (ri in remoteInvoices) {
+                        invoiceRepository.insertInvoice(ri.toEntity())
+                    }
+                }
+
+                // Fetch expenses in real-time (upsert into Room without wiping local expenses)
+                val expensesRes = InvoicelyApiManager.getAllExpenses(companyId = companyId)
+                if (expensesRes.isSuccess) {
+                    val remoteExpenses = expensesRes.getOrNull() ?: emptyList()
+                    for (re in remoteExpenses) {
+                        expenseRepository.insertExpense(re.toEntity())
+                    }
+                }
+
+                // Fetch clients (upsert into Room without wiping local clients)
+                val clientsRes = InvoicelyApiManager.getAllClients()
+                if (clientsRes.isSuccess) {
+                    val remoteClients = clientsRes.getOrNull() ?: emptyList()
+                    for (rc in remoteClients) {
+                        clientRepository.insertClient(rc.toEntity())
+                    }
+                }
+
+                // Fetch business profile if not developer
+                if (!isDev) {
+                    val profRes = InvoicelyApiManager.getBusinessProfile()
+                    if (profRes.isSuccess) {
+                        val profDto = profRes.getOrNull()
+                        if (profDto != null) {
+                            businessRepository.saveProfile(profDto.toEntity())
+                        }
+                    }
+                }
+
+                kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.Main) {
+                    onComplete?.invoke(true, "Data loaded in real time")
+                }
+            } catch (e: Exception) {
+                kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.Main) {
+                    onComplete?.invoke(false, e.message ?: "Failed to refresh real-time data")
+                }
+            } finally {
+                _isLiveRefreshing.value = false
+            }
+        }
+    }
+
+    fun syncAllDataWithBackend(onComplete: ((Boolean, String) -> Unit)? = null) {
+        refreshRealtimeData(onComplete = onComplete)
+    }
+
     init {
         viewModelScope.launch {
-            try {
-                if (businessRepository.getProfileDirect() == null) {
-                    AppDatabase.populateInitialData(database)
+            // Initialize chat history from persistent storage or generate proactive executive greeting
+            val savedHistory = chatHistoryManager.loadChatHistory()
+            if (savedHistory.isNotEmpty()) {
+                _chatMessages.value = savedHistory
+            } else {
+                _chatMessages.value = listOf(
+                    chatHistoryManager.createExecutiveGreeting(
+                        profile = businessProfile.value,
+                        invoices = allInvoices.value,
+                        clients = allClients.value
+                    )
+                )
+            }
+
+            // Real-time live data fetch on initial load
+            if (com.example.data.repository.AuthSessionManager.isLoggedIn.value && !com.example.data.api.client.ApiClient.getAuthToken().isNullOrBlank()) {
+                try {
+                    refreshRealtimeData()
+                } catch (_: Exception) {}
+            }
+        }
+
+        // Auto-refresh when currentUser changes (e.g. login / logout / switch)
+        viewModelScope.launch {
+            com.example.data.repository.AuthSessionManager.currentUser.collect { user ->
+                if (user != null && !com.example.data.api.client.ApiClient.getAuthToken().isNullOrBlank()) {
+                    refreshRealtimeData()
                 }
-            } catch (_: Exception) {}
+            }
         }
     }
 
@@ -108,7 +254,12 @@ class InvoiceViewModel(application: Application) : AndroidViewModel(application)
         _invoiceStatusFilter
     ) { invoices, query, filter ->
         invoices.filter { inv ->
-            val matchesFilter = if (filter == "All") true else inv.status.equals(filter, ignoreCase = true)
+            val matchesFilter = when {
+                filter.equals("All", ignoreCase = true) -> true
+                filter.equals("Pending", ignoreCase = true) || filter.equals("Outstanding", ignoreCase = true) ->
+                    inv.status.equals("Sent", ignoreCase = true) || inv.status.equals("Pending", ignoreCase = true)
+                else -> inv.status.equals(filter, ignoreCase = true)
+            }
             val matchesQuery = query.isBlank() ||
                     inv.invoiceNumber.contains(query, ignoreCase = true) ||
                     inv.clientName.contains(query, ignoreCase = true) ||
@@ -398,16 +549,44 @@ class InvoiceViewModel(application: Application) : AndroidViewModel(application)
 
         viewModelScope.launch(kotlinx.coroutines.Dispatchers.IO) {
             _invoiceFormState.value = state.copy(isSaving = true, validationError = null)
-            val entity = state.toInvoiceEntity()
-            val id = if (entity.id == 0L) {
+            val currentUser = com.example.data.repository.AuthSessionManager.currentUser.value
+            val currentCompany = com.example.data.repository.AuthSessionManager.currentCompany.value
+            val entity = state.toInvoiceEntity(
+                companyId = currentCompany?.id ?: currentUser?.companyId,
+                createdByUserId = currentUser?.id,
+                createdByUserName = currentUser?.fullName
+            )
+            var finalId = if (entity.id == 0L) {
                 invoiceRepository.insertInvoice(entity)
             } else {
                 invoiceRepository.updateInvoice(entity)
                 entity.id
             }
-            _invoiceFormState.value = _invoiceFormState.value.copy(isSaving = false, invoiceId = id)
+
+            // Direct Real-time Backend Sync
+            try {
+                if (entity.id == 0L) {
+                    val createDto = entity.copy(id = 0L).toBackendDto()
+                    val res = InvoicelyApiManager.createInvoice(createDto)
+                    if (res.isSuccess) {
+                        val backendInvoice = res.getOrNull()
+                        if (backendInvoice?.id != null && backendInvoice.id > 0) {
+                            invoiceRepository.deleteInvoiceById(finalId)
+                            finalId = backendInvoice.id
+                            invoiceRepository.insertInvoice(backendInvoice.toEntity())
+                        }
+                    }
+                } else {
+                    val updateDto = entity.copy(id = finalId).toBackendDto()
+                    InvoicelyApiManager.updateInvoice(finalId, updateDto)
+                }
+                refreshRealtimeData()
+            } catch (_: Exception) {}
+
+            _invoiceFormState.value = _invoiceFormState.value.copy(isSaving = false, invoiceId = finalId)
+
             kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.Main) {
-                onSuccess(id)
+                onSuccess(finalId)
             }
         }
     }
@@ -417,7 +596,13 @@ class InvoiceViewModel(application: Application) : AndroidViewModel(application)
      */
     suspend fun saveInvoiceFromFormDirect(): Long {
         val state = _invoiceFormState.value
-        val entity = state.toInvoiceEntity()
+        val currentUser = com.example.data.repository.AuthSessionManager.currentUser.value
+        val currentCompany = com.example.data.repository.AuthSessionManager.currentCompany.value
+        val entity = state.toInvoiceEntity(
+            companyId = currentCompany?.id ?: currentUser?.companyId,
+            createdByUserId = currentUser?.id,
+            createdByUserName = currentUser?.fullName
+        )
         val id = if (entity.id == 0L) {
             invoiceRepository.insertInvoice(entity)
         } else {
@@ -425,31 +610,91 @@ class InvoiceViewModel(application: Application) : AndroidViewModel(application)
             entity.id
         }
         _invoiceFormState.value = _invoiceFormState.value.copy(invoiceId = id)
+
+        try {
+            val dto = entity.copy(id = id).toBackendDto()
+            if (entity.id == 0L) {
+                InvoicelyApiManager.createInvoice(dto)
+            } else {
+                InvoicelyApiManager.updateInvoice(id, dto)
+            }
+            refreshRealtimeData()
+        } catch (_: Exception) {}
+
         return id
     }
 
     // Invoice CRUD Actions
     fun saveInvoice(invoice: InvoiceEntity, onSaved: (Long) -> Unit = {}) {
-        viewModelScope.launch {
-            if (invoice.id == 0L) {
-                val newId = invoiceRepository.insertInvoice(invoice)
-                onSaved(newId)
+        viewModelScope.launch(kotlinx.coroutines.Dispatchers.IO) {
+            val currentUser = com.example.data.repository.AuthSessionManager.currentUser.value
+            val currentCompany = com.example.data.repository.AuthSessionManager.currentCompany.value
+            val mappedInvoice = invoice.copy(
+                companyId = invoice.companyId ?: currentCompany?.id ?: currentUser?.companyId,
+                createdByUserId = invoice.createdByUserId ?: currentUser?.id,
+                createdByUserName = invoice.createdByUserName ?: currentUser?.fullName
+            )
+            var finalId = mappedInvoice.id
+            if (mappedInvoice.id == 0L) {
+                finalId = invoiceRepository.insertInvoice(mappedInvoice)
+                try {
+                    val createDto = mappedInvoice.copy(id = 0L).toBackendDto()
+                    val res = InvoicelyApiManager.createInvoice(createDto)
+                    if (res.isSuccess) {
+                        val backendInvoice = res.getOrNull()
+                        if (backendInvoice?.id != null && backendInvoice.id > 0) {
+                            invoiceRepository.deleteInvoiceById(finalId)
+                            finalId = backendInvoice.id
+                            invoiceRepository.insertInvoice(backendInvoice.toEntity())
+                        }
+                    }
+                } catch (e: Exception) {
+                    android.util.Log.w("InvoiceViewModel", "Failed to sync created invoice to backend, saved locally with ID $finalId", e)
+                }
             } else {
-                invoiceRepository.updateInvoice(invoice)
-                onSaved(invoice.id)
+                invoiceRepository.updateInvoice(mappedInvoice)
+                try {
+                    val updateDto = mappedInvoice.toBackendDto()
+                    InvoicelyApiManager.updateInvoice(finalId, updateDto)
+                } catch (e: Exception) {
+                    android.util.Log.w("InvoiceViewModel", "Failed to sync updated invoice $finalId to backend", e)
+                }
             }
+
+            try {
+                val deserializedItems = InvoiceUtils.deserializeInvoiceItems(mappedInvoice.itemsJson)
+                InvoiceAutofillCache.recordInvoiceSaved(getApplication(), mappedInvoice, deserializedItems)
+            } catch (_: Exception) {}
+
+            kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.Main) {
+                onSaved(finalId)
+            }
+
+            try {
+                refreshRealtimeData()
+            } catch (_: Exception) {}
         }
     }
 
     fun deleteInvoice(invoice: InvoiceEntity) {
         viewModelScope.launch {
             invoiceRepository.deleteInvoice(invoice)
+            try {
+                if (invoice.id > 0) {
+                    InvoicelyApiManager.deleteInvoice(invoice.id)
+                    refreshRealtimeData()
+                }
+            } catch (_: Exception) {}
         }
     }
 
     fun updateInvoiceStatus(invoiceId: Long, status: String) {
         viewModelScope.launch {
             invoiceRepository.updateStatus(invoiceId, status)
+            try {
+                InvoicelyApiManager.updateInvoiceStatus(invoiceId, status)
+                refreshRealtimeData()
+            } catch (_: Exception) {}
         }
     }
 
@@ -462,19 +707,38 @@ class InvoiceViewModel(application: Application) : AndroidViewModel(application)
     // Client CRUD Actions
     fun saveClient(client: ClientEntity, onSaved: (Long) -> Unit = {}) {
         viewModelScope.launch {
+            val finalId: Long
             if (client.id == 0L) {
-                val newId = clientRepository.insertClient(client)
-                onSaved(newId)
+                finalId = clientRepository.insertClient(client)
             } else {
+                finalId = client.id
                 clientRepository.updateClient(client)
-                onSaved(client.id)
             }
+            kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.Main) {
+                onSaved(finalId)
+            }
+
+            try {
+                val dto = client.copy(id = finalId).toBackendDto()
+                if (client.id == 0L) {
+                    InvoicelyApiManager.createClient(dto)
+                } else {
+                    InvoicelyApiManager.updateClient(finalId, dto)
+                }
+                refreshBackendStats()
+            } catch (_: Exception) {}
         }
     }
 
     fun deleteClient(client: ClientEntity) {
         viewModelScope.launch {
             clientRepository.deleteClient(client)
+            try {
+                if (client.id > 0) {
+                    InvoicelyApiManager.deleteClient(client.id)
+                    refreshBackendStats()
+                }
+            } catch (_: Exception) {}
         }
     }
 
@@ -482,14 +746,28 @@ class InvoiceViewModel(application: Application) : AndroidViewModel(application)
     fun saveBusinessProfile(profile: BusinessProfile) {
         viewModelScope.launch {
             businessRepository.saveProfile(profile)
+            try {
+                InvoicelyApiManager.updateBusinessProfile(profile.toBackendDto())
+            } catch (_: Exception) {}
         }
     }
 
-    fun resetSampleData() {
-        viewModelScope.launch {
+    fun clearAllLocalData() {
+        viewModelScope.launch(kotlinx.coroutines.Dispatchers.IO) {
             invoiceRepository.deleteAllInvoices()
             clientRepository.deleteAllClients()
-            AppDatabase.populateInitialData(database)
+            expenseRepository.deleteAllExpenses()
+            businessRepository.clearProfile()
+        }
+    }
+
+    fun resyncFromCloudDatabase(onComplete: ((Boolean, String) -> Unit)? = null) {
+        viewModelScope.launch(kotlinx.coroutines.Dispatchers.IO) {
+            invoiceRepository.deleteAllInvoices()
+            clientRepository.deleteAllClients()
+            expenseRepository.deleteAllExpenses()
+            businessRepository.clearProfile()
+            syncAllDataWithBackend(onComplete)
         }
     }
 
@@ -647,89 +925,137 @@ class InvoiceViewModel(application: Application) : AndroidViewModel(application)
     }
 
     // =========================================================================
-    // GEMINI AI CHAT & CONVERSATIONAL ASSISTANT
+    // GEMINI AI CHAT & CONVERSATIONAL ASSISTANT (PERSISTENT & CONTEXT-AWARE)
     // =========================================================================
-    private val geminiService = GeminiAiService()
 
-    private val initialGreeting = ChatMessage(
-        text = "Hi there! 👋 I'm **Invoicely AI**, your personal assistant powered by Google Gemini.\n\n" +
-                "You can chat or speak with me to:\n" +
-                "• **Generate an invoice**: *\"Create invoice for Acme Corp, 10 hours at $80/hr with 18% GST\"*\n" +
-                "• **Save a client**: *\"Add client Sarah at NextGen Corp, email sarah@nextgen.com\"*\n" +
-                "• **Business enquiry**: *\"What are the tax slabs for freelance services?\"*\n\n" +
-                "Tap the mic or type below to get started!",
-        isUser = false
+    val dynamicPredictions: StateFlow<List<String>> = combine(
+        allInvoices,
+        allClients,
+        allExpenses,
+        businessProfile
+    ) { invoices, clients, expenses, profile ->
+        chatHistoryManager.generateDynamicPredictions(
+            invoices = invoices,
+            clients = clients,
+            expenses = expenses,
+            currencySymbol = profile.defaultCurrencySymbol.ifBlank { "$" }
+        )
+    }.stateIn(
+        viewModelScope,
+        SharingStarted.WhileSubscribed(5000),
+        listOf(
+            "💰 कुल कितना पेंडिंग पेमेंट बाकी है?",
+            "📊 Show complete revenue & profit overview",
+            "⚡ Create an invoice with GST",
+            "💸 Record a new business expense",
+            "👥 Who are my active clients?",
+            "💡 How to recover overdue payments faster?"
+        )
     )
 
-    private val _chatMessages = MutableStateFlow<List<ChatMessage>>(listOf(initialGreeting))
-    val chatMessages: StateFlow<List<ChatMessage>> = _chatMessages.asStateFlow()
-
-    private val _isAiThinking = MutableStateFlow(false)
-    val isAiThinking: StateFlow<Boolean> = _isAiThinking.asStateFlow()
-
-    fun sendAiChatMessage(userPrompt: String, onInvoiceCreated: ((Long) -> Unit)? = null) {
+    fun sendAiChatMessage(userPrompt: String, isVoiceInput: Boolean = false, onInvoiceCreated: ((Long) -> Unit)? = null) {
         val trimmed = userPrompt.trim()
         if (trimmed.isBlank()) return
 
-        val userMessage = ChatMessage(text = trimmed, isUser = true)
-        _chatMessages.value = _chatMessages.value + userMessage
+        val userMessage = ChatMessage(text = trimmed, isUser = true, isVoiceInput = isVoiceInput)
+        val updatedList = _chatMessages.value + userMessage
+        _chatMessages.value = updatedList
         _isAiThinking.value = true
 
-        viewModelScope.launch(kotlinx.coroutines.Dispatchers.IO) {
-            val result = geminiService.processUserPrompt(
-                prompt = trimmed,
-                profile = businessProfile.value,
-                existingClients = allClients.value,
-                invoices = allInvoices.value,
-                expenses = allExpenses.value,
-                nextInvoiceNumber = generateNextInvoiceNumber()
-            )
-
-            var createdInvoiceId: Long? = null
-            var finalInvoice: InvoiceEntity? = null
-            var savedClient: ClientEntity? = null
-
-            // If action is SAVE_CLIENT
-            if (result.clientToSave != null) {
-                val newClientId = clientRepository.insertClient(result.clientToSave)
-                savedClient = result.clientToSave.copy(id = newClientId)
-            }
-
-            // If action is GENERATE_INVOICE
-            if (result.invoiceToGenerate != null) {
-                val newInvoiceId = invoiceRepository.insertInvoice(result.invoiceToGenerate)
-                createdInvoiceId = newInvoiceId
-                finalInvoice = result.invoiceToGenerate.copy(id = newInvoiceId)
-                kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.Main) {
-                    onInvoiceCreated?.invoke(newInvoiceId)
+        viewModelScope.launch {
+            val response = InvoicelyApiManager.askAi(trimmed)
+            val botMessage = response.fold(
+                onSuccess = { aiResponse ->
+                    ChatMessage(
+                        text = buildString {
+                            append(aiResponse.answer)
+                            if (aiResponse.groundedSources.isNotEmpty()) {
+                                append("\n\nGrounded in: ")
+                                append(aiResponse.groundedSources.joinToString())
+                            }
+                        },
+                        isUser = false,
+                        isVoiceInput = false,
+                        pendingCommandId = aiResponse.pendingCommandId
+                    )
+                },
+                onFailure = { error ->
+                    ChatMessage(
+                        text = error.localizedMessage ?: "The secure AI assistant could not complete the request. Please try again.",
+                        isUser = false,
+                        isError = true
+                    )
                 }
-            }
-
-            var savedExpense: ExpenseEntity? = null
-            // If action is SAVE_EXPENSE
-            if (result.expenseToSave != null) {
-                val newExpenseId = expenseRepository.insertExpense(result.expenseToSave)
-                savedExpense = result.expenseToSave.copy(id = newExpenseId)
-            }
-
-            val botMessage = ChatMessage(
-                text = result.conversationalReply,
-                isUser = false,
-                generatedInvoiceId = createdInvoiceId,
-                generatedInvoice = finalInvoice,
-                generatedClient = savedClient,
-                generatedExpense = savedExpense,
-                financialSummary = result.financialSummary,
-                matchedInvoices = result.matchedInvoices
             )
+            val finalList = _chatMessages.value + botMessage
+            _chatMessages.value = finalList
+            chatHistoryManager.saveChatHistory(finalList)
+            _isAiThinking.value = false
+        }
+    }
 
-            _chatMessages.value = _chatMessages.value + botMessage
+    fun confirmAiCommand(commandId: String, onInvoiceCreated: ((Long) -> Unit)? = null) {
+        if (_isAiThinking.value) return
+        _isAiThinking.value = true
+        viewModelScope.launch {
+            val response = InvoicelyApiManager.confirmAiCommand(commandId)
+            val confirmation = response.fold(
+                onSuccess = { result ->
+                    _chatMessages.value = _chatMessages.value.map { message ->
+                        if (message.pendingCommandId == commandId) message.copy(pendingCommandId = null) else message
+                    }
+                    refreshRealtimeData { success, _ ->
+                        if (success && result.resourceType == "invoice") {
+                            result.resourceId?.let { onInvoiceCreated?.invoke(it) }
+                        }
+                    }
+                    ChatMessage(text = result.answer, isUser = false)
+                },
+                onFailure = { error ->
+                    ChatMessage(
+                        text = error.localizedMessage ?: "The draft could not be confirmed. Please try again.",
+                        isUser = false,
+                        isError = true
+                    )
+                }
+            )
+            val finalList = _chatMessages.value + confirmation
+            _chatMessages.value = finalList
+            chatHistoryManager.saveChatHistory(finalList)
             _isAiThinking.value = false
         }
     }
 
     fun clearAiChat() {
-        _chatMessages.value = listOf(initialGreeting)
+        chatHistoryManager.clearChatHistory()
+        _chatMessages.value = listOf(
+            chatHistoryManager.createExecutiveGreeting(
+                profile = businessProfile.value,
+                invoices = allInvoices.value,
+                clients = allClients.value
+            )
+        )
+    }
+
+    suspend fun parseInvoiceDraftWithAi(prompt: String): com.example.ai.AiActionResult {
+        return InvoicelyApiManager.prepareAiInvoiceDraft(prompt).fold(
+            onSuccess = { response ->
+                val invoice = response.invoice?.toEntity()
+                if (invoice == null) {
+                    com.example.ai.AiActionResult(
+                        actionType = com.example.ai.AiActionType.GENERAL_CHAT,
+                        conversationalReply = response.message
+                    )
+                } else {
+                    com.example.ai.AiActionResult(
+                        actionType = com.example.ai.AiActionType.GENERATE_INVOICE,
+                        conversationalReply = response.message,
+                        invoiceToGenerate = invoice
+                    )
+                }
+            },
+            onFailure = { throw it }
+        )
     }
 
     // =========================================================================
@@ -737,21 +1063,124 @@ class InvoiceViewModel(application: Application) : AndroidViewModel(application)
     // =========================================================================
     fun saveExpense(expense: ExpenseEntity, onSaved: (Long) -> Unit = {}) {
         viewModelScope.launch(kotlinx.coroutines.Dispatchers.IO) {
-            val id = if (expense.id == 0L) {
-                expenseRepository.insertExpense(expense)
+            val currentUser = com.example.data.repository.AuthSessionManager.currentUser.value
+            val currentCompany = com.example.data.repository.AuthSessionManager.currentCompany.value
+            val mappedExpense = expense.copy(
+                companyId = expense.companyId ?: currentCompany?.id ?: currentUser?.companyId,
+                createdByUserId = expense.createdByUserId ?: currentUser?.id,
+                createdByUserName = expense.createdByUserName ?: currentUser?.fullName
+            )
+            var finalId = mappedExpense.id
+            if (mappedExpense.id == 0L) {
+                finalId = expenseRepository.insertExpense(mappedExpense)
+                try {
+                    val createDto = mappedExpense.copy(id = 0L).toBackendDto()
+                    val res = InvoicelyApiManager.createExpense(createDto)
+                    if (res.isSuccess) {
+                        val backendExpense = res.getOrNull()
+                        if (backendExpense?.id != null && backendExpense.id > 0) {
+                            expenseRepository.deleteExpense(mappedExpense.copy(id = finalId))
+                            finalId = backendExpense.id
+                            expenseRepository.insertExpense(backendExpense.toEntity())
+                        }
+                    }
+                } catch (e: Exception) {
+                    android.util.Log.w("InvoiceViewModel", "Failed to sync created expense to backend, saved locally with ID $finalId", e)
+                }
             } else {
-                expenseRepository.updateExpense(expense)
-                expense.id
+                expenseRepository.updateExpense(mappedExpense)
+                try {
+                    val updateDto = mappedExpense.toBackendDto()
+                    InvoicelyApiManager.updateExpense(finalId, updateDto)
+                } catch (e: Exception) {
+                    android.util.Log.w("InvoiceViewModel", "Failed to sync updated expense $finalId to backend", e)
+                }
             }
+
             kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.Main) {
-                onSaved(id)
+                onSaved(finalId)
             }
+
+            try {
+                refreshRealtimeData()
+            } catch (e: Exception) {}
         }
     }
 
     fun deleteExpense(expense: ExpenseEntity) {
         viewModelScope.launch(kotlinx.coroutines.Dispatchers.IO) {
             expenseRepository.deleteExpense(expense)
+            try {
+                if (expense.id > 0) {
+                    InvoicelyApiManager.deleteExpense(expense.id)
+                    refreshRealtimeData()
+                }
+            } catch (e: Exception) {}
+        }
+    }
+
+    // =========================================================================
+    // BACKEND API ENTITY REFRESH HELPERS
+    // =========================================================================
+
+    fun refreshClientsFromBackend() {
+        viewModelScope.launch(kotlinx.coroutines.Dispatchers.IO) {
+            val res = InvoicelyApiManager.getAllClients()
+            if (res.isSuccess) {
+                val remoteList = res.getOrNull() ?: emptyList()
+                val localList = allClients.value
+                val localIds = localList.map { it.id }.toSet()
+                for (rc in remoteList) {
+                    val entity = rc.toEntity()
+                    if (entity.id in localIds) {
+                        clientRepository.updateClient(entity)
+                    } else {
+                        clientRepository.insertClient(entity)
+                    }
+                }
+            }
+        }
+    }
+
+    fun refreshExpensesFromBackend() {
+        viewModelScope.launch(kotlinx.coroutines.Dispatchers.IO) {
+            val res = InvoicelyApiManager.getAllExpenses()
+            if (res.isSuccess) {
+                val remoteList = res.getOrNull() ?: emptyList()
+                val localList = allExpenses.value
+                val localIds = localList.map { it.id }.toSet()
+                for (re in remoteList) {
+                    val entity = re.toEntity()
+                    if (entity.id in localIds) {
+                        expenseRepository.updateExpense(entity)
+                    } else {
+                        expenseRepository.insertExpense(entity)
+                    }
+                }
+            }
+        }
+    }
+
+    fun refreshInvoicesFromBackend() {
+        viewModelScope.launch(kotlinx.coroutines.Dispatchers.IO) {
+            val res = InvoicelyApiManager.getAllInvoices()
+            if (res.isSuccess) {
+                val remoteList = res.getOrNull() ?: emptyList()
+                val localList = allInvoices.value
+                val localNumbers = localList.map { it.invoiceNumber }.toSet()
+                for (ri in remoteList) {
+                    val entity = ri.toEntity()
+                    if (entity.invoiceNumber in localNumbers) {
+                        val localMatch = localList.find { it.invoiceNumber == entity.invoiceNumber }
+                        if (localMatch != null) {
+                            invoiceRepository.updateInvoice(entity.copy(id = localMatch.id))
+                        }
+                    } else {
+                        invoiceRepository.insertInvoice(entity)
+                    }
+                }
+                refreshBackendStats()
+            }
         }
     }
 }

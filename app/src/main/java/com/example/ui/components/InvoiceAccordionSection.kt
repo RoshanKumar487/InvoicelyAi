@@ -44,20 +44,17 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.example.ui.theme.PrimaryNavy
 
+import androidx.compose.foundation.isSystemInDarkTheme
+import com.example.ui.components.GlassCard
+
 /**
  * Enterprise-grade Accordion Section Card for Invoicing Form.
- * Features:
- * - Section Number Badge (1, 2, 3, 4, 5)
- * - Section Icon with brand gradient/color
- * - Section Title & Optional Badge
- * - Collapsed live summary text
- * - Animated expand/collapse rotation chevron
- * - Optional top action chip (e.g. "Customize", "Choose Industry")
- * - Progressive disclosure content body
+ * Upgraded with Glassmorphism styling, ambient border highlights,
+ * and 100% crisp visibility of labels and indicators.
  */
 @Composable
 fun InvoiceAccordionSection(
-    sectionNumber: Int,
+    sectionNumber: Int? = null,
     icon: ImageVector,
     title: String,
     collapsedSummary: String,
@@ -70,25 +67,23 @@ fun InvoiceAccordionSection(
     testTag: String = "accordion_section_$sectionNumber",
     content: @Composable () -> Unit
 ) {
+    val isDark = isSystemInDarkTheme()
     val rotationAngle by animateFloatAsState(
         targetValue = if (isExpanded) 180f else 0f,
         label = "chevron_rotation"
     )
 
-    Card(
+    GlassCard(
         modifier = modifier
             .fillMaxWidth()
             .testTag(testTag),
-        shape = RoundedCornerShape(0.dp),
-        colors = CardDefaults.cardColors(
-            containerColor = Color.White
-        ),
-        elevation = CardDefaults.cardElevation(
-            defaultElevation = if (isExpanded) 2.dp else 0.dp
-        ),
+        shape = RoundedCornerShape(18.dp),
+        elevation = if (isExpanded) 4.dp else 1.dp,
         border = androidx.compose.foundation.BorderStroke(
             width = if (isExpanded) 1.5.dp else 1.dp,
-            color = if (isExpanded) Color(0xFF3B82F6) else Color(0xFFE2E8F0)
+            color = if (isExpanded) Color(0xFF2563EB).copy(alpha = 0.65f)
+                    else if (isDark) Color.White.copy(alpha = 0.15f)
+                    else Color(0xFF0F172A).copy(alpha = 0.08f)
         )
     ) {
         Column(modifier = Modifier.fillMaxWidth()) {
@@ -97,7 +92,7 @@ fun InvoiceAccordionSection(
                 modifier = Modifier
                     .fillMaxWidth()
                     .clickable { onToggleExpand() }
-                    .padding(horizontal = 16.dp, vertical = 13.dp),
+                    .padding(horizontal = 16.dp, vertical = 14.dp),
                 verticalAlignment = Alignment.CenterVertically,
                 horizontalArrangement = Arrangement.SpaceBetween
             ) {
@@ -111,14 +106,18 @@ fun InvoiceAccordionSection(
                         modifier = Modifier
                             .size(28.dp)
                             .clip(CircleShape)
-                            .background(if (isExpanded) Color(0xFF2563EB) else Color(0xFFF1F5F9)),
+                            .background(
+                                if (isExpanded) Color(0xFF2563EB)
+                                else if (isDark) Color(0xFF334155)
+                                else Color(0xFFF1F5F9)
+                            ),
                         contentAlignment = Alignment.Center
                     ) {
                         Text(
-                            text = sectionNumber.toString(),
+                            text = sectionNumber?.toString() ?: "+",
                             fontSize = 13.sp,
                             fontWeight = FontWeight.Bold,
-                            color = if (isExpanded) Color.White else PrimaryNavy
+                            color = if (isExpanded) Color.White else if (isDark) Color.White else PrimaryNavy
                         )
                     }
 
@@ -126,14 +125,18 @@ fun InvoiceAccordionSection(
                     Box(
                         modifier = Modifier
                             .size(34.dp)
-                            .clip(RoundedCornerShape(8.dp))
-                            .background(if (isExpanded) Color(0xFFEFF6FF) else Color(0xFFF8FAFC)),
+                            .clip(RoundedCornerShape(10.dp))
+                            .background(
+                                if (isExpanded) Color(0xFF2563EB).copy(alpha = 0.15f)
+                                else if (isDark) Color(0xFF1E293B)
+                                else Color(0xFFF8FAFC)
+                            ),
                         contentAlignment = Alignment.Center
                     ) {
                         Icon(
                             imageVector = icon,
                             contentDescription = null,
-                            tint = if (isExpanded) Color(0xFF2563EB) else Color(0xFF64748B),
+                            tint = if (isExpanded) Color(0xFF2563EB) else if (isDark) Color(0xFF94A3B8) else Color(0xFF64748B),
                             modifier = Modifier.size(18.dp)
                         )
                     }
@@ -148,20 +151,23 @@ fun InvoiceAccordionSection(
                                 text = title,
                                 fontSize = 15.sp,
                                 fontWeight = FontWeight.Bold,
-                                color = PrimaryNavy
+                                color = if (isDark) Color.White else PrimaryNavy
                             )
 
                             if (badgeText != null) {
                                 Surface(
-                                    color = Color(0xFFEFF6FF),
+                                    color = if (isDark) Color(0xFF1E3A8A).copy(alpha = 0.5f) else Color(0xFFEFF6FF),
                                     shape = RoundedCornerShape(6.dp),
-                                    border = androidx.compose.foundation.BorderStroke(1.dp, Color(0xFFBFDBFE))
+                                    border = androidx.compose.foundation.BorderStroke(
+                                        1.dp,
+                                        if (isDark) Color(0xFF3B82F6).copy(alpha = 0.4f) else Color(0xFFBFDBFE)
+                                    )
                                 ) {
                                     Text(
                                         text = badgeText,
                                         fontSize = 10.sp,
                                         fontWeight = FontWeight.SemiBold,
-                                        color = Color(0xFF1D4ED8),
+                                        color = if (isDark) Color(0xFF93C5FD) else Color(0xFF1D4ED8),
                                         modifier = Modifier.padding(horizontal = 6.dp, vertical = 1.dp)
                                     )
                                 }
@@ -172,7 +178,7 @@ fun InvoiceAccordionSection(
                         Text(
                             text = collapsedSummary,
                             fontSize = 11.sp,
-                            color = if (isExpanded) Color(0xFF64748B) else Color(0xFF475569),
+                            color = if (isDark) Color(0xFF94A3B8) else if (isExpanded) Color(0xFF64748B) else Color(0xFF475569),
                             maxLines = if (isExpanded) 1 else 2,
                             fontWeight = if (!isExpanded) FontWeight.Medium else FontWeight.Normal
                         )
@@ -186,16 +192,19 @@ fun InvoiceAccordionSection(
                 ) {
                     if (actionButtonText != null && onActionButtonClick != null) {
                         Surface(
-                            color = Color(0xFFEFF6FF),
+                            color = if (isDark) Color(0xFF1E3A8A).copy(alpha = 0.4f) else Color(0xFFEFF6FF),
                             shape = RoundedCornerShape(8.dp),
-                            border = androidx.compose.foundation.BorderStroke(1.dp, Color(0xFF93C5FD)),
+                            border = androidx.compose.foundation.BorderStroke(
+                                1.dp,
+                                if (isDark) Color(0xFF3B82F6).copy(alpha = 0.5f) else Color(0xFF93C5FD)
+                            ),
                             modifier = Modifier.clickable { onActionButtonClick() }
                         ) {
                             Text(
                                 text = actionButtonText,
                                 fontSize = 11.sp,
                                 fontWeight = FontWeight.Bold,
-                                color = Color(0xFF2563EB),
+                                color = if (isDark) Color(0xFF60A5FA) else Color(0xFF2563EB),
                                 modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp)
                             )
                         }
@@ -205,7 +214,7 @@ fun InvoiceAccordionSection(
                     Icon(
                         imageVector = Icons.Default.KeyboardArrowDown,
                         contentDescription = if (isExpanded) "Collapse" else "Expand",
-                        tint = if (isExpanded) Color(0xFF2563EB) else Color(0xFF94A3B8),
+                        tint = if (isExpanded) Color(0xFF2563EB) else if (isDark) Color(0xFF64748B) else Color(0xFF94A3B8),
                         modifier = Modifier
                             .size(24.dp)
                             .rotate(rotationAngle)
@@ -224,7 +233,10 @@ fun InvoiceAccordionSection(
                         .fillMaxWidth()
                         .padding(horizontal = 16.dp, vertical = 12.dp)
                 ) {
-                    HorizontalDivider(color = Color(0xFFF1F5F9), thickness = 1.dp)
+                    HorizontalDivider(
+                        color = if (isDark) Color.White.copy(alpha = 0.1f) else Color(0xFF0F172A).copy(alpha = 0.08f),
+                        thickness = 1.dp
+                    )
                     Spacer(modifier = Modifier.height(12.dp))
                     content()
                 }

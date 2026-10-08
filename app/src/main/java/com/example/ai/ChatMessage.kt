@@ -36,7 +36,9 @@ data class ChatMessage(
     val generatedExpense: ExpenseEntity? = null,
     val financialSummary: FinancialSummaryData? = null,
     val matchedInvoices: List<InvoiceEntity>? = null,
-    val isError: Boolean = false
+    val isError: Boolean = false,
+    val isVoiceInput: Boolean = false,
+    val pendingCommandId: String? = null
 )
 
 /**
@@ -63,4 +65,17 @@ data class AiActionResult(
     val expenseToSave: ExpenseEntity? = null,
     val financialSummary: FinancialSummaryData? = null,
     val matchedInvoices: List<InvoiceEntity>? = null
+)
+
+data class ScannedBillData(
+    val vendor: String,
+    val title: String,
+    val amount: Double,
+    val taxAmount: Double = 0.0,
+    val category: String = "General Business",
+    val paymentMethod: String = "Credit Card",
+    val date: String = "",
+    val taxDeductible: Boolean = true,
+    val notes: String = "",
+    val isAiExtracted: Boolean = true
 )

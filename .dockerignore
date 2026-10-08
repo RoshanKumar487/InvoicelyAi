@@ -1,0 +1,36 @@
+# Exclude Android client app from Backend Docker build context
+app/
+
+# Git and IDE
+.git/
+.gitignore
+.idea/
+.vscode/
+*.iml
+
+# Build artifacts and caches
+build/
+target/
+.gradle/
+.kotlin/
+captures/
+.externalNativeBuild/
+.cxx/
+
+# Secrets and local files
+local.properties
+release-key.jks
+*.jks
+*.keystore
+.env
+.env.*
+
+# Logs and crash dumps
+*.log
+hs_err_pid*.log
+replay_pid*.log
+
+# Scratch and OS
+scratch/
+.DS_Store
+Thumbs.db

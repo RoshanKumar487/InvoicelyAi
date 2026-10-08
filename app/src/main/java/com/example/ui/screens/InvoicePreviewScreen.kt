@@ -21,6 +21,7 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
@@ -34,13 +35,17 @@ import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.automirrored.filled.ReceiptLong
 import androidx.compose.material.icons.filled.Download
 import androidx.compose.material.icons.filled.Edit
+import androidx.compose.material.icons.filled.Menu
 import androidx.compose.material.icons.filled.NotificationsActive
+import androidx.compose.material.icons.filled.PictureAsPdf
 import androidx.compose.material.icons.filled.Print
 import androidx.compose.material.icons.filled.RestartAlt
 import androidx.compose.material.icons.filled.Share
 import androidx.compose.material.icons.filled.Tune
 import androidx.compose.material.icons.filled.ZoomIn
 import androidx.compose.material.icons.filled.ZoomOut
+import androidx.compose.ui.res.painterResource
+import com.example.R
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Card
@@ -95,6 +100,9 @@ import com.example.ui.components.PaymentReminderBottomSheet
 import com.example.ui.theme.PrimaryNavy
 import com.example.ui.theme.StatusPaidGreen
 import com.example.ui.viewmodel.InvoiceViewModel
+import androidx.compose.foundation.isSystemInDarkTheme
+import com.example.ui.components.AmbientGlassBackdrop
+import com.example.ui.components.GlassCard
 import java.io.File
 import java.util.Locale
 
@@ -106,6 +114,7 @@ fun InvoicePreviewScreen(
     onBack: () -> Unit,
     onEditInvoice: (Long) -> Unit,
     initialFullPage: Boolean = true,
+    onOpenMenu: () -> Unit = {},
     modifier: Modifier = Modifier
 ) {
     val context = LocalContext.current
@@ -217,6 +226,42 @@ fun InvoicePreviewScreen(
         }
     }
 
+    fun exportAndShareWhatsApp() {
+        try {
+            val file = viewModel.generateDocx(context, invoice, templateConfig)
+            generatedDocxFile = file
+            val uri = FileProvider.getUriForFile(
+                context,
+                "${context.packageName}.fileprovider",
+                file
+            )
+            val upiNote = if (profile.upiId.isNotBlank()) "\nPay via UPI: ${profile.upiId}" else ""
+            val docType = invoice.docxTemplateTitle.ifBlank { "Invoice" }
+            val shareText = "$docType #${invoice.invoiceNumber} from ${profile.businessName}\nAmount Due: ${InvoiceUtils.formatMoney(calculations.balanceDue, invoice.currencySymbol)}\nDue Date: ${invoice.dueDate}$upiNote\nThank you for your business!"
+            val whatsappIntent = Intent(Intent.ACTION_SEND).apply {
+                type = "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+                putExtra(Intent.EXTRA_STREAM, uri)
+                putExtra(Intent.EXTRA_TEXT, shareText)
+                setPackage("com.whatsapp")
+                addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+            }
+            try {
+                context.startActivity(whatsappIntent)
+            } catch (_: Exception) {
+                val chooserIntent = Intent(Intent.ACTION_SEND).apply {
+                    type = "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+                    putExtra(Intent.EXTRA_STREAM, uri)
+                    putExtra(Intent.EXTRA_TEXT, shareText)
+                    putExtra(Intent.EXTRA_SUBJECT, "Invoice ${invoice.invoiceNumber} from ${profile.businessName}")
+                    addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+                }
+                context.startActivity(Intent.createChooser(chooserIntent, "Share Invoice via WhatsApp / Apps"))
+            }
+        } catch (e: Exception) {
+            Toast.makeText(context, "Error sharing invoice: ${e.message}", Toast.LENGTH_SHORT).show()
+        }
+    }
+
     fun downloadDocx() {
         try {
             val file = viewModel.generateDocx(context, invoice, templateConfig)
@@ -308,30 +353,31 @@ fun InvoicePreviewScreen(
     // =========================================================================
     // FULL PREVIEW PAGE (Always in Full Page View with Smooth Zoom)
     // =========================================================================
-    Scaffold(
-        modifier = modifier.fillMaxSize(),
-        topBar = {
+    val isDark = isSystemInDarkTheme()
+
+    AmbientGlassBackdrop {
+        Scaffold(
+            contentWindowInsets = androidx.compose.foundation.layout.WindowInsets(0, 0, 0, 0),
+            modifier = modifier.fillMaxSize(),
+            containerColor = Color.Transparent,
+            topBar = {
             TopAppBar(
                 title = {
                     Column {
-                        Row(verticalAlignment = Alignment.CenterVertically) {
-                            Text(invoice.invoiceNumber, fontWeight = FontWeight.Bold, fontSize = 16.sp)
-                            Spacer(modifier = Modifier.width(6.dp))
-                            Surface(
-                                color = Color(0xFFEFF6FF),
-                                shape = RoundedCornerShape(6.dp),
-                                border = androidx.compose.foundation.BorderStroke(1.dp, Color(0xFFBFDBFE))
-                            ) {
-                                Text(
-                                    text = templateConfig.templateName,
-                                    fontSize = 10.sp,
-                                    fontWeight = FontWeight.Bold,
-                                    color = Color(0xFF1D4ED8),
-                                    modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
-                                )
-                            }
-                        }
-                        Text("A4 Print-Ready Document Layout", fontSize = 11.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                        Text(
+                            text = invoice.invoiceNumber,
+                            fontWeight = FontWeight.ExtraBold,
+                            fontSize = 15.sp,
+                            maxLines = 1,
+                            color = if (isDark) Color.White else Color(0xFF0F172A)
+                        )
+                        Text(
+                            text = templateConfig.templateName,
+                            fontSize = 10.sp,
+                            fontWeight = FontWeight.Medium,
+                            color = if (isDark) Color(0xFF93C5FD) else Color(0xFF2563EB),
+                            maxLines = 1
+                        )
                     }
                 },
                 navigationIcon = {
@@ -340,146 +386,181 @@ fun InvoicePreviewScreen(
                     }
                 },
                 actions = {
-                    // Zoom Out Button
-                    IconButton(
-                        onClick = { zoomScale = (zoomScale - 0.15f).coerceAtLeast(0.6f) },
-                        modifier = Modifier.testTag("zoom_out_btn")
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(2.dp),
+                        modifier = Modifier.padding(end = 4.dp)
                     ) {
-                        Icon(imageVector = Icons.Default.ZoomOut, contentDescription = "Zoom Out", tint = PrimaryNavy)
-                    }
-
-                    // Zoom Percentage Pill (tap to reset to 100%)
-                    Surface(
-                        color = Color(0xFFF1F5F9),
-                        shape = RoundedCornerShape(12.dp),
-                        modifier = Modifier.clickable { zoomScale = 1.0f }
-                    ) {
-                        Text(
-                            text = "${(zoomScale * 100).toInt()}%",
-                            fontSize = 11.sp,
-                            fontWeight = FontWeight.Bold,
-                            color = PrimaryNavy,
-                            modifier = Modifier.padding(horizontal = 6.dp, vertical = 3.dp)
-                        )
-                    }
-
-                    // Zoom In Button
-                    IconButton(
-                        onClick = { zoomScale = (zoomScale + 0.15f).coerceAtMost(2.5f) },
-                        modifier = Modifier.testTag("zoom_in_btn")
-                    ) {
-                        Icon(imageVector = Icons.Default.ZoomIn, contentDescription = "Zoom In", tint = PrimaryNavy)
-                    }
-
-                    // Switch Template Dropdown
-                    Box {
-                        IconButton(onClick = { templateDropdownExpanded = true }) {
-                            Icon(imageVector = Icons.Default.Tune, contentDescription = "Switch Template", tint = PrimaryNavy)
-                        }
-                        DropdownMenu(
-                            expanded = templateDropdownExpanded,
-                            onDismissRequest = { templateDropdownExpanded = false }
-                        ) {
-                            DocxTemplatePreset.allTemplates.forEach { preset ->
-                                DropdownMenuItem(
-                                    text = {
-                                        Row(verticalAlignment = Alignment.CenterVertically) {
-                                            Box(
-                                                modifier = Modifier
-                                                    .size(12.dp)
-                                                    .clip(CircleShape)
-                                                    .background(Color(android.graphics.Color.parseColor(preset.primaryColorHex)))
-                                            )
-                                            Spacer(modifier = Modifier.width(8.dp))
-                                            Text(preset.templateName, fontSize = 12.sp)
+                        // Switch Template Dropdown
+                        Box {
+                            IconButton(
+                                onClick = { templateDropdownExpanded = true },
+                                modifier = Modifier.size(36.dp)
+                            ) {
+                                Box(
+                                    modifier = Modifier
+                                        .size(32.dp)
+                                        .clip(CircleShape)
+                                        .background(if (isDark) Color(0xFF1E293B) else Color(0xFFF1F5F9)),
+                                    contentAlignment = Alignment.Center
+                                ) {
+                                    Icon(
+                                        imageVector = Icons.Default.Tune,
+                                        contentDescription = "Switch Template",
+                                        tint = if (isDark) Color.White else PrimaryNavy,
+                                        modifier = Modifier.size(17.dp)
+                                    )
+                                }
+                            }
+                            DropdownMenu(
+                                expanded = templateDropdownExpanded,
+                                onDismissRequest = { templateDropdownExpanded = false }
+                            ) {
+                                DocxTemplatePreset.allTemplates.forEach { preset ->
+                                    DropdownMenuItem(
+                                        text = {
+                                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                                Box(
+                                                    modifier = Modifier
+                                                        .size(12.dp)
+                                                        .clip(CircleShape)
+                                                        .background(Color(android.graphics.Color.parseColor(preset.primaryColorHex)))
+                                                )
+                                                Spacer(modifier = Modifier.width(8.dp))
+                                                Text(preset.templateName, fontSize = 12.sp)
+                                            }
+                                        },
+                                        onClick = {
+                                            templateConfig = preset.copy(primaryColorHex = templateConfig.primaryColorHex)
+                                            templateDropdownExpanded = false
                                         }
-                                    },
-                                    onClick = {
-                                        templateConfig = preset.copy(primaryColorHex = templateConfig.primaryColorHex)
-                                        templateDropdownExpanded = false
-                                    }
+                                    )
+                                }
+                            }
+                        }
+
+                        // Download as PDF (Icon only, no label)
+                        IconButton(
+                            onClick = { printInvoice() },
+                            modifier = Modifier
+                                .size(36.dp)
+                                .testTag("print_invoice_btn")
+                                .testTag("download_pdf_btn")
+                        ) {
+                            Box(
+                                modifier = Modifier
+                                    .size(32.dp)
+                                    .clip(CircleShape)
+                                    .background(if (isDark) Color(0xFF7F1D1D).copy(alpha = 0.6f) else Color(0xFFFEE2E2)),
+                                contentAlignment = Alignment.Center
+                            ) {
+                                Icon(
+                                    imageVector = Icons.Default.PictureAsPdf,
+                                    contentDescription = "Download as PDF",
+                                    tint = if (isDark) Color(0xFFFCA5A5) else Color(0xFFDC2626),
+                                    modifier = Modifier.size(17.dp)
                                 )
                             }
                         }
-                    }
 
-                    // Print / PDF
-                    IconButton(onClick = { printInvoice() }, modifier = Modifier.testTag("print_invoice_btn")) {
-                        Icon(imageVector = Icons.Default.Print, contentDescription = "Print / PDF")
-                    }
-                },
-                colors = TopAppBarDefaults.topAppBarColors(containerColor = MaterialTheme.colorScheme.surface)
-            )
-        },
-        bottomBar = {
-            Surface(
-                color = MaterialTheme.colorScheme.surface,
-                shadowElevation = 10.dp
-            ) {
-                Row(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(horizontal = 14.dp, vertical = 10.dp),
-                    horizontalArrangement = Arrangement.spacedBy(8.dp)
-                ) {
-                    OutlinedButton(
-                        onClick = { downloadDocx() },
-                        modifier = Modifier
-                            .weight(1f)
-                            .height(46.dp)
-                            .testTag("download_docx_btn"),
-                        shape = RoundedCornerShape(10.dp)
-                    ) {
-                        Icon(Icons.Default.Download, contentDescription = null, modifier = Modifier.size(16.dp))
-                        Spacer(modifier = Modifier.width(4.dp))
-                        Text("DOCX", fontSize = 11.sp)
-                    }
-
-                    Button(
-                        onClick = { exportAndShareDocx() },
-                        modifier = Modifier
-                            .weight(1.3f)
-                            .height(46.dp)
-                            .testTag("share_docx_btn"),
-                        colors = ButtonDefaults.buttonColors(containerColor = PrimaryNavy),
-                        shape = RoundedCornerShape(10.dp)
-                    ) {
-                        Icon(Icons.Default.Share, contentDescription = null, modifier = Modifier.size(16.dp))
-                        Spacer(modifier = Modifier.width(4.dp))
-                        Text("Share DOCX", fontSize = 12.sp, fontWeight = FontWeight.Bold)
-                    }
-
-                    OutlinedButton(
-                        onClick = { onEditInvoice(invoice.id) },
-                        modifier = Modifier
-                            .weight(1f)
-                            .height(46.dp)
-                            .testTag("edit_invoice_btn"),
-                        shape = RoundedCornerShape(10.dp)
-                    ) {
-                        Icon(Icons.Default.Edit, contentDescription = null, modifier = Modifier.size(16.dp))
-                        Spacer(modifier = Modifier.width(4.dp))
-                        Text("Edit", fontSize = 11.sp)
-                    }
-
-                    if (invoice.status != "Paid") {
+                        // Generate DOCX (Icon only, no label)
                         IconButton(
-                            onClick = { reminderInvoice = invoice },
+                            onClick = { downloadDocx() },
                             modifier = Modifier
-                                .size(46.dp)
-                                .clip(RoundedCornerShape(10.dp))
-                                .background(Color(0xFFFEF3C7))
-                                .testTag("reminder_btn")
+                                .size(36.dp)
+                                .testTag("download_docx_btn")
                         ) {
-                            Icon(
-                                imageVector = Icons.Default.NotificationsActive,
-                                contentDescription = "Send Reminder",
-                                tint = Color(0xFFD97706)
-                            )
+                            Box(
+                                modifier = Modifier
+                                    .size(32.dp)
+                                    .clip(CircleShape)
+                                    .background(if (isDark) Color(0xFF1E3A8A).copy(alpha = 0.6f) else Color(0xFFDBEAFE)),
+                                contentAlignment = Alignment.Center
+                            ) {
+                                Icon(
+                                    imageVector = Icons.Default.Download,
+                                    contentDescription = "Generate DOCX",
+                                    tint = if (isDark) Color(0xFF93C5FD) else Color(0xFF2563EB),
+                                    modifier = Modifier.size(17.dp)
+                                )
+                            }
+                        }
+
+                        // WhatsApp Share (Icon only, no label)
+                        IconButton(
+                            onClick = { exportAndShareWhatsApp() },
+                            modifier = Modifier
+                                .size(36.dp)
+                                .testTag("share_docx_btn")
+                                .testTag("whatsapp_share_btn")
+                        ) {
+                            Box(
+                                modifier = Modifier
+                                    .size(32.dp)
+                                    .clip(CircleShape)
+                                    .background(if (isDark) Color(0xFF064E3B).copy(alpha = 0.6f) else Color(0xFFDCFCE7)),
+                                contentAlignment = Alignment.Center
+                            ) {
+                                Icon(
+                                    painter = painterResource(id = R.drawable.ic_whatsapp),
+                                    contentDescription = "Share via WhatsApp",
+                                    tint = Color.Unspecified,
+                                    modifier = Modifier.size(18.dp)
+                                )
+                            }
+                        }
+
+                        // Edit Invoice (Icon only, no label)
+                        IconButton(
+                            onClick = { onEditInvoice(invoice.id) },
+                            modifier = Modifier
+                                .size(36.dp)
+                                .testTag("edit_invoice_btn")
+                        ) {
+                            Box(
+                                modifier = Modifier
+                                    .size(32.dp)
+                                    .clip(CircleShape)
+                                    .background(if (isDark) Color(0xFF1E293B) else Color(0xFFF1F5F9)),
+                                contentAlignment = Alignment.Center
+                            ) {
+                                Icon(
+                                    imageVector = Icons.Default.Edit,
+                                    contentDescription = "Edit Invoice",
+                                    tint = if (isDark) Color.White else PrimaryNavy,
+                                    modifier = Modifier.size(16.dp)
+                                )
+                            }
+                        }
+
+                        // Send Reminder (if unpaid)
+                        if (invoice.status != "Paid") {
+                            IconButton(
+                                onClick = { reminderInvoice = invoice },
+                                modifier = Modifier
+                                    .size(36.dp)
+                                    .testTag("reminder_btn")
+                            ) {
+                                Box(
+                                    modifier = Modifier
+                                        .size(32.dp)
+                                        .clip(CircleShape)
+                                        .background(if (isDark) Color(0xFF78350F).copy(alpha = 0.6f) else Color(0xFFFEF3C7)),
+                                    contentAlignment = Alignment.Center
+                                ) {
+                                    Icon(
+                                        imageVector = Icons.Default.NotificationsActive,
+                                        contentDescription = "Send Reminder",
+                                        tint = if (isDark) Color(0xFFFCD34D) else Color(0xFFD97706),
+                                        modifier = Modifier.size(16.dp)
+                                    )
+                                }
+                            }
                         }
                     }
-                }
-            }
+                },
+                colors = TopAppBarDefaults.topAppBarColors(containerColor = Color.Transparent)
+            )
         }
     ) { padding ->
         // Interactive Zoomable Canvas
@@ -502,15 +583,62 @@ fun InvoicePreviewScreen(
                     .padding(horizontal = 8.dp, vertical = 14.dp),
                 contentAlignment = Alignment.TopCenter
             ) {
-                Box(
+                Column(
                     modifier = Modifier
                         .graphicsLayer(
                             scaleX = zoomScale,
                             scaleY = zoomScale,
                             transformOrigin = TransformOrigin(0.5f, 0f)
                         )
-                        .widthIn(max = 680.dp)
+                        .widthIn(max = 680.dp),
+                    horizontalAlignment = Alignment.CenterHorizontally
                 ) {
+                    val isQuotation = invoice.docxTemplateTitle.contains("quotation", ignoreCase = true) || invoice.docxTemplateTitle.contains("estimate", ignoreCase = true)
+                    if (isQuotation) {
+                        Card(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(bottom = 12.dp),
+                            shape = RoundedCornerShape(12.dp),
+                            colors = CardDefaults.cardColors(containerColor = Color(0xFF064E3B)),
+                            border = androidx.compose.foundation.BorderStroke(1.dp, Color(0xFF059669))
+                        ) {
+                            Row(
+                                modifier = Modifier.padding(12.dp).fillMaxWidth(),
+                                horizontalArrangement = Arrangement.SpaceBetween,
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Column(modifier = Modifier.weight(1f)) {
+                                    Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                                        Text("📑 Quotation / Estimate", fontWeight = FontWeight.Bold, fontSize = 13.sp, color = Color.White)
+                                        Surface(
+                                            color = Color(0xFF10B981),
+                                            shape = RoundedCornerShape(4.dp)
+                                        ) {
+                                            Text("ESTIMATE", fontSize = 8.5.sp, fontWeight = FontWeight.Bold, color = Color.White, modifier = Modifier.padding(horizontal = 4.dp, vertical = 1.dp))
+                                        }
+                                    }
+                                    Text("Ready to finalize this estimate into a bill?", fontSize = 11.sp, color = Color(0xFFA7F3D0))
+                                }
+                                Button(
+                                    onClick = {
+                                        val updated = invoice.copy(
+                                            docxTemplateTitle = "Tax Invoice",
+                                            status = "Sent"
+                                        )
+                                        viewModel.saveInvoice(updated) {
+                                            Toast.makeText(context, "Quotation converted to Tax Invoice!", Toast.LENGTH_SHORT).show()
+                                        }
+                                    },
+                                    colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF10B981)),
+                                    shape = RoundedCornerShape(8.dp)
+                                ) {
+                                    Text("Convert to Tax Invoice", fontSize = 11.5.sp, fontWeight = FontWeight.Bold)
+                                }
+                            }
+                        }
+                    }
+
                     InvoiceDocumentPaper(
                         invoice = invoice,
                         items = items,
@@ -526,11 +654,13 @@ fun InvoicePreviewScreen(
 
             // Floating Quick Zoom Thumb Controller
             Surface(
-                color = Color.White.copy(alpha = 0.95f),
+                color = if (isDark) Color(0xEE1E293B) else Color.White.copy(alpha = 0.95f),
                 shape = RoundedCornerShape(24.dp),
-                shadowElevation = 6.dp,
+                shadowElevation = 8.dp,
+                border = androidx.compose.foundation.BorderStroke(1.dp, if (isDark) Color.White.copy(alpha = 0.15f) else Color(0x220F172A)),
                 modifier = Modifier
                     .align(Alignment.BottomEnd)
+                    .navigationBarsPadding()
                     .padding(end = 16.dp, bottom = 16.dp)
             ) {
                 Row(
@@ -567,6 +697,7 @@ fun InvoicePreviewScreen(
                 }
             }
         }
+    }
     }
 
     // Payment reminder bottom sheet

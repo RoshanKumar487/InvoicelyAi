@@ -7,22 +7,22 @@ import androidx.room.PrimaryKey
 data class BusinessProfile(
     @PrimaryKey val id: Int = 1,
     // Business Identity
-    val businessName: String = "Apex Nova Dynamics",
-    val legalName: String = "Apex Nova Dynamics LLC",
-    val email: String = "billing@apexnova.io",
-    val phone: String = "+91 98201 54321",
-    val website: String = "www.apexnova.io",
-    val address: String = "Plot 42, Bandra-Kurla Complex (BKC)\nMumbai, Maharashtra 400051",
-    val taxId: String = "27AABCU9603R1ZN",
+    val businessName: String = "",
+    val legalName: String = "",
+    val email: String = "",
+    val phone: String = "",
+    val website: String = "",
+    val address: String = "",
+    val taxId: String = "",
     val brandColorHex: String = "#1E3A8A",
 
     // Indian Business & Zoho Invoicing specifics
-    val gstin: String = "27AABCU9603R1ZN",
-    val panNumber: String = "AABCU9603R",
-    val placeOfSupply: String = "27-Maharashtra",
-    val upiId: String = "apexnova@icici",
-    val ifscCode: String = "HDFC0000240",
-    val branchName: String = "BKC Branch, Mumbai",
+    val gstin: String = "",
+    val panNumber: String = "",
+    val placeOfSupply: String = "",
+    val upiId: String = "",
+    val ifscCode: String = "",
+    val branchName: String = "",
     val showGstBreakdown: Boolean = true,
     val showAmountInWords: Boolean = true,
 
@@ -30,22 +30,26 @@ data class BusinessProfile(
     val customIconType: String = "symbol", // "symbol", "initials", "badge"
     val customIconSymbol: String = "receipt", // "receipt", "business", "store", "star", "diamond", "trending", "account_balance", "verified"
     val customIconShape: String = "rounded", // "rounded", "circle", "square"
-    val customIconText: String = "AN",
+    val customIconText: String = "IN",
     val customIconBgColorHex: String = "#1E3A8A",
     val customIconFgColorHex: String = "#FFFFFF",
 
     // Bank & Wire details
-    val bankName: String = "HDFC Commercial Bank Ltd",
-    val accountHolder: String = "Apex Nova Dynamics LLC",
-    val accountNumber: String = "50200084920491",
-    val routingNumber: String = "400240012",
-    val swiftBic: String = "HDFCINBB",
-    val paymentLink: String = "https://pay.apexnova.io/inv",
+    val bankName: String = "",
+    val accountHolder: String = "",
+    val accountNumber: String = "",
+    val routingNumber: String = "",
+    val swiftBic: String = "",
+    val paymentLink: String = "",
 
     // Currency Settings (configured in Settings only)
     val defaultCurrency: String = "INR",
     val defaultCurrencySymbol: String = "₹",
     val defaultCurrencyFormat: String = "before", // "before" (₹100) or "after" (100 ₹)
+
+    // Business Category & Industry Presets (configured in Invoice Settings)
+    val industryPresetId: String = "general",
+    val businessCategory: String = "General Business",
 
     // Default Template selection
     val defaultTemplateId: String = "gst_tax", // "gst_tax", "zoho_elegance", "vyapar_classic", "modern", "corporate", etc.
@@ -77,14 +81,21 @@ data class BusinessProfile(
     val showItemTax: Boolean = true,
     val showShippingFee: Boolean = true,
     val showShippingSection: Boolean = false,
+    val showNotesSection: Boolean = false,
     val showPaymentInstructions: Boolean = true,
     val showNotes: Boolean = true,
     val showTerms: Boolean = true,
     val showSignature: Boolean = true,
 
     // Tax & Invoicing defaults
+    val isTaxApplicable: Boolean = true,
     val defaultTaxRate: Double = 18.0,
     val defaultTaxLabel: String = "GST (18%)",
+    val defaultIsRcm: Boolean = false,
+    val defaultDiscountType: String = "percentage", // "percentage" or "flat"
+    val defaultDiscountValue: Double = 0.0,
+    val additionalChargeLabel: String = "Additional Charges",
+    val defaultAdditionalCharge: Double = 0.0,
     val defaultPaymentTerms: String = "Net 30",
     val defaultNotes: String = "Thank you for partnering with Apex Nova! We appreciate your business.",
     val defaultTerms: String = "Payment is due according to the specified terms. Outstanding balances are subject to 1.5% interest per month.",

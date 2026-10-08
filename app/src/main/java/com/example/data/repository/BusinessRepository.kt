@@ -12,4 +12,6 @@ class BusinessRepository(private val businessProfileDao: BusinessProfileDao) {
 
     suspend fun saveProfile(profile: BusinessProfile) =
         businessProfileDao.insertOrUpdate(profile)
+
+    suspend fun clearProfile() = businessProfileDao.deleteAll()
 }

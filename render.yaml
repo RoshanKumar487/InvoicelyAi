@@ -1,0 +1,29 @@
+services:
+  - type: web
+    name: invoicely-backend
+    runtime: docker
+    rootDir: backend
+    dockerfilePath: Dockerfile
+    dockerContext: .
+    plan: free
+    region: oregon
+    healthCheckPath: /api/v1/health
+    envVars:
+      - key: PORT
+        value: 10000
+      - key: DB_HOST
+        value: aws-0-ap-south-1.pooler.supabase.com
+      - key: DB_PORT
+        value: 5432
+      - key: DB_NAME
+        value: postgres
+      - key: DB_USER
+        value: postgres.pggsnzcbkqyzcpjmcmqj
+      - key: DB_PASSWORD
+        value: Roshan96522@
+      - key: JWT_SECRET
+        generateValue: true
+      - key: DEV_SECRET_KEY
+        value: invoicely_dev_secret_2026
+      - key: SPRING_PROFILES_ACTIVE
+        value: prod

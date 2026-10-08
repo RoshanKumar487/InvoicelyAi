@@ -28,6 +28,7 @@ import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.Description
 import androidx.compose.material.icons.filled.Download
 import androidx.compose.material.icons.filled.Edit
+import androidx.compose.material.icons.filled.Menu
 import androidx.compose.material.icons.filled.Palette
 import androidx.compose.material.icons.filled.Share
 import androidx.compose.material.icons.filled.Visibility
@@ -69,6 +70,12 @@ import com.example.data.model.TemplateConfig
 import com.example.docx.DocxTemplatePreset
 import com.example.ui.theme.PrimaryNavy
 import com.example.ui.viewmodel.InvoiceViewModel
+import androidx.compose.foundation.isSystemInDarkTheme
+import com.example.ui.components.AmbientGlassBackdrop
+import com.example.ui.components.AdaptiveContainer
+import com.example.ui.components.GlassCard
+import com.example.ui.components.glassTextFieldColors
+import com.example.ui.components.rememberWindowAdaptiveInfo
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -76,6 +83,7 @@ fun TemplatesScreen(
     viewModel: InvoiceViewModel,
     onBack: () -> Unit,
     onPreviewWithInvoice: (Long) -> Unit,
+    onOpenMenu: () -> Unit = {},
     modifier: Modifier = Modifier
 ) {
     val context = LocalContext.current
@@ -96,39 +104,86 @@ fun TemplatesScreen(
         "#0F172A" to "Charcoal Slate"
     )
 
-    Scaffold(
-        modifier = modifier.fillMaxSize(),
-        topBar = {
-            TopAppBar(
-                title = { Text("DOCX Templates & Editor", fontWeight = FontWeight.Bold) },
-                navigationIcon = {
-                    IconButton(onClick = onBack) {
-                        Icon(imageVector = Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back")
-                    }
-                },
-                actions = {
-                    IconButton(
-                        onClick = {
-                            viewModel.updateActiveTemplateConfig(editingConfig)
-                            Toast.makeText(context, "Template configuration saved", Toast.LENGTH_SHORT).show()
-                        },
-                        modifier = Modifier.testTag("save_template_config_btn")
-                    ) {
-                        Icon(imageVector = Icons.Default.Check, contentDescription = "Save", tint = PrimaryNavy)
-                    }
-                },
-                colors = TopAppBarDefaults.topAppBarColors(containerColor = MaterialTheme.colorScheme.surface)
-            )
-        }
-    ) { padding ->
-        Column(
-            modifier = Modifier
-                .fillMaxSize()
-                .padding(padding)
-                .verticalScroll(rememberScrollState())
-                .padding(16.dp),
-            verticalArrangement = Arrangement.spacedBy(16.dp)
-        ) {
+    val isDark = isSystemInDarkTheme()
+    val adaptiveInfo = rememberWindowAdaptiveInfo()
+
+    AmbientGlassBackdrop {
+        Scaffold(
+            contentWindowInsets = androidx.compose.foundation.layout.WindowInsets(0, 0, 0, 0),
+            modifier = modifier.fillMaxSize(),
+            containerColor = Color.Transparent,
+            topBar = {
+                TopAppBar(
+                    title = {
+                        Text(
+                            text = "DOCX Templates & Editor",
+                            fontWeight = FontWeight.Bold,
+                            color = if (isDark) Color.White else PrimaryNavy,
+                            fontSize = adaptiveInfo.titleLargeSize
+                        )
+                    },
+                    navigationIcon = {
+                        IconButton(onClick = onBack) {
+                            Box(
+                                modifier = Modifier
+                                    .size(36.dp)
+                                    .clip(CircleShape)
+                                    .background(if (isDark) Color(0xFF1E293B) else Color(0xFFEFF6FF)),
+                                contentAlignment = Alignment.Center
+                            ) {
+                                Icon(
+                                    imageVector = Icons.AutoMirrored.Filled.ArrowBack,
+                                    contentDescription = "Back",
+                                    tint = if (isDark) Color.White else Color(0xFF1D4ED8),
+                                    modifier = Modifier.size(18.dp)
+                                )
+                            }
+                        }
+                    },
+                    actions = {
+                        IconButton(
+                            onClick = {
+                                viewModel.updateActiveTemplateConfig(editingConfig)
+                                Toast.makeText(context, "Template configuration saved", Toast.LENGTH_SHORT).show()
+                            },
+                            modifier = Modifier.testTag("save_template_config_btn")
+                        ) {
+                            Icon(imageVector = Icons.Default.Check, contentDescription = "Save", tint = if (isDark) Color.White else PrimaryNavy)
+                        }
+
+                        IconButton(
+                            onClick = onOpenMenu,
+                            modifier = Modifier.testTag("templates_menu_btn")
+                        ) {
+                            Box(
+                                modifier = Modifier
+                                    .size(36.dp)
+                                    .clip(CircleShape)
+                                    .background(if (isDark) Color(0xFF1E293B) else Color(0xFFEFF6FF)),
+                                contentAlignment = Alignment.Center
+                            ) {
+                                Icon(
+                                    imageVector = Icons.Default.Menu,
+                                    contentDescription = "Menu",
+                                    tint = if (isDark) Color.White else PrimaryNavy,
+                                    modifier = Modifier.size(20.dp)
+                                )
+                            }
+                        }
+                    },
+                    colors = TopAppBarDefaults.topAppBarColors(containerColor = Color.Transparent)
+                )
+            }
+        ) { padding ->
+            AdaptiveContainer(maxWidth = adaptiveInfo.formMaxWidth) {
+                Column(
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .padding(padding)
+                        .verticalScroll(rememberScrollState())
+                        .padding(horizontal = adaptiveInfo.horizontalPadding, vertical = 16.dp),
+                    verticalArrangement = Arrangement.spacedBy(16.dp)
+                ) {
             // Section 1: Template Presets Grid
             Text(
                 text = "Select Document Template Preset:",
@@ -145,7 +200,7 @@ fun TemplatesScreen(
                     PrimaryNavy
                 }
 
-                Card(
+                GlassCard(
                     modifier = Modifier
                         .fillMaxWidth()
                         .testTag("template_preset_${preset.templateId}")
@@ -155,14 +210,11 @@ fun TemplatesScreen(
                             viewModel.selectTemplatePreset(preset)
                         }
                         .then(
-                            if (isSelected) Modifier.border(2.dp, PrimaryNavy, RoundedCornerShape(16.dp))
+                            if (isSelected) Modifier.border(2.dp, Color(0xFF2563EB), RoundedCornerShape(18.dp))
                             else Modifier
                         ),
-                    colors = CardDefaults.cardColors(
-                        containerColor = if (isSelected) Color(0xFFEFF6FF) else MaterialTheme.colorScheme.surface
-                    ),
-                    shape = RoundedCornerShape(16.dp),
-                    elevation = CardDefaults.cardElevation(defaultElevation = 2.dp)
+                    shape = RoundedCornerShape(18.dp),
+                    elevation = if (isSelected) 4.dp else 2.dp
                 ) {
                     Row(
                         modifier = Modifier
@@ -219,10 +271,9 @@ fun TemplatesScreen(
             }
 
             // Section 2: In-Tool Template Customizer & Editor
-            Card(
-                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
-                shape = RoundedCornerShape(16.dp),
-                elevation = CardDefaults.cardElevation(defaultElevation = 1.dp)
+            GlassCard(
+                shape = RoundedCornerShape(18.dp),
+                elevation = 2.dp
             ) {
                 Column(
                     modifier = Modifier.padding(16.dp),
@@ -246,7 +297,8 @@ fun TemplatesScreen(
                         onValueChange = { editingConfig = editingConfig.copy(docxTitle = it) },
                         label = { Text("Invoice Document Title") },
                         modifier = Modifier.fillMaxWidth().testTag("edit_template_title"),
-                        shape = RoundedCornerShape(10.dp)
+                        shape = RoundedCornerShape(12.dp),
+                        colors = glassTextFieldColors()
                     )
 
                     Row(
@@ -258,14 +310,16 @@ fun TemplatesScreen(
                             onValueChange = { editingConfig = editingConfig.copy(colHeaderItem = it) },
                             label = { Text("Description Header") },
                             modifier = Modifier.weight(1f),
-                            shape = RoundedCornerShape(10.dp)
+                            shape = RoundedCornerShape(12.dp),
+                            colors = glassTextFieldColors()
                         )
                         OutlinedTextField(
                             value = editingConfig.colHeaderQty,
                             onValueChange = { editingConfig = editingConfig.copy(colHeaderQty = it) },
                             label = { Text("Qty Header") },
                             modifier = Modifier.weight(1f),
-                            shape = RoundedCornerShape(10.dp)
+                            shape = RoundedCornerShape(12.dp),
+                            colors = glassTextFieldColors()
                         )
                     }
 
@@ -278,14 +332,16 @@ fun TemplatesScreen(
                             onValueChange = { editingConfig = editingConfig.copy(colHeaderRate = it) },
                             label = { Text("Rate Header") },
                             modifier = Modifier.weight(1f),
-                            shape = RoundedCornerShape(10.dp)
+                            shape = RoundedCornerShape(12.dp),
+                            colors = glassTextFieldColors()
                         )
                         OutlinedTextField(
                             value = editingConfig.colHeaderAmount,
                             onValueChange = { editingConfig = editingConfig.copy(colHeaderAmount = it) },
                             label = { Text("Amount Header") },
                             modifier = Modifier.weight(1f),
-                            shape = RoundedCornerShape(10.dp)
+                            shape = RoundedCornerShape(12.dp),
+                            colors = glassTextFieldColors()
                         )
                     }
 
@@ -475,4 +531,6 @@ fun TemplatesScreen(
             Spacer(modifier = Modifier.height(24.dp))
         }
     }
+}
+}
 }

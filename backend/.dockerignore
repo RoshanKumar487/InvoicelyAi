@@ -1,0 +1,26 @@
+# Git and IDE
+.git/
+.gitignore
+.idea/
+.vscode/
+*.iml
+
+# Build artifacts and caches
+target/
+build/
+.gradle/
+out/
+
+# Logs and crash dumps
+*.log
+hs_err_pid*.log
+replay_pid*.log
+
+# Environment and secrets (Do NOT bake credentials into Docker image)
+.env
+.env.local
+.env.*.local
+
+# OS specific
+.DS_Store
+Thumbs.db

@@ -24,6 +24,7 @@ import androidx.compose.material.icons.filled.AttachMoney
 import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.filled.Download
 import androidx.compose.material.icons.filled.ErrorOutline
+import androidx.compose.material.icons.filled.Menu
 import androidx.compose.material.icons.filled.MonetizationOn
 import androidx.compose.material.icons.filled.Receipt
 import androidx.compose.material.icons.filled.TrendingUp
@@ -54,12 +55,17 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import com.example.ui.components.AdaptiveContainer
 import com.example.ui.components.RevenueChart
+import com.example.ui.components.rememberWindowAdaptiveInfo
 import com.example.ui.theme.PrimaryNavy
 import com.example.ui.theme.StatusOverdueRose
 import com.example.ui.theme.StatusPaidGreen
 import com.example.ui.theme.StatusPendingAmber
 import com.example.ui.viewmodel.InvoiceViewModel
+import androidx.compose.foundation.isSystemInDarkTheme
+import com.example.ui.components.AmbientGlassBackdrop
+import com.example.ui.components.GlassCard
 import java.util.Locale
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -67,6 +73,7 @@ import java.util.Locale
 fun ReportsScreen(
     viewModel: InvoiceViewModel,
     onBack: () -> Unit,
+    onOpenMenu: () -> Unit = {},
     modifier: Modifier = Modifier
 ) {
     val analytics by viewModel.dashboardAnalytics.collectAsStateWithLifecycle()
@@ -77,56 +84,90 @@ fun ReportsScreen(
     val totalExpenses = remember(allExpenses) { allExpenses.sumOf { it.amount } }
     val netEarnings = analytics.totalPaid - totalExpenses
 
-    Scaffold(
-        modifier = modifier.fillMaxSize(),
-        topBar = {
-            TopAppBar(
-                title = {
-                    Column {
-                        Text(
-                            text = "Financial Reports",
-                            fontSize = 18.sp,
-                            fontWeight = FontWeight.Bold,
-                            color = PrimaryNavy
-                        )
-                        Text(
-                            text = "Revenue, expenses & tax metrics",
-                            fontSize = 11.sp,
-                            color = Color.Gray
-                        )
-                    }
-                },
-                navigationIcon = {
-                    IconButton(onClick = onBack, modifier = Modifier.testTag("reports_back_button")) {
-                        Icon(
-                            imageVector = Icons.AutoMirrored.Filled.ArrowBack,
-                            contentDescription = "Back",
-                            tint = PrimaryNavy
-                        )
-                    }
-                },
-                colors = TopAppBarDefaults.topAppBarColors(containerColor = MaterialTheme.colorScheme.surface)
-            )
-        }
-    ) { innerPadding ->
-        LazyColumn(
-            modifier = Modifier
-                .fillMaxSize()
-                .padding(innerPadding)
-                .background(Color(0xFFF8FAFC)),
-            contentPadding = PaddingValues(16.dp),
-            verticalArrangement = Arrangement.spacedBy(16.dp)
-        ) {
-            // Net Earnings & High-Level Summary Card
-            item {
-                Card(
-                    modifier = Modifier.fillMaxWidth(),
-                    shape = RoundedCornerShape(16.dp),
-                    colors = CardDefaults.cardColors(containerColor = Color.White),
-                    border = androidx.compose.foundation.BorderStroke(1.dp, Color(0xFFE2E8F0)),
-                    elevation = CardDefaults.cardElevation(defaultElevation = 2.dp)
+    val isDark = isSystemInDarkTheme()
+    val adaptiveInfo = rememberWindowAdaptiveInfo()
+
+    AmbientGlassBackdrop {
+        Scaffold(
+            contentWindowInsets = androidx.compose.foundation.layout.WindowInsets(0, 0, 0, 0),
+            modifier = modifier.fillMaxSize(),
+            containerColor = Color.Transparent,
+            topBar = {
+                TopAppBar(
+                    title = {
+                        Column {
+                            Text(
+                                text = "Financial Reports",
+                                fontSize = adaptiveInfo.titleLargeSize,
+                                fontWeight = FontWeight.Bold,
+                                color = if (isDark) Color.White else PrimaryNavy
+                            )
+                            Text(
+                                text = "Revenue, expenses & tax metrics",
+                                fontSize = 11.sp,
+                                color = if (isDark) Color(0xFF94A3B8) else Color.Gray
+                            )
+                        }
+                    },
+                    navigationIcon = {
+                        IconButton(onClick = onBack, modifier = Modifier.testTag("reports_back_button")) {
+                            Box(
+                                modifier = Modifier
+                                    .size(36.dp)
+                                    .clip(CircleShape)
+                                    .background(if (isDark) Color(0xFF1E293B) else Color(0xFFEFF6FF)),
+                                contentAlignment = Alignment.Center
+                            ) {
+                                Icon(
+                                    imageVector = Icons.AutoMirrored.Filled.ArrowBack,
+                                    contentDescription = "Back",
+                                    tint = if (isDark) Color.White else Color(0xFF1D4ED8),
+                                    modifier = Modifier.size(18.dp)
+                                )
+                            }
+                        }
+                    },
+                    actions = {
+                        IconButton(
+                            onClick = onOpenMenu,
+                            modifier = Modifier.testTag("reports_menu_btn")
+                        ) {
+                            Box(
+                                modifier = Modifier
+                                    .size(36.dp)
+                                    .clip(CircleShape)
+                                    .background(if (isDark) Color(0xFF1E293B) else Color(0xFFEFF6FF)),
+                                contentAlignment = Alignment.Center
+                            ) {
+                                Icon(
+                                    imageVector = Icons.Default.Menu,
+                                    contentDescription = "Menu",
+                                    tint = if (isDark) Color.White else PrimaryNavy,
+                                    modifier = Modifier.size(20.dp)
+                                )
+                            }
+                        }
+                    },
+                    colors = TopAppBarDefaults.topAppBarColors(containerColor = Color.Transparent)
+                )
+            }
+        ) { innerPadding ->
+            AdaptiveContainer(maxWidth = adaptiveInfo.contentMaxWidth) {
+                LazyColumn(
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .padding(innerPadding),
+                    contentPadding = PaddingValues(horizontal = adaptiveInfo.horizontalPadding, vertical = 16.dp),
+                    verticalArrangement = Arrangement.spacedBy(16.dp)
                 ) {
-                    Column(modifier = Modifier.padding(16.dp)) {
+                // Net Earnings & High-Level Summary Card
+                item {
+                    GlassCard(
+                        modifier = Modifier.fillMaxWidth(),
+                        shape = RoundedCornerShape(18.dp),
+                        elevation = 3.dp
+                    ) {
+                        Column(modifier = Modifier.padding(16.dp)) {
                         Text(
                             text = "Net Cashflow (Paid Invoices - Expenses)",
                             fontSize = 12.sp,
@@ -183,12 +224,10 @@ fun ReportsScreen(
 
             // Monthly Revenue & Billing Chart
             item {
-                Card(
+                GlassCard(
                     modifier = Modifier.fillMaxWidth(),
-                    shape = RoundedCornerShape(16.dp),
-                    colors = CardDefaults.cardColors(containerColor = Color.White),
-                    border = androidx.compose.foundation.BorderStroke(1.dp, Color(0xFFE2E8F0)),
-                    elevation = CardDefaults.cardElevation(defaultElevation = 2.dp)
+                    shape = RoundedCornerShape(18.dp),
+                    elevation = 3.dp
                 ) {
                     Column(modifier = Modifier.padding(16.dp)) {
                         Row(
@@ -226,12 +265,10 @@ fun ReportsScreen(
 
             // Invoice Health & Collection Status
             item {
-                Card(
+                GlassCard(
                     modifier = Modifier.fillMaxWidth(),
-                    shape = RoundedCornerShape(16.dp),
-                    colors = CardDefaults.cardColors(containerColor = Color.White),
-                    border = androidx.compose.foundation.BorderStroke(1.dp, Color(0xFFE2E8F0)),
-                    elevation = CardDefaults.cardElevation(defaultElevation = 2.dp)
+                    shape = RoundedCornerShape(18.dp),
+                    elevation = 3.dp
                 ) {
                     Column(modifier = Modifier.padding(16.dp)) {
                         Text(
@@ -310,6 +347,8 @@ fun ReportsScreen(
             }
         }
     }
+}
+}
 }
 
 @Composable

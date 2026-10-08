@@ -21,5 +21,8 @@ data class ExpenseEntity(
     val taxDeductible: Boolean = true,
     val taxAmount: Double = 0.0,
     val receiptImageUri: String? = null,
-    val notes: String = ""
+    val notes: String = "",
+    val companyId: Long? = null,
+    val createdByUserId: Long? = null,
+    val createdByUserName: String? = null
 )

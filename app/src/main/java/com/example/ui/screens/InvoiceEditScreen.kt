@@ -20,7 +20,10 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.statusBars
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.rememberScrollState
+import com.example.ui.components.AdaptiveContainer
+import com.example.ui.components.rememberWindowAdaptiveInfo
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardOptions
@@ -28,6 +31,7 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.Add
+import androidx.compose.material.icons.filled.Business
 import androidx.compose.material.icons.filled.AutoAwesome
 import androidx.compose.material.icons.filled.Calculate
 import androidx.compose.material.icons.filled.CalendarToday
@@ -41,8 +45,10 @@ import androidx.compose.material.icons.filled.Event
 import androidx.compose.material.icons.filled.ExpandLess
 import androidx.compose.material.icons.filled.ExpandMore
 import androidx.compose.material.icons.filled.FactCheck
+import androidx.compose.material.icons.filled.History
 import androidx.compose.material.icons.filled.KeyboardArrowDown
 import androidx.compose.material.icons.filled.LocalShipping
+import androidx.compose.material.icons.filled.Menu
 import androidx.compose.material.icons.filled.Payments
 import androidx.compose.material.icons.filled.Person
 import androidx.compose.material.icons.filled.Receipt
@@ -58,6 +64,7 @@ import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.ExposedDropdownMenuBox
 import androidx.compose.material3.ExposedDropdownMenuDefaults
+import androidx.compose.material3.FilledTonalButton
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -70,6 +77,7 @@ import androidx.compose.material3.Surface
 import androidx.compose.material3.Switch
 import androidx.compose.material3.SwitchDefaults
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
@@ -89,6 +97,9 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.rememberCoroutineScope
+import kotlinx.coroutines.launch
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.example.data.model.ClientEntity
 import com.example.data.model.CustomClientField
@@ -99,13 +110,24 @@ import com.example.data.model.InvoiceItem
 import com.example.data.model.InvoiceUtils
 import com.example.data.model.ItemColumnDef
 import com.example.data.model.ShippingDetails
-import com.example.ui.components.IndustryTemplateSelectorDialog
 import com.example.ui.components.InvoiceAccordionSection
 import com.example.ui.components.ItemizationBuilderDialog
 import com.example.ui.components.LiveInvoicePreviewModal
+import com.example.ui.components.AutofillItemDescriptionField
+import com.example.ui.components.AutofillUnitField
+import com.example.ui.components.DomainItemCatalogDialog
+import com.example.ui.components.InvoiceFormConfig
+import com.example.ui.components.InvoiceFormCustomizerSheet
+import androidx.compose.foundation.layout.navigationBarsPadding
+import com.example.util.IndustryItemCatalog
+import com.example.util.InvoiceAutofillCache
 import com.example.ui.theme.PrimaryNavy
 import com.example.ui.theme.StatusPaidGreen
 import com.example.ui.viewmodel.InvoiceViewModel
+import androidx.compose.foundation.isSystemInDarkTheme
+import com.example.ui.components.AmbientGlassBackdrop
+import com.example.ui.components.GlassCard
+import com.example.ui.components.glassTextFieldColors
 import java.text.SimpleDateFormat
 import java.util.Calendar
 import java.util.Date
@@ -127,6 +149,7 @@ fun InvoiceEditScreen(
     viewModel: InvoiceViewModel,
     onBack: () -> Unit,
     onSavedAndPreview: (Long) -> Unit,
+    onOpenMenu: () -> Unit = {},
     modifier: Modifier = Modifier
 ) {
     val context = LocalContext.current
@@ -139,6 +162,11 @@ fun InvoiceEditScreen(
     }
     val isNew = invoiceId == 0L
 
+    // Fetch real-time client data when opening invoice creation / edit
+    LaunchedEffect(Unit) {
+        viewModel.refreshRealtimeData()
+    }
+
     val dateFormat = remember { SimpleDateFormat("yyyy-MM-dd", Locale.US) }
     val today = remember { dateFormat.format(Date()) }
     val defaultDue = remember {
@@ -149,6 +177,11 @@ fun InvoiceEditScreen(
     // -------------------------------------------------------------------------
     // Accordion Expansion States (Allow multiple expanded)
     // -------------------------------------------------------------------------
+    var isInvoiceDetailsExpanded by remember { mutableStateOf(true) }
+    var showShippingSectionManually by remember { mutableStateOf(false) }
+    var showNotesSectionManually by remember { mutableStateOf(false) }
+    val isShippingSectionVisible = profile.showShippingSection || showShippingSectionManually
+    val isNotesSectionVisible = profile.showNotesSection || showNotesSectionManually
     var isClientExpanded by remember { mutableStateOf(true) }
     var isShippingExpanded by remember { mutableStateOf(false) }
     var isItemsExpanded by remember { mutableStateOf(true) }
@@ -156,19 +189,18 @@ fun InvoiceEditScreen(
     var isNotesExpanded by remember { mutableStateOf(false) }
 
     // -------------------------------------------------------------------------
-    // Dialog States
+    // Dialog States (No popup on creation; business category configured in Settings)
     // -------------------------------------------------------------------------
-    var showIndustrySelectorDialog by remember { mutableStateOf(isNew) }
     var showItemizationBuilderDialog by remember { mutableStateOf(false) }
     var showLivePreviewModal by remember { mutableStateOf(false) }
-    var selectedIndustryId by remember { mutableStateOf("general") }
+    var selectedIndustryId by remember(profile.industryPresetId) { mutableStateOf(profile.industryPresetId.ifBlank { "general" }) }
 
     // -------------------------------------------------------------------------
-    // Section 1: Client Details
+    // Section 1: Client Details (Primary Key: Company Name)
     // -------------------------------------------------------------------------
     var selectedClientId by remember { mutableStateOf(existingInvoice?.clientId) }
-    var clientName by remember { mutableStateOf(existingInvoice?.clientName ?: "") }
-    var clientCompany by remember { mutableStateOf(existingInvoice?.clientCompany ?: "") }
+    var clientCompany by remember { mutableStateOf(existingInvoice?.clientCompany?.ifBlank { existingInvoice.clientName } ?: "") }
+    var clientName by remember { mutableStateOf(existingInvoice?.clientName?.ifBlank { existingInvoice.clientCompany } ?: "") }
     var clientEmail by remember { mutableStateOf(existingInvoice?.clientEmail ?: "") }
     var clientPhone by remember { mutableStateOf(existingInvoice?.clientPhone ?: "") }
     var clientAddress by remember { mutableStateOf(existingInvoice?.clientAddress ?: "") }
@@ -190,9 +222,7 @@ fun InvoiceEditScreen(
         }
     }
 
-    // Client Display Label Customization
-    var clientLabelTitle by remember { mutableStateOf("Client / Customer Name") }
-    var clientDropdownExpanded by remember { mutableStateOf(false) }
+    var companyDropdownExpanded by remember { mutableStateOf(false) }
 
     // -------------------------------------------------------------------------
     // Section 2: Shipping / Delivery Details
@@ -212,16 +242,17 @@ fun InvoiceEditScreen(
     }
 
     // -------------------------------------------------------------------------
-    // Section 3: Universal Itemization Columns
+    // Section 3: Universal Itemization Columns (Inlined with Invoice Settings)
     // -------------------------------------------------------------------------
-    val itemColumns = remember {
+    val itemColumns = remember(profile.customColumnsJson, existingInvoice?.itemColumnsJson) {
         mutableStateListOf<ItemColumnDef>().apply {
             if (existingInvoice != null && existingInvoice.itemColumnsJson.isNotBlank()) {
                 addAll(InvoiceUtils.deserializeColumns(existingInvoice.itemColumnsJson, profile))
             } else if (profile.customColumnsJson.isNotBlank()) {
                 addAll(InvoiceUtils.deserializeColumns(profile.customColumnsJson, profile))
             } else {
-                addAll(IndustryTemplates.getPresetById("general").defaultColumns)
+                val preset = IndustryTemplates.getPresetById(profile.industryPresetId.ifBlank { "general" })
+                addAll(preset.defaultColumns)
             }
         }
     }
@@ -256,13 +287,20 @@ fun InvoiceEditScreen(
     var taxLabel by remember { mutableStateOf(existingInvoice?.taxLabel ?: profile.defaultTaxLabel) }
     var taxType by remember { mutableStateOf(existingInvoice?.taxType ?: "GST") }
     var isTaxInclusive by remember { mutableStateOf(existingInvoice?.isTaxInclusive ?: false) }
-    var discountPercent by remember { mutableDoubleStateOf(existingInvoice?.discountPercent ?: 0.0) }
-    var discountAmount by remember { mutableDoubleStateOf(existingInvoice?.discountAmount ?: 0.0) }
+    var isRcm by remember { mutableStateOf(existingInvoice?.isRcm ?: profile.defaultIsRcm) }
+    val defaultDiscPct = profile.defaultDiscountType == "percentage"
+    var discountPercent by remember { mutableDoubleStateOf(existingInvoice?.discountPercent ?: if (defaultDiscPct) profile.defaultDiscountValue else 0.0) }
+    var discountAmount by remember { mutableDoubleStateOf(existingInvoice?.discountAmount ?: if (!defaultDiscPct) profile.defaultDiscountValue else 0.0) }
     var shippingFee by remember { mutableDoubleStateOf(existingInvoice?.shippingFee ?: 0.0) }
-    var additionalCharges by remember { mutableDoubleStateOf(existingInvoice?.additionalCharges ?: 0.0) }
+    var additionalCharges by remember { mutableDoubleStateOf(existingInvoice?.additionalCharges ?: profile.defaultAdditionalCharge) }
     var roundOff by remember { mutableDoubleStateOf(existingInvoice?.roundOff ?: 0.0) }
     var amountPaid by remember { mutableDoubleStateOf(existingInvoice?.amountPaid ?: 0.0) }
-    var isDiscountPercentageMode by remember { mutableStateOf(discountPercent > 0.0 || discountAmount == 0.0) }
+    var isDiscountPercentageMode by remember {
+        mutableStateOf(
+            if (existingInvoice != null) (discountPercent > 0.0 || discountAmount == 0.0) else defaultDiscPct
+        )
+    }
+    val additionalChargeLabel = profile.additionalChargeLabel.ifBlank { "Additional Charges" }
 
     // -------------------------------------------------------------------------
     // Section 5: Notes / Terms / Signatures
@@ -280,30 +318,56 @@ fun InvoiceEditScreen(
     var templateId by remember { mutableStateOf(existingInvoice?.templateId ?: profile.defaultTemplateId) }
     var customerSignatureRequired by remember { mutableStateOf(false) }
 
+    val coroutineScope = rememberCoroutineScope()
+    var documentType by remember { mutableStateOf(existingInvoice?.docxTemplateTitle?.ifBlank { "Tax Invoice" } ?: "Tax Invoice") }
+    var copyWatermark by remember { mutableStateOf("Original for Recipient") }
+    var isAutoRoundOff by remember { mutableStateOf(existingInvoice?.roundOff != 0.0 || isNew) }
+    var showAiDraftDialog by remember { mutableStateOf(false) }
+    var showDomainCatalogDialog by remember { mutableStateOf(false) }
+
     // -------------------------------------------------------------------------
     // Calculations
     // -------------------------------------------------------------------------
-    val calculations = remember(
+    val unroundedCalc = remember(
         items.toList(),
         taxRate,
+        profile.isTaxApplicable,
         discountPercent,
         discountAmount,
         shippingFee,
         additionalCharges,
-        roundOff,
         amountPaid,
         isTaxInclusive
     ) {
         InvoiceUtils.calculateInvoice(
             items = items,
-            taxRate = taxRate,
+            taxRate = if (profile.isTaxApplicable) taxRate else 0.0,
             discountPercent = if (isDiscountPercentageMode) discountPercent else 0.0,
             discountAmount = if (!isDiscountPercentageMode) discountAmount else 0.0,
             shippingFee = if (shippingDetails.isEnabled) shippingFee else 0.0,
             amountPaid = amountPaid,
             additionalCharges = additionalCharges,
-            roundOff = roundOff,
+            roundOff = 0.0,
             isTaxInclusive = isTaxInclusive
+        )
+    }
+
+    val computedRoundOff = remember(unroundedCalc.grandTotal, isAutoRoundOff, roundOff) {
+        if (isAutoRoundOff) {
+            val gross = unroundedCalc.grandTotal
+            val rounded = kotlin.math.round(gross)
+            rounded - gross
+        } else {
+            roundOff
+        }
+    }
+
+    val calculations = remember(unroundedCalc, computedRoundOff, amountPaid) {
+        val finalGrand = maxOf(0.0, unroundedCalc.grandTotal + computedRoundOff)
+        unroundedCalc.copy(
+            grandTotal = finalGrand,
+            balanceDue = maxOf(0.0, finalGrand - amountPaid),
+            roundOff = computedRoundOff
         )
     }
 
@@ -316,25 +380,14 @@ fun InvoiceEditScreen(
         Toast.makeText(context, "Applied $termName (Due: $dueDate)", Toast.LENGTH_SHORT).show()
     }
 
-    // Helper: Save Invoice
-    fun validateAndSave(previewAfter: Boolean) {
-        if (clientName.isBlank()) {
-            Toast.makeText(context, "Please enter client name in Section 1", Toast.LENGTH_SHORT).show()
-            isClientExpanded = true
-            return
-        }
-        if (items.isEmpty()) {
-            Toast.makeText(context, "Please add at least one item in Section 3", Toast.LENGTH_SHORT).show()
-            isItemsExpanded = true
-            return
-        }
-
+    fun saveInvoiceInternal(finalClientId: Long?, previewAfter: Boolean) {
+        val trimmedCompany = clientCompany.trim()
         val invoiceToSave = InvoiceEntity(
             id = if (isNew) 0L else invoiceId,
             invoiceNumber = invoiceNumber.trim(),
-            clientId = selectedClientId,
-            clientName = clientName.trim(),
-            clientCompany = clientCompany.trim(),
+            clientId = finalClientId,
+            clientName = trimmedCompany,
+            clientCompany = trimmedCompany,
             clientEmail = clientEmail.trim(),
             clientPhone = clientPhone.trim(),
             clientAddress = clientAddress.trim(),
@@ -349,7 +402,7 @@ fun InvoiceEditScreen(
             notes = notes,
             terms = terms,
             paymentInstructions = paymentInstructions,
-            taxRate = taxRate,
+            taxRate = if (profile.isTaxApplicable) taxRate else 0.0,
             taxLabel = taxLabel,
             discountPercent = if (isDiscountPercentageMode) discountPercent else 0.0,
             discountAmount = if (!isDiscountPercentageMode) discountAmount else 0.0,
@@ -357,7 +410,7 @@ fun InvoiceEditScreen(
             amountPaid = amountPaid,
             status = status,
             templateId = templateId,
-            docxTemplateTitle = "TAX INVOICE",
+            docxTemplateTitle = documentType,
             createdAt = existingInvoice?.createdAt ?: System.currentTimeMillis(),
             paidDate = if (status.equals("paid", ignoreCase = true)) System.currentTimeMillis() else null,
             reminderLastSent = existingInvoice?.reminderLastSent,
@@ -365,9 +418,10 @@ fun InvoiceEditScreen(
             customFieldsJson = InvoiceUtils.serializeCustomFields(customClientFields),
             itemColumnsJson = InvoiceUtils.serializeColumns(itemColumns),
             additionalCharges = additionalCharges,
-            roundOff = roundOff,
+            roundOff = calculations.roundOff,
             isTaxInclusive = isTaxInclusive,
-            taxType = taxType
+            taxType = taxType,
+            isRcm = isRcm
         )
 
         viewModel.saveInvoice(invoiceToSave) { savedId ->
@@ -380,433 +434,490 @@ fun InvoiceEditScreen(
         }
     }
 
-    Scaffold(
-        modifier = Modifier.fillMaxSize(),
-        contentWindowInsets = WindowInsets(0, 0, 0, 0),
-        topBar = {
-            TopAppBar(
-                title = {
-                    Column {
-                        Row(verticalAlignment = Alignment.CenterVertically) {
-                            Text(
-                                text = if (isNew) "Universal Invoice Creator" else "Edit Invoice",
-                                fontWeight = FontWeight.Bold,
-                                fontSize = 16.sp,
-                                color = PrimaryNavy
-                            )
-                            Spacer(modifier = Modifier.width(6.dp))
-                            Surface(
-                                color = Color(0xFFEFF6FF),
-                                shape = RoundedCornerShape(6.dp),
-                                border = androidx.compose.foundation.BorderStroke(1.dp, Color(0xFFBFDBFE))
-                            ) {
-                                Text(
-                                    text = "Adaptive",
-                                    fontSize = 9.sp,
-                                    fontWeight = FontWeight.Bold,
-                                    color = Color(0xFF1D4ED8),
-                                    modifier = Modifier.padding(horizontal = 4.dp, vertical = 1.dp)
-                                )
-                            }
-                        }
-                        Text(
-                            text = "Itemization & form customizable for any business",
-                            fontSize = 11.sp,
-                            color = Color(0xFF64748B)
-                        )
-                    }
-                },
-                navigationIcon = {
-                    IconButton(onClick = onBack) {
-                        Icon(imageVector = Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back")
-                    }
-                },
-                actions = {
-                    // Choose Industry button
-                    IconButton(
-                        onClick = { showIndustrySelectorDialog = true },
-                        modifier = Modifier.testTag("choose_industry_top_btn")
-                    ) {
-                        Icon(Icons.Default.ShoppingBag, contentDescription = "Choose Industry", tint = Color(0xFF2563EB))
-                    }
+    // Helper: Save Invoice (auto-creates client profile if not matching)
+    fun validateAndSave(previewAfter: Boolean) {
+        val trimmedCompany = clientCompany.trim()
+        if (trimmedCompany.isBlank()) {
+            Toast.makeText(context, "Please enter Company Name in Section 2", Toast.LENGTH_SHORT).show()
+            isClientExpanded = true
+            return
+        }
+        if (items.isEmpty()) {
+            Toast.makeText(context, "Please add at least one item in Section 3", Toast.LENGTH_SHORT).show()
+            isItemsExpanded = true
+            return
+        }
 
-                    // Live Preview Dialog Action
-                    IconButton(
-                        onClick = { showLivePreviewModal = true },
-                        modifier = Modifier.testTag("open_live_preview_top_btn")
-                    ) {
-                        Icon(Icons.Default.Visibility, contentDescription = "Live Preview", tint = PrimaryNavy)
-                    }
-                },
-                windowInsets = WindowInsets.statusBars,
-                colors = TopAppBarDefaults.topAppBarColors(
-                    containerColor = Color.White,
-                    scrolledContainerColor = Color.White
-                )
+        // Check if company matches existing client in database
+        val matchedClient = allClients.find {
+            (selectedClientId != null && it.id == selectedClientId) ||
+            it.companyName.trim().equals(trimmedCompany, ignoreCase = true) ||
+            it.name.trim().equals(trimmedCompany, ignoreCase = true)
+        }
+
+        if (matchedClient != null) {
+            selectedClientId = matchedClient.id
+            saveInvoiceInternal(matchedClient.id, previewAfter)
+        } else {
+            // Auto-create client profile and call save API
+            val newClient = ClientEntity(
+                id = 0L,
+                name = trimmedCompany,
+                companyName = trimmedCompany,
+                email = clientEmail.trim(),
+                phone = clientPhone.trim(),
+                address = clientAddress.trim(),
+                taxId = clientTaxId.trim(),
+                defaultPaymentTerms = paymentTerms
             )
-        },
-        bottomBar = {
-            // Enterprise Bottom Sticky Action Bar
-            Surface(
-                color = Color.White,
-                shadowElevation = 14.dp,
-                border = androidx.compose.foundation.BorderStroke(1.dp, Color(0xFFE2E8F0))
-            ) {
-                Row(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(horizontal = 14.dp, vertical = 10.dp),
-                    horizontalArrangement = Arrangement.spacedBy(8.dp),
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    Column(modifier = Modifier.weight(1f)) {
-                        Text(
-                            text = "Grand Total: ${currencySymbol}${String.format(Locale.US, "%,.2f", calculations.grandTotal)}",
-                            fontSize = 14.sp,
-                            fontWeight = FontWeight.Black,
-                            color = PrimaryNavy
-                        )
-                        Text(
-                            text = "${items.size} item(s) • $paymentTerms",
-                            fontSize = 10.sp,
-                            color = Color(0xFF64748B)
-                        )
-                    }
-
-                    OutlinedButton(
-                        onClick = { validateAndSave(previewAfter = false) },
-                        shape = RoundedCornerShape(8.dp),
-                        contentPadding = PaddingValues(horizontal = 10.dp, vertical = 8.dp),
-                        modifier = Modifier.testTag("save_draft_bottom_btn")
-                    ) {
-                        Icon(Icons.Default.Check, contentDescription = null, modifier = Modifier.size(14.dp))
-                        Spacer(modifier = Modifier.width(4.dp))
-                        Text("Save Draft", fontSize = 11.sp, fontWeight = FontWeight.SemiBold)
-                    }
-
-                    OutlinedButton(
-                        onClick = { showLivePreviewModal = true },
-                        shape = RoundedCornerShape(8.dp),
-                        colors = ButtonDefaults.outlinedButtonColors(contentColor = Color(0xFF2563EB)),
-                        contentPadding = PaddingValues(horizontal = 10.dp, vertical = 8.dp),
-                        modifier = Modifier.testTag("live_preview_bottom_btn")
-                    ) {
-                        Icon(Icons.Default.Visibility, contentDescription = null, modifier = Modifier.size(14.dp))
-                        Spacer(modifier = Modifier.width(4.dp))
-                        Text("Live Preview", fontSize = 11.sp, fontWeight = FontWeight.Bold)
-                    }
-
-                    Button(
-                        onClick = { validateAndSave(previewAfter = true) },
-                        colors = ButtonDefaults.buttonColors(containerColor = PrimaryNavy),
-                        shape = RoundedCornerShape(8.dp),
-                        contentPadding = PaddingValues(horizontal = 12.dp, vertical = 8.dp),
-                        modifier = Modifier.testTag("generate_invoice_bottom_btn")
-                    ) {
-                        Icon(Icons.Default.Receipt, contentDescription = null, modifier = Modifier.size(14.dp))
-                        Spacer(modifier = Modifier.width(4.dp))
-                        Text("Generate", fontSize = 11.sp, fontWeight = FontWeight.Bold)
-                    }
-                }
+            viewModel.saveClient(newClient) { newClientId ->
+                selectedClientId = newClientId
+                saveInvoiceInternal(newClientId, previewAfter)
             }
         }
-    ) { innerPadding ->
-        Column(
-            modifier = Modifier
-                .fillMaxSize()
-                .padding(innerPadding)
-                .background(Color(0xFFF1F5F9))
-                .verticalScroll(rememberScrollState()),
-            verticalArrangement = Arrangement.spacedBy(8.dp)
-        ) {
+    }
 
-            // Top Industry Quick Selector Banner (Edge-to-edge)
-            Surface(
-                modifier = Modifier.fillMaxWidth(),
-                color = Color.White,
-                border = androidx.compose.foundation.BorderStroke(1.dp, Color(0xFFE2E8F0))
-            ) {
-                Column(modifier = Modifier.padding(horizontal = 16.dp, vertical = 12.dp)) {
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.SpaceBetween,
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        Row(
-                            verticalAlignment = Alignment.CenterVertically,
-                            horizontalArrangement = Arrangement.spacedBy(6.dp)
-                        ) {
-                            Icon(Icons.Default.AutoAwesome, contentDescription = null, tint = Color(0xFF2563EB), modifier = Modifier.size(18.dp))
-                            Text(
-                                text = "Business Type & Preset",
-                                fontSize = 13.sp,
-                                fontWeight = FontWeight.Bold,
-                                color = PrimaryNavy
-                            )
-                        }
+    val isDark = isSystemInDarkTheme()
+    val adaptiveInfo = rememberWindowAdaptiveInfo()
 
-                        Surface(
-                            color = Color(0xFFEFF6FF),
-                            shape = RoundedCornerShape(6.dp),
-                            border = androidx.compose.foundation.BorderStroke(1.dp, Color(0xFF93C5FD)),
-                            modifier = Modifier.clickable { showIndustrySelectorDialog = true }
-                        ) {
-                            Text(
-                                text = "Browse 12 Industries →",
-                                fontSize = 10.sp,
-                                fontWeight = FontWeight.Bold,
-                                color = Color(0xFF2563EB),
-                                modifier = Modifier.padding(horizontal = 8.dp, vertical = 3.dp)
-                            )
-                        }
-                    }
-
-                    Spacer(modifier = Modifier.height(8.dp))
-
-                    // Quick Chips row for most common presets
-                    Row(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .horizontalScroll(rememberScrollState()),
-                        horizontalArrangement = Arrangement.spacedBy(6.dp)
-                    ) {
-                        IndustryTemplates.allPresets.take(6).forEach { preset ->
-                            val isSelected = selectedIndustryId == preset.id
-                            Surface(
-                                color = if (isSelected) Color(0xFF2563EB) else Color(0xFFF1F5F9),
-                                shape = RoundedCornerShape(16.dp),
-                                border = androidx.compose.foundation.BorderStroke(
-                                    1.dp,
-                                    if (isSelected) Color(0xFF1D4ED8) else Color(0xFFCBD5E1)
-                                ),
-                                modifier = Modifier.clickable {
-                                    selectedIndustryId = preset.id
-                                    templateId = preset.recommendedTemplateId
-                                    itemColumns.clear()
-                                    itemColumns.addAll(preset.defaultColumns)
-                                    if (preset.defaultNotes.isNotBlank()) notes = preset.defaultNotes
-                                    if (preset.defaultTerms.isNotBlank()) terms = preset.defaultTerms
-                                    shippingDetails = shippingDetails.copy(sectionTitle = preset.recommendedSectionTitle)
-                                    if (items.isEmpty() || (items.size == 1 && items.first().description.isBlank())) {
-                                        preset.sampleItem?.let { sample ->
-                                            items.clear()
-                                            items.add(sample)
-                                        }
-                                    }
-                                    Toast.makeText(context, "Loaded ${preset.name} template", Toast.LENGTH_SHORT).show()
-                                }
-                            ) {
+    AmbientGlassBackdrop {
+        Scaffold(
+            modifier = Modifier.fillMaxSize(),
+            contentWindowInsets = WindowInsets(0, 0, 0, 0),
+            containerColor = Color.Transparent,
+            topBar = {
+                TopAppBar(
+                    title = {
+                        Column {
+                            Row(verticalAlignment = Alignment.CenterVertically) {
                                 Text(
-                                    text = preset.name,
-                                    fontSize = 11.sp,
-                                    fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Medium,
-                                    color = if (isSelected) Color.White else PrimaryNavy,
-                                    modifier = Modifier.padding(horizontal = 10.dp, vertical = 5.dp)
+                                    text = if (isNew) "Universal Invoice Creator" else "Edit Invoice",
+                                    fontWeight = FontWeight.Bold,
+                                    fontSize = if (adaptiveInfo.isTablet) 18.sp else 16.sp,
+                                    color = if (isDark) Color.White else PrimaryNavy
+                                )
+                                Spacer(modifier = Modifier.width(6.dp))
+                                Surface(
+                                    color = if (isDark) Color(0xFF1E3A8A).copy(alpha = 0.5f) else Color(0xFFEFF6FF),
+                                    shape = RoundedCornerShape(6.dp),
+                                    border = androidx.compose.foundation.BorderStroke(1.dp, if (isDark) Color(0xFF3B82F6).copy(alpha = 0.4f) else Color(0xFFBFDBFE))
+                                ) {
+                                    Text(
+                                        text = "Adaptive",
+                                        fontSize = 9.sp,
+                                        fontWeight = FontWeight.Bold,
+                                        color = if (isDark) Color(0xFF93C5FD) else Color(0xFF1D4ED8),
+                                        modifier = Modifier.padding(horizontal = 4.dp, vertical = 1.dp)
+                                    )
+                                }
+                            }
+                            Text(
+                                text = "Itemization & form customizable for any business",
+                                fontSize = 11.sp,
+                                color = if (isDark) Color(0xFF94A3B8) else Color(0xFF64748B)
+                            )
+                        }
+                    },
+                    navigationIcon = {
+                        IconButton(onClick = onBack) {
+                            Box(
+                                modifier = Modifier
+                                    .size(36.dp)
+                                    .clip(CircleShape)
+                                    .background(if (isDark) Color(0xFF1E293B) else Color(0xFFEFF6FF)),
+                                contentAlignment = Alignment.Center
+                            ) {
+                                Icon(
+                                    imageVector = Icons.AutoMirrored.Filled.ArrowBack,
+                                    contentDescription = "Back",
+                                    tint = if (isDark) Color.White else Color(0xFF1D4ED8),
+                                    modifier = Modifier.size(18.dp)
                                 )
                             }
                         }
+                    },
+                    actions = {
+                        // Quick Save button in header
+                        FilledTonalButton(
+                            onClick = { validateAndSave(previewAfter = false) },
+                            shape = RoundedCornerShape(10.dp),
+                            contentPadding = PaddingValues(horizontal = 10.dp, vertical = 4.dp),
+                            colors = ButtonDefaults.filledTonalButtonColors(
+                                containerColor = if (isDark) Color(0xFF1E293B) else Color(0xFFEFF6FF),
+                                contentColor = if (isDark) Color(0xFF93C5FD) else Color(0xFF1D4ED8)
+                            ),
+                            modifier = Modifier.testTag("save_draft_top_btn")
+                        ) {
+                            Icon(Icons.Default.Check, contentDescription = null, modifier = Modifier.size(14.dp))
+                            Spacer(modifier = Modifier.width(4.dp))
+                            Text("Save", fontSize = 12.sp, fontWeight = FontWeight.Bold)
+                        }
+
+                        // Live Preview Action
+                        IconButton(
+                            onClick = { showLivePreviewModal = true },
+                            modifier = Modifier.testTag("open_live_preview_top_btn")
+                        ) {
+                            Box(
+                                modifier = Modifier
+                                    .size(36.dp)
+                                    .clip(CircleShape)
+                                    .background(if (isDark) Color(0xFF1E293B) else Color(0xFFEFF6FF)),
+                                contentAlignment = Alignment.Center
+                            ) {
+                                Icon(Icons.Default.Visibility, contentDescription = "Live Preview", tint = if (isDark) Color.White else PrimaryNavy, modifier = Modifier.size(18.dp))
+                            }
+                        }
+
+                        // App Menu Action
+                        IconButton(
+                            onClick = onOpenMenu,
+                            modifier = Modifier.testTag("invoice_edit_menu_btn")
+                        ) {
+                            Box(
+                                modifier = Modifier
+                                    .size(36.dp)
+                                    .clip(CircleShape)
+                                    .background(if (isDark) Color(0xFF1E293B) else Color(0xFFEFF6FF)),
+                                contentAlignment = Alignment.Center
+                            ) {
+                                Icon(Icons.Default.Menu, contentDescription = "Menu", tint = if (isDark) Color.White else PrimaryNavy, modifier = Modifier.size(18.dp))
+                            }
+                        }
+                    },
+                    windowInsets = WindowInsets.statusBars,
+                    colors = TopAppBarDefaults.topAppBarColors(
+                        containerColor = Color.Transparent,
+                        scrolledContainerColor = Color.Transparent
+                    )
+                )
+            }
+        ) { innerPadding ->
+            AdaptiveContainer(maxWidth = adaptiveInfo.formMaxWidth) {
+                Column(
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .padding(innerPadding)
+                        .padding(horizontal = adaptiveInfo.horizontalPadding)
+                        .verticalScroll(rememberScrollState()),
+                    verticalArrangement = Arrangement.spacedBy(10.dp)
+                ) {
+
+
+
+            if (showAiDraftDialog) {
+                var draftPrompt by remember { mutableStateOf("") }
+                var isDrafting by remember { mutableStateOf(false) }
+
+                androidx.compose.material3.AlertDialog(
+                    onDismissRequest = { if (!isDrafting) showAiDraftDialog = false },
+                    title = {
+                        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                            Icon(Icons.Default.AutoAwesome, contentDescription = null, tint = Color(0xFF4F46E5), modifier = Modifier.size(20.dp))
+                            Text("AI Smart Bill & Invoice Draft", fontWeight = FontWeight.Bold, fontSize = 15.sp)
+                        }
+                    },
+                    text = {
+                        Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                            Text(
+                                text = "Describe what you want to bill in natural language or choose an instant template below:",
+                                fontSize = 12.sp,
+                                color = Color(0xFF64748B)
+                            )
+
+                            OutlinedTextField(
+                                value = draftPrompt,
+                                onValueChange = { draftPrompt = it },
+                                placeholder = { Text("e.g. Invoice for Ramesh Traders: 5 cement bags at 350 and 2 steel at 1200 with 18% GST paid 1000 cash", fontSize = 12.sp) },
+                                modifier = Modifier.fillMaxWidth().height(100.dp),
+                                enabled = !isDrafting
+                            )
+
+                            Text("Instant Presets:", fontSize = 11.sp, fontWeight = FontWeight.Bold, color = Color(0xFF475569))
+
+                            Row(
+                                modifier = Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()),
+                                horizontalArrangement = Arrangement.spacedBy(6.dp)
+                            ) {
+                                listOf(
+                                    "🏗️ Cement & Hardware" to "Invoice for Ramesh Traders: 10 Cement Bags at 380 each with 18% GST and 5 boxes tiles at 650 with 12% GST paid 2000 cash",
+                                    "🍕 Catering & Lunch" to "Bill for FoodWorks Corp: 1 Team Buffet Lunch qty 15 at 420 each with 5% GST full paid",
+                                    "💻 Web & IT Services" to "Invoice for TechNova Ltd: 1 Frontend UI Architecture at 45000 and 1 API Integration at 25000 with 18% GST Net 15"
+                                ).forEach { (label, preset) ->
+                                    Surface(
+                                        shape = RoundedCornerShape(8.dp),
+                                        color = Color(0xFFF1F5F9),
+                                        border = androidx.compose.foundation.BorderStroke(1.dp, Color(0xFFE2E8F0)),
+                                        modifier = Modifier.clickable { draftPrompt = preset }
+                                    ) {
+                                        Text(text = label, fontSize = 11.sp, modifier = Modifier.padding(horizontal = 8.dp, vertical = 5.dp), color = Color(0xFF334155))
+                                    }
+                                }
+                            }
+
+                            if (isDrafting) {
+                                Row(
+                                    modifier = Modifier.fillMaxWidth().padding(top = 4.dp),
+                                    horizontalArrangement = Arrangement.Center,
+                                    verticalAlignment = Alignment.CenterVertically
+                                ) {
+                                    androidx.compose.material3.CircularProgressIndicator(modifier = Modifier.size(18.dp), strokeWidth = 2.dp, color = Color(0xFF4F46E5))
+                                    Spacer(modifier = Modifier.width(8.dp))
+                                    Text("Gemini AI is parsing and drafting invoice...", fontSize = 11.sp, color = Color(0xFF4F46E5))
+                                }
+                            }
+                        }
+                    },
+                    confirmButton = {
+                        Button(
+                            onClick = {
+                                if (draftPrompt.isNotBlank()) {
+                                    isDrafting = true
+                                    coroutineScope.launch {
+                                        try {
+                                            val result = viewModel.parseInvoiceDraftWithAi(draftPrompt)
+                                            val inv = result.invoiceToGenerate
+                                            if (inv != null) {
+                                                val comp = inv.clientCompany.ifBlank { inv.clientName }
+                                                if (comp.isNotBlank()) {
+                                                    clientCompany = comp
+                                                    clientName = comp
+                                                }
+                                                if (inv.clientEmail.isNotBlank()) clientEmail = inv.clientEmail
+                                                if (inv.clientPhone.isNotBlank()) clientPhone = inv.clientPhone
+                                                if (inv.clientAddress.isNotBlank()) clientAddress = inv.clientAddress
+                                                if (inv.taxRate > 0) taxRate = inv.taxRate
+                                                if (inv.amountPaid > 0) amountPaid = inv.amountPaid
+                                                if (inv.paymentTerms.isNotBlank()) paymentTerms = inv.paymentTerms
+                                                val parsedItems = InvoiceUtils.deserializeInvoiceItems(inv.itemsJson)
+                                                if (parsedItems.isNotEmpty()) {
+                                                    items.clear()
+                                                    items.addAll(parsedItems)
+                                                }
+                                                Toast.makeText(context, "AI populated invoice with ${items.size} items!", Toast.LENGTH_SHORT).show()
+                                                showAiDraftDialog = false
+                                            } else {
+                                                Toast.makeText(context, "Could not extract invoice details. Please specify client and items.", Toast.LENGTH_LONG).show()
+                                            }
+                                        } catch (e: Exception) {
+                                            Toast.makeText(context, "AI Draft error: ${e.message}", Toast.LENGTH_SHORT).show()
+                                        } finally {
+                                            isDrafting = false
+                                        }
+                                    }
+                                }
+                            },
+                            enabled = draftPrompt.isNotBlank() && !isDrafting,
+                            colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF4F46E5))
+                        ) {
+                            Text("Populate Invoice", fontSize = 12.sp, fontWeight = FontWeight.Bold)
+                        }
+                    },
+                    dismissButton = {
+                        OutlinedButton(
+                            onClick = { showAiDraftDialog = false },
+                            enabled = !isDrafting
+                        ) {
+                            Text("Cancel", fontSize = 12.sp)
+                        }
                     }
-                }
+                )
             }
 
             // =================================================================
-            // INVOICE DOCUMENT HEADER CARD (OUTSIDE ACCORDION)
+            // ACCORDION 1: INVOICE DETAILS (compact)
             // =================================================================
-            Card(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(horizontal = 0.dp)
-                    .testTag("invoice_header_outside_card"),
-                shape = RoundedCornerShape(12.dp),
-                colors = CardDefaults.cardColors(containerColor = Color.White),
-                border = androidx.compose.foundation.BorderStroke(1.dp, Color(0xFFE2E8F0)),
-                elevation = CardDefaults.cardElevation(defaultElevation = 2.dp)
+            var statusMenuExpanded by remember { mutableStateOf(false) }
+            val (statusBg, statusFg) = when (status.lowercase()) {
+                "paid" -> Pair(Color(0xFFDCFCE7), Color(0xFF15803D))
+                "overdue" -> Pair(Color(0xFFFFE4E6), Color(0xFFBE123C))
+                "sent" -> Pair(Color(0xFFDBEAFE), Color(0xFF1D4ED8))
+                else -> Pair(Color(0xFFF1F5F9), Color(0xFF475569))
+            }
+            InvoiceAccordionSection(
+                sectionNumber = 1,
+                icon = Icons.Default.Receipt,
+                title = "Invoice Details",
+                collapsedSummary = "#$invoiceNumber • $documentType • $status • Issued $issueDate • Due $dueDate",
+                isExpanded = isInvoiceDetailsExpanded,
+                onToggleExpand = { isInvoiceDetailsExpanded = !isInvoiceDetailsExpanded },
+                badgeText = status,
+                testTag = "invoice_header_outside_card"
             ) {
-                Column(
-                    modifier = Modifier.padding(14.dp),
-                    verticalArrangement = Arrangement.spacedBy(10.dp)
-                ) {
-                    // Top Row: Title + Status Dropdown
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.SpaceBetween,
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                            Box(
-                                modifier = Modifier
-                                    .size(32.dp)
-                                    .clip(RoundedCornerShape(8.dp))
-                                    .background(Color(0xFFEFF6FF)),
-                                contentAlignment = Alignment.Center
-                            ) {
-                                Icon(Icons.Default.Receipt, contentDescription = null, tint = Color(0xFF2563EB), modifier = Modifier.size(18.dp))
-                            }
-                            Column {
-                                Text(
-                                    text = "Invoice Details",
-                                    fontWeight = FontWeight.Bold,
-                                    fontSize = 14.sp,
-                                    color = PrimaryNavy
-                                )
-                                Text(
-                                    text = "Document number & status",
-                                    fontSize = 10.5.sp,
-                                    color = Color(0xFF64748B)
-                                )
-                            }
-                        }
-
-                        // Status Selector Dropdown
-                        var statusMenuExpanded by remember { mutableStateOf(false) }
-                        val (statusBg, statusFg) = when (status.lowercase()) {
-                            "paid" -> Pair(Color(0xFFDCFCE7), Color(0xFF15803D))
-                            "overdue" -> Pair(Color(0xFFFFE4E6), Color(0xFFBE123C))
-                            "sent" -> Pair(Color(0xFFDBEAFE), Color(0xFF1D4ED8))
-                            else -> Pair(Color(0xFFF1F5F9), Color(0xFF475569))
-                        }
-
-                        Box {
-                            Surface(
-                                color = statusBg,
-                                shape = RoundedCornerShape(20.dp),
-                                border = androidx.compose.foundation.BorderStroke(1.dp, statusFg.copy(alpha = 0.3f)),
-                                modifier = Modifier
-                                    .clickable { statusMenuExpanded = true }
-                                    .testTag("invoice_status_pill_btn")
-                            ) {
-                                Row(
-                                    modifier = Modifier.padding(horizontal = 12.dp, vertical = 6.dp),
-                                    verticalAlignment = Alignment.CenterVertically,
-                                    horizontalArrangement = Arrangement.spacedBy(4.dp)
+                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    // Document Type Selector Chips
+                    Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                        Text("Document Type", fontSize = 10.5.sp, fontWeight = FontWeight.SemiBold, color = if (isDark) Color.White else PrimaryNavy)
+                        Row(
+                            modifier = Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()),
+                            horizontalArrangement = Arrangement.spacedBy(6.dp)
+                        ) {
+                            listOf(
+                                "Tax Invoice",
+                                "Bill of Supply",
+                                "Quotation / Estimate",
+                                "Proforma Invoice",
+                                "Delivery Challan"
+                            ).forEach { docType ->
+                                val isSelected = documentType.equals(docType, ignoreCase = true)
+                                Surface(
+                                    shape = RoundedCornerShape(8.dp),
+                                    color = if (isSelected) (if (isDark) Color(0xFF1E3A8A) else Color(0xFFEFF6FF)) else (if (isDark) Color(0xFF1E293B) else Color(0xFFF1F5F9)),
+                                    border = androidx.compose.foundation.BorderStroke(1.dp, if (isSelected) (if (isDark) Color(0xFF3B82F6) else Color(0xFF2563EB)) else Color.Transparent),
+                                    modifier = Modifier.clickable { documentType = docType }
                                 ) {
-                                    Box(
-                                        modifier = Modifier
-                                            .size(8.dp)
-                                            .clip(CircleShape)
-                                            .background(statusFg)
-                                    )
-                                    Text(
-                                        text = status,
-                                        fontWeight = FontWeight.Bold,
-                                        fontSize = 12.sp,
-                                        color = statusFg
-                                    )
-                                    Icon(Icons.Default.KeyboardArrowDown, contentDescription = "Change Status", tint = statusFg, modifier = Modifier.size(16.dp))
-                                }
-                            }
-
-                            DropdownMenu(
-                                expanded = statusMenuExpanded,
-                                onDismissRequest = { statusMenuExpanded = false }
-                            ) {
-                                listOf("Draft", "Sent", "Paid", "Overdue").forEach { st ->
-                                    DropdownMenuItem(
-                                        text = {
-                                            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                                                val dotColor = when (st.lowercase()) {
-                                                    "paid" -> Color(0xFF16A34A)
-                                                    "overdue" -> Color(0xFFE11D48)
-                                                    "sent" -> Color(0xFF2563EB)
-                                                    else -> Color(0xFF64748B)
-                                                }
-                                                Box(modifier = Modifier.size(10.dp).clip(CircleShape).background(dotColor))
-                                                Text(st, fontWeight = if (status == st) FontWeight.Bold else FontWeight.Normal)
-                                            }
-                                        },
-                                        onClick = {
-                                            status = st
-                                            statusMenuExpanded = false
+                                    Row(
+                                        modifier = Modifier.padding(horizontal = 9.dp, vertical = 5.dp),
+                                        verticalAlignment = Alignment.CenterVertically,
+                                        horizontalArrangement = Arrangement.spacedBy(4.dp)
+                                    ) {
+                                        if (isSelected) {
+                                            Icon(Icons.Default.Check, contentDescription = null, tint = if (isDark) Color(0xFF93C5FD) else Color(0xFF1D4ED8), modifier = Modifier.size(12.dp))
                                         }
-                                    )
+                                        Text(
+                                            text = docType,
+                                            fontSize = 11.sp,
+                                            fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Medium,
+                                            color = if (isSelected) (if (isDark) Color(0xFF93C5FD) else Color(0xFF1D4ED8)) else (if (isDark) Color(0xFFCBD5E1) else Color(0xFF475569))
+                                        )
+                                    }
                                 }
                             }
                         }
                     }
 
-                    HorizontalDivider(color = Color(0xFFF1F5F9))
-
-                    // Row 1: Invoice # and PO / Ref #
+                    // Copy Watermark (Original / Duplicate / Triplicate)
                     Row(
                         modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.spacedBy(10.dp)
+                        horizontalArrangement = Arrangement.spacedBy(6.dp)
                     ) {
-                        OutlinedTextField(
+                        listOf("Original for Recipient", "Duplicate for Transporter", "Triplicate for Supplier").forEach { watermark ->
+                            val isSelected = copyWatermark.equals(watermark, ignoreCase = true)
+                            Surface(
+                                shape = RoundedCornerShape(6.dp),
+                                color = if (isSelected) Color(0xFFDCFCE7) else (if (isDark) Color(0xFF1E293B) else Color(0xFFF8FAFC)),
+                                border = androidx.compose.foundation.BorderStroke(1.dp, if (isSelected) Color(0xFF16A34A) else Color(0xFFE2E8F0)),
+                                modifier = Modifier.weight(1f).clickable { copyWatermark = watermark }
+                            ) {
+                                Box(
+                                    modifier = Modifier.padding(vertical = 5.dp, horizontal = 2.dp),
+                                    contentAlignment = Alignment.Center
+                                ) {
+                                    Text(
+                                        text = when(watermark) {
+                                            "Original for Recipient" -> "Original"
+                                            "Duplicate for Transporter" -> "Duplicate"
+                                            else -> "Triplicate"
+                                        },
+                                        fontSize = 10.sp,
+                                        fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Normal,
+                                        color = if (isSelected) Color(0xFF15803D) else (if (isDark) Color(0xFF94A3B8) else Color(0xFF64748B))
+                                    )
+                                }
+                            }
+                        }
+                    }
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(8.dp),
+                        verticalAlignment = Alignment.Bottom
+                    ) {
+                        CompactField(
+                            label = "Invoice #",
                             value = invoiceNumber,
                             onValueChange = { invoiceNumber = it },
-                            label = { Text("Invoice #") },
-                            leadingIcon = {
-                                Text("#", fontWeight = FontWeight.Bold, color = Color(0xFF2563EB), fontSize = 16.sp, modifier = Modifier.padding(start = 12.dp, end = 4.dp))
-                            },
-                            singleLine = true,
-                            modifier = Modifier.weight(1.2f).testTag("field_invoice_number")
+                            modifier = Modifier.weight(1.3f).testTag("field_invoice_number")
                         )
-
-                        OutlinedTextField(
-                            value = poNumber,
-                            onValueChange = { poNumber = it },
-                            label = { Text("PO / Ref # (Optional)") },
-                            singleLine = true,
-                            modifier = Modifier.weight(1f).testTag("field_po_number")
-                        )
+                        Column(modifier = Modifier.weight(1f)) {
+                            Text("Status", fontSize = 10.sp, fontWeight = FontWeight.SemiBold, color = Color(0xFF64748B), modifier = Modifier.padding(bottom = 2.dp))
+                            Box {
+                                Surface(
+                                    color = statusBg,
+                                    shape = RoundedCornerShape(8.dp),
+                                    border = androidx.compose.foundation.BorderStroke(1.dp, statusFg.copy(alpha = 0.3f)),
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .height(34.dp)
+                                        .clickable { statusMenuExpanded = true }
+                                        .testTag("invoice_status_pill_btn")
+                                ) {
+                                    Row(
+                                        modifier = Modifier.padding(horizontal = 8.dp),
+                                        verticalAlignment = Alignment.CenterVertically,
+                                        horizontalArrangement = Arrangement.spacedBy(4.dp)
+                                    ) {
+                                        Box(modifier = Modifier.size(7.dp).clip(CircleShape).background(statusFg))
+                                        Text(status, fontWeight = FontWeight.Bold, fontSize = 12.sp, color = statusFg, modifier = Modifier.weight(1f))
+                                        Icon(Icons.Default.KeyboardArrowDown, contentDescription = "Change Status", tint = statusFg, modifier = Modifier.size(14.dp))
+                                    }
+                                }
+                                DropdownMenu(expanded = statusMenuExpanded, onDismissRequest = { statusMenuExpanded = false }) {
+                                    listOf("Draft", "Sent", "Paid", "Overdue").forEach { st ->
+                                        DropdownMenuItem(
+                                            text = { Text(st, fontSize = 13.sp, fontWeight = if (status == st) FontWeight.Bold else FontWeight.Normal) },
+                                            onClick = {
+                                                status = st
+                                                statusMenuExpanded = false
+                                            }
+                                        )
+                                    }
+                                }
+                            }
+                        }
                     }
 
-                    // Row 2: Issue Date & Due Date
                     Row(
                         modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.spacedBy(10.dp)
+                        horizontalArrangement = Arrangement.spacedBy(8.dp)
                     ) {
-                        OutlinedTextField(
+                        CompactField(
+                            label = "Issue Date",
                             value = issueDate,
                             onValueChange = { issueDate = it },
-                            label = { Text("Issue Date") },
-                            leadingIcon = { Icon(Icons.Default.CalendarToday, contentDescription = null, modifier = Modifier.size(16.dp)) },
-                            singleLine = true,
                             modifier = Modifier.weight(1f).testTag("field_issue_date")
                         )
-
-                        OutlinedTextField(
+                        CompactField(
+                            label = "Due Date",
                             value = dueDate,
                             onValueChange = { dueDate = it },
-                            label = { Text("Due Date") },
-                            leadingIcon = { Icon(Icons.Default.Event, contentDescription = null, modifier = Modifier.size(16.dp)) },
-                            singleLine = true,
                             modifier = Modifier.weight(1f).testTag("field_due_date")
                         )
                     }
 
-                    // Quick Terms Shortcut Chips
-                    Row(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .horizontalScroll(rememberScrollState()),
-                        horizontalArrangement = Arrangement.spacedBy(6.dp),
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        Text("Terms:", fontSize = 11.sp, color = Color(0xFF64748B), fontWeight = FontWeight.SemiBold)
-                        listOf(
-                            "Due on Receipt" to 0,
-                            "Net 15" to 15,
-                            "Net 30" to 30,
-                            "Net 60" to 60
-                        ).forEach { (tName, offset) ->
-                            val isCurrentTerm = paymentTerms == tName
-                            Surface(
-                                color = if (isCurrentTerm) Color(0xFFEFF6FF) else Color(0xFFF8FAFC),
-                                shape = RoundedCornerShape(12.dp),
-                                border = androidx.compose.foundation.BorderStroke(
-                                    1.dp,
-                                    if (isCurrentTerm) Color(0xFF93C5FD) else Color(0xFFCBD5E1)
-                                ),
-                                modifier = Modifier.clickable { applyTerms(tName, offset) }
-                            ) {
-                                Text(
-                                    text = tName,
-                                    fontSize = 10.sp,
-                                    fontWeight = if (isCurrentTerm) FontWeight.Bold else FontWeight.Normal,
-                                    color = if (isCurrentTerm) Color(0xFF1D4ED8) else Color(0xFF475569),
-                                    modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp)
-                                )
+                    if (profile.showPoNumber) {
+                        CompactField(
+                            label = "PO / Ref # (Optional)",
+                            value = poNumber,
+                            onValueChange = { poNumber = it },
+                            modifier = Modifier.fillMaxWidth().testTag("field_po_number")
+                        )
+                    }
+
+                    if (profile.showPaymentTerms) {
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .horizontalScroll(rememberScrollState()),
+                            horizontalArrangement = Arrangement.spacedBy(6.dp),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Text("Terms:", fontSize = 10.sp, color = Color(0xFF64748B), fontWeight = FontWeight.SemiBold)
+                            listOf("Due on Receipt" to 0, "Net 15" to 15, "Net 30" to 30, "Net 60" to 60).forEach { (tName, offset) ->
+                                val isCurrentTerm = paymentTerms == tName
+                                Surface(
+                                    color = if (isCurrentTerm) Color(0xFFEFF6FF) else Color(0xFFF8FAFC),
+                                    shape = RoundedCornerShape(10.dp),
+                                    border = androidx.compose.foundation.BorderStroke(1.dp, if (isCurrentTerm) Color(0xFF93C5FD) else Color(0xFFCBD5E1)),
+                                    modifier = Modifier.clickable { applyTerms(tName, offset) }
+                                ) {
+                                    Text(
+                                        text = tName,
+                                        fontSize = 10.sp,
+                                        fontWeight = if (isCurrentTerm) FontWeight.Bold else FontWeight.Normal,
+                                        color = if (isCurrentTerm) Color(0xFF1D4ED8) else Color(0xFF475569),
+                                        modifier = Modifier.padding(horizontal = 8.dp, vertical = 3.dp)
+                                    )
+                                }
                             }
                         }
                     }
@@ -814,135 +925,228 @@ fun InvoiceEditScreen(
             }
 
             // =================================================================
-            // ACCORDION 1: CLIENT DETAILS
+            // ACCORDION 2: CLIENT DETAILS (Company Name is Primary Key)
             // =================================================================
+            val matchingClients = remember(clientCompany, allClients, allInvoices) {
+                val q = clientCompany.trim()
+                if (q.isBlank()) emptyList()
+                else InvoiceAutofillCache.getCompanySuggestions(q, allClients, allInvoices)
+            }
+
+            val matchedClient = remember(selectedClientId, clientCompany, allClients) {
+                allClients.find {
+                    (selectedClientId != null && it.id == selectedClientId) ||
+                        it.companyName.trim().equals(clientCompany.trim(), ignoreCase = true) ||
+                        it.name.trim().equals(clientCompany.trim(), ignoreCase = true)
+                }
+            }
+
             InvoiceAccordionSection(
-                sectionNumber = 1,
-                icon = Icons.Default.Person,
-                title = "Client Details",
-                collapsedSummary = if (clientName.isNotBlank()) {
-                    "Billed to: $clientName ${if (clientCompany.isNotBlank()) "($clientCompany)" else ""} • ${clientEmail.ifBlank { clientPhone.ifBlank { "Contact details added" } }}"
+                sectionNumber = 2,
+                icon = Icons.Default.Business,
+                title = "Client Company Details",
+                collapsedSummary = if (clientCompany.isNotBlank()) {
+                    "Billed to: $clientCompany • ${clientEmail.ifBlank { clientPhone.ifBlank { clientAddress.ifBlank { "Client profile attached" } } }}"
                 } else {
-                    "No client specified • Tap to enter details"
+                    "No company specified • Tap to enter details"
                 },
                 isExpanded = isClientExpanded,
                 onToggleExpand = { isClientExpanded = !isClientExpanded },
-                badgeText = if (clientName.isNotBlank()) "Configured" else "Required",
+                badgeText = if (clientCompany.isNotBlank()) "Configured" else "Required",
                 testTag = "accordion_client_details"
             ) {
                 Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                    // Client Name with Dropdown Autocomplete
-                    val matchingClients = remember(clientName, allClients) {
-                        if (clientName.isBlank()) emptyList()
-                        else allClients.filter {
-                            it.name.contains(clientName, ignoreCase = true) ||
-                                it.companyName.contains(clientName, ignoreCase = true)
-                        }
-                    }
-
+                    // Company Name with Dropdown Autocomplete (Non-blocking: allow free typing with suggestions)
                     Box(modifier = Modifier.fillMaxWidth()) {
                         OutlinedTextField(
-                            value = clientName,
-                            onValueChange = {
-                                clientName = it
-                                clientDropdownExpanded = it.isNotBlank()
+                            value = clientCompany,
+                            onValueChange = { newVal ->
+                                clientCompany = newVal
+                                clientName = newVal
+                                companyDropdownExpanded = newVal.isNotBlank()
+                                if (matchedClient != null &&
+                                    !matchedClient.companyName.equals(newVal.trim(), ignoreCase = true) &&
+                                    !matchedClient.name.equals(newVal.trim(), ignoreCase = true)) {
+                                    selectedClientId = null
+                                }
                             },
-                            label = { Text(clientLabelTitle) },
+                            label = { Text("Company Name *") },
+                            placeholder = { Text("Search client directory or enter new company name...") },
                             singleLine = true,
                             modifier = Modifier
                                 .fillMaxWidth()
-                                .testTag("field_client_name"),
+                                .testTag("field_client_company"),
+                            leadingIcon = {
+                                Icon(Icons.Default.Business, contentDescription = null, tint = PrimaryNavy)
+                            },
                             trailingIcon = {
                                 if (allClients.isNotEmpty()) {
-                                    IconButton(onClick = { clientDropdownExpanded = !clientDropdownExpanded }) {
-                                        Icon(Icons.Default.KeyboardArrowDown, contentDescription = "Pick Client")
+                                    IconButton(onClick = { companyDropdownExpanded = !companyDropdownExpanded }) {
+                                        Icon(
+                                            imageVector = if (companyDropdownExpanded) Icons.Default.ExpandLess else Icons.Default.KeyboardArrowDown,
+                                            contentDescription = "Pick Company",
+                                            tint = PrimaryNavy
+                                        )
                                     }
                                 }
                             }
                         )
 
                         DropdownMenu(
-                            expanded = clientDropdownExpanded && matchingClients.isNotEmpty(),
-                            onDismissRequest = { clientDropdownExpanded = false }
+                            expanded = companyDropdownExpanded && matchingClients.isNotEmpty(),
+                            onDismissRequest = { companyDropdownExpanded = false },
+                            properties = androidx.compose.ui.window.PopupProperties(
+                                focusable = false // Allows continuous typing without losing cursor focus or keyboard!
+                            ),
+                            modifier = Modifier
+                                .fillMaxWidth(0.9f)
+                                .background(Color.White)
                         ) {
-                            matchingClients.forEach { c ->
+                            matchingClients.take(6).forEach { c ->
+                                val compTitle = c.companyName.ifBlank { c.name }
                                 DropdownMenuItem(
                                     text = {
-                                        Column {
-                                            Text(text = c.name, fontWeight = FontWeight.Bold, fontSize = 13.sp)
-                                            if (c.companyName.isNotBlank()) Text(text = c.companyName, fontSize = 11.sp, color = Color.Gray)
-                                            if (c.email.isNotBlank()) Text(text = c.email, fontSize = 10.sp, color = Color.Gray)
+                                        Row(
+                                            verticalAlignment = Alignment.CenterVertically,
+                                            horizontalArrangement = Arrangement.spacedBy(10.dp)
+                                        ) {
+                                            Box(
+                                                modifier = Modifier
+                                                    .size(34.dp)
+                                                    .clip(CircleShape)
+                                                    .background(Color(0xFFEFF6FF)),
+                                                contentAlignment = Alignment.Center
+                                            ) {
+                                                Text(
+                                                    text = compTitle.take(1).uppercase(),
+                                                    fontWeight = FontWeight.Bold,
+                                                    color = PrimaryNavy,
+                                                    fontSize = 14.sp
+                                                )
+                                            }
+                                            Column {
+                                                Text(text = compTitle, fontWeight = FontWeight.Bold, fontSize = 13.sp, color = Color(0xFF0F172A))
+                                                val details = listOfNotNull(
+                                                    c.taxId.takeIf { it.isNotBlank() }?.let { "Tax ID: $it" },
+                                                    c.email.takeIf { it.isNotBlank() },
+                                                    c.phone.takeIf { it.isNotBlank() }
+                                                ).joinToString(" • ")
+                                                if (details.isNotBlank()) {
+                                                    Text(text = details, fontSize = 10.sp, color = Color(0xFF64748B))
+                                                }
+                                                if (c.address.isNotBlank()) {
+                                                    Text(text = c.address.replace("\n", ", "), fontSize = 9.5.sp, color = Color(0xFF94A3B8), maxLines = 1)
+                                                }
+                                            }
                                         }
                                     },
                                     onClick = {
                                         selectedClientId = c.id
-                                        clientName = c.name
-                                        clientCompany = c.companyName
-                                        clientEmail = c.email
-                                        clientPhone = c.phone
-                                        clientAddress = c.address
-                                        clientTaxId = c.taxId
-                                        clientDropdownExpanded = false
-                                        Toast.makeText(context, "Filled details for ${c.name}", Toast.LENGTH_SHORT).show()
+                                        clientCompany = compTitle
+                                        clientName = compTitle
+                                        if (c.email.isNotBlank()) clientEmail = c.email
+                                        if (c.phone.isNotBlank()) clientPhone = c.phone
+                                        if (c.address.isNotBlank()) clientAddress = c.address
+                                        if (c.taxId.isNotBlank()) clientTaxId = c.taxId
+                                        if (c.defaultPaymentTerms.isNotBlank()) paymentTerms = c.defaultPaymentTerms
+                                        companyDropdownExpanded = false
+                                        Toast.makeText(context, "Filled details for $compTitle", Toast.LENGTH_SHORT).show()
                                     }
                                 )
                             }
                         }
                     }
 
-                    // Company Name & GST / Tax ID
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.spacedBy(10.dp)
-                    ) {
-                        OutlinedTextField(
-                            value = clientCompany,
-                            onValueChange = { clientCompany = it },
-                            label = { Text("Company Name") },
-                            singleLine = true,
-                            modifier = Modifier.weight(1f).testTag("field_client_company")
-                        )
+                    // Client Status Indicator Pill
+                    if (clientCompany.isNotBlank()) {
+                        Surface(
+                            color = if (matchedClient != null) Color(0xFFDCFCE7) else Color(0xFFEFF6FF),
+                            shape = RoundedCornerShape(8.dp),
+                            border = androidx.compose.foundation.BorderStroke(
+                                1.dp,
+                                if (matchedClient != null) Color(0xFF86EFAC) else Color(0xFFBFDBFE)
+                            ),
+                            modifier = Modifier.fillMaxWidth()
+                        ) {
+                            Row(
+                                modifier = Modifier.padding(horizontal = 10.dp, vertical = 6.dp),
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.spacedBy(6.dp)
+                            ) {
+                                Icon(
+                                    imageVector = if (matchedClient != null) Icons.Default.Check else Icons.Default.AutoAwesome,
+                                    contentDescription = null,
+                                    tint = if (matchedClient != null) Color(0xFF15803D) else Color(0xFF1D4ED8),
+                                    modifier = Modifier.size(14.dp)
+                                )
+                                Text(
+                                    text = if (matchedClient != null) {
+                                        "Linked to Client Directory (#${matchedClient.id} • ${matchedClient.companyName.ifBlank { matchedClient.name }})"
+                                    } else {
+                                        "New Client • Will be auto-saved to client profile upon creating invoice"
+                                    },
+                                    fontSize = 11.sp,
+                                    fontWeight = FontWeight.Medium,
+                                    color = if (matchedClient != null) Color(0xFF166534) else Color(0xFF1E40AF)
+                                )
+                            }
+                        }
+                    }
 
+                    // GSTIN / Tax ID
+                    if (profile.showClientTaxId) {
                         OutlinedTextField(
                             value = clientTaxId,
                             onValueChange = { clientTaxId = it },
                             label = { Text("GSTIN / Tax ID") },
+                            placeholder = { Text("e.g. 29ABCDE1234F1Z5 or US EIN") },
                             singleLine = true,
-                            modifier = Modifier.weight(1f).testTag("field_client_tax_id")
+                            modifier = Modifier.fillMaxWidth().testTag("field_client_tax_id")
                         )
                     }
 
                     // Billing Address
-                    OutlinedTextField(
-                        value = clientAddress,
-                        onValueChange = { clientAddress = it },
-                        label = { Text("Billing Address") },
-                        maxLines = 3,
-                        modifier = Modifier.fillMaxWidth().testTag("field_client_address")
-                    )
+                    if (profile.showClientAddress) {
+                        OutlinedTextField(
+                            value = clientAddress,
+                            onValueChange = { clientAddress = it },
+                            label = { Text("Billing Address") },
+                            placeholder = { Text("Street address, city, postal code, country") },
+                            maxLines = 3,
+                            modifier = Modifier.fillMaxWidth().testTag("field_client_address")
+                        )
+                    }
 
                     // Email & Phone
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.spacedBy(10.dp)
-                    ) {
-                        OutlinedTextField(
-                            value = clientEmail,
-                            onValueChange = { clientEmail = it },
-                            label = { Text("Email Address") },
-                            singleLine = true,
-                            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Email),
-                            modifier = Modifier.weight(1f).testTag("field_client_email")
-                        )
+                    if (profile.showClientEmail || profile.showClientPhone) {
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.spacedBy(10.dp)
+                        ) {
+                            if (profile.showClientEmail) {
+                                OutlinedTextField(
+                                    value = clientEmail,
+                                    onValueChange = { clientEmail = it },
+                                    label = { Text("Email Address") },
+                                    placeholder = { Text("billing@client.com") },
+                                    singleLine = true,
+                                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Email),
+                                    modifier = Modifier.weight(1f).testTag("field_client_email")
+                                )
+                            }
 
-                        OutlinedTextField(
-                            value = clientPhone,
-                            onValueChange = { clientPhone = it },
-                            label = { Text("Phone Number") },
-                            singleLine = true,
-                            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Phone),
-                            modifier = Modifier.weight(1f).testTag("field_client_phone")
-                        )
+                            if (profile.showClientPhone) {
+                                OutlinedTextField(
+                                    value = clientPhone,
+                                    onValueChange = { clientPhone = it },
+                                    label = { Text("Phone Number") },
+                                    placeholder = { Text("+1 (555) 000-0000") },
+                                    singleLine = true,
+                                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Phone),
+                                    modifier = Modifier.weight(1f).testTag("field_client_phone")
+                                )
+                            }
+                        }
                     }
 
                     // Custom Client Fields List
@@ -970,7 +1174,7 @@ fun InvoiceEditScreen(
                         }
                     }
 
-                    // Bottom Row: Add Custom Field & Save to Clients DB
+                    // Bottom Row: Add Custom Field
                     Row(
                         modifier = Modifier.fillMaxWidth(),
                         horizontalArrangement = Arrangement.SpaceBetween,
@@ -987,30 +1191,6 @@ fun InvoiceEditScreen(
                             Spacer(modifier = Modifier.width(4.dp))
                             Text("+ Add Custom Field", fontSize = 11.sp)
                         }
-
-                        if (clientName.isNotBlank() && allClients.none { it.name.equals(clientName, ignoreCase = true) }) {
-                            Button(
-                                onClick = {
-                                    val newClient = ClientEntity(
-                                        name = clientName.trim(),
-                                        companyName = clientCompany.trim(),
-                                        email = clientEmail.trim(),
-                                        phone = clientPhone.trim(),
-                                        address = clientAddress.trim(),
-                                        taxId = clientTaxId.trim()
-                                    )
-                                    viewModel.saveClient(newClient) { newId ->
-                                        selectedClientId = newId
-                                        Toast.makeText(context, "Saved $clientName to client directory", Toast.LENGTH_SHORT).show()
-                                    }
-                                },
-                                colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF16A34A)),
-                                shape = RoundedCornerShape(8.dp),
-                                contentPadding = PaddingValues(horizontal = 10.dp, vertical = 4.dp)
-                            ) {
-                                Text("Save Client to DB", fontSize = 11.sp, fontWeight = FontWeight.Bold)
-                            }
-                        }
                     }
                 }
             }
@@ -1018,10 +1198,9 @@ fun InvoiceEditScreen(
             // =================================================================
             // ACCORDION 2: SHIPPING / DELIVERY DETAILS (OPTIONAL)
             // =================================================================
-            val isShippingSectionVisible = profile.showShippingSection || shippingDetails.isEnabled
             if (isShippingSectionVisible) {
                 InvoiceAccordionSection(
-                    sectionNumber = 2,
+                    sectionNumber = null,
                 icon = Icons.Default.LocalShipping,
                 title = shippingDetails.sectionTitle,
                 collapsedSummary = if (!shippingDetails.isEnabled) {
@@ -1186,42 +1365,7 @@ fun InvoiceEditScreen(
                         }
                     }
                 }
-            } else {
-                Surface(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .clickable {
-                            shippingDetails = shippingDetails.copy(isEnabled = true)
-                            isShippingExpanded = true
-                        }
-                        .testTag("enable_shipping_prompt_card"),
-                    color = Color.White,
-                    shape = RoundedCornerShape(10.dp),
-                    border = androidx.compose.foundation.BorderStroke(1.dp, Color(0xFFE2E8F0))
-                ) {
-                    Row(
-                        modifier = Modifier.padding(horizontal = 14.dp, vertical = 12.dp),
-                        horizontalArrangement = Arrangement.SpaceBetween,
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                            Box(
-                                modifier = Modifier
-                                    .size(32.dp)
-                                    .clip(RoundedCornerShape(8.dp))
-                                    .background(Color(0xFFF1F5F9)),
-                                contentAlignment = Alignment.Center
-                            ) {
-                                Icon(Icons.Default.LocalShipping, contentDescription = null, tint = Color(0xFF64748B), modifier = Modifier.size(18.dp))
-                            }
-                            Column {
-                                Text(text = "Shipping Details (Hidden by Settings)", fontSize = 13.sp, fontWeight = FontWeight.SemiBold, color = Color(0xFF334155))
-                                Text(text = "Keep hidden for services, or tap to enable for physical goods", fontSize = 10.5.sp, color = Color(0xFF94A3B8))
-                            }
-                        }
-                        Text(text = "+ Add Shipping", fontSize = 11.sp, fontWeight = FontWeight.Bold, color = Color(0xFF2563EB))
-                    }
-                }
+            }
             }
 
             // =================================================================
@@ -1296,6 +1440,77 @@ fun InvoiceEditScreen(
                         }
                     }
 
+                    // Quick Industry Domain Presets & Catalog Row
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .horizontalScroll(rememberScrollState()),
+                        horizontalArrangement = Arrangement.spacedBy(6.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Surface(
+                            color = Color(0xFFEFF6FF),
+                            shape = RoundedCornerShape(20.dp),
+                            border = androidx.compose.foundation.BorderStroke(1.dp, Color(0xFFBFDBFE)),
+                            modifier = Modifier.clickable { showDomainCatalogDialog = true }
+                        ) {
+                            Row(
+                                modifier = Modifier.padding(horizontal = 9.dp, vertical = 5.dp),
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.spacedBy(4.dp)
+                            ) {
+                                Icon(Icons.Default.Tune, contentDescription = null, tint = Color(0xFF2563EB), modifier = Modifier.size(13.dp))
+                                Text("Domain Catalog", fontSize = 11.sp, fontWeight = FontWeight.Bold, color = Color(0xFF1D4ED8))
+                            }
+                        }
+
+                        IndustryItemCatalog.categories.take(3).forEach { domainCat ->
+                            Surface(
+                                color = Color(0xFFF8FAFC),
+                                shape = RoundedCornerShape(20.dp),
+                                border = androidx.compose.foundation.BorderStroke(1.dp, Color(0xFFE2E8F0)),
+                                modifier = Modifier.clickable { showDomainCatalogDialog = true }
+                            ) {
+                                Row(
+                                    modifier = Modifier.padding(horizontal = 8.dp, vertical = 5.dp),
+                                    verticalAlignment = Alignment.CenterVertically,
+                                    horizontalArrangement = Arrangement.spacedBy(4.dp)
+                                ) {
+                                    Icon(domainCat.icon, contentDescription = null, tint = Color(domainCat.colorHex), modifier = Modifier.size(12.dp))
+                                    Text(domainCat.shortLabel, fontSize = 10.5.sp, fontWeight = FontWeight.Medium, color = Color(0xFF334155))
+                                }
+                            }
+                        }
+
+                        val lastCompanyInvoice = remember(clientCompany, selectedClientId, allInvoices) {
+                            InvoiceAutofillCache.getLastInvoiceForCompany(clientCompany, selectedClientId, allInvoices)
+                        }
+                        if (lastCompanyInvoice != null && lastCompanyInvoice.id != (existingInvoice?.id ?: -1L)) {
+                            Surface(
+                                color = Color(0xFFFEF3C7),
+                                shape = RoundedCornerShape(20.dp),
+                                border = androidx.compose.foundation.BorderStroke(1.dp, Color(0xFFFDE68A)),
+                                modifier = Modifier.clickable {
+                                    val lastItems = InvoiceUtils.deserializeInvoiceItems(lastCompanyInvoice.itemsJson)
+                                    if (lastItems.isNotEmpty()) {
+                                        items.clear()
+                                        items.addAll(lastItems)
+                                        Toast.makeText(context, "Filled ${lastItems.size} items from last invoice for ${clientCompany.ifBlank { "client" }}", Toast.LENGTH_SHORT).show()
+                                    }
+                                }
+                            ) {
+                                Row(
+                                    modifier = Modifier.padding(horizontal = 8.dp, vertical = 5.dp),
+                                    verticalAlignment = Alignment.CenterVertically,
+                                    horizontalArrangement = Arrangement.spacedBy(4.dp)
+                                ) {
+                                    Icon(Icons.Default.History, contentDescription = null, tint = Color(0xFFD97706), modifier = Modifier.size(12.dp))
+                                    Text("Repeat Last Bill Items", fontSize = 10.5.sp, fontWeight = FontWeight.Bold, color = Color(0xFF92400E))
+                                }
+                            }
+                        }
+                    }
+
                     // Mobile-first Item Cards (Sleek, matching Client accordion elegance)
                     items.forEachIndexed { itemIndex, item ->
                         val isItemDetailsExpanded = expandedItemIndexSet.contains(itemIndex)
@@ -1331,14 +1546,30 @@ fun InvoiceEditScreen(
                                         )
                                     }
 
-                                    OutlinedTextField(
+                                    AutofillItemDescriptionField(
                                         value = item.description,
                                         onValueChange = { items[itemIndex] = item.copy(description = it) },
-                                        label = { Text(descCol?.label ?: "Description / Service / Product") },
-                                        singleLine = true,
-                                        modifier = Modifier
-                                            .weight(1f)
-                                            .testTag("item_desc_$itemIndex")
+                                        onSuggestionSelected = { sug ->
+                                            val updatedFields = item.customFields.toMutableMap()
+                                            if (sug.hsnOrSac.isNotBlank()) {
+                                                updatedFields["hsn"] = sug.hsnOrSac
+                                                updatedFields["sac"] = sug.hsnOrSac
+                                            }
+                                            updatedFields.putAll(sug.customFields)
+                                            items[itemIndex] = item.copy(
+                                                description = sug.description,
+                                                unit = sug.unit.ifBlank { item.unit },
+                                                unitPrice = if (sug.unitPrice > 0.0) sug.unitPrice else item.unitPrice,
+                                                taxRate = if (sug.taxRate > 0.0) sug.taxRate else item.taxRate,
+                                                customFields = updatedFields
+                                            )
+                                        },
+                                        clientCompany = clientCompany,
+                                        clientId = selectedClientId,
+                                        allInvoices = allInvoices,
+                                        label = descCol?.label ?: "Description / Service / Product",
+                                        modifier = Modifier.weight(1f),
+                                        testTag = "item_desc_$itemIndex"
                                     )
 
                                     IconButton(
@@ -1387,12 +1618,12 @@ fun InvoiceEditScreen(
                                     )
 
                                     val unitCol = itemColumns.find { it.key == "unit" }
-                                    OutlinedTextField(
+                                    AutofillUnitField(
                                         value = item.unit,
                                         onValueChange = { items[itemIndex] = item.copy(unit = it) },
-                                        label = { Text(unitCol?.label ?: "Unit", fontSize = 10.sp) },
-                                        singleLine = true,
-                                        modifier = Modifier.weight(0.8f).testTag("item_unit_$itemIndex")
+                                        label = unitCol?.label ?: "Unit",
+                                        modifier = Modifier.weight(0.85f),
+                                        testTag = "item_unit_$itemIndex"
                                     )
 
                                     val rateCol = itemColumns.find { it.key == "unitPrice" }
@@ -1432,7 +1663,7 @@ fun InvoiceEditScreen(
 
                                 // Row 3: Extra columns
                                 val extraCustomCols = itemColumns.filter {
-                                    it.key != "description" && it.key != "quantity" && it.key != "unit" && it.key != "unitPrice" && it.key != "total"
+                                    it.isVisible && it.key != "description" && it.key != "quantity" && it.key != "unit" && it.key != "unitPrice" && it.key != "total"
                                 }
 
                                 if (extraCustomCols.isNotEmpty()) {
@@ -1512,191 +1743,258 @@ fun InvoiceEditScreen(
             }
 
             // =================================================================
-            // ACCORDION 4: TOTALS & TAXES
+            // ACCORDION 4: TOTALS & SUMMARY (label = value)
             // =================================================================
+            val fmtMoney = { v: Double -> "${currencySymbol}${String.format(Locale.US, "%,.2f", v)}" }
             InvoiceAccordionSection(
                 sectionNumber = 4,
                 icon = Icons.Default.Payments,
-                title = "Totals & Taxes",
-                collapsedSummary = "Subtotal: ${currencySymbol}${String.format(Locale.US, "%,.2f", calculations.subtotal)} • Tax: ${currencySymbol}${String.format(Locale.US, "%,.2f", calculations.taxTotal)} • Grand Total: ${currencySymbol}${String.format(Locale.US, "%,.2f", calculations.grandTotal)}",
+                title = "Totals & Summary",
+                collapsedSummary = "Subtotal: ${fmtMoney(calculations.subtotal)}" +
+                    (if (profile.isTaxApplicable) " • ${taxLabel.ifBlank { "Tax" }}: ${fmtMoney(calculations.taxTotal)}" else "") +
+                    " • Total: ${fmtMoney(calculations.grandTotal)}",
                 isExpanded = isTotalsExpanded,
                 onToggleExpand = { isTotalsExpanded = !isTotalsExpanded },
                 badgeText = "${currencySymbol}${String.format(Locale.US, "%,.0f", calculations.grandTotal)}",
                 testTag = "accordion_totals_taxes"
             ) {
-                Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                    // Subtotal Display Row
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.SpaceBetween
-                    ) {
-                        Text("Subtotal", fontSize = 13.sp, color = Color(0xFF64748B))
-                        Text(
-                            text = "${currencySymbol}${String.format(Locale.US, "%,.2f", calculations.subtotal)}",
-                            fontSize = 14.sp,
-                            fontWeight = FontWeight.Bold,
-                            color = PrimaryNavy
+                Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                    TotalsLine(label = "Subtotal", value = fmtMoney(calculations.subtotal))
+
+                    // Discount: [input] [% / $] = -value
+                    TotalsLine(
+                        label = "Discount",
+                        value = "-${fmtMoney(calculations.discountTotal)}",
+                        valueColor = Color(0xFFDC2626),
+                        input = {
+                            CompactField(
+                                value = if (isDiscountPercentageMode) (if (discountPercent > 0) discountPercent.toString() else "") else (if (discountAmount > 0) discountAmount.toString() else ""),
+                                onValueChange = { str ->
+                                    val v = str.toDoubleOrNull() ?: 0.0
+                                    if (isDiscountPercentageMode) discountPercent = v else discountAmount = v
+                                },
+                                placeholder = "0",
+                                keyboardType = KeyboardType.Decimal,
+                                modifier = Modifier.width(62.dp).testTag("field_discount")
+                            )
+                            Surface(
+                                color = Color(0xFFEFF6FF),
+                                shape = RoundedCornerShape(8.dp),
+                                border = androidx.compose.foundation.BorderStroke(1.dp, Color(0xFF93C5FD)),
+                                modifier = Modifier.clickable { isDiscountPercentageMode = !isDiscountPercentageMode }
+                            ) {
+                                Box(modifier = Modifier.height(34.dp).width(30.dp), contentAlignment = Alignment.Center) {
+                                    Text(
+                                        text = if (isDiscountPercentageMode) "%" else currencySymbol,
+                                        fontSize = 12.sp,
+                                        fontWeight = FontWeight.Bold,
+                                        color = Color(0xFF1D4ED8)
+                                    )
+                                }
+                            }
+                        }
+                    )
+
+                    // Tax: label [rate] % = +value (hidden if tax not applicable)
+                    if (profile.isTaxApplicable) {
+                        TotalsLine(
+                            label = taxLabel.ifBlank { "Tax" },
+                            value = "+${fmtMoney(calculations.taxTotal)}",
+                            input = {
+                                CompactField(
+                                    value = if (taxRate > 0) taxRate.toString() else "",
+                                    onValueChange = { taxRate = it.toDoubleOrNull() ?: 0.0 },
+                                    placeholder = "0",
+                                    keyboardType = KeyboardType.Decimal,
+                                    modifier = Modifier.width(62.dp).testTag("field_tax_rate")
+                                )
+                                Text("%", fontSize = 12.sp, fontWeight = FontWeight.Bold, color = Color(0xFF1D4ED8))
+                            }
                         )
                     }
 
-                    // Discount row (Percentage vs Flat amount)
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.spacedBy(8.dp),
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        OutlinedTextField(
-                            value = if (isDiscountPercentageMode) (if (discountPercent > 0) discountPercent.toString() else "") else (if (discountAmount > 0) discountAmount.toString() else ""),
-                            onValueChange = { str ->
-                                val v = str.toDoubleOrNull() ?: 0.0
-                                if (isDiscountPercentageMode) discountPercent = v else discountAmount = v
-                            },
-                            label = { Text(if (isDiscountPercentageMode) "Discount (%)" else "Discount ($currencySymbol)") },
-                            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
-                            singleLine = true,
-                            modifier = Modifier.weight(1.2f).testTag("field_discount")
-                        )
-
-                        // Mode Switch
-                        Surface(
-                            color = Color(0xFFF1F5F9),
-                            shape = RoundedCornerShape(8.dp),
-                            modifier = Modifier
-                                .weight(0.8f)
-                                .clickable { isDiscountPercentageMode = !isDiscountPercentageMode }
-                        ) {
-                            Box(modifier = Modifier.padding(vertical = 12.dp), contentAlignment = Alignment.Center) {
-                                Text(
-                                    text = if (isDiscountPercentageMode) "% (Percent)" else "$ (Flat)",
-                                    fontSize = 11.sp,
-                                    fontWeight = FontWeight.Bold,
-                                    color = Color(0xFF2563EB)
+                    // Shipping fee (only when delivery section is in use)
+                    if (isShippingSectionVisible && shippingDetails.isEnabled) {
+                        TotalsLine(
+                            label = "Shipping",
+                            value = "+${fmtMoney(calculations.shipping)}",
+                            input = {
+                                CompactField(
+                                    value = if (shippingFee > 0) shippingFee.toString() else "",
+                                    onValueChange = { shippingFee = it.toDoubleOrNull() ?: 0.0 },
+                                    placeholder = "0",
+                                    keyboardType = KeyboardType.Decimal,
+                                    modifier = Modifier.width(62.dp).testTag("field_shipping_fee")
                                 )
                             }
+                        )
+                    }
+
+                    // Additional custom charge (name configured in settings)
+                    TotalsLine(
+                        label = additionalChargeLabel.ifBlank { "Additional Charges" },
+                        value = "+${fmtMoney(calculations.additionalCharges)}",
+                        input = {
+                            CompactField(
+                                value = if (additionalCharges > 0) additionalCharges.toString() else "",
+                                onValueChange = { additionalCharges = it.toDoubleOrNull() ?: 0.0 },
+                                placeholder = "0",
+                                keyboardType = KeyboardType.Decimal,
+                                modifier = Modifier.width(62.dp)
+                            )
+                        }
+                    )
+
+                    if (profile.isTaxApplicable) {
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Text("Prices include tax", fontSize = 11.sp, color = Color(0xFF64748B))
+                            Switch(
+                                checked = isTaxInclusive,
+                                onCheckedChange = { isTaxInclusive = it },
+                                modifier = Modifier.height(24.dp),
+                                colors = SwitchDefaults.colors(checkedThumbColor = Color.White, checkedTrackColor = Color(0xFF2563EB))
+                            )
                         }
                     }
 
-                    // Tax Setup Row (GST / VAT / Sales Tax / Custom)
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.spacedBy(8.dp),
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        OutlinedTextField(
-                            value = taxLabel,
-                            onValueChange = { taxLabel = it },
-                            label = { Text("Tax Label (e.g. GST)") },
-                            singleLine = true,
-                            modifier = Modifier.weight(1f)
-                        )
-
-                        OutlinedTextField(
-                            value = if (taxRate > 0) taxRate.toString() else "",
-                            onValueChange = { taxRate = it.toDoubleOrNull() ?: 0.0 },
-                            label = { Text("Tax Rate (%)") },
-                            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
-                            singleLine = true,
-                            modifier = Modifier.weight(1f).testTag("field_tax_rate")
-                        )
-                    }
-
-                    // Tax-inclusive pricing toggle
+                    // Reverse Charge Mechanism (RCM) Toggle
                     Row(
                         modifier = Modifier.fillMaxWidth(),
                         horizontalArrangement = Arrangement.SpaceBetween,
                         verticalAlignment = Alignment.CenterVertically
                     ) {
-                        Column {
-                            Text("Tax-Inclusive Pricing", fontSize = 12.sp, fontWeight = FontWeight.Medium)
-                            Text("Item rates already include taxes", fontSize = 10.sp, color = Color.Gray)
+                        Column(modifier = Modifier.weight(1f)) {
+                            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                                Text("Reverse Charge (RCM)", fontSize = 11.5.sp, fontWeight = FontWeight.SemiBold, color = if (isDark) Color.White else PrimaryNavy)
+                                if (isRcm) {
+                                    Surface(
+                                        color = Color(0xFFFEF3C7),
+                                        shape = RoundedCornerShape(4.dp),
+                                        border = androidx.compose.foundation.BorderStroke(1.dp, Color(0xFFFDE68A))
+                                    ) {
+                                        Text(
+                                            text = "RCM ACTIVE",
+                                            fontSize = 9.sp,
+                                            fontWeight = FontWeight.Bold,
+                                            color = Color(0xFFB45309),
+                                            modifier = Modifier.padding(horizontal = 4.dp, vertical = 1.dp)
+                                        )
+                                    }
+                                }
+                            }
+                            Text(
+                                text = if (isRcm) "Tax is payable by recipient on reverse charge basis" else "Standard billing (Tax charged by supplier)",
+                                fontSize = 10.sp,
+                                color = if (isDark) Color(0xFF94A3B8) else Color(0xFF64748B)
+                            )
                         }
                         Switch(
-                            checked = isTaxInclusive,
-                            onCheckedChange = { isTaxInclusive = it },
-                            colors = SwitchDefaults.colors(
-                                checkedThumbColor = Color.White,
-                                checkedTrackColor = Color(0xFF2563EB)
-                            )
+                            checked = isRcm,
+                            onCheckedChange = { isRcm = it },
+                            modifier = Modifier.height(24.dp).testTag("switch_rcm_toggle"),
+                            colors = SwitchDefaults.colors(checkedThumbColor = Color.White, checkedTrackColor = Color(0xFFD97706))
                         )
                     }
 
-                    // Shipping & Additional Charges
+                    if (isRcm) {
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .clip(RoundedCornerShape(8.dp))
+                                .background(Color(0xFFFFFBEB))
+                                .padding(horizontal = 10.dp, vertical = 6.dp),
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Text(
+                                text = "⚡ Tax is payable on reverse charge basis",
+                                fontSize = 10.5.sp,
+                                color = Color(0xFF92400E),
+                                fontWeight = FontWeight.Medium
+                            )
+                            TextButton(
+                                onClick = {
+                                    viewModel.saveBusinessProfile(profile.copy(defaultIsRcm = true))
+                                    Toast.makeText(context, "RCM set as default in Invoice Settings!", Toast.LENGTH_SHORT).show()
+                                },
+                                contentPadding = PaddingValues(horizontal = 6.dp, vertical = 2.dp)
+                            ) {
+                                Text("Set as Default", fontSize = 10.sp, fontWeight = FontWeight.Bold, color = Color(0xFFB45309))
+                            }
+                        }
+                    }
+
+                    // Auto Round Off Toggle
                     Row(
                         modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
                     ) {
-                        OutlinedTextField(
-                            value = if (shippingFee > 0) shippingFee.toString() else "",
-                            onValueChange = { shippingFee = it.toDoubleOrNull() ?: 0.0 },
-                            label = { Text("Shipping Fee ($currencySymbol)") },
-                            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
-                            singleLine = true,
-                            modifier = Modifier.weight(1f).testTag("field_shipping_fee")
-                        )
-
-                        OutlinedTextField(
-                            value = if (additionalCharges > 0) additionalCharges.toString() else "",
-                            onValueChange = { additionalCharges = it.toDoubleOrNull() ?: 0.0 },
-                            label = { Text("Additional Charges") },
-                            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
-                            singleLine = true,
-                            modifier = Modifier.weight(1f)
+                        Column(modifier = Modifier.weight(1f)) {
+                            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                                Text("Auto Round Off", fontSize = 11.5.sp, fontWeight = FontWeight.SemiBold, color = if (isDark) Color.White else PrimaryNavy)
+                                if (isAutoRoundOff && computedRoundOff != 0.0) {
+                                    Surface(
+                                        color = Color(0xFFECFDF5),
+                                        shape = RoundedCornerShape(4.dp),
+                                        border = androidx.compose.foundation.BorderStroke(1.dp, Color(0xFFA7F3D0))
+                                    ) {
+                                        Text(
+                                            text = "${if (computedRoundOff > 0) "+" else ""}${String.format(Locale.US, "%.2f", computedRoundOff)}",
+                                            fontSize = 9.sp,
+                                            fontWeight = FontWeight.Bold,
+                                            color = Color(0xFF047857),
+                                            modifier = Modifier.padding(horizontal = 4.dp, vertical = 1.dp)
+                                        )
+                                    }
+                                }
+                            }
+                            Text(
+                                text = if (isAutoRoundOff) "Automatically rounds total to the nearest whole rupee" else "Exact unrounded cents",
+                                fontSize = 10.sp,
+                                color = if (isDark) Color(0xFF94A3B8) else Color(0xFF64748B)
+                            )
+                        }
+                        Switch(
+                            checked = isAutoRoundOff,
+                            onCheckedChange = { isAutoRoundOff = it },
+                            modifier = Modifier.height(24.dp),
+                            colors = SwitchDefaults.colors(checkedThumbColor = Color.White, checkedTrackColor = Color(0xFF10B981))
                         )
                     }
 
-                    // Prominent Grand Total SaaS Card
+                    HorizontalDivider(color = Color(0xFFE2E8F0))
+
+                    // Grand total bar
                     Card(
                         modifier = Modifier.fillMaxWidth(),
-                        shape = RoundedCornerShape(14.dp),
+                        shape = RoundedCornerShape(12.dp),
                         colors = CardDefaults.cardColors(containerColor = PrimaryNavy)
                     ) {
-                        Column(modifier = Modifier.padding(16.dp)) {
+                        Column(modifier = Modifier.padding(horizontal = 14.dp, vertical = 10.dp)) {
                             Row(
                                 modifier = Modifier.fillMaxWidth(),
                                 horizontalArrangement = Arrangement.SpaceBetween,
                                 verticalAlignment = Alignment.CenterVertically
                             ) {
-                                Column {
-                                    Text("GRAND TOTAL DUE", fontSize = 11.sp, fontWeight = FontWeight.Bold, color = Color(0xFF94A3B8))
-                                    Text(
-                                        text = "${currencySymbol}${String.format(Locale.US, "%,.2f", calculations.grandTotal)}",
-                                        fontSize = 24.sp,
-                                        fontWeight = FontWeight.Black,
-                                        color = Color.White
-                                    )
-                                }
-
-                                Surface(
-                                    color = Color(0xFF16A34A).copy(alpha = 0.2f),
-                                    shape = RoundedCornerShape(8.dp),
-                                    border = androidx.compose.foundation.BorderStroke(1.dp, Color(0xFF22C55E))
-                                ) {
-                                    Text(
-                                        text = status.uppercase(),
-                                        fontSize = 10.sp,
-                                        fontWeight = FontWeight.Bold,
-                                        color = Color(0xFF4ADE80),
-                                        modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp)
-                                    )
-                                }
-                            }
-
-                            Spacer(modifier = Modifier.height(8.dp))
-
-                            // Amount in Words Pill
-                            Surface(
-                                color = Color(0xFF0F172A),
-                                shape = RoundedCornerShape(6.dp),
-                                modifier = Modifier.fillMaxWidth()
-                            ) {
+                                Text("GRAND TOTAL", fontSize = 11.sp, fontWeight = FontWeight.Bold, color = Color(0xFF94A3B8))
                                 Text(
-                                    text = InvoiceUtils.amountInWords(calculations.grandTotal, currencyCode),
-                                    fontSize = 11.sp,
-                                    fontWeight = FontWeight.Medium,
-                                    color = Color(0xFF38BDF8),
-                                    modifier = Modifier.padding(horizontal = 8.dp, vertical = 6.dp)
+                                    text = fmtMoney(calculations.grandTotal),
+                                    fontSize = 20.sp,
+                                    fontWeight = FontWeight.Black,
+                                    color = Color.White
                                 )
                             }
+                            Text(
+                                text = InvoiceUtils.amountInWords(calculations.grandTotal, currencyCode),
+                                fontSize = 10.sp,
+                                color = Color(0xFF38BDF8),
+                                modifier = Modifier.padding(top = 2.dp)
+                            )
                         }
                     }
                 }
@@ -1705,8 +2003,9 @@ fun InvoiceEditScreen(
             // =================================================================
             // ACCORDION 5: NOTES / TERMS / SIGNATURES
             // =================================================================
+            if (isNotesSectionVisible) {
             InvoiceAccordionSection(
-                sectionNumber = 5,
+                sectionNumber = null,
                 icon = Icons.Default.FactCheck,
                 title = "Notes, Terms & Signatures",
                 collapsedSummary = "Signatory: ${profile.signeeName} • Stamp: ${if (profile.showStamp) "Active" else "Hidden"} • Payment Wire included",
@@ -1716,7 +2015,7 @@ fun InvoiceEditScreen(
                 testTag = "accordion_notes_signatures"
             ) {
                 Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                    if (profile.showNotesSection) {
+                    if (profile.showNotes) {
                         OutlinedTextField(
                             value = notes,
                             onValueChange = { notes = it },
@@ -1726,7 +2025,7 @@ fun InvoiceEditScreen(
                         )
                     }
 
-                    if (profile.showTermsSection) {
+                    if (profile.showTerms) {
                         OutlinedTextField(
                             value = terms,
                             onValueChange = { terms = it },
@@ -1736,7 +2035,7 @@ fun InvoiceEditScreen(
                         )
                     }
 
-                    if (profile.showBankingSection) {
+                    if (profile.showPaymentInstructions) {
                         OutlinedTextField(
                             value = paymentInstructions,
                             onValueChange = { paymentInstructions = it },
@@ -1746,7 +2045,7 @@ fun InvoiceEditScreen(
                         )
                     }
 
-                    if (profile.showSignatureSection) {
+                    if (profile.showSignature) {
                         // Authorized Signatory Card Preview
                         Card(
                             modifier = Modifier.fillMaxWidth(),
@@ -1786,10 +2085,122 @@ fun InvoiceEditScreen(
                     }
                 }
             }
+            }
 
-            Spacer(modifier = Modifier.height(24.dp))
+            // Quick-add buttons for optional sections
+            if (!isShippingSectionVisible || !isNotesSectionVisible) {
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    if (!isShippingSectionVisible) {
+                        AddSectionChip("Delivery Details", Icons.Default.LocalShipping) {
+                            showShippingSectionManually = true
+                            shippingDetails = shippingDetails.copy(isEnabled = true)
+                            isShippingExpanded = true
+                        }
+                    }
+                    if (!isNotesSectionVisible) {
+                        AddSectionChip("Notes & Terms", Icons.Default.FactCheck) {
+                            showNotesSectionManually = true
+                            isNotesExpanded = true
+                        }
+                    }
+                }
+            }
+
+            // Final Summary & Action Card at bottom of form
+            GlassCard(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(vertical = 8.dp),
+                shape = RoundedCornerShape(18.dp),
+                elevation = 4.dp
+            ) {
+                Column(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(16.dp),
+                    verticalArrangement = Arrangement.spacedBy(14.dp)
+                ) {
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Column {
+                            Text(
+                                text = "Grand Total",
+                                fontSize = 13.sp,
+                                fontWeight = FontWeight.Medium,
+                                color = if (isDark) Color(0xFF94A3B8) else Color(0xFF64748B)
+                            )
+                            Text(
+                                text = "${items.size} item(s) • $paymentTerms",
+                                fontSize = 11.sp,
+                                color = if (isDark) Color(0xFF64748B) else Color(0xFF94A3B8)
+                            )
+                        }
+                        Text(
+                            text = "${currencySymbol}${String.format(Locale.US, "%,.2f", calculations.grandTotal)}",
+                            fontSize = 22.sp,
+                            fontWeight = FontWeight.Black,
+                            color = if (isDark) Color.White else PrimaryNavy
+                        )
+                    }
+
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(10.dp)
+                    ) {
+                        OutlinedButton(
+                            onClick = { validateAndSave(previewAfter = false) },
+                            shape = RoundedCornerShape(12.dp),
+                            modifier = Modifier
+                                .weight(1f)
+                                .height(46.dp)
+                                .testTag("save_draft_bottom_btn")
+                        ) {
+                            Icon(Icons.Default.Check, contentDescription = null, modifier = Modifier.size(16.dp))
+                            Spacer(modifier = Modifier.width(6.dp))
+                            Text("Save Draft", fontWeight = FontWeight.SemiBold)
+                        }
+
+                        OutlinedButton(
+                            onClick = { showLivePreviewModal = true },
+                            shape = RoundedCornerShape(12.dp),
+                            modifier = Modifier
+                                .weight(1f)
+                                .height(46.dp)
+                                .testTag("live_preview_bottom_btn")
+                        ) {
+                            Icon(Icons.Default.Visibility, contentDescription = null, modifier = Modifier.size(16.dp))
+                            Spacer(modifier = Modifier.width(6.dp))
+                            Text("Live Preview", fontWeight = FontWeight.SemiBold)
+                        }
+                    }
+
+                    Button(
+                        onClick = { validateAndSave(previewAfter = true) },
+                        colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF1D4ED8)),
+                        shape = RoundedCornerShape(12.dp),
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .height(48.dp)
+                            .testTag("generate_invoice_bottom_btn")
+                    ) {
+                        Icon(Icons.Default.Receipt, contentDescription = null, modifier = Modifier.size(18.dp))
+                        Spacer(modifier = Modifier.width(8.dp))
+                        Text("Save & Preview Invoice", fontSize = 14.sp, fontWeight = FontWeight.Bold)
+                    }
+                }
+            }
+
+            Spacer(modifier = Modifier.height(32.dp))
         }
     }
+}
+}
 
     // -------------------------------------------------------------------------
     // DIALOGS & OVERLAYS
@@ -1802,38 +2213,39 @@ fun InvoiceEditScreen(
             onSaveColumns = { updatedCols ->
                 itemColumns.clear()
                 itemColumns.addAll(updatedCols)
-                Toast.makeText(context, "Itemization structure applied!", Toast.LENGTH_SHORT).show()
+                val serialized = InvoiceUtils.serializeColumns(updatedCols)
+                viewModel.saveBusinessProfile(profile.copy(customColumnsJson = serialized))
+                Toast.makeText(context, "Itemization structure applied and saved as default!", Toast.LENGTH_SHORT).show()
+                showItemizationBuilderDialog = false
             },
             onDismiss = { showItemizationBuilderDialog = false }
         )
     }
 
-    // 2. 12 Industry Preset Selector Dialog
-    if (showIndustrySelectorDialog) {
-        IndustryTemplateSelectorDialog(
-            selectedPresetId = selectedIndustryId,
-            onSelectPreset = { preset ->
-                selectedIndustryId = preset.id
-                templateId = preset.recommendedTemplateId
-                itemColumns.clear()
-                itemColumns.addAll(preset.defaultColumns)
-                if (preset.defaultNotes.isNotBlank()) notes = preset.defaultNotes
-                if (preset.defaultTerms.isNotBlank()) terms = preset.defaultTerms
-                shippingDetails = shippingDetails.copy(sectionTitle = preset.recommendedSectionTitle)
-                if (items.isEmpty() || (items.size == 1 && items.first().description.isBlank())) {
-                    preset.sampleItem?.let { sample ->
-                        items.clear()
-                        items.add(sample)
-                    }
+    // Domain & Industry Item Catalog Dialog (Security Agency, Employee Salary/HR, IT, etc.)
+    if (showDomainCatalogDialog) {
+        DomainItemCatalogDialog(
+            onDismissRequest = { showDomainCatalogDialog = false },
+            onAddItem = { newItem ->
+                if (items.size == 1 && items.first().description.isBlank() && items.first().unitPrice == 0.0) {
+                    items[0] = newItem
+                } else {
+                    items.add(newItem)
                 }
-                Toast.makeText(context, "Loaded ${preset.name} template", Toast.LENGTH_SHORT).show()
-                showIndustrySelectorDialog = false
+                Toast.makeText(context, "Added ${newItem.description}", Toast.LENGTH_SHORT).show()
             },
-            onDismiss = { showIndustrySelectorDialog = false }
+            onAddMultipleItems = { newItems ->
+                if (items.size == 1 && items.first().description.isBlank() && items.first().unitPrice == 0.0) {
+                    items.clear()
+                }
+                items.addAll(newItems)
+                Toast.makeText(context, "Added ${newItems.size} domain items to invoice", Toast.LENGTH_SHORT).show()
+            },
+            currencySymbol = currencySymbol
         )
     }
 
-    // 3. Live Full Invoice Preview Modal
+    // 2. Live Full Invoice Preview Modal
     if (showLivePreviewModal) {
         LiveInvoicePreviewModal(
             invoiceNumber = invoiceNumber,
@@ -1867,5 +2279,101 @@ fun InvoiceEditScreen(
             templateId = templateId,
             onDismiss = { showLivePreviewModal = false }
         )
+    }
+}
+
+@Composable
+private fun CompactField(
+    value: String,
+    onValueChange: (String) -> Unit,
+    modifier: Modifier = Modifier,
+    label: String? = null,
+    placeholder: String = "",
+    keyboardType: KeyboardType = KeyboardType.Text
+) {
+    val isDark = isSystemInDarkTheme()
+    Column(modifier) {
+        if (label != null) {
+            Text(label, fontSize = 10.sp, fontWeight = FontWeight.SemiBold, color = Color(0xFF64748B), modifier = Modifier.padding(bottom = 2.dp))
+        }
+        androidx.compose.foundation.text.BasicTextField(
+            value = value,
+            onValueChange = onValueChange,
+            singleLine = true,
+            textStyle = androidx.compose.ui.text.TextStyle(fontSize = 12.sp, color = if (isDark) Color.White else Color(0xFF0F172A)),
+            keyboardOptions = KeyboardOptions(keyboardType = keyboardType),
+            cursorBrush = androidx.compose.ui.graphics.SolidColor(Color(0xFF2563EB)),
+            decorationBox = { inner ->
+                Box(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(34.dp)
+                        .clip(RoundedCornerShape(8.dp))
+                        .background(if (isDark) Color(0xFF1E293B) else Color(0xFFF8FAFC))
+                        .border(1.dp, Color(0xFFCBD5E1).copy(alpha = 0.7f), RoundedCornerShape(8.dp))
+                        .padding(horizontal = 8.dp),
+                    contentAlignment = Alignment.CenterStart
+                ) {
+                    if (value.isEmpty() && placeholder.isNotEmpty()) {
+                        Text(placeholder, fontSize = 12.sp, color = Color(0xFF94A3B8))
+                    }
+                    inner()
+                }
+            }
+        )
+    }
+}
+
+@Composable
+private fun TotalsLine(
+    label: String,
+    value: String,
+    valueColor: Color = PrimaryNavy,
+    input: (@Composable androidx.compose.foundation.layout.RowScope.() -> Unit)? = null
+) {
+    Row(
+        modifier = Modifier.fillMaxWidth(),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(6.dp)
+    ) {
+        Text(label, fontSize = 12.sp, color = Color(0xFF475569), modifier = Modifier.weight(1f), maxLines = 1)
+        if (input != null) {
+            input()
+            Text("=", fontSize = 12.sp, color = Color(0xFF94A3B8))
+        }
+        Text(
+            text = value,
+            fontSize = 13.sp,
+            fontWeight = FontWeight.Bold,
+            color = valueColor,
+            modifier = Modifier.widthIn(min = 80.dp),
+            textAlign = androidx.compose.ui.text.style.TextAlign.End
+        )
+    }
+}
+
+@Composable
+private fun androidx.compose.foundation.layout.RowScope.AddSectionChip(
+    title: String,
+    icon: androidx.compose.ui.graphics.vector.ImageVector,
+    onClick: () -> Unit
+) {
+    Surface(
+        color = Color(0xFFEFF6FF),
+        shape = RoundedCornerShape(10.dp),
+        border = androidx.compose.foundation.BorderStroke(1.dp, Color(0xFF93C5FD)),
+        modifier = Modifier.weight(1f).clickable(onClick = onClick)
+    ) {
+        Row(
+            modifier = Modifier.padding(horizontal = 10.dp, vertical = 8.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.Center
+        ) {
+            Icon(Icons.Default.Add, contentDescription = null, tint = Color(0xFF1D4ED8), modifier = Modifier.size(14.dp))
+            Spacer(Modifier.width(4.dp))
+            Icon(icon, contentDescription = null, tint = Color(0xFF1D4ED8), modifier = Modifier.size(14.dp))
+            Spacer(Modifier.width(4.dp))
+            Text(title, fontSize = 11.sp, fontWeight = FontWeight.Bold, color = Color(0xFF1D4ED8), maxLines = 1)
+        }
     }
 }

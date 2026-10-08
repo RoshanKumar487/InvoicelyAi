@@ -4,7 +4,6 @@ plugins {
   alias(libs.plugins.android.application)
   alias(libs.plugins.kotlin.compose)
   alias(libs.plugins.google.devtools.ksp)
-  alias(libs.plugins.secrets)
   alias(libs.plugins.google.services)
 }
 
@@ -15,7 +14,7 @@ android {
   defaultConfig {
     applicationId = "com.aistudio.invoicely.pxrtvb"
     minSdk = 24
-    targetSdk = 36
+    targetSdk = 35
     versionCode = 1
     versionName = "1.0"
 
@@ -24,28 +23,38 @@ android {
 
   signingConfigs {
     create("release") {
-      val keystorePath = System.getenv("KEYSTORE_PATH") ?: "${rootDir}/my-upload-key.jks"
+      val keystorePath = System.getenv("KEYSTORE_PATH") ?: "${rootDir}/release-key.jks"
       storeFile = file(keystorePath)
-      storePassword = System.getenv("STORE_PASSWORD")
-      keyAlias = "upload"
-      keyPassword = System.getenv("KEY_PASSWORD")
+      storePassword = System.getenv("STORE_PASSWORD") ?: "invoicelypassword"
+      keyAlias = System.getenv("KEY_ALIAS") ?: "invoicely"
+      keyPassword = System.getenv("KEY_PASSWORD") ?: "invoicelypassword"
+      enableV1Signing = true
+      enableV2Signing = true
     }
-    create("debugConfig") {
-      storeFile = file("${rootDir}/debug.keystore")
-      storePassword = "android"
-      keyAlias = "androiddebugkey"
-      keyPassword = "android"
+    val customDebugKeystore = file("${rootDir}/debug.keystore")
+    if (customDebugKeystore.exists()) {
+      create("debugConfig") {
+        storeFile = customDebugKeystore
+        storePassword = "android"
+        keyAlias = "androiddebugkey"
+        keyPassword = "android"
+        enableV1Signing = true
+        enableV2Signing = true
+      }
     }
   }
 
   buildTypes {
     release {
+      isDebuggable = false
       isCrunchPngs = false
       isMinifyEnabled = false
       proguardFiles(getDefaultProguardFile("proguard-android-optimize.txt"), "proguard-rules.pro")
       signingConfig = signingConfigs.getByName("release")
     }
-    debug { signingConfig = signingConfigs.getByName("debugConfig") }
+    debug {
+      signingConfigs.findByName("debugConfig")?.let { signingConfig = it }
+    }
   }
   compileOptions {
     sourceCompatibility = JavaVersion.VERSION_11
@@ -60,14 +69,6 @@ android {
     includeInApk = false
     includeInBundle = true
   }
-}
-
-// Configure the Secrets Gradle Plugin to use .env and .env.example files
-// to match the convention used in Web projects.
-secrets {
-  propertiesFileName = ".env"
-  defaultPropertiesFileName = ".env.example"
-  ignoreList.add("FIREBASE_APPCHECK_DEBUG_TOKEN")
 }
 
 googleServices { missingGoogleServicesStrategy = MissingGoogleServicesStrategy.WARN }
@@ -116,8 +117,8 @@ dependencies {
   implementation(libs.logging.interceptor)
   implementation(libs.moshi.kotlin)
   implementation(libs.okhttp)
-  // implementation(libs.play.services.location)
   implementation(libs.retrofit)
+  implementation("com.google.zxing:core:3.5.3")
   testImplementation(libs.androidx.compose.ui.test.junit4)
   testImplementation(libs.androidx.core)
   testImplementation(libs.androidx.junit)

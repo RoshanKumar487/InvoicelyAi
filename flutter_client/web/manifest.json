@@ -1,0 +1,9 @@
+{
+  "name": "Invoicely AI",
+  "short_name": "Invoicely",
+  "start_url": ".",
+  "display": "standalone",
+  "background_color": "#F8FAFC",
+  "theme_color": "#1E3A8A",
+  "description": "Invoicely AI business invoicing and management"
+}
