@@ -320,16 +320,6 @@ String parseSettingString(Object? value, String fallback) {
   return string.isEmpty ? fallback : string;
 }
 
-String currencySymbolFor(String currency) => switch (currency.toUpperCase()) {
-      'USD' => r'$',
-      'EUR' => '€',
-      'GBP' => '£',
-      'INR' => '₹',
-      'JPY' => '¥',
-      'CAD' || 'AUD' || 'NZD' => r'$',
-      _ => currency.toUpperCase(),
-    };
-
 String readShippingDetails(String? value) {
   if (value == null || value.trim().isEmpty || value.trim() == '{}') return '';
   try {

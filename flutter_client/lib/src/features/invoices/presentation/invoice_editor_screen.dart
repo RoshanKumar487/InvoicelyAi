@@ -128,16 +128,23 @@ class _InvoiceEditorScreenState extends State<InvoiceEditorScreen> {
     _roundOff = TextEditingController(text: _num(invoice?.roundOff ?? 0));
     _amountPaid = TextEditingController(text: _num(invoice?.amountPaid ?? 0));
     final defaultCurrency =
-        _settingString(_localSettings['defaultCurrency'], 'USD');
+        _settingString(_localSettings['defaultCurrency'], 'INR');
+    final defaultCurrencySymbol = _settingString(
+      _localSettings['defaultCurrencySymbol'],
+      _currencySymbolFor(defaultCurrency),
+    );
+    final hasExistingCustomCurrency = invoice != null &&
+        invoice.currencyCode.isNotEmpty &&
+        invoice.currencyCode != 'USD';
     _currencyCode = TextEditingController(
-      text: invoice?.currencyCode ?? defaultCurrency,
+      text: hasExistingCustomCurrency ? invoice.currencyCode : defaultCurrency,
     );
     _currencySymbol = TextEditingController(
-      text: invoice?.currencySymbol ??
-          _settingString(
-            _localSettings['defaultCurrencySymbol'],
-            _currencySymbolFor(defaultCurrency),
-          ),
+      text: (hasExistingCustomCurrency &&
+              invoice.currencySymbol.isNotEmpty &&
+              invoice.currencySymbol != r'$')
+          ? invoice.currencySymbol
+          : defaultCurrencySymbol,
     );
     _notes = TextEditingController(
       text:
@@ -413,10 +420,10 @@ class _InvoiceEditorScreenState extends State<InvoiceEditorScreen> {
         poNumber: _poNumber.text.trim(),
         paymentTerms: _paymentTerms,
         currencyCode: _currencyCode.text.trim().isEmpty
-            ? 'USD'
+            ? 'INR'
             : _currencyCode.text.trim().toUpperCase(),
         currencySymbol:
-            _currencySymbol.text.trim().isEmpty ? r'$' : _currencySymbol.text,
+            _currencySymbol.text.trim().isEmpty ? '₹' : _currencySymbol.text,
         items: _items,
         notes: _showNotesSection ? _notes.text.trim() : '',
         terms: _showNotesSection ? _terms.text.trim() : '',
@@ -511,7 +518,7 @@ class _InvoiceEditorScreenState extends State<InvoiceEditorScreen> {
               _items[0] = InvoiceItem(
                 id: _items[0].id,
                 description: 'Security Guard (12 Hrs Shift)',
-                itemDetails: 'Deployment of uniformed security guard for 12 hours shift. Access control and premise surveillance.',
+                itemDetails: '',
                 quantity: 1,
                 dutyCount: 26,
                 unitPrice: 18500,

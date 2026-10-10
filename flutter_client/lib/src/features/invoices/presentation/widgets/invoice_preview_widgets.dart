@@ -40,6 +40,17 @@ class LineItemsTable extends StatelessWidget {
     return (custom != null && custom.isNotEmpty) ? custom : fallback;
   }
 
+  String get _currencySymbol {
+    final s = localSettings['defaultCurrencySymbol']?.toString().trim();
+    if (s != null && s.isNotEmpty) return s;
+    final c = localSettings['defaultCurrency']?.toString().trim();
+    if (c != null && c.isNotEmpty) return currencySymbolFor(c);
+    if (invoice.currencySymbol.isNotEmpty && invoice.currencySymbol != r'$') {
+      return invoice.currencySymbol;
+    }
+    return '₹';
+  }
+
   @override
   Widget build(BuildContext context) {
     if (invoice.items.isEmpty) {
@@ -78,63 +89,52 @@ class LineItemsTable extends StatelessWidget {
 
     final showDuty = _show('showItemDuty') || invoice.items.any((InvoiceItem it) => it.dutyCount > 0);
     final dutyHeader = _label('customDutyHeader', 'Duty');
+    final hasQty = _show('showItemQty');
+    final hasRate = _show('showItemRate');
+    final hasDiscount = _show('showItemDiscount');
+    final hasTax = _show('showItemTax');
+
+    final totalExtraCols = (hasQty ? 1 : 0) +
+        (showDuty ? 1 : 0) +
+        (hasRate ? 1 : 0) +
+        (hasDiscount ? 1 : 0) +
+        (hasTax ? 1 : 0) +
+        customCols.length;
+
+    final itemFlex = totalExtraCols >= 5 ? 5 : 6;
+    final qtyFlex = qtyHeader.length > 8 ? 2 : 1;
+    final dutyFlex = dutyHeader.length > 10 ? 3 : 2;
+    final rateFlex = rateHeader.length > 12 ? 3 : 2;
+    const discountFlex = 2;
+    const taxFlex = 2;
+    const customFlex = 2;
+    const amountFlex = 3;
 
     return Column(
       children: [
         Container(
-          padding: const EdgeInsets.symmetric(vertical: 10, horizontal: 10),
+          padding: const EdgeInsets.symmetric(vertical: 8, horizontal: 8),
           decoration: BoxDecoration(
             color: headerColor,
             borderRadius: BorderRadius.circular(6),
           ),
-          child: DefaultTextStyle.merge(
-            style: const TextStyle(
-              color: Colors.white,
-              fontWeight: FontWeight.w700,
-              fontSize: 13,
-            ),
-            child: Row(
-              children: [
-                Expanded(
-                  flex: 5,
-                  child: Text(itemHeader),
-                ),
-                if (_show('showItemQty'))
-                  Expanded(
-                    flex: 2,
-                    child: Text(qtyHeader, textAlign: TextAlign.end),
-                  ),
-                if (showDuty)
-                  Expanded(
-                    flex: 2,
-                    child: Text(dutyHeader, textAlign: TextAlign.end),
-                  ),
-                if (_show('showItemRate'))
-                  Expanded(
-                    flex: 2,
-                    child: Text(rateHeader, textAlign: TextAlign.end),
-                  ),
-                if (_show('showItemDiscount'))
-                  Expanded(
-                    flex: 2,
-                    child: Text(_label('customDiscountHeader', 'Discount'), textAlign: TextAlign.end),
-                  ),
-                if (_show('showItemTax'))
-                  Expanded(
-                    flex: 2,
-                    child: Text(_label('customTaxHeader', 'Tax'), textAlign: TextAlign.end),
-                  ),
-                for (final col in customCols)
-                  Expanded(
-                    flex: 2,
-                    child: Text(col['label']?.toString() ?? '', textAlign: TextAlign.end),
-                  ),
-                Expanded(
-                  flex: 3,
-                  child: Text(amountHeader, textAlign: TextAlign.end),
-                ),
-              ],
-            ),
+          child: Row(
+            children: [
+              _buildHeaderCell(itemHeader, flex: itemFlex, align: TextAlign.start),
+              if (hasQty)
+                _buildHeaderCell(qtyHeader, flex: qtyFlex, align: TextAlign.end),
+              if (showDuty)
+                _buildHeaderCell(dutyHeader, flex: dutyFlex, align: TextAlign.end),
+              if (hasRate)
+                _buildHeaderCell(rateHeader, flex: rateFlex, align: TextAlign.end),
+              if (hasDiscount)
+                _buildHeaderCell(_label('customDiscountHeader', 'Discount'), flex: discountFlex, align: TextAlign.end),
+              if (hasTax)
+                _buildHeaderCell(_label('customTaxHeader', 'Tax'), flex: taxFlex, align: TextAlign.end),
+              for (final col in customCols)
+                _buildHeaderCell(col['label']?.toString() ?? '', flex: customFlex, align: TextAlign.end),
+              _buildHeaderCell(amountHeader, flex: amountFlex, align: TextAlign.end),
+            ],
           ),
         ),
         for (var i = 0; i < invoice.items.length; i++) ...[
@@ -143,7 +143,7 @@ class LineItemsTable extends StatelessWidget {
             final isAlt = template?.tableStyle == 'striped' && (i % 2 == 1);
             final isBoxed = template?.tableStyle == 'boxed';
             return Container(
-              padding: const EdgeInsets.symmetric(vertical: 10, horizontal: 10),
+              padding: const EdgeInsets.symmetric(vertical: 8, horizontal: 8),
               decoration: BoxDecoration(
                 color: isAlt ? const Color(0xFFF8FAFC) : Colors.transparent,
                 border: isBoxed
@@ -157,99 +157,54 @@ class LineItemsTable extends StatelessWidget {
               child: Row(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  Expanded(
-                    flex: 5,
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Text(
-                          item.description,
-                          style: const TextStyle(
-                            fontSize: 13,
-                            fontWeight: FontWeight.w500,
-                            color: Color(0xFF1E293B),
-                          ),
-                        ),
-                        if (item.itemDetails.isNotEmpty)
-                          Padding(
-                            padding: const EdgeInsets.only(top: 2),
-                            child: Text(
-                              item.itemDetails,
-                              style: const TextStyle(
-                                fontSize: 11,
-                                color: Color(0xFF64748B),
-                              ),
-                            ),
-                          ),
-                      ],
-                    ),
+                  _buildDescriptionCell(
+                    item.description,
+                    item.itemDetails,
+                    flex: itemFlex,
                   ),
-                  if (_show('showItemQty'))
-                    Expanded(
-                      flex: 2,
-                      child: Text(
-                        '${formatQuantity(item.quantity)}'
-                        '${_show('showItemUnit') ? ' ${item.unit}' : ''}',
-                        textAlign: TextAlign.end,
-                        style: const TextStyle(fontSize: 13),
-                      ),
+                  if (hasQty)
+                    _buildDataCell(
+                      '${formatQuantity(item.quantity)}'
+                      '${_show('showItemUnit') ? ' ${item.unit}' : ''}',
+                      flex: qtyFlex,
+                      align: TextAlign.end,
                     ),
                   if (showDuty)
-                    Expanded(
-                      flex: 2,
-                      child: Text(
-                        item.dutyCount > 0 ? formatQuantity(item.dutyCount) : '−',
-                        textAlign: TextAlign.end,
-                        style: const TextStyle(fontSize: 13),
-                      ),
+                    _buildDataCell(
+                      item.dutyCount > 0 ? formatQuantity(item.dutyCount) : '−',
+                      flex: dutyFlex,
+                      align: TextAlign.end,
                     ),
-                  if (_show('showItemRate'))
-                    Expanded(
-                      flex: 2,
-                      child: Text(
-                        formatMoney(item.unitPrice, invoice.currencySymbol),
-                        textAlign: TextAlign.end,
-                        style: const TextStyle(fontSize: 13),
-                      ),
+                  if (hasRate)
+                    _buildDataCell(
+                      formatMoney(item.unitPrice, _currencySymbol),
+                      flex: rateFlex,
+                      align: TextAlign.end,
                     ),
-                  if (_show('showItemDiscount'))
-                    Expanded(
-                      flex: 2,
-                      child: Text(
-                        '${item.discountRate}%',
-                        textAlign: TextAlign.end,
-                        style: const TextStyle(fontSize: 13),
-                      ),
+                  if (hasDiscount)
+                    _buildDataCell(
+                      '${item.discountRate}%',
+                      flex: discountFlex,
+                      align: TextAlign.end,
                     ),
-                  if (_show('showItemTax'))
-                    Expanded(
-                      flex: 2,
-                      child: Text(
-                        '${item.taxRate}%',
-                        textAlign: TextAlign.end,
-                        style: const TextStyle(fontSize: 13),
-                      ),
+                  if (hasTax)
+                    _buildDataCell(
+                      '${item.taxRate}%',
+                      flex: taxFlex,
+                      align: TextAlign.end,
                     ),
                   for (final col in customCols)
-                    Expanded(
-                      flex: 2,
-                      child: Text(
-                        col['value']?.toString() ?? '−',
-                        textAlign: TextAlign.end,
-                        style: const TextStyle(fontSize: 13),
-                      ),
+                    _buildDataCell(
+                      col['value']?.toString() ?? '−',
+                      flex: customFlex,
+                      align: TextAlign.end,
                     ),
-                  Expanded(
-                    flex: 3,
-                    child: Text(
-                      formatMoney(item.total, invoice.currencySymbol),
-                      textAlign: TextAlign.end,
-                      style: const TextStyle(
-                        fontSize: 13,
-                        fontWeight: FontWeight.w700,
-                        color: Color(0xFF0F172A),
-                      ),
-                    ),
+                  _buildDataCell(
+                    formatMoney(item.total, _currencySymbol),
+                    flex: amountFlex,
+                    align: TextAlign.end,
+                    isBold: true,
+                    color: const Color(0xFF0F172A),
                   ),
                 ],
               ),
@@ -259,6 +214,94 @@ class LineItemsTable extends StatelessWidget {
         if (template?.tableStyle != 'boxed')
           const Divider(color: Color(0xFFCBD5E1)),
       ],
+    );
+  }
+
+  Widget _buildHeaderCell(
+    String text, {
+    required int flex,
+    required TextAlign align,
+  }) {
+    final len = text.length;
+    final double fs = len > 20 ? 10.0 : (len > 12 ? 11.0 : 12.5);
+    return Expanded(
+      flex: flex,
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 4),
+        child: Text(
+          text,
+          textAlign: align,
+          maxLines: 2,
+          overflow: TextOverflow.ellipsis,
+          style: TextStyle(
+            color: Colors.white,
+            fontWeight: FontWeight.w700,
+            fontSize: fs,
+            height: 1.15,
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildDescriptionCell(
+    String title,
+    String subtitle, {
+    required int flex,
+  }) {
+    return Expanded(
+      flex: flex,
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 4),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(
+              title,
+              style: const TextStyle(
+                fontSize: 12.5,
+                fontWeight: FontWeight.w600,
+                color: Color(0xFF1E293B),
+              ),
+            ),
+            if (subtitle.trim().isNotEmpty)
+              Padding(
+                padding: const EdgeInsets.only(top: 2),
+                child: Text(
+                  subtitle.trim(),
+                  style: const TextStyle(
+                    fontSize: 10.5,
+                    color: Color(0xFF64748B),
+                  ),
+                ),
+              ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildDataCell(
+    String text, {
+    required int flex,
+    required TextAlign align,
+    bool isBold = false,
+    Color? color,
+  }) {
+    return Expanded(
+      flex: flex,
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 4),
+        child: Text(
+          text,
+          textAlign: align,
+          style: TextStyle(
+            fontSize: 12,
+            fontWeight: isBold ? FontWeight.w700 : FontWeight.w500,
+            color: color ?? const Color(0xFF1E293B),
+          ),
+        ),
+      ),
     );
   }
 }

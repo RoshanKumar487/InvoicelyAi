@@ -266,9 +266,7 @@ class _LineItemEditorState extends State<LineItemEditor> {
   void _applySuggestion(ItemSuggestion s) {
     setState(() {
       _description.text = s.title;
-      if (_itemDetails.text.trim().isEmpty) {
-        _itemDetails.text = s.defaultDetails;
-      }
+      // Keep description empty as default per requirement; only display if user enters text
       if (s.defaultUnit != null &&
           (_unit.text.trim().isEmpty || _unit.text == 'pcs')) {
         _unit.text = s.defaultUnit!;

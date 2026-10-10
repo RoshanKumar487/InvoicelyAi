@@ -42,9 +42,9 @@ class ExpensesRepository {
       title: _stringValue(data['title']),
       category: _stringValue(data['category'], fallback: 'General'),
       amount: _doubleValue(data['amount']),
-      currency: _stringValue(data['currency'], fallback: 'USD'),
+      currency: _stringValue(data['currency'], fallback: 'INR'),
       currencySymbol: _currencySymbol(
-        _stringValue(data['currency'], fallback: 'USD'),
+        _stringValue(data['currency'], fallback: 'INR'),
       ),
       date: _stringValue(data['date']),
       vendor: _stringValue(data['vendor']),

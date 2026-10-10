@@ -14,6 +14,7 @@ import '../../expenses/presentation/expenses_screen.dart';
 import '../../ai/presentation/ai_chat_screen.dart';
 import '../../invoices/invoice_feature.dart';
 import '../../reports/presentation/reports_screen.dart';
+import '../../settings/data/settings_repository.dart';
 import '../../settings/presentation/invoice_settings_screen.dart';
 import '../../settings/presentation/settings_screen.dart';
 import '../../tax/presentation/tax_calculator_screen.dart';
@@ -78,11 +79,43 @@ class _AppShellState extends State<AppShell> {
       final template = TemplateConfig.tryDecode(templateJson);
       final invoiceSettings =
           await _localPreferences.readMap('invoice_settings');
+      final merged = Map<String, Object?>.from(invoiceSettings);
+
+      // Fetch server business profile to sync currency and business defaults if missing or updated
+      try {
+        final profile = await SettingsRepository(apiClient: widget.apiClient).loadProfile();
+        if (profile.isNotEmpty) {
+          final cur = profile['defaultCurrency']?.toString();
+          if (cur != null && cur.isNotEmpty) {
+            merged['defaultCurrency'] = cur;
+            merged['defaultCurrencySymbol'] = profile['defaultCurrencySymbol']?.toString() ??
+                (cur == 'INR' ? '₹' : (cur == 'USD' ? r'$' : cur));
+            merged['defaultCurrencyFormat'] = profile['defaultCurrencyFormat']?.toString() ?? 'before';
+          }
+          if (profile['companyName'] != null) merged['businessName'] ??= profile['companyName'];
+          if (profile['address'] != null) merged['businessAddress'] ??= profile['address'];
+          if (profile['gstin'] != null) merged['businessGstin'] ??= profile['gstin'];
+          if (profile['panNumber'] != null) merged['businessPan'] ??= profile['panNumber'];
+          if (profile['phone'] != null) merged['businessPhone'] ??= profile['phone'];
+          if (profile['email'] != null) merged['businessEmail'] ??= profile['email'];
+          if (profile['upiId'] != null) merged['upiId'] ??= profile['upiId'];
+          if (profile['bankName'] != null) merged['bankName'] ??= profile['bankName'];
+          if (profile['accountNumber'] != null) merged['accountNumber'] ??= profile['accountNumber'];
+          if (profile['accountHolder'] != null) merged['accountHolder'] ??= profile['accountHolder'];
+          if (profile['ifscCode'] != null) merged['ifscCode'] ??= profile['ifscCode'];
+        }
+      } catch (_) {}
+
+      // Default currency to INR if still unset
+      merged.putIfAbsent('defaultCurrency', () => 'INR');
+      merged.putIfAbsent('defaultCurrencySymbol', () => '₹');
+
       if (!mounted) return;
       setState(() {
         _preferredTemplate = template;
-        _invoiceLocalSettings = invoiceSettings;
+        _invoiceLocalSettings = merged;
       });
+      await _localPreferences.writeMap('invoice_settings', merged);
     } catch (error) {
       if (!mounted) return;
       _showMessage('Could not restore local invoice settings: $error');
@@ -309,6 +342,7 @@ class _AppShellState extends State<AppShell> {
 
   Widget _buildExpenses() => ExpensesScreen(
         repository: ExpensesRepository(apiClient: widget.apiClient),
+        initialLocalSettings: _invoiceLocalSettings,
       );
 }
 
