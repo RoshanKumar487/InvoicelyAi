@@ -27,6 +27,8 @@ class InvoiceFeatureScreen extends StatefulWidget {
     this.localSettings = const <String, Object?>{},
     this.onOpenBusinessSettings,
     this.initialStatusFilter = 'All',
+    this.onSaveLocalSettings,
+    this.onFullscreenChanged,
     super.key,
   });
 
@@ -36,6 +38,8 @@ class InvoiceFeatureScreen extends StatefulWidget {
   final Map<String, Object?> localSettings;
   final VoidCallback? onOpenBusinessSettings;
   final String initialStatusFilter;
+  final Future<void> Function(Map<String, Object?>)? onSaveLocalSettings;
+  final ValueChanged<bool>? onFullscreenChanged;
 
   @override
   State<InvoiceFeatureScreen> createState() => _InvoiceFeatureScreenState();
@@ -63,12 +67,17 @@ class _InvoiceFeatureScreenState extends State<InvoiceFeatureScreen> {
     }
   }
 
-  void _backToList() {
+  void _setPage(_InvoicePage page, [Invoice? selected]) {
     setState(() {
-      _selected = null;
-      _page = _InvoicePage.list;
+      _page = page;
+      if (selected != null || page == _InvoicePage.list) {
+        _selected = selected;
+      }
     });
+    widget.onFullscreenChanged?.call(page != _InvoicePage.list);
   }
+
+  void _backToList() => _setPage(_InvoicePage.list);
 
   @override
   Widget build(BuildContext context) => switch (_page) {
@@ -76,18 +85,9 @@ class _InvoiceFeatureScreenState extends State<InvoiceFeatureScreen> {
             key: ValueKey('invoice-list-${widget.initialStatusFilter}'),
             repository: _repository,
             initialFilter: widget.initialStatusFilter,
-            onCreate: () => setState(() {
-              _selected = null;
-              _page = _InvoicePage.editor;
-            }),
-            onOpen: (invoice) => setState(() {
-              _selected = invoice;
-              _page = _InvoicePage.preview;
-            }),
-            onEdit: (invoice) => setState(() {
-              _selected = invoice;
-              _page = _InvoicePage.editor;
-            }),
+            onCreate: () => _setPage(_InvoicePage.editor),
+            onOpen: (invoice) => _setPage(_InvoicePage.preview, invoice),
+            onEdit: (invoice) => _setPage(_InvoicePage.editor, invoice),
           ),
         _InvoicePage.editor => InvoiceEditorScreen(
             key: ValueKey('invoice-editor-${_selected?.id ?? 'new'}'),
@@ -96,13 +96,12 @@ class _InvoiceFeatureScreenState extends State<InvoiceFeatureScreen> {
             preferredTemplate: widget.preferredTemplate,
             initialLocalSettings: widget.localSettings,
             clientRepository: ClientsRepository(apiClient: widget.apiClient),
+            onOpenInvoiceSettings: widget.onOpenBusinessSettings,
+            onSaveLocalSettings: widget.onSaveLocalSettings,
             onCancel: _selected == null
                 ? _backToList
-                : () => setState(() => _page = _InvoicePage.preview),
-            onSaved: (invoice) => setState(() {
-              _selected = invoice;
-              _page = _InvoicePage.preview;
-            }),
+                : () => _setPage(_InvoicePage.preview),
+            onSaved: (invoice) => _setPage(_InvoicePage.preview, invoice),
           ),
         _InvoicePage.preview => InvoicePreviewScreen(
             key: ValueKey('invoice-preview-${_selected?.id}'),
@@ -111,11 +110,9 @@ class _InvoiceFeatureScreenState extends State<InvoiceFeatureScreen> {
             preferredTemplate: widget.preferredTemplate,
             localSettings: widget.localSettings,
             onOpenBusinessSettings: widget.onOpenBusinessSettings,
+            onSaveLocalSettings: widget.onSaveLocalSettings,
             onBack: _backToList,
-            onEdit: (invoice) => setState(() {
-              _selected = invoice;
-              _page = _InvoicePage.editor;
-            }),
+            onEdit: (invoice) => _setPage(_InvoicePage.editor, invoice),
             onDeleted: _backToList,
           ),
       };

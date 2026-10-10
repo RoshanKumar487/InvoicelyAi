@@ -87,6 +87,42 @@ class _SettingsScreenState extends State<SettingsScreen> {
         _profile = profile;
         _loading = false;
       });
+      // Synchronize company currency and business details with local settings
+      final cur = profile['defaultCurrency']?.toString();
+      if (cur != null && cur.isNotEmpty) {
+        final updated = Map<String, Object?>.from(_localSettings)
+          ..['defaultCurrency'] = cur
+          ..['defaultCurrencySymbol'] =
+              profile['defaultCurrencySymbol']?.toString() ??
+                  _currencySymbols[cur] ??
+                  '₹'
+          ..['defaultCurrencyFormat'] =
+              profile['defaultCurrencyFormat']?.toString() ?? 'before';
+        if (profile['companyName'] != null) {
+          updated['businessName'] = profile['companyName'];
+        }
+        if (profile['address'] != null) {
+          updated['businessAddress'] = profile['address'];
+        }
+        if (profile['gstin'] != null) {
+          updated['businessGstin'] = profile['gstin'];
+        }
+        if (profile['upiId'] != null) {
+          updated['upiId'] = profile['upiId'];
+        }
+        if (profile['bankName'] != null) {
+          updated['bankName'] = profile['bankName'];
+        }
+        if (profile['accountNumber'] != null) {
+          updated['accountNumber'] = profile['accountNumber'];
+        }
+        if (profile['ifscCode'] != null) {
+          updated['ifscCode'] = profile['ifscCode'];
+        }
+        _localSettings = updated;
+        widget.onSaveLocalSettings?.call(updated);
+        widget.localPreferences?.writeMap('invoice_settings', updated);
+      }
     } on ApiException catch (error) {
       if (!mounted) return;
       setState(() {
@@ -107,6 +143,76 @@ class _SettingsScreenState extends State<SettingsScreen> {
     setState(() => _saving = true);
     try {
       final result = await _repository.saveProfile(_profile);
+      final currency = result['defaultCurrency']?.toString() ??
+          _profile['defaultCurrency']?.toString() ??
+          'INR';
+      final currencySymbol = result['defaultCurrencySymbol']?.toString() ??
+          _currencySymbols[currency] ??
+          '₹';
+      final currencyFormat = result['defaultCurrencyFormat']?.toString() ??
+          _profile['defaultCurrencyFormat']?.toString() ??
+          'before';
+
+      final updatedLocal = Map<String, Object?>.from(_localSettings)
+        ..['defaultCurrency'] = currency
+        ..['defaultCurrencySymbol'] = currencySymbol
+        ..['defaultCurrencyFormat'] = currencyFormat
+        ..['businessName'] = result['companyName'] ??
+            _profile['companyName'] ??
+            _localSettings['businessName'] ??
+            ''
+        ..['businessAddress'] = result['address'] ??
+            _profile['address'] ??
+            _localSettings['businessAddress'] ??
+            ''
+        ..['businessGstin'] = result['gstin'] ??
+            _profile['gstin'] ??
+            _localSettings['businessGstin'] ??
+            ''
+        ..['businessPan'] = result['panNumber'] ??
+            _profile['panNumber'] ??
+            _localSettings['businessPan'] ??
+            ''
+        ..['businessPhone'] = result['phone'] ??
+            _profile['phone'] ??
+            _localSettings['businessPhone'] ??
+            ''
+        ..['businessEmail'] = result['email'] ??
+            _profile['email'] ??
+            _localSettings['businessEmail'] ??
+            ''
+        ..['businessWebsite'] = result['website'] ??
+            _profile['website'] ??
+            _localSettings['businessWebsite'] ??
+            ''
+        ..['upiId'] = result['upiId'] ??
+            _profile['upiId'] ??
+            _localSettings['upiId'] ??
+            ''
+        ..['bankName'] = result['bankName'] ??
+            _profile['bankName'] ??
+            _localSettings['bankName'] ??
+            ''
+        ..['accountNumber'] = result['accountNumber'] ??
+            _profile['accountNumber'] ??
+            _localSettings['accountNumber'] ??
+            ''
+        ..['accountHolder'] = result['accountHolder'] ??
+            _profile['accountHolder'] ??
+            _localSettings['accountHolder'] ??
+            ''
+        ..['ifscCode'] = result['ifscCode'] ??
+            _profile['ifscCode'] ??
+            _localSettings['ifscCode'] ??
+            '';
+
+      _localSettings = updatedLocal;
+      widget.onSaveLocalSettings?.call(updatedLocal);
+      if (widget.localPreferences != null) {
+        await widget.localPreferences!
+            .writeMap('invoice_settings', updatedLocal);
+      }
+
       if (!mounted) return;
       setState(() => _profile = result);
       ScaffoldMessenger.of(context).showSnackBar(
@@ -308,6 +414,16 @@ class _SettingsScreenState extends State<SettingsScreen> {
                                 onRemove: () =>
                                     _removeBrandingAsset('invoiceSignature'),
                                 pickLabel: 'Draw',
+                              ),
+                              const SizedBox(height: 10),
+                              _BrandingAssetTile(
+                                label: 'Payment QR code (Optional)',
+                                base64: _localSettings['invoiceQrCode']
+                                    ?.toString(),
+                                onPick: () =>
+                                    _pickBrandImage('invoiceQrCode', 'QR code'),
+                                onRemove: () =>
+                                    _removeBrandingAsset('invoiceQrCode'),
                               ),
                               const SizedBox(height: 16),
                               Align(

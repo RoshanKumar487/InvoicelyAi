@@ -7,6 +7,8 @@ class InvoiceRepository {
 
   final ApiClient _apiClient;
 
+  ApiClient get apiClient => _apiClient;
+
   bool get lastLoadUsedCache => _apiClient.lastGetUsedCache;
 
   Future<List<Invoice>> getInvoices({String? status}) async {

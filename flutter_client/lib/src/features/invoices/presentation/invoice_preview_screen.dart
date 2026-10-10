@@ -1,17 +1,20 @@
-import 'dart:convert';
-
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:printing/printing.dart';
 import 'package:share_plus/share_plus.dart';
 
 import '../../../core/api/api_exception.dart';
-import '../../../shared/widgets/app_card.dart';
+import '../../../shared/widgets/signature_pad_dialog.dart';
+import '../../../shared/widgets/whatsapp_icon.dart';
+import '../../settings/data/settings_repository.dart';
 import '../../templates/data/template_config.dart';
 import '../data/invoice.dart';
 import '../data/invoice_docx_export.dart';
 import '../data/invoice_pdf_export.dart';
 import '../data/invoice_repository.dart';
+import 'widgets/invoice_preview_a4_paper.dart';
+import 'widgets/invoice_preview_widgets.dart';
+import 'widgets/invoice_template_picker_modal.dart';
 
 class InvoicePreviewScreen extends StatefulWidget {
   const InvoicePreviewScreen({
@@ -23,6 +26,7 @@ class InvoicePreviewScreen extends StatefulWidget {
     this.onOpenBusinessSettings,
     this.preferredTemplate,
     this.localSettings = const <String, Object?>{},
+    this.onSaveLocalSettings,
     super.key,
   });
 
@@ -34,76 +38,177 @@ class InvoicePreviewScreen extends StatefulWidget {
   final VoidCallback? onOpenBusinessSettings;
   final TemplateConfig? preferredTemplate;
   final Map<String, Object?> localSettings;
+  final Future<void> Function(Map<String, Object?>)? onSaveLocalSettings;
 
   @override
   State<InvoicePreviewScreen> createState() => _InvoicePreviewScreenState();
 }
 
-class _InvoicePreviewScreenState extends State<InvoicePreviewScreen> {
+class _InvoicePreviewScreenState extends State<InvoicePreviewScreen>
+    with SingleTickerProviderStateMixin {
   late Invoice _invoice = widget.invoice;
+  late Map<String, Object?> _localSettings =
+      Map<String, Object?>.from(widget.localSettings);
+  Map<String, dynamic> _profile = <String, dynamic>{};
   final TransformationController _zoomController = TransformationController();
   String? _selectedTemplateId;
-  double _zoomScale = 1;
+  double _zoomScale = 1.0;
   bool _busy = false;
+
+  AnimationController? _animController;
+  Animation<Matrix4>? _zoomAnimation;
+
+  @override
+  void initState() {
+    super.initState();
+    _loadProfile();
+    _animController = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 240),
+    )..addListener(() {
+        if (_zoomAnimation != null) {
+          _zoomController.value = _zoomAnimation!.value;
+          setState(() {
+            _zoomScale = _zoomController.value.getMaxScaleOnAxis();
+          });
+        }
+      });
+  }
+
+  @override
+  void didUpdateWidget(covariant InvoicePreviewScreen oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.localSettings != widget.localSettings) {
+      _localSettings = Map<String, Object?>.from(widget.localSettings);
+    }
+  }
 
   @override
   void dispose() {
+    _animController?.dispose();
     _zoomController.dispose();
     super.dispose();
   }
 
-  void _setZoom(double scale) {
-    final boundedScale = scale.clamp(0.6, 2.5).toDouble();
-    _zoomController.value = Matrix4.diagonal3Values(
-      boundedScale,
-      boundedScale,
-      boundedScale,
-    );
-    setState(() => _zoomScale = boundedScale);
+  static const double a4PaperWidth = 760.0;
+
+  double? _initialFitScale;
+  double _lastViewportWidth = 0.0;
+
+  void _initFitZoom(double viewportWidth) {
+    if (_initialFitScale != null && (_lastViewportWidth - viewportWidth).abs() < 2.0) {
+      return;
+    }
+    _lastViewportWidth = viewportWidth;
+    final fit = ((viewportWidth - 24) / a4PaperWidth).clamp(0.25, 1.2);
+    _initialFitScale = fit;
+    final tx = (viewportWidth - a4PaperWidth * fit) / 2;
+    final targetMatrix = Matrix4.identity()
+      ..translate(tx, 16.0)
+      ..scale(fit, fit);
+    _zoomController.value = targetMatrix;
+    _zoomScale = fit;
   }
 
-  bool _show(String key) => widget.localSettings[key] != false;
-
-  Image? _brandImage(String key, {double height = 72}) {
-    final encoded = widget.localSettings[key]?.toString() ?? '';
-    if (encoded.isEmpty) return null;
-    try {
-      return Image.memory(
-        base64Decode(encoded),
-        height: height,
-        fit: BoxFit.contain,
-        errorBuilder: (_, __, ___) => const SizedBox.shrink(),
+  void _animateToMatrix(Matrix4 targetMatrix, double targetScale) {
+    if (_animController != null) {
+      _zoomAnimation = Matrix4Tween(
+        begin: _zoomController.value,
+        end: targetMatrix,
+      ).animate(
+        CurvedAnimation(parent: _animController!, curve: Curves.easeOutCubic),
       );
-    } on FormatException {
-      return null;
+      _animController!.forward(from: 0);
+    } else {
+      _zoomController.value = targetMatrix;
+      setState(() => _zoomScale = targetScale);
     }
   }
 
-  List<String> _shippingLines() {
-    final json = _invoice.shippingDetailsJson;
-    if (json.trim().isEmpty || json.trim() == '{}') return const [];
-    try {
-      final decoded = jsonDecode(json);
-      if (decoded is! Map<String, dynamic> || decoded['isEnabled'] != true) {
-        return const [];
-      }
-      const fields = <String, String>{
-        'shippingAddress': 'Shipping address',
-        'deliveryAddress': 'Delivery address',
-        'shippingMethod': 'Shipping method',
-        'courier': 'Carrier',
-        'trackingNumber': 'Tracking',
-        'expectedDelivery': 'Expected delivery',
-      };
-      return fields.entries
-          .where((entry) =>
-              decoded[entry.key]?.toString().trim().isNotEmpty == true)
-          .map((entry) => '${entry.value}: ${decoded[entry.key]}')
-          .toList(growable: false);
-    } on FormatException {
-      return const ['Shipping details could not be displayed.'];
+  void _zoomToFit(double viewportWidth) {
+    final fit = ((viewportWidth - 24) / a4PaperWidth).clamp(0.25, 1.2);
+    final tx = (viewportWidth - a4PaperWidth * fit) / 2;
+    final targetMatrix = Matrix4.identity()
+      ..translate(tx, 16.0)
+      ..scale(fit, fit);
+    _animateToMatrix(targetMatrix, fit);
+  }
+
+  void _zoomToActual(double viewportWidth) {
+    const actual = 1.0;
+    final tx = ((viewportWidth - a4PaperWidth) / 2).clamp(-380.0, 16.0);
+    final targetMatrix = Matrix4.identity()
+      ..translate(tx, 16.0)
+      ..scale(actual, actual);
+    _animateToMatrix(targetMatrix, actual);
+  }
+
+  void _setZoomStep(double delta, double viewportWidth) {
+    final newScale = (_zoomScale + delta).clamp(0.25, 3.5);
+    final tx = (viewportWidth - a4PaperWidth * newScale) / 2;
+    final targetMatrix = Matrix4.identity()
+      ..translate(tx.clamp(-400.0, 24.0), 16.0)
+      ..scale(newScale, newScale);
+    _animateToMatrix(targetMatrix, newScale);
+  }
+
+  void _handleDoubleTap(double viewportWidth) {
+    final fit = ((viewportWidth - 24) / a4PaperWidth).clamp(0.25, 1.2);
+    if ((_zoomScale - fit).abs() < 0.12) {
+      _zoomToActual(viewportWidth);
+    } else {
+      _zoomToFit(viewportWidth);
     }
   }
+
+
+  Future<void> _loadProfile() async {
+    try {
+      final repo = SettingsRepository(apiClient: widget.repository.apiClient);
+      final profile = await repo.loadProfile();
+      if (mounted) {
+        setState(() => _profile = profile);
+      }
+    } catch (_) {}
+  }
+
+  TemplateConfig? get _template {
+    // If user explicitly switched via popup menu, find that preset
+    if (_selectedTemplateId != null) {
+      for (final preset in templatePresets) {
+        if (preset.id == _selectedTemplateId) return preset;
+      }
+      if (widget.preferredTemplate?.id == _selectedTemplateId) {
+        return widget.preferredTemplate;
+      }
+    }
+
+    // Otherwise, prefer the user's customized preferredTemplate
+    if (widget.preferredTemplate != null) {
+      if (_invoice.templateId.isEmpty ||
+          _invoice.templateId == widget.preferredTemplate!.id) {
+        return widget.preferredTemplate;
+      }
+    }
+
+    final selectedId = _invoice.templateId;
+    for (final preset in templatePresets) {
+      if (preset.id == selectedId) return preset;
+    }
+    return widget.preferredTemplate ?? templatePresets.first;
+  }
+
+  String get _activeCurrencySymbol {
+    final s = _localSettings['defaultCurrencySymbol']?.toString().trim();
+    if (s != null && s.isNotEmpty) return s;
+    final c = _localSettings['defaultCurrency']?.toString().trim();
+    if (c != null && c.isNotEmpty) return currencySymbolFor(c);
+    if (_invoice.currencySymbol.isNotEmpty && _invoice.currencySymbol != r'$') {
+      return _invoice.currencySymbol;
+    }
+    return '₹';
+  }
+
 
   Future<void> _changeStatus(String status) async {
     final id = _invoice.id;
@@ -112,13 +217,58 @@ class _InvoicePreviewScreenState extends State<InvoicePreviewScreen> {
     try {
       final updated = await widget.repository.updateStatus(id, status);
       if (mounted) setState(() => _invoice = updated);
-      if (mounted) _showMessage('Invoice status changed to $status.');
+      if (mounted) _showMessage('Invoice status updated to $status.');
     } on ApiException catch (error) {
       if (mounted) _showMessage(error.message);
     } catch (error) {
       if (mounted) _showMessage('Could not update status: $error');
     } finally {
       if (mounted) setState(() => _busy = false);
+    }
+  }
+
+  Future<void> _convertEstimateToInvoice() async {
+    final id = _invoice.id;
+    if (id == null) return;
+    setState(() => _busy = true);
+    try {
+      final updated = await widget.repository.updateStatus(id, 'Sent');
+      if (mounted) {
+        setState(() {
+          _invoice = updated;
+          _localSettings['customTitle'] = 'Tax Invoice';
+        });
+        _showMessage('Converted to Tax Invoice successfully!');
+      }
+    } catch (e) {
+      if (mounted) _showMessage('Could not convert estimate: $e');
+    } finally {
+      if (mounted) setState(() => _busy = false);
+    }
+  }
+
+  Future<void> _openDocuHubSigner() async {
+    final result = await SignaturePadDialog.show(
+      context,
+      initialSigneeName: _localSettings['signeeName']?.toString(),
+      initialSigneeTitle: _localSettings['signeeTitle']?.toString(),
+    );
+    if (result == null) return;
+
+    final updated = Map<String, Object?>.from(_localSettings)
+      ..['invoiceSignature'] = result.base64Png
+      ..['showSignature'] = true;
+    if (result.signeeName != null) {
+      updated['signeeName'] = result.signeeName;
+    }
+    if (result.signeeTitle != null) {
+      updated['signeeTitle'] = result.signeeTitle;
+    }
+
+    setState(() => _localSettings = updated);
+    await widget.onSaveLocalSettings?.call(updated);
+    if (mounted) {
+      _showMessage('Signature captured & applied via DocuHub Studio!');
     }
   }
 
@@ -134,62 +284,30 @@ class _InvoicePreviewScreenState extends State<InvoicePreviewScreen> {
     for (final item in _invoice.items) {
       summary.writeln(
         '${item.description} | ${_quantity(item.quantity)} ${item.unit} | '
-        '${_money(item.unitPrice, _invoice.currencySymbol)} | '
-        '${_money(item.total, _invoice.currencySymbol)}',
+        '${_money(item.unitPrice, _activeCurrencySymbol)} | '
+        '${_money(item.total, _activeCurrencySymbol)}',
       );
     }
     summary
       ..writeln()
       ..writeln(
-          'Subtotal: ${_money(_invoice.subtotal, _invoice.currencySymbol)}')
+          'Subtotal: ${_money(_invoice.subtotal, _activeCurrencySymbol)}')
       ..writeln(
         '${_invoice.taxLabel} (${_invoice.taxRate}%): '
-        '${_money(_invoice.taxAmount, _invoice.currencySymbol)}',
+        '${_money(_invoice.taxAmount, _activeCurrencySymbol)}',
       )
-      ..writeln('Total: ${_money(_invoice.total, _invoice.currencySymbol)}')
+      ..writeln('Total: ${_money(_invoice.total, _activeCurrencySymbol)}')
       ..writeln(
-        'Amount paid: ${_money(_invoice.amountPaid, _invoice.currencySymbol)}',
+        'Amount paid: ${_money(_invoice.amountPaid, _activeCurrencySymbol)}',
       )
       ..writeln(
-        'Balance due: ${_money(_invoice.balanceDue, _invoice.currencySymbol)}',
+        'Balance due: ${_money(_invoice.balanceDue, _activeCurrencySymbol)}',
       );
     if (_invoice.notes.isNotEmpty) {
       summary.writeln('\nNotes: ${_invoice.notes}');
     }
     await Clipboard.setData(ClipboardData(text: summary.toString()));
     if (mounted) _showMessage('Invoice details copied to clipboard.');
-  }
-
-  TemplateConfig? get _template {
-    final selectedId = _selectedTemplateId ?? _invoice.templateId;
-    for (final preset in templatePresets) {
-      if (preset.id == selectedId) return preset;
-    }
-    if (widget.preferredTemplate?.id == selectedId) {
-      return widget.preferredTemplate;
-    }
-    return templatePresets.first;
-  }
-
-  Future<void> _sendPaymentReminder() async {
-    final invoice = _invoice;
-    final text = 'Payment reminder for invoice ${invoice.invoiceNumber}\n'
-        'Amount due: ${_money(invoice.balanceDue, invoice.currencySymbol)}\n'
-        'Due date: ${invoice.dueDate}\n'
-        'Please let us know if you have any questions. Thank you.';
-    try {
-      final result = await SharePlus.instance.share(
-        ShareParams(
-          text: text,
-          subject: 'Payment reminder - ${invoice.invoiceNumber}',
-        ),
-      );
-      if (mounted && result.status == ShareResultStatus.unavailable) {
-        _showMessage('Sharing is unavailable on this platform.');
-      }
-    } catch (error) {
-      if (mounted) _showMessage('Could not share payment reminder: $error');
-    }
   }
 
   String get _safeFileName =>
@@ -201,7 +319,8 @@ class _InvoicePreviewScreenState extends State<InvoicePreviewScreen> {
       final bytes = await InvoicePdfExport.build(
         _invoice,
         template: _template,
-        localSettings: widget.localSettings,
+        localSettings: _localSettings,
+        businessProfile: _profile,
       );
       await Printing.layoutPdf(
         name: 'Invoice_$_safeFileName.pdf',
@@ -214,32 +333,14 @@ class _InvoicePreviewScreenState extends State<InvoicePreviewScreen> {
     }
   }
 
-  Future<void> _sharePdf() async {
-    setState(() => _busy = true);
-    try {
-      final bytes = await InvoicePdfExport.build(
-        _invoice,
-        template: _template,
-        localSettings: widget.localSettings,
-      );
-      await Printing.sharePdf(
-        bytes: bytes,
-        filename: 'Invoice_$_safeFileName.pdf',
-      );
-    } catch (error) {
-      if (mounted) _showMessage('Could not share PDF: $error');
-    } finally {
-      if (mounted) setState(() => _busy = false);
-    }
-  }
-
   Future<void> _shareDocx() async {
     setState(() => _busy = true);
     try {
       final bytes = InvoiceDocxExport.build(
         _invoice,
         template: _template,
-        localSettings: widget.localSettings,
+        localSettings: _localSettings,
+        businessProfile: _profile,
       );
       final name = 'Invoice_$_safeFileName.docx';
       final result = await SharePlus.instance.share(
@@ -263,6 +364,64 @@ class _InvoicePreviewScreenState extends State<InvoicePreviewScreen> {
       if (mounted) _showMessage('Could not share DOCX: $error');
     } finally {
       if (mounted) setState(() => _busy = false);
+    }
+  }
+
+  Future<void> _shareWhatsApp() async {
+    setState(() => _busy = true);
+    try {
+      final bytes = await InvoicePdfExport.build(
+        _invoice,
+        template: _template,
+        localSettings: _localSettings,
+        businessProfile: _profile,
+      );
+      final pdfName = 'Invoice_$_safeFileName.pdf';
+      final shareText =
+          '${_template?.title ?? "Invoice"} #${_invoice.invoiceNumber}\n'
+          'Amount Due: ${_money(_invoice.balanceDue, _activeCurrencySymbol)}\n'
+          'Due Date: ${_invoice.dueDate}\n\n'
+          'Thank you for your business!';
+
+      await SharePlus.instance.share(
+        ShareParams(
+          text: shareText,
+          files: [
+            XFile.fromData(
+              bytes,
+              mimeType: 'application/pdf',
+              name: pdfName,
+            ),
+          ],
+          fileNameOverrides: [pdfName],
+          subject: 'Invoice ${_invoice.invoiceNumber}',
+        ),
+      );
+    } catch (error) {
+      if (mounted) _showMessage('Could not share on WhatsApp: $error');
+    } finally {
+      if (mounted) setState(() => _busy = false);
+    }
+  }
+
+  Future<void> _sendPaymentReminder() async {
+    final invoice = _invoice;
+    final text = 'Payment reminder for invoice ${invoice.invoiceNumber}\n'
+        'Amount due: ${_money(invoice.balanceDue, _activeCurrencySymbol)}\n'
+        'Due date: ${invoice.dueDate}\n'
+        'Please let us know if you have any questions. Thank you.';
+    try {
+      final result = await SharePlus.instance.share(
+        ShareParams(
+          text: text,
+          subject: 'Payment reminder - ${invoice.invoiceNumber}',
+        ),
+      );
+      if (mounted && result.status == ShareResultStatus.unavailable) {
+        _showMessage('Sharing is unavailable on this platform.');
+      }
+    } catch (error) {
+      if (mounted) _showMessage('Could not share payment reminder: $error');
     }
   }
 
@@ -302,6 +461,42 @@ class _InvoicePreviewScreenState extends State<InvoicePreviewScreen> {
     }
   }
 
+  void _openTemplatePickerSheet(BuildContext context) {
+    showModalBottomSheet<void>(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: Colors.transparent,
+      builder: (ctx) => TemplatePickerModal(
+        selectedId: _template?.id,
+        onSelectTemplate: (preset) {
+          setState(() {
+            _selectedTemplateId = preset.id;
+            _invoice = _invoice.copyWith(templateId: preset.id);
+          });
+        },
+        onSetDefault: (preset) async {
+          final updated = Map<String, Object?>.from(_localSettings)
+            ..['preferredTemplateId'] = preset.id
+            ..['customTitle'] = preset.title
+            ..['customItemHeader'] = preset.itemHeader
+            ..['customQtyHeader'] = preset.quantityHeader
+            ..['customRateHeader'] = preset.rateHeader
+            ..['customAmountHeader'] = preset.amountHeader
+            ..['customDutyHeader'] = preset.dutyHeader
+            ..['showItemDuty'] = preset.showDuty;
+          await widget.onSaveLocalSettings?.call(updated);
+          if (mounted) {
+            setState(() {
+              _localSettings = updated;
+              _selectedTemplateId = preset.id;
+            });
+            _showMessage('✓ Template "${preset.name}" set as default!');
+          }
+        },
+      ),
+    );
+  }
+
   void _showMessage(String text) {
     ScaffoldMessenger.of(context)
       ..hideCurrentSnackBar()
@@ -311,725 +506,504 @@ class _InvoicePreviewScreenState extends State<InvoicePreviewScreen> {
   @override
   Widget build(BuildContext context) {
     final invoice = _invoice;
+    final template = _template;
     final templateColor = _templateColor(
-      _template?.color,
-      Theme.of(context).colorScheme.primary,
-    );
-    final signatureImage =
-        _show('showSignature') ? _brandImage('invoiceSignature') : null;
-    final stampImage = _show('showStamp') ? _brandImage('invoiceStamp') : null;
-    return Scaffold(
-      appBar: AppBar(
-        leading: IconButton(
-          tooltip: 'Back to invoices',
-          onPressed: widget.onBack,
-          icon: const Icon(Icons.arrow_back),
-        ),
-        title: Text(invoice.invoiceNumber),
-        actions: [
-          if (widget.onOpenBusinessSettings != null)
-            IconButton(
-              tooltip: 'Manage business branding',
-              onPressed: widget.onOpenBusinessSettings,
-              icon: const Icon(Icons.branding_watermark_outlined),
-            ),
-          IconButton(
-            tooltip: 'Copy invoice details',
-            onPressed: _busy ? null : _copySummary,
-            icon: const Icon(Icons.copy_outlined),
-          ),
-          PopupMenuButton<String>(
-            tooltip: 'Export invoice',
-            enabled: !_busy,
-            onSelected: (action) {
-              switch (action) {
-                case 'print':
-                  _printPdf();
-                case 'pdf':
-                  _sharePdf();
-                case 'docx':
-                  _shareDocx();
-              }
-            },
-            itemBuilder: (context) => const [
-              PopupMenuItem(
-                value: 'print',
-                child: ListTile(
-                  leading: Icon(Icons.print_outlined),
-                  title: Text('Print / download PDF'),
-                  contentPadding: EdgeInsets.zero,
-                ),
-              ),
-              PopupMenuItem(
-                value: 'pdf',
-                child: ListTile(
-                  leading: Icon(Icons.picture_as_pdf_outlined),
-                  title: Text('Share PDF'),
-                  contentPadding: EdgeInsets.zero,
-                ),
-              ),
-              PopupMenuItem(
-                value: 'docx',
-                child: ListTile(
-                  leading: Icon(Icons.description_outlined),
-                  title: Text('Share DOCX'),
-                  contentPadding: EdgeInsets.zero,
-                ),
-              ),
-            ],
-          ),
-          IconButton(
-            tooltip: 'Edit invoice',
-            onPressed: _busy ? null : () => widget.onEdit(_invoice),
-            icon: const Icon(Icons.edit_outlined),
-          ),
-          if (_invoice.balanceDue > 0 &&
-              _invoice.status.toLowerCase() != 'paid')
-            IconButton(
-              tooltip: 'Share payment reminder',
-              onPressed: _busy ? null : _sendPaymentReminder,
-              icon: const Icon(Icons.notifications_active_outlined),
-            ),
-          PopupMenuButton<String>(
-            tooltip: 'Change status',
-            enabled: !_busy,
-            onSelected: _changeStatus,
-            itemBuilder: (context) => const [
-              PopupMenuItem(value: 'Draft', child: Text('Set draft')),
-              PopupMenuItem(value: 'Sent', child: Text('Mark sent')),
-              PopupMenuItem(value: 'Paid', child: Text('Mark paid')),
-              PopupMenuItem(value: 'Overdue', child: Text('Mark overdue')),
-              PopupMenuItem(value: 'Cancelled', child: Text('Cancel invoice')),
-            ],
-          ),
-          IconButton(
-            tooltip: 'Delete invoice',
-            onPressed: _busy ? null : _delete,
-            icon: const Icon(Icons.delete_outline),
-          ),
-        ],
-      ),
-      body: ListView(
-        padding: const EdgeInsets.fromLTRB(20, 8, 20, 32),
-        children: [
-          Center(
-            child: ConstrainedBox(
-              constraints: const BoxConstraints(maxWidth: 850),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.stretch,
-                children: [
-                  Row(
-                    children: [
-                      Expanded(
-                        child: Text(
-                          'Invoice preview',
-                          style: Theme.of(context)
-                              .textTheme
-                              .headlineSmall
-                              ?.copyWith(fontWeight: FontWeight.w800),
-                        ),
-                      ),
-                      if (_show('showStatus'))
-                        _StatusChip(status: invoice.status),
-                    ],
-                  ),
-                  const SizedBox(height: 14),
-                  Wrap(
-                    spacing: 8,
-                    runSpacing: 8,
-                    crossAxisAlignment: WrapCrossAlignment.center,
-                    children: [
-                      const Text(
-                        'Template',
-                        style: TextStyle(fontWeight: FontWeight.w700),
-                      ),
-                      SizedBox(
-                        width: 240,
-                        child: DropdownButton<String>(
-                          isExpanded: true,
-                          value: templatePresets.any(
-                            (preset) => preset.id == _template?.id,
-                          )
-                              ? _template!.id
-                              : templatePresets.first.id,
-                          items: [
-                            for (final preset in templatePresets)
-                              DropdownMenuItem(
-                                value: preset.id,
-                                child: Text(
-                                  preset.name,
-                                  overflow: TextOverflow.ellipsis,
-                                ),
-                              ),
-                          ],
-                          onChanged: _busy
-                              ? null
-                              : (id) {
-                                  if (id != null) {
-                                    setState(() => _selectedTemplateId = id);
-                                  }
-                                },
-                        ),
-                      ),
-                      IconButton(
-                        tooltip: 'Zoom out',
-                        onPressed: _zoomScale <= 0.6
-                            ? null
-                            : () => _setZoom(_zoomScale - 0.2),
-                        icon: const Icon(Icons.zoom_out),
-                      ),
-                      TextButton(
-                        onPressed: () => _setZoom(1),
-                        child: Text('${(_zoomScale * 100).round()}% · Reset'),
-                      ),
-                      IconButton(
-                        tooltip: 'Zoom in',
-                        onPressed: _zoomScale >= 2.5
-                            ? null
-                            : () => _setZoom(_zoomScale + 0.2),
-                        icon: const Icon(Icons.zoom_in),
-                      ),
-                    ],
-                  ),
-                  const SizedBox(height: 10),
-                  SizedBox(
-                    height: 650,
-                    child: LayoutBuilder(
-                      builder: (context, constraints) {
-                        final fitScale = (constraints.maxWidth / 680)
-                            .clamp(0.35, 1.0)
-                            .toDouble();
-                        return ClipRect(
-                          child: InteractiveViewer(
-                            transformationController: _zoomController,
-                            minScale: 0.6,
-                            maxScale: 2.5,
-                            constrained: false,
-                            onInteractionUpdate: (_) {
-                              final scale =
-                                  _zoomController.value.getMaxScaleOnAxis();
-                              if ((scale - _zoomScale).abs() > 0.01) {
-                                setState(() => _zoomScale = scale);
-                              }
-                            },
-                            child: Transform.scale(
-                              scale: fitScale,
-                              alignment: Alignment.topCenter,
-                              child: SizedBox(
-                                width: 680,
-                                child: AppCard(
-                                  padding: const EdgeInsets.all(28),
-                                  child: Column(
-                                    crossAxisAlignment:
-                                        CrossAxisAlignment.start,
-                                    children: [
-                                      Row(
-                                        crossAxisAlignment:
-                                            CrossAxisAlignment.start,
-                                        children: [
-                                          Expanded(
-                                            child: Column(
-                                              crossAxisAlignment:
-                                                  CrossAxisAlignment.start,
-                                              children: [
-                                                if (_brandImage('invoiceLogo')
-                                                    case final logo?)
-                                                  logo,
-                                                Text(
-                                                  _template?.title ?? 'INVOICE',
-                                                  style: Theme.of(context)
-                                                      .textTheme
-                                                      .headlineMedium
-                                                      ?.copyWith(
-                                                        color: templateColor,
-                                                        fontWeight:
-                                                            FontWeight.w900,
-                                                        letterSpacing: 1.2,
-                                                      ),
-                                                ),
-                                              ],
-                                            ),
-                                          ),
-                                          Column(
-                                            crossAxisAlignment:
-                                                CrossAxisAlignment.end,
-                                            children: [
-                                              Text(
-                                                invoice.invoiceNumber,
-                                                style: Theme.of(context)
-                                                    .textTheme
-                                                    .titleMedium
-                                                    ?.copyWith(
-                                                        fontWeight:
-                                                            FontWeight.w800),
-                                              ),
-                                              const SizedBox(height: 6),
-                                              if (_show('showIssueDate'))
-                                                Text(
-                                                    'Issued ${invoice.issueDate}'),
-                                              if (_show('showDueDate'))
-                                                Text('Due ${invoice.dueDate}'),
-                                            ],
-                                          ),
-                                        ],
-                                      ),
-                                      const Divider(height: 32),
-                                      _ClientSummary(
-                                        invoice: invoice,
-                                        localSettings: widget.localSettings,
-                                      ),
-                                      if (_shippingLines().isNotEmpty) ...[
-                                        const SizedBox(height: 14),
-                                        _TextBlock(
-                                          title: 'Shipping details',
-                                          text: _shippingLines().join('\n'),
-                                        ),
-                                      ],
-                                      const SizedBox(height: 28),
-                                      _LineItemsTable(
-                                        invoice: invoice,
-                                        localSettings: widget.localSettings,
-                                        template: _template,
-                                      ),
-                                      const SizedBox(height: 20),
-                                      Align(
-                                        alignment: Alignment.centerRight,
-                                        child: ConstrainedBox(
-                                          constraints: const BoxConstraints(
-                                              maxWidth: 350),
-                                          child: Column(
-                                            children: [
-                                              _TotalLine(
-                                                label: 'Subtotal',
-                                                value: _money(
-                                                  invoice.subtotal,
-                                                  invoice.currencySymbol,
-                                                ),
-                                              ),
-                                              if (invoice.totalDiscount > 0)
-                                                _TotalLine(
-                                                  label: 'Discount',
-                                                  value:
-                                                      '−${_money(invoice.totalDiscount, invoice.currencySymbol)}',
-                                                ),
-                                              if (_template?.showTaxBreakdown !=
-                                                  false)
-                                                _TotalLine(
-                                                  label:
-                                                      '${invoice.taxLabel} (${invoice.taxRate}%)',
-                                                  value: _money(
-                                                    invoice.taxAmount,
-                                                    invoice.currencySymbol,
-                                                  ),
-                                                ),
-                                              if (invoice.shippingFee > 0)
-                                                _TotalLine(
-                                                  label: 'Shipping',
-                                                  value: _money(
-                                                    invoice.shippingFee,
-                                                    invoice.currencySymbol,
-                                                  ),
-                                                ),
-                                              if (invoice.additionalCharges > 0)
-                                                _TotalLine(
-                                                  label: 'Additional charges',
-                                                  value: _money(
-                                                    invoice.additionalCharges,
-                                                    invoice.currencySymbol,
-                                                  ),
-                                                ),
-                                              if (invoice.roundOff != 0)
-                                                _TotalLine(
-                                                  label: 'Round off',
-                                                  value: _money(
-                                                    invoice.roundOff,
-                                                    invoice.currencySymbol,
-                                                  ),
-                                                ),
-                                              const Divider(),
-                                              _TotalLine(
-                                                label: 'Total',
-                                                value: _money(
-                                                  invoice.total,
-                                                  invoice.currencySymbol,
-                                                ),
-                                                bold: true,
-                                              ),
-                                              _TotalLine(
-                                                label: 'Amount paid',
-                                                value: _money(
-                                                  invoice.amountPaid,
-                                                  invoice.currencySymbol,
-                                                ),
-                                              ),
-                                              _TotalLine(
-                                                label: 'Balance due',
-                                                value: _money(
-                                                  invoice.balanceDue,
-                                                  invoice.currencySymbol,
-                                                ),
-                                                bold: true,
-                                              ),
-                                            ],
-                                          ),
-                                        ),
-                                      ),
-                                      if ((_show('showNotes') &&
-                                              invoice.notes.isNotEmpty) ||
-                                          (_show('showTerms') &&
-                                              invoice.terms.isNotEmpty) ||
-                                          (_show('showPaymentInstructions') &&
-                                              invoice.paymentInstructions
-                                                  .isNotEmpty)) ...[
-                                        const Divider(height: 32),
-                                        if (_show('showNotes') &&
-                                            invoice.notes.isNotEmpty)
-                                          _TextBlock(
-                                              title: 'Notes',
-                                              text: invoice.notes),
-                                        if (_show('showTerms') &&
-                                            invoice.terms.isNotEmpty)
-                                          _TextBlock(
-                                            title: 'Terms and conditions',
-                                            text: invoice.terms,
-                                          ),
-                                        if (_show('showPaymentInstructions') &&
-                                            _template
-                                                    ?.showPaymentInstructions !=
-                                                false &&
-                                            invoice
-                                                .paymentInstructions.isNotEmpty)
-                                          _TextBlock(
-                                            title: 'Payment instructions',
-                                            text: invoice.paymentInstructions,
-                                          ),
-                                      ],
-                                      if (signatureImage != null ||
-                                          stampImage != null) ...[
-                                        const Divider(height: 32),
-                                        Row(
-                                          mainAxisAlignment:
-                                              MainAxisAlignment.end,
-                                          children: [
-                                            if (signatureImage != null)
-                                              signatureImage,
-                                            if (stampImage != null)
-                                              Padding(
-                                                padding: const EdgeInsets.only(
-                                                    left: 12),
-                                                child: stampImage,
-                                              ),
-                                          ],
-                                        ),
-                                      ],
-                                    ],
-                                  ),
-                                ),
-                              ),
-                            ),
-                          ),
-                        );
-                      },
-                    ),
-                  ),
-                  const SizedBox(height: 12),
-                  Text(
-                    'Print, download, or share this invoice as a PDF or editable DOCX.',
-                    textAlign: TextAlign.center,
-                    style: Theme.of(context).textTheme.bodySmall,
-                  ),
-                ],
-              ),
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-}
-
-class _ClientSummary extends StatelessWidget {
-  const _ClientSummary({
-    required this.invoice,
-    required this.localSettings,
-  });
-
-  final Invoice invoice;
-  final Map<String, Object?> localSettings;
-
-  bool _show(String key) => localSettings[key] != false;
-
-  @override
-  Widget build(BuildContext context) => Row(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Expanded(
-            child: _SummaryBlock(
-              title: 'BILL TO',
-              children: [
-                Text(
-                  invoice.clientName,
-                  style: const TextStyle(fontWeight: FontWeight.w700),
-                ),
-                if (_show('showClientCompany') &&
-                    invoice.clientCompany.isNotEmpty)
-                  Text(invoice.clientCompany),
-                if (_show('showClientEmail') && invoice.clientEmail.isNotEmpty)
-                  Text(invoice.clientEmail),
-                if (_show('showClientPhone') && invoice.clientPhone.isNotEmpty)
-                  Text(invoice.clientPhone),
-                if (_show('showClientAddress') &&
-                    invoice.clientAddress.isNotEmpty)
-                  Text(invoice.clientAddress),
-                if (_show('showClientTaxId') && invoice.clientTaxId.isNotEmpty)
-                  Text('Tax ID: ${invoice.clientTaxId}'),
-              ],
-            ),
-          ),
-          if (_show('showPoNumber') && invoice.poNumber.isNotEmpty)
-            Expanded(
-              child: _SummaryBlock(
-                title: 'PURCHASE ORDER',
-                children: [Text(invoice.poNumber)],
-              ),
-            ),
-        ],
-      );
-}
-
-class _LineItemsTable extends StatelessWidget {
-  const _LineItemsTable({
-    required this.invoice,
-    required this.localSettings,
-    required this.template,
-  });
-
-  final Invoice invoice;
-  final Map<String, Object?> localSettings;
-  final TemplateConfig? template;
-
-  bool _show(String key) => localSettings[key] != false;
-
-  @override
-  Widget build(BuildContext context) {
-    if (invoice.items.isEmpty) {
-      return const Text('This invoice has no line items.');
-    }
-    final headerColor = _templateColor(
       template?.color,
       Theme.of(context).colorScheme.primary,
     );
-    return Column(
-      children: [
-        Container(
-          padding: const EdgeInsets.symmetric(vertical: 10, horizontal: 8),
-          color: headerColor,
-          child: DefaultTextStyle.merge(
-            style: const TextStyle(
-              color: Colors.white,
-              fontWeight: FontWeight.w700,
-            ),
-            child: Row(
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+    final isMobile = MediaQuery.sizeOf(context).width < 600;
+    final isEstimate = invoice.status.toLowerCase().contains('quotation') ||
+        invoice.status.toLowerCase().contains('estimate') ||
+        (template?.title.toLowerCase().contains('estimate') ?? false) ||
+        (template?.title.toLowerCase().contains('quotation') ?? false);
+
+    return Scaffold(
+      backgroundColor: const Color(0xFF0F172A), // Sleek high-contrast dark canvas
+      appBar: AppBar(
+        backgroundColor: isDark ? const Color(0xFF1E293B) : Colors.white,
+        elevation: 2,
+        leading: IconButton(
+          tooltip: 'Back',
+          onPressed: widget.onBack,
+          icon: const Icon(Icons.arrow_back),
+        ),
+        title: InkWell(
+          onTap: () => _openTemplatePickerSheet(context),
+          borderRadius: BorderRadius.circular(6),
+          child: Padding(
+            padding: const EdgeInsets.symmetric(vertical: 2, horizontal: 4),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              mainAxisSize: MainAxisSize.min,
               children: [
-                Expanded(
-                  flex: 5,
-                  child: Text(template?.itemHeader ?? 'Description'),
+                Text(
+                  invoice.invoiceNumber,
+                  style: const TextStyle(
+                    fontWeight: FontWeight.w800,
+                    fontSize: 16,
+                  ),
                 ),
-                if (_show('showItemQty'))
-                  Expanded(
-                    child: Text(
-                      template?.quantityHeader ?? 'Qty',
-                      textAlign: TextAlign.end,
+                Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Flexible(
+                      child: Text(
+                        template?.name ?? 'Standard Template',
+                        style: TextStyle(
+                          fontSize: 11,
+                          fontWeight: FontWeight.w600,
+                          color: Theme.of(context).colorScheme.primary,
+                        ),
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                      ),
                     ),
-                  ),
-                if (_show('showItemRate'))
-                  Expanded(
-                    flex: 2,
-                    child: Text(
-                      template?.rateHeader ?? 'Rate',
-                      textAlign: TextAlign.end,
+                    const SizedBox(width: 2),
+                    Icon(
+                      Icons.arrow_drop_down_rounded,
+                      size: 16,
+                      color: Theme.of(context).colorScheme.primary,
                     ),
-                  ),
-                if (_show('showItemDiscount'))
-                  const Expanded(
-                    child: Text('Discount', textAlign: TextAlign.end),
-                  ),
-                if (_show('showItemTax'))
-                  const Expanded(
-                    child: Text('Tax', textAlign: TextAlign.end),
-                  ),
-                Expanded(
-                  flex: 2,
-                  child: Text(
-                    template?.amountHeader ?? 'Amount',
-                    textAlign: TextAlign.end,
-                  ),
+                  ],
                 ),
               ],
             ),
           ),
         ),
-        for (final item in invoice.items)
-          Padding(
-            padding: const EdgeInsets.symmetric(vertical: 12, horizontal: 8),
-            child: Row(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Expanded(flex: 5, child: Text(item.description)),
-                if (_show('showItemQty'))
-                  Expanded(
-                    child: Text(
-                      '${_quantity(item.quantity)}'
-                      '${_show('showItemUnit') ? ' ${item.unit}' : ''}',
-                      textAlign: TextAlign.end,
-                    ),
-                  ),
-                if (_show('showItemRate'))
-                  Expanded(
-                    flex: 2,
-                    child: Text(
-                      _money(item.unitPrice, invoice.currencySymbol),
-                      textAlign: TextAlign.end,
-                    ),
-                  ),
-                if (_show('showItemDiscount'))
-                  Expanded(
-                    child: Text(
-                      '${item.discountRate}%',
-                      textAlign: TextAlign.end,
-                    ),
-                  ),
-                if (_show('showItemTax'))
-                  Expanded(
-                    child: Text(
-                      '${item.taxRate}%',
-                      textAlign: TextAlign.end,
-                    ),
-                  ),
-                Expanded(
-                  flex: 2,
-                  child: Text(
-                    _money(item.total, invoice.currencySymbol),
-                    textAlign: TextAlign.end,
-                  ),
-                ),
-              ],
+        actions: [
+          // 1. SWITCH TEMPLATE (Palette button opening category-wise template studio sheet)
+          _buildPillButton(
+            tooltip: 'Switch Template Style & Category',
+            backgroundColor:
+                isDark ? const Color(0xFF334155) : const Color(0xFFF1F5F9),
+            child: IconButton(
+              icon: Icon(
+                Icons.palette_outlined,
+                size: 18,
+                color: isDark ? Colors.white : const Color(0xFF0F172A),
+              ),
+              onPressed: () => _openTemplatePickerSheet(context),
             ),
           ),
-        const Divider(),
-      ],
-    );
-  }
-}
 
-class _SummaryBlock extends StatelessWidget {
-  const _SummaryBlock({required this.title, required this.children});
-
-  final String title;
-  final List<Widget> children;
-
-  @override
-  Widget build(BuildContext context) => Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Text(
-            title,
-            style: Theme.of(context).textTheme.labelMedium?.copyWith(
-                  fontWeight: FontWeight.w800,
-                  letterSpacing: 0.8,
-                ),
+          // 2. DOWNLOAD / PRINT PDF (Red circular pill)
+          _buildPillButton(
+            tooltip: 'Download / Print PDF',
+            backgroundColor:
+                isDark ? const Color(0xFF7F1D1D) : const Color(0xFFFEE2E2),
+            child: IconButton(
+              icon: Icon(
+                Icons.picture_as_pdf_rounded,
+                size: 18,
+                color: isDark ? const Color(0xFFFCA5A5) : const Color(0xFFDC2626),
+              ),
+              onPressed: _busy ? null : _printPdf,
+            ),
           ),
-          const SizedBox(height: 8),
-          ...children,
-        ],
-      );
-}
 
-class _TotalLine extends StatelessWidget {
-  const _TotalLine({
-    required this.label,
-    required this.value,
-    this.bold = false,
-  });
+          // 3. GENERATE DOCX (Blue circular pill)
+          _buildPillButton(
+            tooltip: 'Generate DOCX',
+            backgroundColor:
+                isDark ? const Color(0xFF1E3A8A) : const Color(0xFFDBEAFE),
+            child: IconButton(
+              icon: Icon(
+                Icons.download_rounded,
+                size: 18,
+                color: isDark ? const Color(0xFF93C5FD) : const Color(0xFF2563EB),
+              ),
+              onPressed: _busy ? null : _shareDocx,
+            ),
+          ),
 
-  final String label;
-  final String value;
-  final bool bold;
+          // 4. WHATSAPP SHARE (Green circular pill)
+          _buildPillButton(
+            tooltip: 'Share via WhatsApp',
+            backgroundColor:
+                isDark ? const Color(0xFF064E3B) : const Color(0xFFDCFCE7),
+            child: IconButton(
+              icon: const WhatsAppIcon(size: 19),
+              onPressed: _busy ? null : _shareWhatsApp,
+            ),
+          ),
 
-  @override
-  Widget build(BuildContext context) => Padding(
-        padding: const EdgeInsets.symmetric(vertical: 5),
-        child: Row(
-          children: [
-            Expanded(
-              child: Text(
-                label,
-                style:
-                    bold ? const TextStyle(fontWeight: FontWeight.w700) : null,
+          // 5. EDIT INVOICE (Pill button)
+          _buildPillButton(
+            tooltip: 'Edit Invoice',
+            backgroundColor:
+                isDark ? const Color(0xFF334155) : const Color(0xFFF1F5F9),
+            child: IconButton(
+              icon: Icon(
+                Icons.edit_rounded,
+                size: 17,
+                color: isDark ? Colors.white : const Color(0xFF0F172A),
+              ),
+              onPressed: _busy ? null : () => widget.onEdit(_invoice),
+            ),
+          ),
+
+          // 6. SEND REMINDER (Amber circular pill when unpaid)
+          if (invoice.balanceDue > 0 &&
+              invoice.status.toLowerCase() != 'paid')
+            _buildPillButton(
+              tooltip: 'Send Payment Reminder',
+              backgroundColor:
+                  isDark ? const Color(0xFF78350F) : const Color(0xFFFEF3C7),
+              child: IconButton(
+                icon: Icon(
+                  Icons.notifications_active_rounded,
+                  size: 17,
+                  color: isDark
+                      ? const Color(0xFFFCD34D)
+                      : const Color(0xFFD97706),
+                ),
+                onPressed: _busy ? null : _sendPaymentReminder,
               ),
             ),
-            Text(
-              value,
-              style: bold ? const TextStyle(fontWeight: FontWeight.w800) : null,
-            ),
-          ],
+
+          // 7. OVERFLOW MENU
+          PopupMenuButton<String>(
+            tooltip: 'More actions',
+            enabled: !_busy,
+            icon: const Icon(Icons.more_vert_rounded),
+            onSelected: (action) {
+              switch (action) {
+                case 'sign':
+                  _openDocuHubSigner();
+                case 'copy':
+                  _copySummary();
+                case 'delete':
+                  _delete();
+                case 'branding':
+                  widget.onOpenBusinessSettings?.call();
+                default:
+                  if (action.startsWith('status:')) {
+                    _changeStatus(action.substring(7));
+                  }
+              }
+            },
+            itemBuilder: (context) => [
+              const PopupMenuItem(
+                value: 'sign',
+                child: ListTile(
+                  leading: Icon(Icons.draw_rounded, color: Color(0xFF2563EB)),
+                  title: Text('DocuHub Digital Sign'),
+                  contentPadding: EdgeInsets.zero,
+                ),
+              ),
+              const PopupMenuItem(
+                value: 'copy',
+                child: ListTile(
+                  leading: Icon(Icons.copy_rounded),
+                  title: Text('Copy invoice text'),
+                  contentPadding: EdgeInsets.zero,
+                ),
+              ),
+              if (widget.onOpenBusinessSettings != null)
+                const PopupMenuItem(
+                  value: 'branding',
+                  child: ListTile(
+                    leading: Icon(Icons.branding_watermark_outlined),
+                    title: Text('Business branding'),
+                    contentPadding: EdgeInsets.zero,
+                  ),
+                ),
+              const PopupMenuDivider(),
+              const PopupMenuItem(
+                enabled: false,
+                child: Text(
+                  'Change Status',
+                  style: TextStyle(fontWeight: FontWeight.bold, fontSize: 12),
+                ),
+              ),
+              const PopupMenuItem(
+                value: 'status:Draft',
+                child: Text('• Draft'),
+              ),
+              const PopupMenuItem(
+                value: 'status:Sent',
+                child: Text('• Sent'),
+              ),
+              const PopupMenuItem(
+                value: 'status:Paid',
+                child: Text('• Paid'),
+              ),
+              const PopupMenuItem(
+                value: 'status:Overdue',
+                child: Text('• Overdue'),
+              ),
+              const PopupMenuItem(
+                value: 'status:Cancelled',
+                child: Text('• Cancelled'),
+              ),
+              const PopupMenuDivider(),
+              const PopupMenuItem(
+                value: 'delete',
+                child: ListTile(
+                  leading: Icon(Icons.delete_outline, color: Colors.red),
+                  title: Text(
+                    'Delete invoice',
+                    style: TextStyle(color: Colors.red),
+                  ),
+                  contentPadding: EdgeInsets.zero,
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(width: 4),
+        ],
+      ),
+      body: LayoutBuilder(
+        builder: (context, constraints) {
+          final viewportWidth = constraints.maxWidth;
+          _initFitZoom(viewportWidth);
+
+          return Stack(
+            children: [
+              // FULL PAGE ZOOMABLE CANVAS (EXACT A4 PROPORTIONS)
+              GestureDetector(
+                onDoubleTap: () => _handleDoubleTap(viewportWidth),
+                child: InteractiveViewer(
+                  transformationController: _zoomController,
+                  minScale: 0.25,
+                  maxScale: 3.5,
+                  boundaryMargin: const EdgeInsets.symmetric(horizontal: 160, vertical: 200),
+                  constrained: false,
+                  clipBehavior: Clip.none,
+                  onInteractionUpdate: (_) {
+                    final currentScale = _zoomController.value.getMaxScaleOnAxis();
+                    if ((currentScale - _zoomScale).abs() > 0.02) {
+                      setState(() => _zoomScale = currentScale);
+                    }
+                  },
+                  child: SizedBox(
+                    width: a4PaperWidth,
+                    child: Column(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        // Quotation / Estimate conversion banner (Kotlin style)
+                        if (isEstimate) ...[
+                          Container(
+                            margin: const EdgeInsets.only(bottom: 16),
+                            padding: const EdgeInsets.symmetric(
+                              horizontal: 16,
+                              vertical: 12,
+                            ),
+                            decoration: BoxDecoration(
+                              color: const Color(0xFF064E3B),
+                              borderRadius: BorderRadius.circular(12),
+                              border: Border.all(
+                                color: const Color(0xFF059669),
+                                width: 1.2,
+                              ),
+                            ),
+                            child: Row(
+                              children: [
+                                Expanded(
+                                  child: Column(
+                                    crossAxisAlignment: CrossAxisAlignment.start,
+                                    children: [
+                                      Row(
+                                        children: [
+                                          const Text(
+                                            '📑 Quotation / Estimate',
+                                            style: TextStyle(
+                                              fontWeight: FontWeight.bold,
+                                              fontSize: 14,
+                                              color: Colors.white,
+                                            ),
+                                          ),
+                                          const SizedBox(width: 8),
+                                          Container(
+                                            padding: const EdgeInsets.symmetric(
+                                              horizontal: 6,
+                                              vertical: 2,
+                                            ),
+                                            decoration: BoxDecoration(
+                                              color: const Color(0xFF10B981),
+                                              borderRadius: BorderRadius.circular(4),
+                                            ),
+                                            child: const Text(
+                                              'ESTIMATE',
+                                              style: TextStyle(
+                                                fontSize: 9,
+                                                fontWeight: FontWeight.bold,
+                                                color: Colors.white,
+                                              ),
+                                            ),
+                                          ),
+                                        ],
+                                      ),
+                                      const SizedBox(height: 2),
+                                      const Text(
+                                        'Ready to finalize this estimate into a bill?',
+                                        style: TextStyle(
+                                          fontSize: 12,
+                                          color: Color(0xFFA7F3D0),
+                                        ),
+                                      ),
+                                    ],
+                                  ),
+                                ),
+                                FilledButton(
+                                  onPressed: _busy ? null : _convertEstimateToInvoice,
+                                  style: FilledButton.styleFrom(
+                                    backgroundColor: const Color(0xFF10B981),
+                                    shape: RoundedRectangleBorder(
+                                      borderRadius: BorderRadius.circular(8),
+                                    ),
+                                    padding: const EdgeInsets.symmetric(
+                                      horizontal: 14,
+                                      vertical: 8,
+                                    ),
+                                  ),
+                                  child: const Text(
+                                    'Convert to Tax Invoice',
+                                    style: TextStyle(
+                                      fontSize: 12,
+                                      fontWeight: FontWeight.bold,
+                                    ),
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ),
+                        ],
+
+                        // A4 PAPER DOCUMENT CARD (EXACT PDF PRINT SIZE)
+                        _buildA4Paper(
+                          invoice: invoice,
+                          template: template,
+                          templateColor: templateColor,
+                          isMobile: isMobile,
+                        ),
+
+                        const SizedBox(height: 140), // generous bottom clearance
+                      ],
+                    ),
+                  ),
+                ),
+              ),
+
+              // FLOATING QUICK ZOOM THUMB CONTROLLER
+              Positioned(
+                right: 16,
+                bottom: 16,
+                child: Material(
+                  color: isDark
+                      ? const Color(0xEE1E293B)
+                      : Colors.white.withAlpha(245),
+                  elevation: 8,
+                  borderRadius: BorderRadius.circular(24),
+                  child: Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 4),
+                    decoration: BoxDecoration(
+                      borderRadius: BorderRadius.circular(24),
+                      border: Border.all(
+                        color: isDark
+                            ? Colors.white.withAlpha(40)
+                            : Colors.black.withAlpha(25),
+                      ),
+                    ),
+                    child: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        IconButton(
+                          icon: const Icon(Icons.zoom_out, size: 18),
+                          tooltip: 'Zoom Out',
+                          onPressed: () => _setZoomStep(-0.15, viewportWidth),
+                          constraints: const BoxConstraints(minWidth: 32, minHeight: 32),
+                          padding: EdgeInsets.zero,
+                        ),
+                        IconButton(
+                          icon: const Icon(Icons.fit_screen_rounded, size: 18),
+                          tooltip: 'Fit Page to Screen',
+                          onPressed: () => _zoomToFit(viewportWidth),
+                          constraints: const BoxConstraints(minWidth: 32, minHeight: 32),
+                          padding: EdgeInsets.zero,
+                        ),
+                        InkWell(
+                          onTap: () => _handleDoubleTap(viewportWidth),
+                          borderRadius: BorderRadius.circular(8),
+                          child: Padding(
+                            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                            child: Text(
+                              '${(_zoomScale * 100).round()}%',
+                              style: TextStyle(
+                                fontSize: 12,
+                                fontWeight: FontWeight.bold,
+                                color: Theme.of(context).colorScheme.primary,
+                              ),
+                            ),
+                          ),
+                        ),
+                        IconButton(
+                          icon: const Icon(Icons.zoom_in, size: 18),
+                          tooltip: 'Zoom In',
+                          onPressed: () => _setZoomStep(0.15, viewportWidth),
+                          constraints: const BoxConstraints(minWidth: 32, minHeight: 32),
+                          padding: EdgeInsets.zero,
+                        ),
+                        IconButton(
+                          icon: const Icon(Icons.restart_alt_rounded, size: 18),
+                          tooltip: '100% Print Actual Size',
+                          onPressed: () => _zoomToActual(viewportWidth),
+                          constraints: const BoxConstraints(minWidth: 32, minHeight: 32),
+                          padding: EdgeInsets.zero,
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+              ),
+            ],
+          );
+        },
+      ),
+    );
+  }
+
+  Widget _buildPillButton({
+    required Widget child,
+    required Color backgroundColor,
+    required String tooltip,
+  }) {
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 3, vertical: 8),
+      child: Tooltip(
+        message: tooltip,
+        child: Container(
+          width: 34,
+          height: 34,
+          decoration: BoxDecoration(
+            color: backgroundColor,
+            shape: BoxShape.circle,
+          ),
+          child: Center(child: child),
         ),
-      );
-}
-
-class _TextBlock extends StatelessWidget {
-  const _TextBlock({required this.title, required this.text});
-
-  final String title;
-  final String text;
-
-  @override
-  Widget build(BuildContext context) => Padding(
-        padding: const EdgeInsets.only(bottom: 14),
-        child:
-            _SummaryBlock(title: title.toUpperCase(), children: [Text(text)]),
-      );
-}
-
-class _StatusChip extends StatelessWidget {
-  const _StatusChip({required this.status});
-
-  final String status;
-
-  @override
-  Widget build(BuildContext context) {
-    final color = switch (status.toLowerCase()) {
-      'paid' => const Color(0xFF059669),
-      'overdue' => const Color(0xFFDC2626),
-      'sent' => const Color(0xFF2563EB),
-      'cancelled' => Theme.of(context).colorScheme.outline,
-      _ => const Color(0xFFD97706),
-    };
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 7),
-      decoration: BoxDecoration(
-        color: color.withValues(alpha: 0.1),
-        borderRadius: BorderRadius.circular(20),
       ),
-      child: Text(
-        status,
-        style: TextStyle(color: color, fontWeight: FontWeight.w700),
-      ),
+    );
+  }
+
+  Widget _buildA4Paper({
+    required Invoice invoice,
+    required TemplateConfig? template,
+    required Color templateColor,
+    required bool isMobile,
+  }) {
+    return InvoicePreviewA4Paper(
+      invoice: invoice,
+      template: template,
+      templateColor: templateColor,
+      isMobile: isMobile,
+      localSettings: _localSettings,
+      profile: _profile,
+      onSignTap: _openDocuHubSigner,
     );
   }
 }
 
-String _quantity(double quantity) => quantity == quantity.truncateToDouble()
-    ? quantity.toInt().toString()
-    : '$quantity';
-
-String _money(double amount, String symbol) =>
-    '$symbol${amount.toStringAsFixed(2)}';
-
-Color _templateColor(String? hex, Color fallback) {
-  final value = hex?.replaceFirst('#', '');
-  if (value == null || !RegExp(r'^[0-9A-Fa-f]{6}$').hasMatch(value)) {
-    return fallback;
-  }
-  return Color(0xFF000000 | int.parse(value, radix: 16));
-}
+Color _templateColor(String? hex, Color fallback) => parseTemplateColor(hex, fallback);
+String _quantity(double quantity) => formatQuantity(quantity);
+String _money(double amount, String symbol) => formatMoney(amount, symbol);

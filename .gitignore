@@ -16,3 +16,17 @@ debug.keystore
 *.keystore
 *.log
 scratch/
+
+# Flutter & Dart
+.dart_tool/
+.flutter-plugins
+.flutter-plugins-dependencies
+.packages
+.pub-cache/
+.pub/
+.widget_preview/
+
+# Android & Keystores
+**/android/local.properties
+**/android/key.properties
+**/android/.gradle/

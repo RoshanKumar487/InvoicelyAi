@@ -1,5 +1,4 @@
 import 'dart:convert';
-import 'dart:typed_data';
 
 import 'package:flutter/material.dart';
 import 'package:image_picker/image_picker.dart';
@@ -10,20 +9,34 @@ import '../../../shared/widgets/offline_cache_banner.dart';
 import '../../../theme/app_theme.dart';
 import '../data/expense.dart';
 import '../data/expenses_repository.dart';
+import '../data/receipt_ocr_scanner.dart';
+import 'widgets/expense_editor_dialog.dart';
 
 class ExpensesScreen extends StatefulWidget {
   const ExpensesScreen({
     required this.repository,
+    this.initialLocalSettings = const <String, Object?>{},
     super.key,
   });
 
   final ExpensesRepository repository;
+  final Map<String, Object?> initialLocalSettings;
 
   @override
   State<ExpensesScreen> createState() => _ExpensesScreenState();
 }
 
 class _ExpensesScreenState extends State<ExpensesScreen> {
+  String get _companyCurrency =>
+      widget.initialLocalSettings['defaultCurrency']?.toString().trim().isNotEmpty == true
+          ? widget.initialLocalSettings['defaultCurrency']!.toString().trim().toUpperCase()
+          : 'INR';
+
+  String get _companyCurrencySymbol =>
+      widget.initialLocalSettings['defaultCurrencySymbol']?.toString().trim().isNotEmpty == true
+          ? widget.initialLocalSettings['defaultCurrencySymbol']!.toString().trim()
+          : _currencySymbol(_companyCurrency);
+
   static const List<String> _categories = [
     'All',
     'Software & IT',
@@ -105,7 +118,10 @@ class _ExpensesScreenState extends State<ExpensesScreen> {
   Future<void> _createExpense() async {
     final expense = await showDialog<Expense>(
       context: context,
-      builder: (context) => const _ExpenseEditorDialog(),
+      builder: (context) => ExpenseEditorDialog(
+        defaultCurrency: _companyCurrency,
+        defaultCurrencySymbol: _companyCurrencySymbol,
+      ),
     );
     if (expense == null || !mounted) return;
     try {
@@ -172,54 +188,79 @@ class _ExpensesScreenState extends State<ExpensesScreen> {
       if (bytes.isEmpty) {
         throw const FormatException('The selected image is empty.');
       }
-      final encoded = base64Encode(bytes);
-      if (encoded.length > 8000000) {
-        throw const FormatException(
-          'The image is too large to scan. Choose a smaller image.',
-        );
+      Expense scannedDraft;
+      try {
+        final ocr = await ReceiptOcrScanner.scan(imagePath: image.path);
+        scannedDraft = ocr.toExpenseDraft(receiptImageUri: image.path);
+      } catch (_) {
+        // Fall back to server AI scanning if on-device ML kit is unavailable
+        try {
+          final encoded = base64Encode(bytes);
+          if (encoded.length <= 8000000) {
+            final draft = await widget.repository.scanReceipt(
+              imageBase64: encoded,
+              mimeType: mimeType,
+            );
+            scannedDraft = Expense(
+              id: draft.id,
+              companyId: draft.companyId,
+              createdByUserId: draft.createdByUserId,
+              createdByUserName: draft.createdByUserName,
+              title: draft.title,
+              category: draft.category,
+              amount: draft.amount,
+              currency: draft.currency,
+              currencySymbol: draft.currencySymbol,
+              date: draft.date,
+              vendor: draft.vendor,
+              paymentMethod: draft.paymentMethod,
+              taxDeductible: draft.taxDeductible,
+              taxAmount: draft.taxAmount,
+              receiptImageUri: image.path,
+              notes: draft.notes,
+            );
+          } else {
+            scannedDraft = Expense(
+              title: 'Receipt Expense',
+              currency: 'INR',
+              currencySymbol: '₹',
+              date: _dateFor(DateTime.now()),
+              receiptImageUri: image.path,
+            );
+          }
+        } catch (_) {
+          scannedDraft = Expense(
+            title: 'Receipt Expense',
+            currency: 'INR',
+            currencySymbol: '₹',
+            date: _dateFor(DateTime.now()),
+            receiptImageUri: image.path,
+          );
+        }
       }
-      final draft = await widget.repository.scanReceipt(
-        imageBase64: encoded,
-        mimeType: mimeType,
-      );
+
       if (!mounted) return;
-      final scannedDraft = Expense(
-        id: draft.id,
-        companyId: draft.companyId,
-        createdByUserId: draft.createdByUserId,
-        createdByUserName: draft.createdByUserName,
-        title: draft.title,
-        category: draft.category,
-        amount: draft.amount,
-        currency: draft.currency,
-        currencySymbol: draft.currencySymbol,
-        date: draft.date,
-        vendor: draft.vendor,
-        paymentMethod: draft.paymentMethod,
-        taxDeductible: draft.taxDeductible,
-        taxAmount: draft.taxAmount,
-        receiptImageUri: image.path,
-        notes: draft.notes,
-      );
       final confirmedDraft = await showDialog<Expense>(
         context: context,
-        builder: (context) => _ExpenseEditorDialog(
+        builder: (context) => ExpenseEditorDialog(
           initialValues: scannedDraft,
           receiptImageBytes: bytes,
+          defaultCurrency: _companyCurrency,
+          defaultCurrencySymbol: _companyCurrencySymbol,
         ),
       );
       if (confirmedDraft == null || !mounted) return;
       await widget.repository.create(confirmedDraft);
       if (!mounted) return;
-      _showMessage('Scanned expense saved.');
+      _showMessage('Expense saved successfully!');
       await _loadExpenses();
     } on ApiException catch (error) {
       if (mounted) _showMessage(error.message);
     } on FormatException catch (error) {
       if (mounted) _showMessage(error.message);
-    } catch (_) {
+    } catch (e) {
       if (mounted) {
-        _showMessage('Receipt scan failed. Please try another image.');
+        _showMessage('Receipt scan error: $e');
       }
     } finally {
       if (mounted) setState(() => _isScanningReceipt = false);
@@ -239,7 +280,11 @@ class _ExpensesScreenState extends State<ExpensesScreen> {
   Future<void> _editExpense(Expense expense) async {
     final updated = await showDialog<Expense>(
       context: context,
-      builder: (context) => _ExpenseEditorDialog(expense: expense),
+      builder: (context) => ExpenseEditorDialog(
+        expense: expense,
+        defaultCurrency: _companyCurrency,
+        defaultCurrencySymbol: _companyCurrencySymbol,
+      ),
     );
     if (updated == null || !mounted) return;
     try {
@@ -430,6 +475,7 @@ class _ExpensesScreenState extends State<ExpensesScreen> {
                   for (final expense in visibleExpenses) ...[
                     _ExpenseCard(
                       expense: expense,
+                      currencySymbol: _companyCurrencySymbol,
                       onEdit: () => _editExpense(expense),
                       onDelete: () => _deleteExpense(expense),
                     ),
@@ -451,15 +497,20 @@ class _ExpenseCard extends StatelessWidget {
     required this.expense,
     required this.onEdit,
     required this.onDelete,
+    this.currencySymbol = '₹',
   });
 
   final Expense expense;
   final VoidCallback onEdit;
   final VoidCallback onDelete;
+  final String currencySymbol;
 
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
+    final displaySymbol = (expense.currencySymbol == r'$' || expense.currency == 'USD')
+        ? (currencySymbol.isNotEmpty ? currencySymbol : '₹')
+        : (expense.currencySymbol.isNotEmpty ? expense.currencySymbol : currencySymbol);
     return AppCard(
       padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 14),
       child: LayoutBuilder(
@@ -496,7 +547,7 @@ class _ExpenseCard extends StatelessWidget {
                     ),
                   ),
                   Text(
-                    '${expense.currencySymbol}${expense.amount.toStringAsFixed(2)}',
+                    '$displaySymbol${expense.amount.toStringAsFixed(2)}',
                     style: theme.textTheme.titleMedium
                         ?.copyWith(fontWeight: FontWeight.w800),
                   ),
@@ -538,7 +589,7 @@ class _ExpenseCard extends StatelessWidget {
                     _ExpenseDetail(
                       icon: Icons.request_quote_outlined,
                       value:
-                          'Tax ${expense.currencySymbol}${expense.taxAmount.toStringAsFixed(2)}',
+                          'Tax $displaySymbol${expense.taxAmount.toStringAsFixed(2)}',
                     ),
                 ],
               ),
@@ -589,322 +640,12 @@ class _ExpenseDetail extends StatelessWidget {
       );
 }
 
-class _ExpenseEditorDialog extends StatefulWidget {
-  const _ExpenseEditorDialog({
-    this.expense,
-    this.initialValues,
-    this.receiptImageBytes,
-  });
-
-  final Expense? expense;
-  final Expense? initialValues;
-  final Uint8List? receiptImageBytes;
-
-  @override
-  State<_ExpenseEditorDialog> createState() => _ExpenseEditorDialogState();
-}
-
-class _ExpenseEditorDialogState extends State<_ExpenseEditorDialog> {
-  static const List<String> _categories = [
-    'Software & IT',
-    'Office & Rent',
-    'Travel & Transport',
-    'Meals & Entertainment',
-    'Marketing & Ads',
-    'Hardware & Equipment',
-    'General Business',
-    'General',
-  ];
-  static const List<String> _paymentMethods = [
-    'Credit Card',
-    'Debit Card',
-    'Cash',
-    'Bank Transfer',
-    'Other',
-  ];
-
-  List<String> get _categoryOptions {
-    final currentCategory = (widget.expense ?? widget.initialValues)?.category;
-    if (currentCategory == null || _categories.contains(currentCategory)) {
-      return _categories;
-    }
-    return [..._categories, currentCategory];
-  }
-
-  List<String> get _paymentMethodOptions {
-    final currentMethod =
-        (widget.expense ?? widget.initialValues)?.paymentMethod;
-    if (currentMethod == null || _paymentMethods.contains(currentMethod)) {
-      return _paymentMethods;
-    }
-    return [..._paymentMethods, currentMethod];
-  }
-
-  final _formKey = GlobalKey<FormState>();
-  late final TextEditingController _title;
-  late final TextEditingController _vendor;
-  late final TextEditingController _amount;
-  late final TextEditingController _taxAmount;
-  late final TextEditingController _date;
-  late final TextEditingController _notes;
-  late final TextEditingController _currency;
-  late String _category;
-  late String _paymentMethod;
-  late bool _taxDeductible;
-
-  @override
-  void initState() {
-    super.initState();
-    final expense = widget.expense ?? widget.initialValues;
-    _title = TextEditingController(text: expense?.title ?? '');
-    _vendor = TextEditingController(text: expense?.vendor ?? '');
-    _amount = TextEditingController(
-      text: expense == null ? '' : expense.amount.toStringAsFixed(2),
-    );
-    _taxAmount = TextEditingController(
-      text: expense == null ? '' : expense.taxAmount.toStringAsFixed(2),
-    );
-    _date = TextEditingController(
-      text: expense?.date.isNotEmpty == true
-          ? expense!.date
-          : _dateFor(DateTime.now()),
-    );
-    _notes = TextEditingController(text: expense?.notes ?? '');
-    _currency = TextEditingController(text: expense?.currency ?? 'USD');
-    _category =
-        expense?.category.isNotEmpty == true ? expense!.category : 'General';
-    _paymentMethod = expense?.paymentMethod.isNotEmpty == true
-        ? expense!.paymentMethod
-        : 'Other';
-    _taxDeductible = expense?.taxDeductible ?? true;
-  }
-
-  @override
-  void dispose() {
-    _title.dispose();
-    _vendor.dispose();
-    _amount.dispose();
-    _taxAmount.dispose();
-    _date.dispose();
-    _notes.dispose();
-    _currency.dispose();
-    super.dispose();
-  }
-
-  Future<void> _chooseDate() async {
-    final selected = DateTime.tryParse(_date.text) ?? DateTime.now();
-    final date = await showDatePicker(
-      context: context,
-      initialDate: selected,
-      firstDate: DateTime(2000),
-      lastDate: DateTime(2100),
-    );
-    if (date != null && mounted) _date.text = _dateFor(date);
-  }
-
-  void _save() {
-    if (!_formKey.currentState!.validate()) return;
-    final previous = widget.expense ?? widget.initialValues;
-    final symbol = _currencySymbol(_currency.text.trim());
-    Navigator.pop(
-      context,
-      Expense(
-        id: previous?.id,
-        companyId: previous?.companyId,
-        createdByUserId: previous?.createdByUserId,
-        createdByUserName: previous?.createdByUserName,
-        title: _title.text.trim(),
-        category: _category,
-        amount: double.parse(_amount.text.trim()),
-        currency: _currency.text.trim().toUpperCase(),
-        currencySymbol: symbol,
-        date: _date.text.trim(),
-        vendor: _vendor.text.trim(),
-        paymentMethod: _paymentMethod,
-        taxDeductible: _taxDeductible,
-        taxAmount: double.tryParse(_taxAmount.text.trim()) ?? 0,
-        receiptImageUri: previous?.receiptImageUri,
-        notes: _notes.text.trim(),
-      ),
-    );
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    final editing = widget.expense != null;
-    return AlertDialog(
-      title: Text(editing ? 'Edit expense' : 'Add expense'),
-      content: SizedBox(
-        width: 540,
-        child: Form(
-          key: _formKey,
-          child: SingleChildScrollView(
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                _field(_title, 'Description *', validator: _required),
-                _field(_vendor, 'Vendor / merchant'),
-                if (widget.receiptImageBytes != null) ...[
-                  const SizedBox(height: 12),
-                  ClipRRect(
-                    borderRadius: BorderRadius.circular(12),
-                    child: Image.memory(
-                      widget.receiptImageBytes!,
-                      height: 150,
-                      width: double.infinity,
-                      fit: BoxFit.cover,
-                    ),
-                  ),
-                  const Align(
-                    alignment: Alignment.centerLeft,
-                    child: Padding(
-                      padding: EdgeInsets.only(top: 6),
-                      child: Text('Receipt attached'),
-                    ),
-                  ),
-                ],
-                Row(
-                  children: [
-                    Expanded(
-                      child: _field(
-                        _amount,
-                        'Amount *',
-                        keyboardType: const TextInputType.numberWithOptions(
-                            decimal: true),
-                        validator: _validAmount,
-                      ),
-                    ),
-                    const SizedBox(width: 12),
-                    SizedBox(
-                      width: 105,
-                      child: _field(_currency, 'Currency'),
-                    ),
-                  ],
-                ),
-                DropdownButtonFormField<String>(
-                  value: _category,
-                  decoration: const InputDecoration(labelText: 'Category'),
-                  items: [
-                    for (final category in _categoryOptions)
-                      DropdownMenuItem(
-                        value: category,
-                        child: Text(category),
-                      ),
-                  ],
-                  onChanged: (value) {
-                    if (value != null) setState(() => _category = value);
-                  },
-                ),
-                const SizedBox(height: 12),
-                TextFormField(
-                  controller: _date,
-                  readOnly: true,
-                  onTap: _chooseDate,
-                  decoration: InputDecoration(
-                    labelText: 'Date',
-                    suffixIcon: IconButton(
-                      onPressed: _chooseDate,
-                      icon: const Icon(Icons.calendar_month_outlined),
-                    ),
-                  ),
-                ),
-                const SizedBox(height: 12),
-                DropdownButtonFormField<String>(
-                  value: _paymentMethod,
-                  decoration:
-                      const InputDecoration(labelText: 'Payment method'),
-                  items: [
-                    for (final method in _paymentMethodOptions)
-                      DropdownMenuItem(value: method, child: Text(method)),
-                  ],
-                  onChanged: (value) {
-                    if (value != null) {
-                      setState(() => _paymentMethod = value);
-                    }
-                  },
-                ),
-                const SizedBox(height: 12),
-                _field(
-                  _taxAmount,
-                  'Tax amount',
-                  keyboardType:
-                      const TextInputType.numberWithOptions(decimal: true),
-                  validator: _validOptionalAmount,
-                ),
-                SwitchListTile(
-                  contentPadding: EdgeInsets.zero,
-                  title: const Text('Tax deductible'),
-                  value: _taxDeductible,
-                  onChanged: (value) => setState(() => _taxDeductible = value),
-                ),
-                _field(_notes, 'Notes', maxLines: 3),
-                const SizedBox(height: 8),
-                if (widget.initialValues != null)
-                  const Align(
-                    alignment: Alignment.centerLeft,
-                    child: Text(
-                      'Review the extracted details, then save to create this expense.',
-                      style: TextStyle(color: AppColors.muted),
-                    ),
-                  ),
-              ],
-            ),
-          ),
-        ),
-      ),
-      actions: [
-        TextButton(
-          onPressed: () => Navigator.pop(context),
-          child: const Text('Cancel'),
-        ),
-        FilledButton(
-          onPressed: _save,
-          child: Text(editing ? 'Save changes' : 'Save expense'),
-        ),
-      ],
-    );
-  }
-
-  Widget _field(
-    TextEditingController controller,
-    String label, {
-    String? Function(String?)? validator,
-    TextInputType? keyboardType,
-    int maxLines = 1,
-  }) =>
-      Padding(
-        padding: const EdgeInsets.only(bottom: 12),
-        child: TextFormField(
-          controller: controller,
-          validator: validator,
-          keyboardType: keyboardType,
-          maxLines: maxLines,
-          decoration: InputDecoration(labelText: label),
-        ),
-      );
-
-  String? _required(String? value) =>
-      value == null || value.trim().isEmpty ? 'Description is required' : null;
-
-  String? _validAmount(String? value) {
-    final amount = double.tryParse(value?.trim() ?? '');
-    if (amount == null || amount <= 0) return 'Enter an amount greater than 0';
-    return null;
-  }
-
-  String? _validOptionalAmount(String? value) {
-    final text = value?.trim() ?? '';
-    final amount = text.isEmpty ? 0 : double.tryParse(text);
-    if (amount == null || amount < 0) return 'Enter a valid tax amount';
-    return null;
-  }
-}
-
 String _dateFor(DateTime date) => '${date.year.toString().padLeft(4, '0')}-'
     '${date.month.toString().padLeft(2, '0')}-'
     '${date.day.toString().padLeft(2, '0')}';
 
 String _currencySymbol(String currency) => switch (currency.toUpperCase()) {
+      'INR' => '₹',
       'USD' => r'$',
       'EUR' => '€',
       'GBP' => '£',

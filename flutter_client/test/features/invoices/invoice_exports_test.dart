@@ -85,4 +85,127 @@ void main() {
     expect(restored?.footer, 'Saved footer');
     expect(restored?.showTaxBreakdown, isFalse);
   });
+
+  test('calculates security service items with staff and duty count', () {
+    const item = InvoiceItem(
+      description: 'Armed Security Guard',
+      quantity: 4, // 4 guards
+      dutyCount: 26, // 26 days/duty
+      unitPrice: 500, // 500 per duty
+      unit: 'guards',
+    );
+
+    expect(item.grossLineAmount, 4 * 26 * 500); // 52,000
+    expect(item.total, 52000);
+  });
+
+  test('verifies security agency and category presets exist', () {
+    final securityPresets = templatePresets.where((p) => p.businessCategory == 'Security Agency');
+    expect(securityPresets.length, greaterThanOrEqualTo(6));
+    expect(securityPresets.any((p) => p.designStyle == 'Modern'), isTrue);
+    expect(securityPresets.any((p) => p.designStyle == 'Classic'), isTrue);
+    expect(securityPresets.any((p) => p.designStyle == 'Corporate'), isTrue);
+    expect(securityPresets.any((p) => p.designStyle == 'Industry'), isTrue);
+  });
+
+  test('generates PDF with QR payment payload and bank details', () async {
+    final secInvoice = Invoice(
+      invoiceNumber: 'SEC-2026-099',
+      clientName: 'Alpha Security Client',
+      issueDate: '2026-10-10',
+      dueDate: '2026-10-31',
+      items: const [
+        InvoiceItem(
+          description: 'Night Shift Supervisor',
+          quantity: 2,
+          dutyCount: 30,
+          unitPrice: 650,
+        ),
+      ],
+    );
+
+    final secTemplate = templatePresets.firstWhere((p) => p.id == 'security_modern');
+    final pdfBytes = await InvoicePdfExport.build(
+      secInvoice,
+      template: secTemplate,
+      businessProfile: {
+        'businessName': 'Vanguard Security Services',
+        'bankName': 'HDFC Bank',
+        'accountNumber': '50100987654321',
+        'ifscCode': 'HDFC0001234',
+        'upiId': 'vanguard@upi',
+      },
+    );
+
+    expect(String.fromCharCodes(pdfBytes.take(5)), '%PDF-');
+    expect(pdfBytes.length, greaterThan(1000));
+  });
+
+  test('safely cleans emojis and unicode characters from PDF export', () async {
+    final emojiInvoice = Invoice(
+      invoiceNumber: 'INV-EMOJI-101',
+      clientName: 'Client 🏢 Corp 👍',
+      issueDate: '2026-10-10',
+      dueDate: '2026-10-31',
+      notes: 'Thank you for your business! 🎉✨',
+      terms: 'Payment due in 30 days • No refund ⚠️',
+      items: const [
+        InvoiceItem(
+          description: 'Security & Surveillance 🛡️',
+          itemDetails: '24/7 CCTV Monitoring 📹',
+          quantity: 1,
+          unitPrice: 1500,
+        ),
+      ],
+    );
+
+    final classicTemplate = templatePresets.firstWhere((p) => p.headerLayout == 'classic');
+    final pdfBytes = await InvoicePdfExport.build(
+      emojiInvoice,
+      template: classicTemplate,
+      businessProfile: {
+        'businessName': 'Shield Security 🚨',
+      },
+      localSettings: {
+        'defaultCurrency': 'INR',
+        'defaultCurrencySymbol': '₹',
+      },
+    );
+
+    expect(String.fromCharCodes(pdfBytes.take(5)), '%PDF-');
+    expect(pdfBytes.length, greaterThan(1000));
+  });
+
+  test('does not render QR code when no custom QR or payment link is provided', () async {
+    final noQrInvoice = Invoice(
+      invoiceNumber: 'NO-QR-001',
+      clientName: 'Plain Client',
+      issueDate: '2026-10-10',
+      dueDate: '2026-10-31',
+      items: const [
+        InvoiceItem(
+          description: 'Basic Service',
+          quantity: 1,
+          unitPrice: 100,
+        ),
+      ],
+    );
+
+    final minimalTemplate = templatePresets.firstWhere((p) => p.headerLayout == 'minimal');
+    final pdfBytes = await InvoicePdfExport.build(
+      noQrInvoice,
+      template: minimalTemplate,
+      businessProfile: {
+        'businessName': 'Clean Services Ltd',
+        'bankName': 'SBI',
+        'accountNumber': '123456789',
+      },
+      localSettings: {
+        'defaultCurrency': 'INR',
+      },
+    );
+
+    expect(String.fromCharCodes(pdfBytes.take(5)), '%PDF-');
+    expect(pdfBytes.length, greaterThan(800));
+  });
 }

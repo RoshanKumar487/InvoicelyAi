@@ -39,7 +39,7 @@ public class CompanyKnowledgeService {
             CompanyKnowledgeStore knowledgeStore,
             RestClient.Builder restClientBuilder,
             @Value("${app.ai.gemini.api-key:}") String apiKey,
-            @Value("${app.ai.gemini.embedding-model:gemini-embedding-001}") String model) {
+            @Value("${app.ai.gemini.embedding-model:text-embedding-004}") String model) {
         this.knowledgeStore = knowledgeStore;
         this.restClient = restClientBuilder.build();
         this.apiKey = apiKey;
@@ -79,14 +79,19 @@ public class CompanyKnowledgeService {
     }
 
     public List<KnowledgeChunk> retrieve(Long companyId, String query) {
-        if (apiKey == null || apiKey.isBlank()) return List.of();
-        String embedding = vectorLiteral(embed(query, "RETRIEVAL_QUERY"));
+        if (apiKey == null || apiKey.isBlank() || query == null || query.isBlank()) {
+            return List.of();
+        }
         try {
+            List<Double> vector = embed(query, "RETRIEVAL_QUERY");
+            if (vector == null || vector.isEmpty()) {
+                return List.of();
+            }
+            String embedding = vectorLiteral(vector);
             return knowledgeStore.search(companyId, embedding, MAX_CONTEXT_CHUNKS);
-        } catch (DataAccessException ex) {
-            LOGGER.error("Could not retrieve company knowledge chunks.", ex);
-            throw new ResponseStatusException(HttpStatus.SERVICE_UNAVAILABLE,
-                    "Company knowledge search is unavailable. Verify that the vector schema migration was applied.");
+        } catch (Exception ex) {
+            LOGGER.warn("Company knowledge retrieval skipped due to error: {}", ex.getMessage());
+            return List.of();
         }
     }
 

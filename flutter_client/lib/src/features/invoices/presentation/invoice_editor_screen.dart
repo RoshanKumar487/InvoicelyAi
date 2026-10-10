@@ -1,17 +1,17 @@
 import 'dart:async';
-import 'dart:convert';
 
 import 'package:flutter/material.dart';
-import 'package:flutter/services.dart';
 
 import '../../../core/api/api_exception.dart';
-import '../../../shared/widgets/app_card.dart';
 import '../../clients/data/client.dart';
 import '../../clients/data/clients_repository.dart';
-import '../../../theme/app_theme.dart';
 import '../../templates/data/template_config.dart';
 import '../data/invoice.dart';
 import '../data/invoice_repository.dart';
+import 'widgets/client_billing_card.dart';
+import 'widgets/invoice_editor_components.dart';
+import 'widgets/item_customizer_modal.dart';
+import 'widgets/line_item_editor.dart';
 
 class InvoiceEditorScreen extends StatefulWidget {
   const InvoiceEditorScreen({
@@ -22,6 +22,8 @@ class InvoiceEditorScreen extends StatefulWidget {
     this.preferredTemplate,
     this.initialLocalSettings = const <String, Object?>{},
     this.clientRepository,
+    this.onOpenInvoiceSettings,
+    this.onSaveLocalSettings,
     super.key,
   });
 
@@ -32,6 +34,8 @@ class InvoiceEditorScreen extends StatefulWidget {
   final ClientsRepository? clientRepository;
   final VoidCallback onCancel;
   final ValueChanged<Invoice> onSaved;
+  final VoidCallback? onOpenInvoiceSettings;
+  final Future<void> Function(Map<String, Object?>)? onSaveLocalSettings;
 
   @override
   State<InvoiceEditorScreen> createState() => _InvoiceEditorScreenState();
@@ -61,7 +65,7 @@ class _InvoiceEditorScreenState extends State<InvoiceEditorScreen> {
   late final TextEditingController _terms;
   late final TextEditingController _paymentInstructions;
   late final TextEditingController _shippingDetails;
-  late final Map<String, Object?> _localSettings;
+  late Map<String, Object?> _localSettings;
   late String _issueDate;
   late String _dueDate;
   late String _paymentTerms;
@@ -78,6 +82,7 @@ class _InvoiceEditorScreenState extends State<InvoiceEditorScreen> {
   bool _showShippingSection = false;
   bool _showPaymentSection = false;
   String? _clientLoadError;
+  bool _globalShowItemDescriptions = false;
   bool _saving = false;
   String? _error;
 
@@ -123,16 +128,23 @@ class _InvoiceEditorScreenState extends State<InvoiceEditorScreen> {
     _roundOff = TextEditingController(text: _num(invoice?.roundOff ?? 0));
     _amountPaid = TextEditingController(text: _num(invoice?.amountPaid ?? 0));
     final defaultCurrency =
-        _settingString(_localSettings['defaultCurrency'], 'USD');
+        _settingString(_localSettings['defaultCurrency'], 'INR');
+    final defaultCurrencySymbol = _settingString(
+      _localSettings['defaultCurrencySymbol'],
+      _currencySymbolFor(defaultCurrency),
+    );
+    final hasExistingCustomCurrency = invoice != null &&
+        invoice.currencyCode.isNotEmpty &&
+        invoice.currencyCode != 'USD';
     _currencyCode = TextEditingController(
-      text: invoice?.currencyCode ?? defaultCurrency,
+      text: hasExistingCustomCurrency ? invoice.currencyCode : defaultCurrency,
     );
     _currencySymbol = TextEditingController(
-      text: invoice?.currencySymbol ??
-          _settingString(
-            _localSettings['defaultCurrencySymbol'],
-            _currencySymbolFor(defaultCurrency),
-          ),
+      text: (hasExistingCustomCurrency &&
+              invoice.currencySymbol.isNotEmpty &&
+              invoice.currencySymbol != r'$')
+          ? invoice.currencySymbol
+          : defaultCurrencySymbol,
     );
     _notes = TextEditingController(
       text:
@@ -178,7 +190,9 @@ class _InvoiceEditorScreenState extends State<InvoiceEditorScreen> {
             : _items[index],
     ];
     if (_items.isEmpty) {
-      _items.add(_newLineItem());
+      final isSecurity = _localSettings['industryPresetId'] == 'security' ||
+          _localSettings['showItemDuty'] == true;
+      _items.add(_newLineItem(isSecurity));
     }
     unawaited(_loadClients());
   }
@@ -406,10 +420,10 @@ class _InvoiceEditorScreenState extends State<InvoiceEditorScreen> {
         poNumber: _poNumber.text.trim(),
         paymentTerms: _paymentTerms,
         currencyCode: _currencyCode.text.trim().isEmpty
-            ? 'USD'
+            ? 'INR'
             : _currencyCode.text.trim().toUpperCase(),
         currencySymbol:
-            _currencySymbol.text.trim().isEmpty ? r'$' : _currencySymbol.text,
+            _currencySymbol.text.trim().isEmpty ? '₹' : _currencySymbol.text,
         items: _items,
         notes: _showNotesSection ? _notes.text.trim() : '',
         terms: _showNotesSection ? _terms.text.trim() : '',
@@ -484,13 +498,54 @@ class _InvoiceEditorScreenState extends State<InvoiceEditorScreen> {
     }
   }
 
+  void _openItemCustomizerDialog() {
+    showModalBottomSheet<void>(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: Colors.white,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+      ),
+      builder: (sheetContext) => ItemCustomizerModal(
+        initialSettings: _localSettings,
+        onOpenInvoiceSettings: widget.onOpenInvoiceSettings,
+        onApply: (applied) {
+          setState(() {
+            _localSettings = applied;
+            if (applied['industryPresetId'] == 'security' &&
+                _items.isNotEmpty &&
+                _items.first.description.trim().isEmpty) {
+              _items[0] = InvoiceItem(
+                id: _items[0].id,
+                description: 'Security Guard (12 Hrs Shift)',
+                itemDetails: '',
+                quantity: 1,
+                dutyCount: 26,
+                unitPrice: 18500,
+                unit: 'Duty',
+                taxRate: _items[0].taxRate,
+                discountRate: _items[0].discountRate,
+              );
+            }
+          });
+          widget.onSaveLocalSettings?.call(applied);
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(content: Text('Item columns & template settings applied!')),
+          );
+        },
+      ),
+    );
+  }
+
   void _updateItem(int index, InvoiceItem item) {
     setState(() => _items[index] = item);
   }
 
   void _removeItem(int index) {
+    final isSecurity = _localSettings['industryPresetId'] == 'security' ||
+        _localSettings['showItemDuty'] == true;
     if (_items.length == 1) {
-      setState(() => _items[index] = _newLineItem());
+      setState(() => _items[index] = _newLineItem(isSecurity));
     } else {
       setState(() => _items.removeAt(index));
     }
@@ -566,7 +621,7 @@ class _InvoiceEditorScreenState extends State<InvoiceEditorScreen> {
                       onTap: () => _pickDate(issue: false),
                     ),
                     DropdownButtonFormField<String>(
-                      initialValue: _paymentTerms,
+                      value: _paymentTerms,
                       isExpanded: true,
                       decoration:
                           const InputDecoration(labelText: 'Payment terms'),
@@ -599,7 +654,7 @@ class _InvoiceEditorScreenState extends State<InvoiceEditorScreen> {
                       isRequired: false,
                     ),
                     DropdownButtonFormField<String>(
-                      initialValue: _template,
+                      value: _template,
                       isExpanded: true,
                       decoration:
                           const InputDecoration(labelText: 'Invoice style'),
@@ -658,184 +713,66 @@ class _InvoiceEditorScreenState extends State<InvoiceEditorScreen> {
               ],
             ),
             const SizedBox(height: 14),
-            _SectionCard(
-              title: 'Bill to',
-              subtitle: 'Client contact details',
-              children: [
-                _ResponsiveFields(
-                  children: [
-                    Column(
-                      crossAxisAlignment: CrossAxisAlignment.stretch,
-                      children: [
-                        TextFormField(
-                          controller: _clientName,
-                          decoration: InputDecoration(
-                            labelText: 'Client name',
-                            prefixIcon: const Icon(Icons.person_outline),
-                            suffixIcon: _loadingClients
-                                ? const Padding(
-                                    padding: EdgeInsets.all(14),
-                                    child: SizedBox(
-                                      width: 16,
-                                      height: 16,
-                                      child: CircularProgressIndicator(
-                                        strokeWidth: 2,
-                                      ),
-                                    ),
-                                  )
-                                : _selectedClientId == null
-                                    ? null
-                                    : IconButton(
-                                        tooltip: 'Clear selected client',
-                                        onPressed: () => setState(() {
-                                          _selectedClientId = null;
-                                          _clientName.clear();
-                                          _company.clear();
-                                          _email.clear();
-                                          _phone.clear();
-                                          _address.clear();
-                                          _clientTaxId.clear();
-                                        }),
-                                        icon: const Icon(Icons.close),
-                                      ),
-                          ),
-                          validator: _required,
-                          onChanged: (_) => setState(() {
-                            _selectedClientId = null;
-                            _showClientSuggestions = true;
-                          }),
-                          onTap: () => setState(() {
-                            _showClientSuggestions =
-                                _clientName.text.isNotEmpty;
-                          }),
-                        ),
-                        if (_showClientSuggestions &&
-                            _selectedClientId == null &&
-                            _clientName.text.trim().isNotEmpty) ...[
-                          const SizedBox(height: 4),
-                          Material(
-                            elevation: 2,
-                            borderRadius: BorderRadius.circular(12),
-                            clipBehavior: Clip.antiAlias,
-                            child: Column(
-                              children: [
-                                for (final client in _matchingClients)
-                                  ListTile(
-                                    dense: true,
-                                    leading: const CircleAvatar(
-                                      radius: 17,
-                                      child:
-                                          Icon(Icons.person_outline, size: 18),
-                                    ),
-                                    title: Text(
-                                      client.name,
-                                      maxLines: 1,
-                                      overflow: TextOverflow.ellipsis,
-                                    ),
-                                    subtitle: Text(
-                                      [
-                                        client.companyName,
-                                        client.email,
-                                        client.phone,
-                                      ]
-                                          .where((value) => value.isNotEmpty)
-                                          .join(' • '),
-                                      maxLines: 1,
-                                      overflow: TextOverflow.ellipsis,
-                                    ),
-                                    onTap: () => _applyClient(client),
-                                  ),
-                                if (_matchingClients.isEmpty)
-                                  const ListTile(
-                                    dense: true,
-                                    leading: Icon(Icons.search_off_outlined),
-                                    title: Text('No saved client matches yet'),
-                                  ),
-                                if (widget.clientRepository != null &&
-                                    !_hasExactClientMatch)
-                                  ListTile(
-                                    dense: true,
-                                    leading: const Icon(
-                                      Icons.person_add_alt_1,
-                                      color: AppColors.blue,
-                                    ),
-                                    title: Text(
-                                      'Save "${_clientName.text.trim()}" as a new client',
-                                      maxLines: 1,
-                                      overflow: TextOverflow.ellipsis,
-                                      style: const TextStyle(
-                                        color: AppColors.blue,
-                                        fontWeight: FontWeight.w700,
-                                      ),
-                                    ),
-                                    onTap: _createClientFromInvoice,
-                                  ),
-                              ],
-                            ),
-                          ),
-                        ],
-                        if (_clientLoadError != null)
-                          Padding(
-                            padding: const EdgeInsets.only(top: 4),
-                            child: Text(
-                              _clientLoadError!,
-                              style: TextStyle(
-                                color: Theme.of(context).colorScheme.error,
-                                fontSize: 11,
-                              ),
-                            ),
-                          ),
-                      ],
-                    ),
-                    _textField(
-                      controller: _company,
-                      label: 'Company',
-                      isRequired: false,
-                    ),
-                    _textField(
-                      controller: _email,
-                      label: 'Email address',
-                      isRequired: false,
-                      keyboardType: TextInputType.emailAddress,
-                      validator: (value) {
-                        final email = value?.trim() ?? '';
-                        if (email.isNotEmpty &&
-                            !RegExp(r'^[^@\s]+@[^@\s]+\.[^@\s]+$')
-                                .hasMatch(email)) {
-                          return 'Enter a valid email address';
-                        }
-                        return null;
-                      },
-                    ),
-                    _textField(
-                      controller: _phone,
-                      label: 'Phone',
-                      isRequired: false,
-                      keyboardType: TextInputType.phone,
-                    ),
-                    _textField(
-                      controller: _clientTaxId,
-                      label: 'Client tax ID',
-                      isRequired: false,
-                    ),
-                    _textField(
-                      controller: _address,
-                      label: 'Billing address',
-                      isRequired: false,
-                      maxLines: 2,
-                    ),
-                  ],
-                ),
-              ],
+            ClientBillingCard(
+              clientNameController: _clientName,
+              companyController: _company,
+              emailController: _email,
+              phoneController: _phone,
+              addressController: _address,
+              taxIdController: _clientTaxId,
+              selectedClientId: _selectedClientId,
+              loadingClients: _loadingClients,
+              showSuggestions: _showClientSuggestions,
+              clientLoadError: _clientLoadError,
+              matchingClients: _matchingClients,
+              hasExactClientMatch: _hasExactClientMatch,
+              canSaveClient: widget.clientRepository != null,
+              onClearClient: () => setState(() {
+                _selectedClientId = null;
+                _clientName.clear();
+                _company.clear();
+                _email.clear();
+                _phone.clear();
+                _address.clear();
+                _clientTaxId.clear();
+              }),
+              onApplyClient: _applyClient,
+              onSaveClient: _createClientFromInvoice,
+              onNameChanged: (_) => setState(() {
+                _selectedClientId = null;
+                _showClientSuggestions = true;
+              }),
+              onNameTap: () => setState(() {
+                _showClientSuggestions = _clientName.text.isNotEmpty;
+              }),
             ),
             const SizedBox(height: 14),
             _SectionCard(
               title: 'Line items',
               subtitle: 'Quantities, rates and optional line discounts',
-              trailing: IconButton(
-                tooltip: 'Add item',
-                onPressed: () => setState(() => _items.add(_newLineItem())),
-                icon: const Icon(Icons.add_circle_outline),
+              trailing: Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  OutlinedButton.icon(
+                    onPressed: _openItemCustomizerDialog,
+                    icon: const Icon(Icons.tune_rounded, size: 16),
+                    label: const Text('Item Settings', style: TextStyle(fontSize: 12)),
+                    style: OutlinedButton.styleFrom(
+                      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                      visualDensity: VisualDensity.compact,
+                    ),
+                  ),
+                  const SizedBox(width: 6),
+                  IconButton(
+                    tooltip: 'Add item',
+                    onPressed: () {
+                      final isSecurity = _localSettings['industryPresetId'] == 'security' ||
+                          _localSettings['showItemDuty'] == true;
+                      setState(() => _items.add(_newLineItem(isSecurity)));
+                    },
+                    icon: const Icon(Icons.add_circle_outline),
+                  ),
+                ],
               ),
               children: [
                 Align(
@@ -854,11 +791,17 @@ class _InvoiceEditorScreenState extends State<InvoiceEditorScreen> {
                   ),
                 ),
                 for (var index = 0; index < _items.length; index++) ...[
-                  _LineItemEditor(
+                  LineItemEditor(
                     key: ValueKey(_items[index].id),
                     index: index,
                     item: _items[index],
                     currencySymbol: _currencySymbol.text,
+                    localSettings: _localSettings,
+                    showDescriptionField: _globalShowItemDescriptions ||
+                        _items[index].itemDetails.isNotEmpty,
+                    onToggleDescription: (open) {
+                      setState(() => _globalShowItemDescriptions = open);
+                    },
                     onChanged: (item) => _updateItem(index, item),
                     onRemove: () => _removeItem(index),
                   ),
@@ -1004,306 +947,13 @@ class _InvoiceEditorScreenState extends State<InvoiceEditorScreen> {
   }
 }
 
-InvoiceItem _newLineItem() => InvoiceItem(
-      id: 'local-${DateTime.now().microsecondsSinceEpoch}',
-      description: '',
-      quantity: 1,
-      unitPrice: 0,
-    );
+InvoiceItem _newLineItem([bool isSecurity = false]) =>
+    makeNewLineItem(isSecurity);
 
-class _LineItemEditor extends StatefulWidget {
-  const _LineItemEditor({
-    required this.index,
-    required this.item,
-    required this.currencySymbol,
-    required this.onChanged,
-    required this.onRemove,
-    super.key,
-  });
-
-  final int index;
-  final InvoiceItem item;
-  final String currencySymbol;
-  final ValueChanged<InvoiceItem> onChanged;
-  final VoidCallback onRemove;
-
-  @override
-  State<_LineItemEditor> createState() => _LineItemEditorState();
-}
-
-class _LineItemEditorState extends State<_LineItemEditor> {
-  late final TextEditingController _description;
-  late final TextEditingController _quantity;
-  late final TextEditingController _unitPrice;
-  late final TextEditingController _unit;
-  late final TextEditingController _discount;
-
-  @override
-  void initState() {
-    super.initState();
-    _description = TextEditingController(text: widget.item.description);
-    _quantity = TextEditingController(text: _num(widget.item.quantity));
-    _unitPrice = TextEditingController(text: _num(widget.item.unitPrice));
-    _unit = TextEditingController(text: widget.item.unit);
-    _discount = TextEditingController(text: _num(widget.item.discountRate));
-  }
-
-  @override
-  void dispose() {
-    _description.dispose();
-    _quantity.dispose();
-    _unitPrice.dispose();
-    _unit.dispose();
-    _discount.dispose();
-    super.dispose();
-  }
-
-  void _notify() {
-    widget.onChanged(InvoiceItem(
-      id: widget.item.id,
-      description: _description.text,
-      quantity: double.tryParse(_quantity.text) ?? 0,
-      unitPrice: double.tryParse(_unitPrice.text) ?? 0,
-      unit: _unit.text.trim().isEmpty ? 'pcs' : _unit.text.trim(),
-      taxRate: widget.item.taxRate,
-      discountRate: double.tryParse(_discount.text) ?? 0,
-    ));
-  }
-
-  @override
-  Widget build(BuildContext context) => Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Row(
-            children: [
-              Expanded(
-                child: Text(
-                  'Item ${widget.index + 1}',
-                  style: Theme.of(context).textTheme.titleSmall?.copyWith(
-                        fontWeight: FontWeight.w700,
-                      ),
-                ),
-              ),
-              IconButton(
-                tooltip: 'Remove line item',
-                onPressed: widget.onRemove,
-                icon: const Icon(Icons.delete_outline),
-              ),
-            ],
-          ),
-          TextFormField(
-            controller: _description,
-            decoration: const InputDecoration(
-              labelText: 'Description',
-              hintText: 'What are you billing for?',
-            ),
-            validator: (value) => value == null || value.trim().isEmpty
-                ? 'Add a description'
-                : null,
-            onChanged: (_) => _notify(),
-          ),
-          const SizedBox(height: 10),
-          _ResponsiveFields(
-            children: [
-              _itemNumberField(
-                controller: _quantity,
-                label: 'Quantity',
-                min: 0.000001,
-                onChanged: _notify,
-              ),
-              _itemNumberField(
-                controller: _unitPrice,
-                label: 'Unit price (${widget.currencySymbol})',
-                min: 0,
-                onChanged: _notify,
-              ),
-              TextField(
-                controller: _unit,
-                decoration: const InputDecoration(
-                  labelText: 'Unit',
-                  hintText: 'pcs, hrs, days',
-                ),
-                onChanged: (_) => _notify(),
-              ),
-              _itemNumberField(
-                controller: _discount,
-                label: 'Discount (%)',
-                min: 0,
-                max: 100,
-                onChanged: _notify,
-              ),
-            ],
-          ),
-          const SizedBox(height: 8),
-          Align(
-            alignment: Alignment.centerRight,
-            child: Text(
-              'Line total: ${widget.currencySymbol}${widget.item.total.toStringAsFixed(2)}',
-              style: Theme.of(context).textTheme.titleSmall?.copyWith(
-                    fontWeight: FontWeight.w700,
-                  ),
-            ),
-          ),
-        ],
-      );
-}
-
-class _TotalsPreview extends StatelessWidget {
-  const _TotalsPreview({required this.invoice});
-
-  final Invoice invoice;
-
-  @override
-  Widget build(BuildContext context) => AppCard(
-        padding: const EdgeInsets.all(16),
-        child: Column(
-          children: [
-            _TotalLine(
-              label: 'Subtotal',
-              value: _money(invoice.subtotal, invoice.currencySymbol),
-            ),
-            _TotalLine(
-              label: 'Discount',
-              value:
-                  '−${_money(invoice.totalDiscount, invoice.currencySymbol)}',
-            ),
-            _TotalLine(
-              label:
-                  '${invoice.taxLabel} (${_num(invoice.taxRate)}%${invoice.isTaxInclusive ? ', included' : ''})',
-              value: _money(invoice.taxAmount, invoice.currencySymbol),
-            ),
-            _TotalLine(
-              label: 'Shipping & additional charges',
-              value: _money(
-                invoice.shippingFee + invoice.additionalCharges,
-                invoice.currencySymbol,
-              ),
-            ),
-            const Divider(),
-            _TotalLine(
-              label: 'Total',
-              value: _money(invoice.total, invoice.currencySymbol),
-              emphasized: true,
-            ),
-            _TotalLine(
-              label: 'Balance due',
-              value: _money(invoice.balanceDue, invoice.currencySymbol),
-              emphasized: true,
-            ),
-          ],
-        ),
-      );
-}
-
-class _TotalLine extends StatelessWidget {
-  const _TotalLine({
-    required this.label,
-    required this.value,
-    this.emphasized = false,
-  });
-
-  final String label;
-  final String value;
-  final bool emphasized;
-
-  @override
-  Widget build(BuildContext context) => Padding(
-        padding: const EdgeInsets.symmetric(vertical: 5),
-        child: Row(
-          children: [
-            Expanded(
-              child: Text(
-                label,
-                style: emphasized
-                    ? const TextStyle(fontWeight: FontWeight.w700)
-                    : null,
-              ),
-            ),
-            Text(
-              value,
-              style: emphasized
-                  ? const TextStyle(fontWeight: FontWeight.w800)
-                  : null,
-            ),
-          ],
-        ),
-      );
-}
-
-class _SectionCard extends StatelessWidget {
-  const _SectionCard({
-    required this.title,
-    required this.subtitle,
-    required this.children,
-    this.trailing,
-  });
-
-  final String title;
-  final String subtitle;
-  final List<Widget> children;
-  final Widget? trailing;
-
-  @override
-  Widget build(BuildContext context) => AppCard(
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Row(
-              children: [
-                Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text(
-                        title,
-                        style:
-                            Theme.of(context).textTheme.titleMedium?.copyWith(
-                                  fontWeight: FontWeight.w800,
-                                ),
-                      ),
-                      const SizedBox(height: 3),
-                      Text(subtitle,
-                          style: Theme.of(context).textTheme.bodySmall),
-                    ],
-                  ),
-                ),
-                if (trailing != null) trailing!,
-              ],
-            ),
-            const SizedBox(height: 18),
-            ...children,
-          ],
-        ),
-      );
-}
-
-class _ResponsiveFields extends StatelessWidget {
-  const _ResponsiveFields({required this.children});
-
-  final List<Widget> children;
-
-  @override
-  Widget build(BuildContext context) => LayoutBuilder(
-        builder: (context, constraints) {
-          final responsiveColumns = constraints.maxWidth >= 960
-              ? 3
-              : constraints.maxWidth >= 600
-                  ? 2
-                  : 1;
-          final gap = 12.0;
-          final width = (constraints.maxWidth - (responsiveColumns - 1) * gap) /
-              responsiveColumns;
-          return Wrap(
-            spacing: gap,
-            runSpacing: 12,
-            children: [
-              for (final child in children)
-                SizedBox(width: width, child: child),
-            ],
-          );
-        },
-      );
-}
+typedef _SectionCard = SectionCard;
+typedef _ResponsiveFields = ResponsiveFields;
+typedef _TotalsPreview = TotalsPreview;
+typedef _ErrorBanner = ErrorBanner;
 
 Widget _textField({
   required TextEditingController controller,
@@ -1316,13 +966,15 @@ Widget _textField({
   String? Function(String?)? validator,
   ValueChanged<String>? onChanged,
 }) =>
-    TextFormField(
+    appTextField(
       controller: controller,
+      label: label,
+      isRequired: isRequired,
+      maxLines: maxLines,
+      hintText: hintText,
       keyboardType: keyboardType,
       textCapitalization: textCapitalization,
-      maxLines: maxLines,
-      decoration: InputDecoration(labelText: label, hintText: hintText),
-      validator: validator ?? (isRequired ? _required : null),
+      validator: validator,
       onChanged: onChanged,
     );
 
@@ -1334,49 +986,13 @@ Widget _decimalField({
   bool allowNegative = false,
   required VoidCallback onChanged,
 }) =>
-    TextFormField(
+    appDecimalField(
       controller: controller,
-      keyboardType: const TextInputType.numberWithOptions(decimal: true),
-      inputFormatters: [
-        FilteringTextInputFormatter.allow(
-          RegExp(allowNegative ? r'^-?\d*\.?\d{0,4}' : r'^\d*\.?\d{0,4}'),
-        ),
-      ],
-      decoration: InputDecoration(labelText: label),
-      validator: (value) {
-        final parsed = double.tryParse(value?.trim() ?? '');
-        if (parsed == null) return 'Enter a number';
-        if (parsed < min || (max != null && parsed > max)) {
-          return max == null ? 'Must be at least $min' : 'Enter $min–$max';
-        }
-        return null;
-      },
-      onChanged: (_) => onChanged(),
-    );
-
-Widget _itemNumberField({
-  required TextEditingController controller,
-  required String label,
-  required double min,
-  double? max,
-  required VoidCallback onChanged,
-}) =>
-    TextFormField(
-      controller: controller,
-      keyboardType: const TextInputType.numberWithOptions(decimal: true),
-      inputFormatters: [
-        FilteringTextInputFormatter.allow(RegExp(r'^\d*\.?\d{0,4}')),
-      ],
-      decoration: InputDecoration(labelText: label),
-      validator: (value) {
-        final parsed = double.tryParse(value?.trim() ?? '');
-        if (parsed == null) return 'Enter a number';
-        if (parsed < min || (max != null && parsed > max)) {
-          return max == null ? 'Must be at least $min' : 'Enter $min–$max';
-        }
-        return null;
-      },
-      onChanged: (_) => onChanged(),
+      label: label,
+      min: min,
+      max: max,
+      allowNegative: allowNegative,
+      onChanged: onChanged,
     );
 
 Widget _dateField({
@@ -1384,139 +1000,20 @@ Widget _dateField({
   required String date,
   required VoidCallback onTap,
 }) =>
-    InkWell(
+    appDateField(
+      label: label,
+      date: date,
       onTap: onTap,
-      borderRadius: BorderRadius.circular(14),
-      child: InputDecorator(
-        decoration: InputDecoration(
-          labelText: label,
-          suffixIcon: const Icon(Icons.calendar_month_outlined),
-        ),
-        child: Text(date),
-      ),
     );
 
-class _ErrorBanner extends StatelessWidget {
-  const _ErrorBanner({required this.message});
-
-  final String message;
-
-  @override
-  Widget build(BuildContext context) => AppCard(
-        child: Row(
-          children: [
-            const Icon(Icons.error_outline, color: Color(0xFFDC2626)),
-            const SizedBox(width: 10),
-            Expanded(child: Text(message)),
-          ],
-        ),
-      );
-}
-
-String? _required(String? value) =>
-    value == null || value.trim().isEmpty ? 'This field is required' : null;
-
-String _dateString(DateTime date) => '${date.year.toString().padLeft(4, '0')}-'
-    '${date.month.toString().padLeft(2, '0')}-'
-    '${date.day.toString().padLeft(2, '0')}';
-
-int _paymentTermDays(String terms) {
-  if (terms.toLowerCase().contains('receipt')) return 0;
-  final days = RegExp(r'net\s*(\d+)', caseSensitive: false)
-      .firstMatch(terms)
-      ?.group(1);
-  return int.tryParse(days ?? '') ?? 30;
-}
-
-String _num(double value) =>
-    value == value.truncateToDouble() ? value.toInt().toString() : '$value';
-
-String _money(double value, String symbol) =>
-    '$symbol${value.toStringAsFixed(2)}';
-
-double _settingNumber(Object? value) {
-  if (value is num) return value.toDouble();
-  return double.tryParse(value?.toString() ?? '') ?? 0;
-}
-
-String _settingString(Object? value, String fallback) {
-  final string = value?.toString().trim() ?? '';
-  return string.isEmpty ? fallback : string;
-}
-
-String _currencySymbolFor(String currency) => switch (currency.toUpperCase()) {
-      'USD' => r'$',
-      'EUR' => '€',
-      'GBP' => '£',
-      'INR' => '₹',
-      'JPY' => '¥',
-      'CAD' || 'AUD' || 'NZD' => r'$',
-      _ => currency.toUpperCase(),
-    };
-
-String _readShippingDetails(String? value) {
-  if (value == null || value.trim().isEmpty || value.trim() == '{}') return '';
-  try {
-    final decoded = jsonDecode(value);
-    if (decoded is! Map<String, dynamic>) return value;
-    const labels = <String, String>{
-      'shippingAddress': 'Shipping address',
-      'deliveryAddress': 'Delivery address',
-      'shippingMethod': 'Shipping method',
-      'courier': 'Carrier',
-      'trackingNumber': 'Tracking',
-      'expectedDelivery': 'Expected delivery',
-      'warehouse': 'Warehouse',
-      'deliveryContact': 'Delivery contact',
-      'vehicleNumber': 'Vehicle number',
-      'dispatchDate': 'Dispatch date',
-    };
-    return labels.entries
-        .where(
-            (entry) => decoded[entry.key]?.toString().trim().isNotEmpty == true)
-        .map((entry) => '${entry.value}: ${decoded[entry.key]}')
-        .join('\n');
-  } on FormatException {
-    return value;
-  }
-}
-
-String _serializeShippingDetails(String value) {
-  if (value.trim().isEmpty) return '{}';
-  const keys = <String, String>{
-    'shipping address': 'shippingAddress',
-    'delivery address': 'deliveryAddress',
-    'shipping method': 'shippingMethod',
-    'carrier': 'courier',
-    'tracking': 'trackingNumber',
-    'expected delivery': 'expectedDelivery',
-    'warehouse': 'warehouse',
-    'delivery contact': 'deliveryContact',
-    'vehicle number': 'vehicleNumber',
-    'dispatch date': 'dispatchDate',
-  };
-  final details = <String, Object?>{
-    'isEnabled': true,
-    'sameAsBilling': false,
-    'sectionTitle': 'Shipping Details',
-  };
-  final unmatchedLines = <String>[];
-  for (final line in value.split('\n')) {
-    final separator = line.indexOf(':');
-    final label =
-        separator < 0 ? '' : line.substring(0, separator).trim().toLowerCase();
-    final content =
-        separator < 0 ? line.trim() : line.substring(separator + 1).trim();
-    if (content.isEmpty) continue;
-    final key = keys[label];
-    if (key == null) {
-      unmatchedLines.add(content);
-    } else {
-      details[key] = content;
-    }
-  }
-  if (unmatchedLines.isNotEmpty && details['deliveryAddress'] == null) {
-    details['deliveryAddress'] = unmatchedLines.join('\n');
-  }
-  return jsonEncode(details);
-}
+String? _required(String? value) => requiredValidator(value);
+String _dateString(DateTime date) => formatDateString(date);
+int _paymentTermDays(String terms) => parsePaymentTermDays(terms);
+String _num(double value) => formatNum(value);
+double _settingNumber(Object? value) => parseSettingNumber(value);
+String _settingString(Object? value, String fallback) =>
+    parseSettingString(value, fallback);
+String _currencySymbolFor(String currency) => currencySymbolFor(currency);
+String _readShippingDetails(String? value) => readShippingDetails(value);
+String _serializeShippingDetails(String value) =>
+    serializeShippingDetails(value);

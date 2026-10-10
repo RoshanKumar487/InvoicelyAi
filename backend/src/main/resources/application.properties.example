@@ -12,4 +12,4 @@ spring.jpa.properties.hibernate.dialect=org.hibernate.dialect.PostgreSQLDialect
 # AI credentials belong on the backend only; do not put provider keys in the Android app.
 app.ai.gemini.api-key=${GEMINI_API_KEY:}
 app.ai.gemini.model=${GEMINI_MODEL:gemini-2.0-flash}
-app.ai.gemini.embedding-model=${GEMINI_EMBEDDING_MODEL:gemini-embedding-001}
+app.ai.gemini.embedding-model=${GEMINI_EMBEDDING_MODEL:text-embedding-004}

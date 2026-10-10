@@ -7,6 +7,8 @@ class InvoiceItem {
     required this.unitPrice,
     this.id = '',
     this.unit = 'pcs',
+    this.dutyCount = 0,
+    this.itemDetails = '',
     this.taxRate = 0,
     this.discountRate = 0,
   });
@@ -16,10 +18,14 @@ class InvoiceItem {
   final double quantity;
   final double unitPrice;
   final String unit;
+  final double dutyCount;
+  final String itemDetails;
   final double taxRate;
   final double discountRate;
 
-  double get grossLineAmount => quantity * unitPrice;
+  double get grossLineAmount => dutyCount > 0
+      ? quantity * dutyCount * unitPrice
+      : quantity * unitPrice;
   double get discountAmount => grossLineAmount * discountRate / 100;
   double get total => grossLineAmount - discountAmount;
 
@@ -29,6 +35,8 @@ class InvoiceItem {
     double? quantity,
     double? unitPrice,
     String? unit,
+    double? dutyCount,
+    String? itemDetails,
     double? taxRate,
     double? discountRate,
   }) =>
@@ -38,6 +46,8 @@ class InvoiceItem {
         quantity: quantity ?? this.quantity,
         unitPrice: unitPrice ?? this.unitPrice,
         unit: unit ?? this.unit,
+        dutyCount: dutyCount ?? this.dutyCount,
+        itemDetails: itemDetails ?? this.itemDetails,
         taxRate: taxRate ?? this.taxRate,
         discountRate: discountRate ?? this.discountRate,
       );
@@ -48,6 +58,8 @@ class InvoiceItem {
         quantity: _number(json['quantity'], fallback: 1),
         unitPrice: _number(json['unitPrice']),
         unit: _string(json['unit'], fallback: 'pcs'),
+        dutyCount: _number(json['dutyCount'], fallback: 0),
+        itemDetails: _string(json['itemDetails']),
         taxRate: _number(json['taxRate']),
         discountRate: _number(json['discountRate']),
       );
@@ -58,6 +70,8 @@ class InvoiceItem {
         'quantity': quantity,
         'unitPrice': unitPrice,
         'unit': unit,
+        if (dutyCount > 0) 'dutyCount': dutyCount,
+        if (itemDetails.isNotEmpty) 'itemDetails': itemDetails,
         'taxRate': taxRate,
         'discountRate': discountRate,
       };
@@ -78,8 +92,8 @@ class Invoice {
     this.clientTaxId = '',
     this.poNumber = '',
     this.paymentTerms = 'Net 30',
-    this.currencyCode = 'USD',
-    this.currencySymbol = r'$',
+    this.currencyCode = 'INR',
+    this.currencySymbol = '₹',
     this.items = const [],
     this.notes = '',
     this.terms = '',
@@ -195,8 +209,8 @@ class Invoice {
       dueDate: _string(json['dueDate']),
       poNumber: _string(json['poNumber']),
       paymentTerms: _string(json['paymentTerms'], fallback: 'Net 30'),
-      currencyCode: _string(json['currencyCode'], fallback: 'USD'),
-      currencySymbol: _string(json['currencySymbol'], fallback: r'$'),
+      currencyCode: _string(json['currencyCode'], fallback: 'INR'),
+      currencySymbol: _string(json['currencySymbol'], fallback: '₹'),
       items: items,
       notes: _string(json['notes']),
       terms: _string(json['terms']),
@@ -255,6 +269,107 @@ class Invoice {
         if (createdAt != null) 'createdAt': createdAt,
         if (paidDate != null) 'paidDate': paidDate,
       };
+
+  Invoice copyWith({
+    int? id,
+    String? invoiceNumber,
+    int? clientId,
+    String? clientName,
+    String? clientCompany,
+    String? clientEmail,
+    String? clientPhone,
+    String? clientAddress,
+    String? clientTaxId,
+    String? issueDate,
+    String? dueDate,
+    String? poNumber,
+    String? paymentTerms,
+    String? currencyCode,
+    String? currencySymbol,
+    List<InvoiceItem>? items,
+    String? notes,
+    String? terms,
+    String? paymentInstructions,
+    String? shippingDetailsJson,
+    double? taxRate,
+    String? taxLabel,
+    String? taxType,
+    bool? isTaxInclusive,
+    double? discountPercent,
+    double? discountAmount,
+    double? shippingFee,
+    double? additionalCharges,
+    double? roundOff,
+    double? amountPaid,
+    String? status,
+    String? templateId,
+    int? createdAt,
+    int? paidDate,
+  }) =>
+      Invoice(
+        id: id ?? this.id,
+        invoiceNumber: invoiceNumber ?? this.invoiceNumber,
+        clientId: clientId ?? this.clientId,
+        clientName: clientName ?? this.clientName,
+        clientCompany: clientCompany ?? this.clientCompany,
+        clientEmail: clientEmail ?? this.clientEmail,
+        clientPhone: clientPhone ?? this.clientPhone,
+        clientAddress: clientAddress ?? this.clientAddress,
+        clientTaxId: clientTaxId ?? this.clientTaxId,
+        issueDate: issueDate ?? this.issueDate,
+        dueDate: dueDate ?? this.dueDate,
+        poNumber: poNumber ?? this.poNumber,
+        paymentTerms: paymentTerms ?? this.paymentTerms,
+        currencyCode: currencyCode ?? this.currencyCode,
+        currencySymbol: currencySymbol ?? this.currencySymbol,
+        items: items ?? this.items,
+        notes: notes ?? this.notes,
+        terms: terms ?? this.terms,
+        paymentInstructions: paymentInstructions ?? this.paymentInstructions,
+        shippingDetailsJson: shippingDetailsJson ?? this.shippingDetailsJson,
+        taxRate: taxRate ?? this.taxRate,
+        taxLabel: taxLabel ?? this.taxLabel,
+        taxType: taxType ?? this.taxType,
+        isTaxInclusive: isTaxInclusive ?? this.isTaxInclusive,
+        discountPercent: discountPercent ?? this.discountPercent,
+        discountAmount: discountAmount ?? this.discountAmount,
+        shippingFee: shippingFee ?? this.shippingFee,
+        additionalCharges: additionalCharges ?? this.additionalCharges,
+        roundOff: roundOff ?? this.roundOff,
+        amountPaid: amountPaid ?? this.amountPaid,
+        status: status ?? this.status,
+        templateId: templateId ?? this.templateId,
+        createdAt: createdAt ?? this.createdAt,
+        paidDate: paidDate ?? this.paidDate,
+      );
+}
+
+String currencySymbolFor(String? code) {
+  if (code == null || code.isEmpty) return '₹';
+  final normalized = code.toUpperCase().trim();
+  switch (normalized) {
+    case 'INR':
+      return '₹';
+    case 'USD':
+      return r'$';
+    case 'EUR':
+      return '€';
+    case 'GBP':
+      return '£';
+    case 'AED':
+      return 'AED ';
+    case 'CAD':
+      return r'CA$';
+    case 'AUD':
+      return r'AU$';
+    case 'SGD':
+      return r'SG$';
+    default:
+      if (normalized.length <= 3 && !RegExp(r'^[A-Z]+$').hasMatch(normalized)) {
+        return normalized;
+      }
+      return '₹';
+  }
 }
 
 String _string(Object? value, {String fallback = ''}) =>

@@ -76,6 +76,18 @@ class AiAssistantServiceTest {
         assertEquals(HttpStatus.NOT_FOUND, exception.getStatusCode());
     }
 
+    @Test
+    void knowledgeRetrievalFailureFallsBackGracefully() {
+        org.mockito.Mockito.when(knowledgeService.retrieve(org.mockito.ArgumentMatchers.anyLong(), org.mockito.ArgumentMatchers.anyString()))
+                .thenThrow(new RuntimeException("Embedding service offline"));
+        AiAssistantService service = service("configured-key");
+        UserPrincipal user = principal(Role.ADMIN, 42L, "INVOICES,EXPENSES,CLIENTS");
+
+        // Will attempt to call Gemini model with empty knowledge fallback
+        // It should NOT throw from knowledgeService.retrieve
+        assertThrows(ResponseStatusException.class, () -> service.answer("Summarize my business", user));
+    }
+
     private AiAssistantService service(String apiKey) {
         return new AiAssistantService(invoiceRepository, expenseRepository, clientRepository,
                 pendingRepository, invoiceService, expenseService, clientService,

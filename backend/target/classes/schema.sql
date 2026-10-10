@@ -3,6 +3,8 @@
 -- Multi-Tenant, Role-Based Access Control (DEVELOPER, ADMIN, EMPLOYEE)
 -- ===================================================================
 
+CREATE EXTENSION IF NOT EXISTS vector;
+
 -- 1. Companies Table (Multi-Tenant Organizations)
 CREATE TABLE IF NOT EXISTS companies (
     id BIGSERIAL PRIMARY KEY,
@@ -187,6 +189,29 @@ ALTER TABLE expenses ADD COLUMN IF NOT EXISTS created_by_user_id BIGINT REFERENC
 ALTER TABLE expenses ADD COLUMN IF NOT EXISTS created_by_user_name VARCHAR(255) DEFAULT '';
 ALTER TABLE business_profile ADD COLUMN IF NOT EXISTS company_id BIGINT REFERENCES companies(id) ON DELETE CASCADE;
 
+-- AI command proposals are short-lived, tenant/user-bound and single-use.
+CREATE TABLE IF NOT EXISTS pending_ai_commands (
+    id VARCHAR(36) PRIMARY KEY,
+    company_id BIGINT NOT NULL REFERENCES companies(id) ON DELETE CASCADE,
+    user_id BIGINT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    action_type VARCHAR(40) NOT NULL,
+    payload_json JSONB NOT NULL,
+    status VARCHAR(20) NOT NULL DEFAULT 'PENDING',
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    expires_at TIMESTAMPTZ NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS company_knowledge_chunks (
+    id BIGSERIAL PRIMARY KEY,
+    company_id BIGINT NOT NULL REFERENCES companies(id) ON DELETE CASCADE,
+    document_title VARCHAR(200) NOT NULL,
+    chunk_index INT NOT NULL,
+    content TEXT NOT NULL,
+    embedding vector(768) NOT NULL,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    UNIQUE (company_id, document_title, chunk_index)
+);
+
 -- ===================================================================
 -- Performance Indexes for Multi-Tenant Lookups & RBAC
 -- ===================================================================
@@ -207,3 +232,7 @@ CREATE INDEX IF NOT EXISTS idx_expenses_company ON expenses(company_id);
 CREATE INDEX IF NOT EXISTS idx_expenses_user ON expenses(company_id, created_by_user_id);
 CREATE INDEX IF NOT EXISTS idx_expenses_category ON expenses(category);
 CREATE INDEX IF NOT EXISTS idx_business_profile_company ON business_profile(company_id);
+CREATE INDEX IF NOT EXISTS idx_pending_ai_commands_owner ON pending_ai_commands(company_id, user_id, status);
+CREATE INDEX IF NOT EXISTS idx_company_knowledge_company ON company_knowledge_chunks(company_id);
+CREATE INDEX IF NOT EXISTS idx_company_knowledge_embedding
+    ON company_knowledge_chunks USING hnsw (embedding vector_cosine_ops);
