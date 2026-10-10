@@ -140,4 +140,72 @@ void main() {
     expect(String.fromCharCodes(pdfBytes.take(5)), '%PDF-');
     expect(pdfBytes.length, greaterThan(1000));
   });
+
+  test('safely cleans emojis and unicode characters from PDF export', () async {
+    final emojiInvoice = Invoice(
+      invoiceNumber: 'INV-EMOJI-101',
+      clientName: 'Client 🏢 Corp 👍',
+      issueDate: '2026-10-10',
+      dueDate: '2026-10-31',
+      notes: 'Thank you for your business! 🎉✨',
+      terms: 'Payment due in 30 days • No refund ⚠️',
+      items: const [
+        InvoiceItem(
+          description: 'Security & Surveillance 🛡️',
+          itemDetails: '24/7 CCTV Monitoring 📹',
+          quantity: 1,
+          unitPrice: 1500,
+        ),
+      ],
+    );
+
+    final classicTemplate = templatePresets.firstWhere((p) => p.headerLayout == 'classic');
+    final pdfBytes = await InvoicePdfExport.build(
+      emojiInvoice,
+      template: classicTemplate,
+      businessProfile: {
+        'businessName': 'Shield Security 🚨',
+      },
+      localSettings: {
+        'defaultCurrency': 'INR',
+        'defaultCurrencySymbol': '₹',
+      },
+    );
+
+    expect(String.fromCharCodes(pdfBytes.take(5)), '%PDF-');
+    expect(pdfBytes.length, greaterThan(1000));
+  });
+
+  test('does not render QR code when no custom QR or payment link is provided', () async {
+    final noQrInvoice = Invoice(
+      invoiceNumber: 'NO-QR-001',
+      clientName: 'Plain Client',
+      issueDate: '2026-10-10',
+      dueDate: '2026-10-31',
+      items: const [
+        InvoiceItem(
+          description: 'Basic Service',
+          quantity: 1,
+          unitPrice: 100,
+        ),
+      ],
+    );
+
+    final minimalTemplate = templatePresets.firstWhere((p) => p.headerLayout == 'minimal');
+    final pdfBytes = await InvoicePdfExport.build(
+      noQrInvoice,
+      template: minimalTemplate,
+      businessProfile: {
+        'businessName': 'Clean Services Ltd',
+        'bankName': 'SBI',
+        'accountNumber': '123456789',
+      },
+      localSettings: {
+        'defaultCurrency': 'INR',
+      },
+    );
+
+    expect(String.fromCharCodes(pdfBytes.take(5)), '%PDF-');
+    expect(pdfBytes.length, greaterThan(800));
+  });
 }

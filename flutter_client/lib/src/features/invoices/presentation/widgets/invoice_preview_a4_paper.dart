@@ -40,6 +40,17 @@ class InvoicePreviewA4Paper extends StatelessWidget {
     return (custom != null && custom.isNotEmpty) ? custom : fallback;
   }
 
+  String get _currencySymbol {
+    final s = localSettings['defaultCurrencySymbol']?.toString().trim();
+    if (s != null && s.isNotEmpty) return s;
+    final c = localSettings['defaultCurrency']?.toString().trim();
+    if (c != null && c.isNotEmpty) return currencySymbolFor(c);
+    if (invoice.currencySymbol.isNotEmpty && invoice.currencySymbol != r'$') {
+      return invoice.currencySymbol;
+    }
+    return '₹';
+  }
+
   List<Map<String, dynamic>> _customFields(String key) {
     final raw = localSettings[key];
     if (raw is List) {
@@ -497,57 +508,57 @@ class InvoicePreviewA4Paper extends StatelessWidget {
                 children: [
                   PreviewTotalLine(
                     label: _label('customSubtotalLabel', 'Subtotal'),
-                    value: formatMoney(invoice.subtotal, invoice.currencySymbol),
+                    value: formatMoney(invoice.subtotal, _currencySymbol),
                   ),
                   if (invoice.totalDiscount > 0 && _show('showDiscount', fallback: true))
                     PreviewTotalLine(
                       label: _label('customDiscountLabel', 'Discount'),
-                      value: '−${formatMoney(invoice.totalDiscount, invoice.currencySymbol)}',
+                      value: '−${formatMoney(invoice.totalDiscount, _currencySymbol)}',
                     ),
                   if (template?.showTaxBreakdown != false && _show('showTax', fallback: true))
                     PreviewTotalLine(
                       label: _label('customTaxLabel', '${invoice.taxLabel} (${invoice.taxRate}%)'),
-                      value: formatMoney(invoice.taxAmount, invoice.currencySymbol),
+                      value: formatMoney(invoice.taxAmount, _currencySymbol),
                     ),
                   if (invoice.shippingFee > 0 || _show('showShippingFee', fallback: false))
                     PreviewTotalLine(
                       label: _label('customShippingLabel', 'Shipping'),
-                      value: formatMoney(invoice.shippingFee, invoice.currencySymbol),
+                      value: formatMoney(invoice.shippingFee, _currencySymbol),
                     ),
                   if (invoice.additionalCharges > 0 || _show('showAdditionalCharges', fallback: false))
                     PreviewTotalLine(
                       label: _label('customAdjustmentsLabel', 'Additional charges'),
-                      value: formatMoney(invoice.additionalCharges, invoice.currencySymbol),
+                      value: formatMoney(invoice.additionalCharges, _currencySymbol),
                     ),
                   if (invoice.roundOff != 0 || _show('showRoundOff', fallback: false))
                     PreviewTotalLine(
                       label: _label('customRoundOffLabel', 'Round off'),
-                      value: formatMoney(invoice.roundOff, invoice.currencySymbol),
+                      value: formatMoney(invoice.roundOff, _currencySymbol),
                     ),
                   for (final adj in customAdjustments)
                     if (adj['isVisible'] != false && adj['label']?.toString().isNotEmpty == true)
                       PreviewTotalLine(
                         label: adj['label'] as String,
                         value: adj['value'] != null && adj['value'].toString().isNotEmpty
-                            ? '${invoice.currencySymbol}${adj['value']}'
+                            ? '$_currencySymbol${adj['value']}'
                             : '−',
                       ),
                   const Divider(thickness: 1.5),
                   PreviewTotalLine(
                     label: _label('customTotalLabel', 'Total'),
-                    value: formatMoney(invoice.total, invoice.currencySymbol),
+                    value: formatMoney(invoice.total, _currencySymbol),
                     bold: true,
                     fontSize: 16,
                   ),
                   if (_show('showAmountPaid', fallback: true))
                     PreviewTotalLine(
                       label: _label('customAmountPaidLabel', 'Amount paid'),
-                      value: formatMoney(invoice.amountPaid, invoice.currencySymbol),
+                      value: formatMoney(invoice.amountPaid, _currencySymbol),
                     ),
                   if (_show('showBalanceDue', fallback: true))
                     PreviewTotalLine(
                       label: _label('customBalanceDueLabel', 'Balance due'),
-                      value: formatMoney(invoice.balanceDue, invoice.currencySymbol),
+                      value: formatMoney(invoice.balanceDue, _currencySymbol),
                       bold: true,
                       color: const Color(0xFFDC2626),
                       fontSize: 16,
@@ -560,7 +571,7 @@ class InvoicePreviewA4Paper extends StatelessWidget {
           // -------------------------------------------------------------------
           // ROW: BANK & PAYMENT DETAILS + QR CODE (LEFT) & SIGNATURE / STAMP (RIGHT)
           // -------------------------------------------------------------------
-          const SizedBox(height: 20),
+          const SizedBox(height: 28),
           Row(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
@@ -689,41 +700,64 @@ class InvoicePreviewA4Paper extends StatelessWidget {
                                 ],
                               ),
                             ),
-                            // QR Code with Scan to Pay badge (Optional: only if upiId or paymentLink is provided)
-                            if ((template?.showQrCode ?? true) &&
-                                (localSettings['showQrCode'] != false) &&
-                                (upiId.isNotEmpty || paymentLink.isNotEmpty)) ...[
-                              const SizedBox(width: 10),
-                              Column(
-                                mainAxisSize: MainAxisSize.min,
-                                children: [
-                                  InvoiceQrCodeWidget(
-                                    data: upiId.isNotEmpty
-                                        ? 'upi://pay?pa=$upiId&pn=${Uri.encodeComponent(bizName.isNotEmpty ? bizName : "Merchant")}&am=${(invoice.balanceDue > 0 ? invoice.balanceDue : invoice.total).toStringAsFixed(2)}&cu=INR&tn=${Uri.encodeComponent("Invoice ${invoice.invoiceNumber}")}'
-                                        : paymentLink,
-                                    size: 92,
-                                  ),
-                                  const SizedBox(height: 3),
-                                  Container(
-                                    padding: const EdgeInsets.symmetric(
-                                        horizontal: 6, vertical: 2),
-                                    decoration: BoxDecoration(
-                                      color: const Color(0xFF0F172A),
-                                      borderRadius: BorderRadius.circular(3),
-                                    ),
-                                    child: const Text(
-                                      'SCAN TO PAY',
-                                      style: TextStyle(
-                                        fontSize: 8,
-                                        fontWeight: FontWeight.w900,
-                                        color: Colors.white,
-                                        letterSpacing: 0.5,
+                            // QR Code (Optional: only if custom QR is uploaded or upiId/paymentLink is configured)
+                            () {
+                              final customQrImage = _brandImage('invoiceQrCode', height: 92);
+                              final hasCustomQr = customQrImage != null;
+                              final hasUpiOrLink = upiId.isNotEmpty || paymentLink.isNotEmpty;
+                              final shouldShowQr = (template?.showQrCode ?? true) &&
+                                  (localSettings['showQrCode'] != false) &&
+                                  (hasCustomQr || hasUpiOrLink);
+
+                              if (!shouldShowQr) return const SizedBox.shrink();
+
+                              return Padding(
+                                padding: const EdgeInsets.only(left: 10),
+                                child: Column(
+                                  mainAxisSize: MainAxisSize.min,
+                                  children: [
+                                    if (hasCustomQr)
+                                      Container(
+                                        width: 92,
+                                        height: 92,
+                                        decoration: BoxDecoration(
+                                          border: Border.all(color: const Color(0xFFCBD5E1)),
+                                          borderRadius: BorderRadius.circular(4),
+                                        ),
+                                        child: ClipRRect(
+                                          borderRadius: BorderRadius.circular(4),
+                                          child: customQrImage,
+                                        ),
+                                      )
+                                    else
+                                      InvoiceQrCodeWidget(
+                                        data: upiId.isNotEmpty
+                                            ? 'upi://pay?pa=$upiId&pn=${Uri.encodeComponent(bizName.isNotEmpty ? bizName : "Merchant")}&am=${(invoice.balanceDue > 0 ? invoice.balanceDue : invoice.total).toStringAsFixed(2)}&cu=INR&tn=${Uri.encodeComponent("Invoice ${invoice.invoiceNumber}")}'
+                                            : paymentLink,
+                                        size: 92,
+                                      ),
+                                    const SizedBox(height: 3),
+                                    Container(
+                                      padding: const EdgeInsets.symmetric(
+                                          horizontal: 6, vertical: 2),
+                                      decoration: BoxDecoration(
+                                        color: const Color(0xFF0F172A),
+                                        borderRadius: BorderRadius.circular(3),
+                                      ),
+                                      child: const Text(
+                                        'SCAN TO PAY',
+                                        style: TextStyle(
+                                          fontSize: 8,
+                                          fontWeight: FontWeight.w900,
+                                          color: Colors.white,
+                                          letterSpacing: 0.5,
+                                        ),
                                       ),
                                     ),
-                                  ),
-                                ],
-                              ),
-                            ],
+                                  ],
+                                ),
+                              );
+                            }(),
                           ],
                         ),
                       )
@@ -739,17 +773,6 @@ class InvoicePreviewA4Paper extends StatelessWidget {
                     ? Column(
                         crossAxisAlignment: CrossAxisAlignment.end,
                         children: [
-                          if (bizName.isNotEmpty)
-                            Text(
-                              'For $bizName',
-                              style: const TextStyle(
-                                fontSize: 11.5,
-                                fontWeight: FontWeight.w700,
-                                color: Color(0xFF334155),
-                              ),
-                              textAlign: TextAlign.end,
-                            ),
-                          const SizedBox(height: 6),
                           Row(
                             mainAxisAlignment: MainAxisAlignment.end,
                             crossAxisAlignment: CrossAxisAlignment.end,

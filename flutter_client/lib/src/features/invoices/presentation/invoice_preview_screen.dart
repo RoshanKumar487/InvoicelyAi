@@ -198,6 +198,17 @@ class _InvoicePreviewScreenState extends State<InvoicePreviewScreen>
     return widget.preferredTemplate ?? templatePresets.first;
   }
 
+  String get _activeCurrencySymbol {
+    final s = _localSettings['defaultCurrencySymbol']?.toString().trim();
+    if (s != null && s.isNotEmpty) return s;
+    final c = _localSettings['defaultCurrency']?.toString().trim();
+    if (c != null && c.isNotEmpty) return currencySymbolFor(c);
+    if (_invoice.currencySymbol.isNotEmpty && _invoice.currencySymbol != r'$') {
+      return _invoice.currencySymbol;
+    }
+    return '₹';
+  }
+
 
   Future<void> _changeStatus(String status) async {
     final id = _invoice.id;
@@ -273,24 +284,24 @@ class _InvoicePreviewScreenState extends State<InvoicePreviewScreen>
     for (final item in _invoice.items) {
       summary.writeln(
         '${item.description} | ${_quantity(item.quantity)} ${item.unit} | '
-        '${_money(item.unitPrice, _invoice.currencySymbol)} | '
-        '${_money(item.total, _invoice.currencySymbol)}',
+        '${_money(item.unitPrice, _activeCurrencySymbol)} | '
+        '${_money(item.total, _activeCurrencySymbol)}',
       );
     }
     summary
       ..writeln()
       ..writeln(
-          'Subtotal: ${_money(_invoice.subtotal, _invoice.currencySymbol)}')
+          'Subtotal: ${_money(_invoice.subtotal, _activeCurrencySymbol)}')
       ..writeln(
         '${_invoice.taxLabel} (${_invoice.taxRate}%): '
-        '${_money(_invoice.taxAmount, _invoice.currencySymbol)}',
+        '${_money(_invoice.taxAmount, _activeCurrencySymbol)}',
       )
-      ..writeln('Total: ${_money(_invoice.total, _invoice.currencySymbol)}')
+      ..writeln('Total: ${_money(_invoice.total, _activeCurrencySymbol)}')
       ..writeln(
-        'Amount paid: ${_money(_invoice.amountPaid, _invoice.currencySymbol)}',
+        'Amount paid: ${_money(_invoice.amountPaid, _activeCurrencySymbol)}',
       )
       ..writeln(
-        'Balance due: ${_money(_invoice.balanceDue, _invoice.currencySymbol)}',
+        'Balance due: ${_money(_invoice.balanceDue, _activeCurrencySymbol)}',
       );
     if (_invoice.notes.isNotEmpty) {
       summary.writeln('\nNotes: ${_invoice.notes}');
@@ -368,7 +379,7 @@ class _InvoicePreviewScreenState extends State<InvoicePreviewScreen>
       final pdfName = 'Invoice_$_safeFileName.pdf';
       final shareText =
           '${_template?.title ?? "Invoice"} #${_invoice.invoiceNumber}\n'
-          'Amount Due: ${_money(_invoice.balanceDue, _invoice.currencySymbol)}\n'
+          'Amount Due: ${_money(_invoice.balanceDue, _activeCurrencySymbol)}\n'
           'Due Date: ${_invoice.dueDate}\n\n'
           'Thank you for your business!';
 
@@ -396,7 +407,7 @@ class _InvoicePreviewScreenState extends State<InvoicePreviewScreen>
   Future<void> _sendPaymentReminder() async {
     final invoice = _invoice;
     final text = 'Payment reminder for invoice ${invoice.invoiceNumber}\n'
-        'Amount due: ${_money(invoice.balanceDue, invoice.currencySymbol)}\n'
+        'Amount due: ${_money(invoice.balanceDue, _activeCurrencySymbol)}\n'
         'Due date: ${invoice.dueDate}\n'
         'Please let us know if you have any questions. Thank you.';
     try {
@@ -458,7 +469,10 @@ class _InvoicePreviewScreenState extends State<InvoicePreviewScreen>
       builder: (ctx) => TemplatePickerModal(
         selectedId: _template?.id,
         onSelectTemplate: (preset) {
-          setState(() => _selectedTemplateId = preset.id);
+          setState(() {
+            _selectedTemplateId = preset.id;
+            _invoice = _invoice.copyWith(templateId: preset.id);
+          });
         },
         onSetDefault: (preset) async {
           final updated = Map<String, Object?>.from(_localSettings)
