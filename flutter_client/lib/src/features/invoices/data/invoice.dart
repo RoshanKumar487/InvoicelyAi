@@ -7,6 +7,8 @@ class InvoiceItem {
     required this.unitPrice,
     this.id = '',
     this.unit = 'pcs',
+    this.dutyCount = 0,
+    this.itemDetails = '',
     this.taxRate = 0,
     this.discountRate = 0,
   });
@@ -16,10 +18,14 @@ class InvoiceItem {
   final double quantity;
   final double unitPrice;
   final String unit;
+  final double dutyCount;
+  final String itemDetails;
   final double taxRate;
   final double discountRate;
 
-  double get grossLineAmount => quantity * unitPrice;
+  double get grossLineAmount => dutyCount > 0
+      ? quantity * dutyCount * unitPrice
+      : quantity * unitPrice;
   double get discountAmount => grossLineAmount * discountRate / 100;
   double get total => grossLineAmount - discountAmount;
 
@@ -29,6 +35,8 @@ class InvoiceItem {
     double? quantity,
     double? unitPrice,
     String? unit,
+    double? dutyCount,
+    String? itemDetails,
     double? taxRate,
     double? discountRate,
   }) =>
@@ -38,6 +46,8 @@ class InvoiceItem {
         quantity: quantity ?? this.quantity,
         unitPrice: unitPrice ?? this.unitPrice,
         unit: unit ?? this.unit,
+        dutyCount: dutyCount ?? this.dutyCount,
+        itemDetails: itemDetails ?? this.itemDetails,
         taxRate: taxRate ?? this.taxRate,
         discountRate: discountRate ?? this.discountRate,
       );
@@ -48,6 +58,8 @@ class InvoiceItem {
         quantity: _number(json['quantity'], fallback: 1),
         unitPrice: _number(json['unitPrice']),
         unit: _string(json['unit'], fallback: 'pcs'),
+        dutyCount: _number(json['dutyCount'], fallback: 0),
+        itemDetails: _string(json['itemDetails']),
         taxRate: _number(json['taxRate']),
         discountRate: _number(json['discountRate']),
       );
@@ -58,6 +70,8 @@ class InvoiceItem {
         'quantity': quantity,
         'unitPrice': unitPrice,
         'unit': unit,
+        if (dutyCount > 0) 'dutyCount': dutyCount,
+        if (itemDetails.isNotEmpty) 'itemDetails': itemDetails,
         'taxRate': taxRate,
         'discountRate': discountRate,
       };

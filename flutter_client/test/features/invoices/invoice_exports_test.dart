@@ -85,4 +85,59 @@ void main() {
     expect(restored?.footer, 'Saved footer');
     expect(restored?.showTaxBreakdown, isFalse);
   });
+
+  test('calculates security service items with staff and duty count', () {
+    const item = InvoiceItem(
+      description: 'Armed Security Guard',
+      quantity: 4, // 4 guards
+      dutyCount: 26, // 26 days/duty
+      unitPrice: 500, // 500 per duty
+      unit: 'guards',
+    );
+
+    expect(item.grossLineAmount, 4 * 26 * 500); // 52,000
+    expect(item.total, 52000);
+  });
+
+  test('verifies security agency and category presets exist', () {
+    final securityPresets = templatePresets.where((p) => p.businessCategory == 'Security Agency');
+    expect(securityPresets.length, greaterThanOrEqualTo(6));
+    expect(securityPresets.any((p) => p.designStyle == 'Modern'), isTrue);
+    expect(securityPresets.any((p) => p.designStyle == 'Classic'), isTrue);
+    expect(securityPresets.any((p) => p.designStyle == 'Corporate'), isTrue);
+    expect(securityPresets.any((p) => p.designStyle == 'Industry'), isTrue);
+  });
+
+  test('generates PDF with QR payment payload and bank details', () async {
+    final secInvoice = Invoice(
+      invoiceNumber: 'SEC-2026-099',
+      clientName: 'Alpha Security Client',
+      issueDate: '2026-10-10',
+      dueDate: '2026-10-31',
+      items: const [
+        InvoiceItem(
+          description: 'Night Shift Supervisor',
+          quantity: 2,
+          dutyCount: 30,
+          unitPrice: 650,
+        ),
+      ],
+    );
+
+    final secTemplate = templatePresets.firstWhere((p) => p.id == 'security_modern');
+    final pdfBytes = await InvoicePdfExport.build(
+      secInvoice,
+      template: secTemplate,
+      businessProfile: {
+        'businessName': 'Vanguard Security Services',
+        'bankName': 'HDFC Bank',
+        'accountNumber': '50100987654321',
+        'ifscCode': 'HDFC0001234',
+        'upiId': 'vanguard@upi',
+      },
+    );
+
+    expect(String.fromCharCodes(pdfBytes.take(5)), '%PDF-');
+    expect(pdfBytes.length, greaterThan(1000));
+  });
 }

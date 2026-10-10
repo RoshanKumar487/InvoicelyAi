@@ -82,6 +82,7 @@ class _InvoiceEditorScreenState extends State<InvoiceEditorScreen> {
   bool _showShippingSection = false;
   bool _showPaymentSection = false;
   String? _clientLoadError;
+  bool _globalShowItemDescriptions = false;
   bool _saving = false;
   String? _error;
 
@@ -182,7 +183,9 @@ class _InvoiceEditorScreenState extends State<InvoiceEditorScreen> {
             : _items[index],
     ];
     if (_items.isEmpty) {
-      _items.add(_newLineItem());
+      final isSecurity = _localSettings['industryPresetId'] == 'security' ||
+          _localSettings['showItemDuty'] == true;
+      _items.add(_newLineItem(isSecurity));
     }
     unawaited(_loadClients());
   }
@@ -496,6 +499,9 @@ class _InvoiceEditorScreenState extends State<InvoiceEditorScreen> {
     final qtyHeaderCtrl = TextEditingController(
       text: tempSettings['customQtyHeader']?.toString() ?? 'Qty',
     );
+    final dutyHeaderCtrl = TextEditingController(
+      text: tempSettings['customDutyHeader']?.toString() ?? 'No. of Duty / Days',
+    );
     final unitHeaderCtrl = TextEditingController(
       text: tempSettings['customUnitHeader']?.toString() ?? 'Unit',
     );
@@ -530,11 +536,13 @@ class _InvoiceEditorScreenState extends State<InvoiceEditorScreen> {
                     tempSettings['customTitle'] = 'TAX INVOICE';
                     tempSettings['customItemHeader'] = 'Designation / Post';
                     tempSettings['customQtyHeader'] = 'No. of Staff / Guards';
+                    tempSettings['customDutyHeader'] = 'No. of Duty / Days';
                     tempSettings['customUnitHeader'] = 'Duty / Shift';
                     tempSettings['customRateHeader'] = 'Rate / Salary per Month';
                     tempSettings['customDiscountHeader'] = 'Deductions';
                     tempSettings['customTaxHeader'] = 'GST (18%)';
                     tempSettings['customAmountHeader'] = 'Total Amount';
+                    tempSettings['showItemDuty'] = true;
                     tempSettings['showItemUnit'] = true;
                     tempSettings['showItemQty'] = true;
                     tempSettings['showItemRate'] = true;
@@ -542,6 +550,7 @@ class _InvoiceEditorScreenState extends State<InvoiceEditorScreen> {
                     tempSettings['showItemTax'] = true;
                     itemHeaderCtrl.text = 'Designation / Post';
                     qtyHeaderCtrl.text = 'No. of Staff / Guards';
+                    dutyHeaderCtrl.text = 'No. of Duty / Days';
                     unitHeaderCtrl.text = 'Duty / Shift';
                     rateHeaderCtrl.text = 'Rate / Salary per Month';
                     discountHeaderCtrl.text = 'Deductions';
@@ -551,10 +560,12 @@ class _InvoiceEditorScreenState extends State<InvoiceEditorScreen> {
                     tempSettings['customTitle'] = 'Staffing & Salary Invoice';
                     tempSettings['customItemHeader'] = 'Employee Name / Role';
                     tempSettings['customQtyHeader'] = 'Staff Count';
+                    tempSettings['customDutyHeader'] = 'Days Worked';
                     tempSettings['customUnitHeader'] = 'Days Worked';
                     tempSettings['customRateHeader'] = 'Monthly Salary';
                     tempSettings['customTaxHeader'] = 'GST (18%)';
                     tempSettings['customAmountHeader'] = 'Total Salary Due';
+                    tempSettings['showItemDuty'] = true;
                     tempSettings['showItemUnit'] = true;
                     tempSettings['showItemQty'] = true;
                     tempSettings['showItemRate'] = true;
@@ -562,6 +573,7 @@ class _InvoiceEditorScreenState extends State<InvoiceEditorScreen> {
                     tempSettings['showItemTax'] = true;
                     itemHeaderCtrl.text = 'Employee Name / Role';
                     qtyHeaderCtrl.text = 'Staff Count';
+                    dutyHeaderCtrl.text = 'Days Worked';
                     unitHeaderCtrl.text = 'Days Worked';
                     rateHeaderCtrl.text = 'Monthly Salary';
                     taxHeaderCtrl.text = 'GST (18%)';
@@ -573,6 +585,7 @@ class _InvoiceEditorScreenState extends State<InvoiceEditorScreen> {
                     tempSettings['customRateHeader'] = 'Rate';
                     tempSettings['customTaxHeader'] = 'GST Rate (%)';
                     tempSettings['customAmountHeader'] = 'Total (INR)';
+                    tempSettings['showItemDuty'] = false;
                     tempSettings['showItemTax'] = true;
                     itemHeaderCtrl.text = 'Goods / Services';
                     qtyHeaderCtrl.text = 'Qty';
@@ -587,6 +600,7 @@ class _InvoiceEditorScreenState extends State<InvoiceEditorScreen> {
                     tempSettings['customRateHeader'] = 'Hourly Rate';
                     tempSettings['customTaxHeader'] = 'Tax (%)';
                     tempSettings['customAmountHeader'] = 'Total Fee';
+                    tempSettings['showItemDuty'] = false;
                     itemHeaderCtrl.text = 'Milestone / Deliverable';
                     qtyHeaderCtrl.text = 'Hours';
                     unitHeaderCtrl.text = 'hrs';
@@ -600,6 +614,7 @@ class _InvoiceEditorScreenState extends State<InvoiceEditorScreen> {
                     tempSettings['customRateHeader'] = 'Unit Price';
                     tempSettings['customDiscountHeader'] = 'Discount (%)';
                     tempSettings['customAmountHeader'] = 'Total';
+                    tempSettings['showItemDuty'] = false;
                     tempSettings['showItemDiscount'] = true;
                     itemHeaderCtrl.text = 'Product / Item';
                     qtyHeaderCtrl.text = 'Quantity';
@@ -750,7 +765,7 @@ class _InvoiceEditorScreenState extends State<InvoiceEditorScreen> {
                           child: TextField(
                             controller: qtyHeaderCtrl,
                             decoration: const InputDecoration(
-                              labelText: 'Quantity Column Name',
+                              labelText: 'Quantity / Staff Column Name',
                               hintText: 'e.g. No. of Staff, Qty',
                               isDense: true,
                             ),
@@ -759,10 +774,10 @@ class _InvoiceEditorScreenState extends State<InvoiceEditorScreen> {
                         const SizedBox(width: 10),
                         Expanded(
                           child: TextField(
-                            controller: unitHeaderCtrl,
+                            controller: dutyHeaderCtrl,
                             decoration: const InputDecoration(
-                              labelText: 'Unit Badge Name',
-                              hintText: 'e.g. Duty, Days, Shift',
+                              labelText: 'Duty / Days Column Name',
+                              hintText: 'e.g. No. of Duty / Days',
                               isDense: true,
                             ),
                           ),
@@ -774,6 +789,17 @@ class _InvoiceEditorScreenState extends State<InvoiceEditorScreen> {
                       children: [
                         Expanded(
                           child: TextField(
+                            controller: unitHeaderCtrl,
+                            decoration: const InputDecoration(
+                              labelText: 'Unit Badge Name',
+                              hintText: 'e.g. Duty, Days, Shift',
+                              isDense: true,
+                            ),
+                          ),
+                        ),
+                        const SizedBox(width: 10),
+                        Expanded(
+                          child: TextField(
                             controller: rateHeaderCtrl,
                             decoration: const InputDecoration(
                               labelText: 'Rate / Salary Column Name',
@@ -782,23 +808,29 @@ class _InvoiceEditorScreenState extends State<InvoiceEditorScreen> {
                             ),
                           ),
                         ),
-                        const SizedBox(width: 10),
-                        Expanded(
-                          child: TextField(
-                            controller: amountHeaderCtrl,
-                            decoration: const InputDecoration(
-                              labelText: 'Total Column Name',
-                              hintText: 'e.g. Total Amount, Amount',
-                              isDense: true,
-                            ),
-                          ),
-                        ),
                       ],
+                    ),
+                    const SizedBox(height: 10),
+                    TextField(
+                      controller: amountHeaderCtrl,
+                      decoration: const InputDecoration(
+                        labelText: 'Total Column Name',
+                        hintText: 'e.g. Total Amount, Amount',
+                        isDense: true,
+                      ),
                     ),
                     const SizedBox(height: 16),
                     const Text(
                       'Column Visibility Toggles',
                       style: TextStyle(fontWeight: FontWeight.bold, fontSize: 13),
+                    ),
+                    SwitchListTile(
+                      dense: true,
+                      contentPadding: EdgeInsets.zero,
+                      title: const Text('Show Duty / Days Column (Staff × Duty × Rate)', style: TextStyle(fontSize: 13)),
+                      subtitle: const Text('Calculates Total = Staff × Duty Days × Rate', style: TextStyle(fontSize: 11)),
+                      value: tempSettings['showItemDuty'] == true,
+                      onChanged: (val) => setSheetState(() => tempSettings['showItemDuty'] = val),
                     ),
                     SwitchListTile(
                       dense: true,
@@ -841,6 +873,7 @@ class _InvoiceEditorScreenState extends State<InvoiceEditorScreen> {
                         setState(() {
                           tempSettings['customItemHeader'] = itemHeaderCtrl.text.trim();
                           tempSettings['customQtyHeader'] = qtyHeaderCtrl.text.trim();
+                          tempSettings['customDutyHeader'] = dutyHeaderCtrl.text.trim();
                           tempSettings['customUnitHeader'] = unitHeaderCtrl.text.trim();
                           tempSettings['customRateHeader'] = rateHeaderCtrl.text.trim();
                           tempSettings['customDiscountHeader'] = discountHeaderCtrl.text.trim();
@@ -854,7 +887,9 @@ class _InvoiceEditorScreenState extends State<InvoiceEditorScreen> {
                             _items[0] = InvoiceItem(
                               id: _items[0].id,
                               description: 'Security Guard (12 Hrs Shift)',
+                              itemDetails: 'Deployment of uniformed security guard for 12 hours shift. Access control and premise surveillance.',
                               quantity: 1,
+                              dutyCount: 26,
                               unitPrice: 18500,
                               unit: 'Duty',
                               taxRate: _items[0].taxRate,
@@ -890,8 +925,10 @@ class _InvoiceEditorScreenState extends State<InvoiceEditorScreen> {
   }
 
   void _removeItem(int index) {
+    final isSecurity = _localSettings['industryPresetId'] == 'security' ||
+        _localSettings['showItemDuty'] == true;
     if (_items.length == 1) {
-      setState(() => _items[index] = _newLineItem());
+      setState(() => _items[index] = _newLineItem(isSecurity));
     } else {
       setState(() => _items.removeAt(index));
     }
@@ -1248,7 +1285,11 @@ class _InvoiceEditorScreenState extends State<InvoiceEditorScreen> {
                   const SizedBox(width: 6),
                   IconButton(
                     tooltip: 'Add item',
-                    onPressed: () => setState(() => _items.add(_newLineItem())),
+                    onPressed: () {
+                      final isSecurity = _localSettings['industryPresetId'] == 'security' ||
+                          _localSettings['showItemDuty'] == true;
+                      setState(() => _items.add(_newLineItem(isSecurity)));
+                    },
                     icon: const Icon(Icons.add_circle_outline),
                   ),
                 ],
@@ -1276,6 +1317,11 @@ class _InvoiceEditorScreenState extends State<InvoiceEditorScreen> {
                     item: _items[index],
                     currencySymbol: _currencySymbol.text,
                     localSettings: _localSettings,
+                    showDescriptionField: _globalShowItemDescriptions ||
+                        _items[index].itemDetails.isNotEmpty,
+                    onToggleDescription: (open) {
+                      setState(() => _globalShowItemDescriptions = open);
+                    },
                     onChanged: (item) => _updateItem(index, item),
                     onRemove: () => _removeItem(index),
                   ),
@@ -1421,12 +1467,195 @@ class _InvoiceEditorScreenState extends State<InvoiceEditorScreen> {
   }
 }
 
-InvoiceItem _newLineItem() => InvoiceItem(
+InvoiceItem _newLineItem([bool isSecurity = false]) => InvoiceItem(
       id: 'local-${DateTime.now().microsecondsSinceEpoch}',
       description: '',
+      itemDetails: '',
       quantity: 1,
+      dutyCount: isSecurity ? 26 : 0,
       unitPrice: 0,
+      unit: isSecurity ? 'Duty' : 'pcs',
     );
+
+class _ItemSuggestion {
+  final String title;
+  final String subtitle;
+  final String defaultDetails;
+  final double? defaultRate;
+  final String? defaultUnit;
+  final double? defaultDuty;
+  final IconData icon;
+
+  const _ItemSuggestion({
+    required this.title,
+    required this.subtitle,
+    required this.defaultDetails,
+    this.defaultRate,
+    this.defaultUnit,
+    this.defaultDuty,
+    this.icon = Icons.shield_outlined,
+  });
+}
+
+const _securitySuggestions = <_ItemSuggestion>[
+  _ItemSuggestion(
+    title: 'Security Guard (12 Hrs Shift)',
+    subtitle: '12-Hour Shift • Unarmed Uniformed Guard',
+    defaultDetails:
+        'Deployment of uniformed security guard for 12 hours shift. Access control, gatekeeping, and premise surveillance.',
+    defaultUnit: 'Duty',
+    defaultDuty: 26,
+    defaultRate: 18500,
+    icon: Icons.security,
+  ),
+  _ItemSuggestion(
+    title: 'Security Guard (8 Hrs Shift)',
+    subtitle: '8-Hour Shift • Commercial / Corporate Guard',
+    defaultDetails:
+        'Deployment of trained security guard for 8 hours shift. Visitor monitoring and perimeter patrolling.',
+    defaultUnit: 'Duty',
+    defaultDuty: 26,
+    defaultRate: 15000,
+    icon: Icons.shield_outlined,
+  ),
+  _ItemSuggestion(
+    title: 'Security Supervisor',
+    subtitle: 'Post In-Charge • Shift Operations & Briefing',
+    defaultDetails:
+        'Overall supervision of security personnel, deployment management, incident escalation, and daily report log.',
+    defaultUnit: 'Duty',
+    defaultDuty: 26,
+    defaultRate: 24000,
+    icon: Icons.local_police_outlined,
+  ),
+  _ItemSuggestion(
+    title: 'Gunman / Armed Guard',
+    subtitle: 'Armed Security • Vault & Cash Escort',
+    defaultDetails:
+        'Deployment of licensed armed gunman with weapon for high-security areas, cash transport, or executive protection.',
+    defaultUnit: 'Duty',
+    defaultDuty: 26,
+    defaultRate: 28000,
+    icon: Icons.verified_user_outlined,
+  ),
+  _ItemSuggestion(
+    title: 'Head Guard / Chief Guard',
+    subtitle: 'Site Leadership • Shift Coordination',
+    defaultDetails:
+        'Site head guard responsible for main gate registers, key management, and shift roster execution.',
+    defaultUnit: 'Duty',
+    defaultDuty: 26,
+    defaultRate: 21000,
+    icon: Icons.person_pin_outlined,
+  ),
+  _ItemSuggestion(
+    title: 'Lady Security Guard',
+    subtitle: 'Female Screening • Reception / Staff Gate',
+    defaultDetails:
+        'Deployment of female security guard for female staff/visitor frisking, reception assistance, and women safety.',
+    defaultUnit: 'Duty',
+    defaultDuty: 26,
+    defaultRate: 17500,
+    icon: Icons.female_outlined,
+  ),
+  _ItemSuggestion(
+    title: 'Bouncer / Event Security',
+    subtitle: 'Physical Security • Crowd Control & VIP',
+    defaultDetails:
+        'Heavy physical security bouncer for crowd management, VIP escort, event access, and conflict mitigation.',
+    defaultUnit: 'Duty',
+    defaultDuty: 1,
+    defaultRate: 2500,
+    icon: Icons.sports_mma_outlined,
+  ),
+  _ItemSuggestion(
+    title: 'Field Officer / Inspector',
+    subtitle: 'Operations Officer • Night Patrol & Audit',
+    defaultDetails:
+        'Mobile inspection officer conducting surprise night rounds, guard muster verification, and client feedback.',
+    defaultUnit: 'Duty',
+    defaultDuty: 26,
+    defaultRate: 26000,
+    icon: Icons.directions_walk_outlined,
+  ),
+  _ItemSuggestion(
+    title: 'CCTV Operator / Control Room',
+    subtitle: 'Surveillance Tech • Electronic Monitoring',
+    defaultDetails:
+        'Continuous monitoring of CCTV camera feeds, alarm acknowledgement, incident timestamping, and reporting.',
+    defaultUnit: 'Duty',
+    defaultDuty: 26,
+    defaultRate: 19500,
+    icon: Icons.videocam_outlined,
+  ),
+  _ItemSuggestion(
+    title: 'Housekeeping Staff / Janitor',
+    subtitle: 'Facility Cleaning • Daily Upkeep',
+    defaultDetails:
+        'Daily cleaning of common areas, restroom hygiene, waste disposal, and maintenance of clean premises.',
+    defaultUnit: 'Duty',
+    defaultDuty: 26,
+    defaultRate: 12500,
+    icon: Icons.cleaning_services_outlined,
+  ),
+];
+
+const _generalSuggestions = <_ItemSuggestion>[
+  _ItemSuggestion(
+    title: 'Consulting Services',
+    subtitle: 'Professional Advisory & Planning',
+    defaultDetails:
+        'Strategic consulting and expert advisory services per agreement scope.',
+    defaultUnit: 'hrs',
+    defaultRate: 120,
+    icon: Icons.business_center_outlined,
+  ),
+  _ItemSuggestion(
+    title: 'Maintenance & Support',
+    subtitle: 'Monthly AMC & SLA Support',
+    defaultDetails:
+        'Ongoing maintenance, support services, and issue resolution under SLA.',
+    defaultUnit: 'Month',
+    defaultRate: 500,
+    icon: Icons.build_outlined,
+  ),
+  _ItemSuggestion(
+    title: 'Software Development',
+    subtitle: 'Custom Software & Feature Engineering',
+    defaultDetails:
+        'Software design, feature coding, QA testing, and release delivery.',
+    defaultUnit: 'hrs',
+    defaultRate: 75,
+    icon: Icons.code_outlined,
+  ),
+  _ItemSuggestion(
+    title: 'UI/UX Design Services',
+    subtitle: 'Interface Prototyping & Wireframing',
+    defaultDetails:
+        'User interface design, mobile/web mockups, design tokens, and prototypes.',
+    defaultUnit: 'hrs',
+    defaultRate: 60,
+    icon: Icons.design_services_outlined,
+  ),
+  _ItemSuggestion(
+    title: 'Digital Marketing & SEO',
+    subtitle: 'Search Ranking & Campaign Strategy',
+    defaultDetails:
+        'Search engine optimization, targeted ad management, and monthly performance reporting.',
+    defaultUnit: 'Month',
+    defaultRate: 400,
+    icon: Icons.campaign_outlined,
+  ),
+  _ItemSuggestion(
+    title: 'Technical Audit & Inspection',
+    subtitle: 'Infrastructure Review & Report',
+    defaultDetails:
+        'Full system security and operational compliance audit with detailed recommendation findings.',
+    defaultUnit: 'pcs',
+    defaultRate: 850,
+    icon: Icons.checklist_outlined,
+  ),
+];
 
 class _LineItemEditor extends StatefulWidget {
   const _LineItemEditor({
@@ -1434,6 +1663,8 @@ class _LineItemEditor extends StatefulWidget {
     required this.item,
     required this.currencySymbol,
     required this.localSettings,
+    required this.showDescriptionField,
+    required this.onToggleDescription,
     required this.onChanged,
     required this.onRemove,
     super.key,
@@ -1443,6 +1674,8 @@ class _LineItemEditor extends StatefulWidget {
   final InvoiceItem item;
   final String currencySymbol;
   final Map<String, Object?> localSettings;
+  final bool showDescriptionField;
+  final ValueChanged<bool> onToggleDescription;
   final ValueChanged<InvoiceItem> onChanged;
   final VoidCallback onRemove;
 
@@ -1452,16 +1685,23 @@ class _LineItemEditor extends StatefulWidget {
 
 class _LineItemEditorState extends State<_LineItemEditor> {
   late final TextEditingController _description;
+  late final TextEditingController _itemDetails;
   late final TextEditingController _quantity;
+  late final TextEditingController _duty;
   late final TextEditingController _unitPrice;
   late final TextEditingController _unit;
   late final TextEditingController _discount;
+  bool _showSuggestions = false;
 
   @override
   void initState() {
     super.initState();
     _description = TextEditingController(text: widget.item.description);
+    _itemDetails = TextEditingController(text: widget.item.itemDetails);
     _quantity = TextEditingController(text: _num(widget.item.quantity));
+    _duty = TextEditingController(
+      text: widget.item.dutyCount > 0 ? _num(widget.item.dutyCount) : '',
+    );
     _unitPrice = TextEditingController(text: _num(widget.item.unitPrice));
     _unit = TextEditingController(text: widget.item.unit);
     _discount = TextEditingController(text: _num(widget.item.discountRate));
@@ -1470,7 +1710,9 @@ class _LineItemEditorState extends State<_LineItemEditor> {
   @override
   void dispose() {
     _description.dispose();
+    _itemDetails.dispose();
     _quantity.dispose();
+    _duty.dispose();
     _unitPrice.dispose();
     _unit.dispose();
     _discount.dispose();
@@ -1481,7 +1723,9 @@ class _LineItemEditorState extends State<_LineItemEditor> {
     widget.onChanged(InvoiceItem(
       id: widget.item.id,
       description: _description.text,
+      itemDetails: _itemDetails.text,
       quantity: double.tryParse(_quantity.text) ?? 0,
+      dutyCount: double.tryParse(_duty.text) ?? 0,
       unitPrice: double.tryParse(_unitPrice.text) ?? 0,
       unit: _unit.text.trim().isEmpty ? 'pcs' : _unit.text.trim(),
       taxRate: widget.item.taxRate,
@@ -1489,16 +1733,44 @@ class _LineItemEditorState extends State<_LineItemEditor> {
     ));
   }
 
-  Widget _suggestionChip(String text) {
-    return ActionChip(
-      label: Text(text, style: const TextStyle(fontSize: 11)),
-      padding: EdgeInsets.zero,
-      visualDensity: VisualDensity.compact,
-      onPressed: () {
-        setState(() => _description.text = text);
-        _notify();
-      },
-    );
+  void _applySuggestion(_ItemSuggestion s) {
+    setState(() {
+      _description.text = s.title;
+      if (_itemDetails.text.trim().isEmpty) {
+        _itemDetails.text = s.defaultDetails;
+      }
+      if (s.defaultUnit != null &&
+          (_unit.text.trim().isEmpty || _unit.text == 'pcs')) {
+        _unit.text = s.defaultUnit!;
+      }
+      if (s.defaultDuty != null &&
+          (_duty.text.trim().isEmpty || _duty.text == '0')) {
+        _duty.text = _num(s.defaultDuty!);
+      }
+      if (s.defaultRate != null &&
+          (_unitPrice.text.trim().isEmpty || _unitPrice.text == '0')) {
+        _unitPrice.text = _num(s.defaultRate!);
+      }
+      _showSuggestions = false;
+    });
+    _notify();
+  }
+
+  List<_ItemSuggestion> _matchingSuggestions(bool isSecurity) {
+    final query = _description.text.trim().toLowerCase();
+    final pool = isSecurity
+        ? _securitySuggestions
+        : <_ItemSuggestion>[..._securitySuggestions, ..._generalSuggestions];
+    if (query.isEmpty) {
+      return pool.take(6).toList(growable: false);
+    }
+    return pool
+        .where((s) =>
+            s.title.toLowerCase().contains(query) ||
+            s.subtitle.toLowerCase().contains(query) ||
+            s.defaultDetails.toLowerCase().contains(query))
+        .take(6)
+        .toList(growable: false);
   }
 
   Widget _unitChip(String text) {
@@ -1513,36 +1785,71 @@ class _LineItemEditorState extends State<_LineItemEditor> {
     );
   }
 
+  Widget _dutyChip(String label, double value) {
+    return ActionChip(
+      avatar: const Icon(Icons.date_range_outlined, size: 13),
+      label: Text(label, style: const TextStyle(fontSize: 11)),
+      padding: EdgeInsets.zero,
+      visualDensity: VisualDensity.compact,
+      onPressed: () {
+        setState(() => _duty.text = _num(value));
+        _notify();
+      },
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     final ls = widget.localSettings;
-    final itemLabel = ls['customItemHeader']?.toString().trim().isNotEmpty == true
-        ? ls['customItemHeader']!.toString().trim()
-        : 'Description';
-    final qtyLabel = ls['customQtyHeader']?.toString().trim().isNotEmpty == true
-        ? ls['customQtyHeader']!.toString().trim()
-        : 'Quantity';
-    final unitLabel = ls['customUnitHeader']?.toString().trim().isNotEmpty == true
-        ? ls['customUnitHeader']!.toString().trim()
-        : 'Unit';
-    final rateLabel = ls['customRateHeader']?.toString().trim().isNotEmpty == true
-        ? ls['customRateHeader']!.toString().trim()
-        : 'Unit price';
-    final discountLabel = ls['customDiscountHeader']?.toString().trim().isNotEmpty == true
-        ? ls['customDiscountHeader']!.toString().trim()
-        : 'Discount (%)';
-
-    final qtyVal = double.tryParse(_quantity.text) ?? 0;
-    final rateVal = double.tryParse(_unitPrice.text) ?? 0;
-    final discVal = double.tryParse(_discount.text) ?? 0;
-    final gross = qtyVal * rateVal;
-    final discAmt = gross * (discVal / 100);
-    final lineTotal = gross - discAmt;
+    final itemLabel =
+        ls['customItemHeader']?.toString().trim().isNotEmpty == true
+            ? ls['customItemHeader']!.toString().trim()
+            : 'Description';
+    final qtyLabel =
+        ls['customQtyHeader']?.toString().trim().isNotEmpty == true
+            ? ls['customQtyHeader']!.toString().trim()
+            : 'Quantity';
+    final dutyLabel =
+        ls['customDutyHeader']?.toString().trim().isNotEmpty == true
+            ? ls['customDutyHeader']!.toString().trim()
+            : 'No. of Duty / Days';
+    final unitLabel =
+        ls['customUnitHeader']?.toString().trim().isNotEmpty == true
+            ? ls['customUnitHeader']!.toString().trim()
+            : 'Unit';
+    final rateLabel =
+        ls['customRateHeader']?.toString().trim().isNotEmpty == true
+            ? ls['customRateHeader']!.toString().trim()
+            : 'Unit price';
+    final discountLabel =
+        ls['customDiscountHeader']?.toString().trim().isNotEmpty == true
+            ? ls['customDiscountHeader']!.toString().trim()
+            : 'Discount (%)';
 
     final isSecurityOrStaffing = ls['industryPresetId'] == 'security' ||
         ls['industryPresetId'] == 'hr_staffing' ||
         itemLabel.toLowerCase().contains('guard') ||
         itemLabel.toLowerCase().contains('designation');
+
+    final showDuty = ls['showItemDuty'] == true ||
+        isSecurityOrStaffing ||
+        widget.item.dutyCount > 0;
+    final showUnit = ls['showItemUnit'] != false;
+    final showDiscount = ls['showItemDiscount'] == true;
+
+    final qtyVal = double.tryParse(_quantity.text) ?? 0;
+    final dutyVal = double.tryParse(_duty.text) ?? 0;
+    final rateVal = double.tryParse(_unitPrice.text) ?? 0;
+    final discVal = double.tryParse(_discount.text) ?? 0;
+
+    final gross =
+        dutyVal > 0 ? (qtyVal * dutyVal * rateVal) : (qtyVal * rateVal);
+    final discAmt = gross * (discVal / 100);
+    final lineTotal = gross - discAmt;
+
+    final isDescOpen =
+        widget.showDescriptionField || _itemDetails.text.trim().isNotEmpty;
+    final suggestions = _matchingSuggestions(isSecurityOrStaffing);
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
@@ -1571,32 +1878,166 @@ class _LineItemEditorState extends State<_LineItemEditor> {
             hintText: isSecurityOrStaffing
                 ? 'e.g. Security Guard (12h Shift), Supervisor'
                 : 'What are you billing for?',
+            suffixIcon: _description.text.isNotEmpty
+                ? IconButton(
+                    icon: const Icon(Icons.clear, size: 16),
+                    onPressed: () {
+                      setState(() {
+                        _description.clear();
+                        _showSuggestions = true;
+                      });
+                      _notify();
+                    },
+                  )
+                : const Icon(Icons.arrow_drop_down),
           ),
           validator: (value) => value == null || value.trim().isEmpty
               ? 'Add a $itemLabel'
               : null,
-          onChanged: (_) => _notify(),
+          onTap: () => setState(() => _showSuggestions = true),
+          onChanged: (_) {
+            setState(() => _showSuggestions = true);
+            _notify();
+          },
         ),
-        const SizedBox(height: 6),
-        Wrap(
-          spacing: 6,
-          runSpacing: 4,
-          children: isSecurityOrStaffing
-              ? [
-                  _suggestionChip('🛡️ Security Guard (12h)'),
-                  _suggestionChip('👮 Security Supervisor'),
-                  _suggestionChip('🛡️ Security Guard (8h)'),
-                  _suggestionChip('🎖️ Gunman / Armed Guard'),
-                  _suggestionChip('🏢 Field Officer'),
-                  _suggestionChip('🧹 Housekeeper'),
-                ]
-              : [
-                  _suggestionChip('Consulting Services'),
-                  _suggestionChip('Maintenance & Support'),
-                  _suggestionChip('Project Milestone'),
+        if (_showSuggestions && suggestions.isNotEmpty) ...[
+          const SizedBox(height: 6),
+          Material(
+            elevation: 3,
+            borderRadius: BorderRadius.circular(12),
+            clipBehavior: Clip.antiAlias,
+            child: Container(
+              decoration: BoxDecoration(
+                borderRadius: BorderRadius.circular(12),
+                border: Border.all(color: const Color(0xFFCBD5E1)),
+                color: Colors.white,
+              ),
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Container(
+                    color: const Color(0xFFF8FAFC),
+                    padding: const EdgeInsets.symmetric(
+                        horizontal: 12, vertical: 6),
+                    child: Row(
+                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                      children: [
+                        Text(
+                          'Suggested designations & services (${suggestions.length})',
+                          style: const TextStyle(
+                            fontSize: 11,
+                            fontWeight: FontWeight.bold,
+                            color: Color(0xFF475569),
+                          ),
+                        ),
+                        InkWell(
+                          onTap: () =>
+                              setState(() => _showSuggestions = false),
+                          child: const Icon(Icons.close,
+                              size: 16, color: Color(0xFF94A3B8)),
+                        ),
+                      ],
+                    ),
+                  ),
+                  const Divider(height: 1),
+                  for (final s in suggestions)
+                    ListTile(
+                      dense: true,
+                      leading: CircleAvatar(
+                        radius: 15,
+                        backgroundColor: const Color(0xFFEFF6FF),
+                        child: Icon(s.icon,
+                            size: 16, color: const Color(0xFF2563EB)),
+                      ),
+                      title: Text(
+                        s.title,
+                        style: const TextStyle(
+                          fontSize: 13,
+                          fontWeight: FontWeight.w600,
+                        ),
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                      ),
+                      subtitle: Text(
+                        s.subtitle,
+                        style: const TextStyle(
+                          fontSize: 11,
+                          color: Color(0xFF64748B),
+                        ),
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                      ),
+                      onTap: () => _applySuggestion(s),
+                    ),
                 ],
-        ),
-        const SizedBox(height: 10),
+              ),
+            ),
+          ),
+        ],
+        if (!isDescOpen)
+          Padding(
+            padding: const EdgeInsets.only(top: 4, bottom: 4),
+            child: Align(
+              alignment: Alignment.centerLeft,
+              child: InkWell(
+                onTap: () => widget.onToggleDescription(true),
+                borderRadius: BorderRadius.circular(6),
+                child: Padding(
+                  padding:
+                      const EdgeInsets.symmetric(horizontal: 4, vertical: 3),
+                  child: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: const [
+                      Icon(Icons.add, size: 14, color: Color(0xFF2563EB)),
+                      SizedBox(width: 4),
+                      Text(
+                        '+ Description / Scope of Work',
+                        style: TextStyle(
+                          fontSize: 12,
+                          fontWeight: FontWeight.w600,
+                          color: Color(0xFF2563EB),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+            ),
+          )
+        else
+          Padding(
+            padding: const EdgeInsets.only(top: 6, bottom: 6),
+            child: TextFormField(
+              controller: _itemDetails,
+              maxLines: 2,
+              minLines: 1,
+              style: const TextStyle(fontSize: 13),
+              decoration: InputDecoration(
+                isDense: true,
+                labelText: 'Description / Scope of Work',
+                hintText:
+                    'Specifications, post location, shift hours, duties...',
+                prefixIcon: const Icon(Icons.notes_rounded, size: 18),
+                suffixIcon: _itemDetails.text.isNotEmpty
+                    ? IconButton(
+                        tooltip: 'Clear description',
+                        icon: const Icon(Icons.clear, size: 16),
+                        onPressed: () {
+                          _itemDetails.clear();
+                          _notify();
+                        },
+                      )
+                    : null,
+                contentPadding:
+                    const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+                border: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(8),
+                ),
+              ),
+              onChanged: (_) => _notify(),
+            ),
+          ),
+        const SizedBox(height: 6),
         _ResponsiveFields(
           children: [
             _itemNumberField(
@@ -1605,27 +2046,36 @@ class _LineItemEditorState extends State<_LineItemEditor> {
               min: 0.000001,
               onChanged: _notify,
             ),
+            if (showDuty)
+              _itemNumberField(
+                controller: _duty,
+                label: dutyLabel,
+                min: 0,
+                onChanged: _notify,
+              ),
             _itemNumberField(
               controller: _unitPrice,
               label: '$rateLabel (${widget.currencySymbol})',
               min: 0,
               onChanged: _notify,
             ),
-            TextField(
-              controller: _unit,
-              decoration: InputDecoration(
-                labelText: unitLabel,
-                hintText: 'Duty, Days, Shift, hrs, pcs',
+            if (showUnit)
+              TextField(
+                controller: _unit,
+                decoration: InputDecoration(
+                  labelText: unitLabel,
+                  hintText: 'Duty, Days, Shift, hrs, pcs',
+                ),
+                onChanged: (_) => _notify(),
               ),
-              onChanged: (_) => _notify(),
-            ),
-            _itemNumberField(
-              controller: _discount,
-              label: discountLabel,
-              min: 0,
-              max: 100,
-              onChanged: _notify,
-            ),
+            if (showDiscount)
+              _itemNumberField(
+                controller: _discount,
+                label: discountLabel,
+                min: 0,
+                max: 100,
+                onChanged: _notify,
+              ),
           ],
         ),
         const SizedBox(height: 6),
@@ -1633,9 +2083,15 @@ class _LineItemEditorState extends State<_LineItemEditor> {
           spacing: 6,
           runSpacing: 4,
           children: [
-            _unitChip('Duty'),
+            if (showDuty) ...[
+              _dutyChip('26 Duties', 26),
+              _dutyChip('30 Duties', 30),
+              _dutyChip('31 Duties', 31),
+              _dutyChip('15 Duties', 15),
+              _unitChip('Duty'),
+              _unitChip('Shift'),
+            ],
             _unitChip('Days'),
-            _unitChip('Shift'),
             _unitChip('Month'),
             _unitChip('hrs'),
             _unitChip('pcs'),
@@ -1652,14 +2108,21 @@ class _LineItemEditorState extends State<_LineItemEditor> {
           child: Row(
             mainAxisAlignment: MainAxisAlignment.spaceBetween,
             children: [
-              Text(
-                'Auto Calculation: ${_num(qtyVal)} × ${widget.currencySymbol}${_num(rateVal)}${discVal > 0 ? " (−$discVal%)" : ""}',
-                style: const TextStyle(
-                  fontSize: 12,
-                  color: Color(0xFF475569),
-                  fontWeight: FontWeight.w500,
+              Expanded(
+                child: Text(
+                  dutyVal > 0
+                      ? 'Auto Calculation: ${_num(qtyVal)} Staff × ${_num(dutyVal)} Duties × ${widget.currencySymbol}${_num(rateVal)}${discVal > 0 ? " (−$discVal%)" : ""}'
+                      : 'Auto Calculation: ${_num(qtyVal)} × ${widget.currencySymbol}${_num(rateVal)}${discVal > 0 ? " (−$discVal%)" : ""}',
+                  style: const TextStyle(
+                    fontSize: 12,
+                    color: Color(0xFF475569),
+                    fontWeight: FontWeight.w500,
+                  ),
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
                 ),
               ),
+              const SizedBox(width: 8),
               Text(
                 'Total: ${widget.currencySymbol}${lineTotal.toStringAsFixed(2)}',
                 style: TextStyle(

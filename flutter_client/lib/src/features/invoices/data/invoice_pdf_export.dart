@@ -90,6 +90,12 @@ class InvoicePdfExport {
             ? localSettings['upiId'].toString()
             : '');
 
+    final qrPayload = upiId.isNotEmpty
+        ? 'upi://pay?pa=$upiId&pn=${Uri.encodeComponent(bizName.isNotEmpty ? bizName : "Merchant")}&am=${(invoice.balanceDue > 0 ? invoice.balanceDue : invoice.total).toStringAsFixed(2)}&cu=INR&tn=${Uri.encodeComponent("Invoice ${invoice.invoiceNumber}")}'
+        : (accountNumber.isNotEmpty
+            ? 'Bank: $bankName\nA/C: $accountNumber\nIFSC: $ifscCode\nBeneficiary: $accountHolder'
+            : 'Invoice: ${invoice.invoiceNumber}\nAmount: ${invoice.total} ${invoice.currencyCode}');
+
     List<Map<String, dynamic>> customFields(String key) {
       final raw = localSettings[key];
       if (raw is List) {
@@ -162,6 +168,11 @@ class InvoicePdfExport {
     final customCols = customFields('customColumns_items')
         .where((c) => c['isVisible'] != false)
         .toList();
+    final dutyHeader =
+        localSettings['customDutyHeader']?.toString().trim().isNotEmpty == true
+            ? localSettings['customDutyHeader'].toString()
+            : 'Duty / Days';
+    final showDuty = show('showItemDuty') || invoice.items.any((it) => it.dutyCount > 0);
 
     document.addPage(
       pw.MultiPage(
@@ -271,6 +282,7 @@ class InvoicePdfExport {
             headers: [
               itemHeader,
               if (show('showItemQty')) qtyHeader,
+              if (showDuty) dutyHeader,
               if (show('showItemRate')) rateHeader,
               if (show('showItemDiscount', fallback: false))
                 localSettings['customDiscountHeader']?.toString() ?? 'Discount',
@@ -283,10 +295,14 @@ class InvoicePdfExport {
             data: invoice.items
                 .map(
                   (item) => <String>[
-                    item.description,
+                    item.itemDetails.isNotEmpty
+                        ? '${item.description}\n${item.itemDetails}'
+                        : item.description,
                     if (show('showItemQty'))
                       '${_quantity(item.quantity)}'
                           '${show('showItemUnit') ? ' ${item.unit}' : ''}',
+                    if (showDuty)
+                      item.dutyCount > 0 ? _quantity(item.dutyCount) : '-',
                     if (show('showItemRate'))
                       _money(item.unitPrice, invoice.currencySymbol),
                     if (show('showItemDiscount', fallback: false)) '${item.discountRate}%',
@@ -309,6 +325,7 @@ class InvoicePdfExport {
                   index <
                       1 +
                           (show('showItemQty') ? 1 : 0) +
+                          (showDuty ? 1 : 0) +
                           (show('showItemRate') ? 1 : 0) +
                           (show('showItemDiscount', fallback: false) ? 1 : 0) +
                           (show('showItemTax') ? 1 : 0) +
@@ -401,141 +418,197 @@ class InvoicePdfExport {
               ),
             ),
           ),
-          if (showBank &&
-              (bankName.isNotEmpty ||
-                  accountNumber.isNotEmpty ||
-                  upiId.isNotEmpty)) ...[
-            pw.SizedBox(height: 14),
-            pw.Container(
-              padding: const pw.EdgeInsets.all(10),
-              decoration: pw.BoxDecoration(
-                border: pw.Border.all(color: PdfColors.grey300),
-                borderRadius: const pw.BorderRadius.all(pw.Radius.circular(6)),
-                color: PdfColors.grey50,
+          // -------------------------------------------------------------------
+          // ROW: BANK & PAYMENT DETAILS + QR CODE (LEFT) & SIGNATURE / STAMP (RIGHT)
+          // -------------------------------------------------------------------
+          pw.SizedBox(height: 16),
+          pw.Row(
+            crossAxisAlignment: pw.CrossAxisAlignment.start,
+            children: [
+              // LEFT HALF: Bank Details & QR Code (Scan to Pay)
+              pw.Expanded(
+                flex: 6,
+                child: (showBank &&
+                        (bankName.isNotEmpty ||
+                            accountNumber.isNotEmpty ||
+                            upiId.isNotEmpty ||
+                            (template?.showQrCode ?? true)))
+                    ? pw.Container(
+                        padding: const pw.EdgeInsets.all(9),
+                        decoration: pw.BoxDecoration(
+                          border: pw.Border.all(color: PdfColors.grey300),
+                          borderRadius: const pw.BorderRadius.all(pw.Radius.circular(6)),
+                          color: PdfColors.grey50,
+                        ),
+                        child: pw.Row(
+                          crossAxisAlignment: pw.CrossAxisAlignment.start,
+                          children: [
+                            pw.Expanded(
+                              child: pw.Column(
+                                crossAxisAlignment: pw.CrossAxisAlignment.start,
+                                children: [
+                                  pw.Text(
+                                    'BANK & PAYMENT DETAILS',
+                                    style: pw.TextStyle(
+                                      fontSize: 8.5,
+                                      fontWeight: pw.FontWeight.bold,
+                                      color: brand,
+                                    ),
+                                  ),
+                                  pw.SizedBox(height: 4),
+                                  if (bankName.isNotEmpty)
+                                    pw.Text('Bank: $bankName', style: const pw.TextStyle(fontSize: 8)),
+                                  if (accountHolder.isNotEmpty)
+                                    pw.Text('A/C Name: $accountHolder', style: const pw.TextStyle(fontSize: 8)),
+                                  if (accountNumber.isNotEmpty)
+                                    pw.Text('A/C No: $accountNumber', style: pw.TextStyle(fontSize: 8, fontWeight: pw.FontWeight.bold)),
+                                  if (ifscCode.isNotEmpty)
+                                    pw.Text('IFSC / SWIFT: $ifscCode', style: const pw.TextStyle(fontSize: 8)),
+                                  if (upiId.isNotEmpty)
+                                    pw.Text('UPI ID: $upiId', style: pw.TextStyle(fontSize: 8, fontWeight: pw.FontWeight.bold, color: PdfColors.green800)),
+                                ],
+                              ),
+                            ),
+                            if (template?.showQrCode ?? true) ...[
+                              pw.SizedBox(width: 8),
+                              pw.Column(
+                                children: [
+                                  pw.BarcodeWidget(
+                                    barcode: pw.Barcode.qrCode(),
+                                    data: qrPayload,
+                                    width: 62,
+                                    height: 62,
+                                    drawText: false,
+                                  ),
+                                  pw.SizedBox(height: 2),
+                                  pw.Text(
+                                    'SCAN TO PAY',
+                                    style: pw.TextStyle(fontSize: 6.5, fontWeight: pw.FontWeight.bold),
+                                  ),
+                                ],
+                              ),
+                            ],
+                          ],
+                        ),
+                      )
+                    : pw.SizedBox.shrink(),
               ),
-              child: pw.Column(
-                crossAxisAlignment: pw.CrossAxisAlignment.start,
-                children: [
-                  pw.Text(
-                    'BANK & PAYMENT DETAILS',
-                    style: pw.TextStyle(
-                      fontSize: 9,
-                      fontWeight: pw.FontWeight.bold,
-                      color: brand,
-                    ),
-                  ),
-                  pw.SizedBox(height: 4),
-                  pw.Wrap(
-                    spacing: 12,
-                    children: [
-                      if (bankName.isNotEmpty)
-                        pw.Text('Bank: $bankName', style: const pw.TextStyle(fontSize: 8.5)),
-                      if (accountHolder.isNotEmpty)
-                        pw.Text('A/C Name: $accountHolder', style: const pw.TextStyle(fontSize: 8.5)),
-                      if (accountNumber.isNotEmpty)
-                        pw.Text('A/C No: $accountNumber', style: pw.TextStyle(fontSize: 8.5, fontWeight: pw.FontWeight.bold)),
-                      if (ifscCode.isNotEmpty)
-                        pw.Text('IFSC / SWIFT: $ifscCode', style: const pw.TextStyle(fontSize: 8.5)),
-                      if (upiId.isNotEmpty)
-                        pw.Text('UPI ID: $upiId', style: pw.TextStyle(fontSize: 8.5, fontWeight: pw.FontWeight.bold)),
-                    ],
-                  ),
-                ],
+
+              pw.SizedBox(width: 16),
+
+              // RIGHT HALF: SIGNATURE & STAMP BLOCK (Ample space)
+              pw.Expanded(
+                flex: 5,
+                child: ((show('showSignature') && (template?.showSignature ?? true)) || show('showStamp'))
+                    ? pw.Column(
+                        crossAxisAlignment: pw.CrossAxisAlignment.end,
+                        children: [
+                          if (bizName.isNotEmpty)
+                            pw.Text(
+                              'For $bizName',
+                              style: pw.TextStyle(fontSize: 8.5, fontWeight: pw.FontWeight.bold),
+                              textAlign: pw.TextAlign.right,
+                            ),
+                          pw.SizedBox(height: 4),
+                          pw.Row(
+                            mainAxisAlignment: pw.MainAxisAlignment.end,
+                            crossAxisAlignment: pw.CrossAxisAlignment.end,
+                            children: [
+                              if (stamp != null)
+                                pw.Container(
+                                  width: 60,
+                                  height: 60,
+                                  child: pw.Image(stamp, fit: pw.BoxFit.contain),
+                                ),
+                              if (stamp != null) pw.SizedBox(width: 8),
+                              pw.Column(
+                                crossAxisAlignment: pw.CrossAxisAlignment.center,
+                                children: [
+                                  pw.Container(
+                                    width: 130,
+                                    height: 48,
+                                    child: signature != null
+                                        ? pw.Image(signature, fit: pw.BoxFit.contain)
+                                        : pw.SizedBox.shrink(),
+                                  ),
+                                  pw.Container(width: 130, height: 0.8, color: PdfColors.grey500),
+                                  pw.SizedBox(height: 3),
+                                  pw.Text(
+                                    localSettings['signeeTitle']?.toString().trim().isNotEmpty == true
+                                        ? localSettings['signeeTitle'].toString()
+                                        : 'Authorized Signatory',
+                                    style: pw.TextStyle(fontSize: 8, fontWeight: pw.FontWeight.bold),
+                                  ),
+                                  if (localSettings['signeeName']?.toString().trim().isNotEmpty == true)
+                                    pw.Text(
+                                      localSettings['signeeName'].toString(),
+                                      style: const pw.TextStyle(fontSize: 7.5, color: PdfColors.grey700),
+                                    ),
+                                ],
+                              ),
+                            ],
+                          ),
+                        ],
+                      )
+                    : pw.SizedBox.shrink(),
               ),
-            ),
-          ],
-          for (final foot in customFields('customFields_footer'))
-            if (foot['isVisible'] != false && foot['label']?.toString().isNotEmpty == true) ...[
-              pw.SizedBox(height: 12),
-              pw.Text(
-                foot['label'].toString().toUpperCase(),
-                style: pw.TextStyle(
-                  color: brand,
-                  fontSize: 10,
-                  fontWeight: pw.FontWeight.bold,
-                ),
-              ),
-              if (foot['value']?.toString().isNotEmpty == true)
-                pw.Text(foot['value'].toString()),
             ],
+          ),
+
+          // -------------------------------------------------------------------
+          // FULL WIDTH (TOTAL DOWN): Notes, Terms & Conditions, Payment Instructions
+          // -------------------------------------------------------------------
           if (show('showNotes') &&
               (template?.showNotes ?? true) &&
               invoice.notes.isNotEmpty) ...[
-            pw.SizedBox(height: 18),
+            pw.SizedBox(height: 14),
             pw.Text(
               localSettings['customNotesLabel']?.toString().trim().isNotEmpty == true
                   ? localSettings['customNotesLabel'].toString()
                   : 'Notes',
-              style: pw.TextStyle(fontWeight: pw.FontWeight.bold),
+              style: pw.TextStyle(fontWeight: pw.FontWeight.bold, fontSize: 8.5),
             ),
-            pw.SizedBox(height: 4),
-            pw.Text(invoice.notes),
+            pw.SizedBox(height: 2),
+            pw.Text(invoice.notes, style: const pw.TextStyle(fontSize: 8, color: PdfColors.grey800)),
           ],
           if (show('showTerms') &&
               (template?.showTerms ?? true) &&
               invoice.terms.isNotEmpty) ...[
-            pw.SizedBox(height: 12),
+            pw.SizedBox(height: 8),
             pw.Text(
               localSettings['customTermsLabel']?.toString().trim().isNotEmpty == true
                   ? localSettings['customTermsLabel'].toString()
                   : 'Terms and conditions',
-              style: pw.TextStyle(fontWeight: pw.FontWeight.bold),
+              style: pw.TextStyle(fontWeight: pw.FontWeight.bold, fontSize: 8.5),
             ),
-            pw.SizedBox(height: 4),
-            pw.Text(invoice.terms),
+            pw.SizedBox(height: 2),
+            pw.Text(invoice.terms, style: const pw.TextStyle(fontSize: 8, color: PdfColors.grey800)),
           ],
           if (show('showPaymentInstructions') &&
               template?.showPaymentInstructions != false &&
               invoice.paymentInstructions.isNotEmpty) ...[
-            pw.SizedBox(height: 12),
+            pw.SizedBox(height: 8),
             pw.Text(
               'Payment instructions',
-              style: pw.TextStyle(fontWeight: pw.FontWeight.bold),
+              style: pw.TextStyle(fontWeight: pw.FontWeight.bold, fontSize: 8.5),
             ),
-            pw.SizedBox(height: 4),
-            pw.Text(invoice.paymentInstructions),
+            pw.SizedBox(height: 2),
+            pw.Text(invoice.paymentInstructions, style: const pw.TextStyle(fontSize: 8, color: PdfColors.grey800)),
           ],
-          if (signature != null || stamp != null) ...[
-            pw.SizedBox(height: 24),
-            pw.Row(
-              mainAxisAlignment: pw.MainAxisAlignment.end,
-              crossAxisAlignment: pw.CrossAxisAlignment.end,
-              children: [
-                if (signature != null)
-                  pw.Column(
-                    crossAxisAlignment: pw.CrossAxisAlignment.center,
-                    children: [
-                      pw.Container(
-                        width: 150,
-                        height: 60,
-                        child: pw.Image(signature, fit: pw.BoxFit.contain),
-                      ),
-                      pw.Container(width: 150, height: 0.8, color: PdfColors.grey500),
-                      pw.SizedBox(height: 3),
-                      pw.Text(
-                        localSettings['signeeTitle']?.toString().trim().isNotEmpty == true
-                            ? localSettings['signeeTitle'].toString()
-                            : 'Authorized Signatory',
-                        style: const pw.TextStyle(fontSize: 8),
-                      ),
-                      if (localSettings['signeeName']?.toString().trim().isNotEmpty == true)
-                        pw.Text(
-                          localSettings['signeeName'].toString(),
-                          style: const pw.TextStyle(fontSize: 8),
-                        ),
-                    ],
-                  ),
-                if (stamp != null) ...[
-                  pw.SizedBox(width: 16),
-                  pw.Container(
-                    width: 90,
-                    height: 90,
-                    child: pw.Image(stamp, fit: pw.BoxFit.contain),
-                  ),
-                ],
-              ],
-            ),
-          ],
+          for (final foot in customFields('customFields_footer'))
+            if (foot['isVisible'] != false && foot['label']?.toString().isNotEmpty == true) ...[
+              pw.SizedBox(height: 8),
+              pw.Text(
+                foot['label'].toString().toUpperCase(),
+                style: pw.TextStyle(
+                  color: brand,
+                  fontSize: 8.5,
+                  fontWeight: pw.FontWeight.bold,
+                ),
+              ),
+              if (foot['value']?.toString().isNotEmpty == true)
+                pw.Text(foot['value'].toString(), style: const pw.TextStyle(fontSize: 8)),
+            ],
           if (template?.footer.isNotEmpty == true) ...[
             pw.SizedBox(height: 20),
             pw.Divider(color: PdfColors.grey400),

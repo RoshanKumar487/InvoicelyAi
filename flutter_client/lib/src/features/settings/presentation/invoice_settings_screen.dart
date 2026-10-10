@@ -342,10 +342,12 @@ class _InvoiceSettingsScreenState extends State<InvoiceSettingsScreen>
           _localSettings['showShippingSection'] = true;
           _localSettings['customItemHeader'] = 'Designation / Deployment (Supervisor, Guard, etc.)';
           _localSettings['customQtyHeader'] = 'No. of Guards / Staff';
+          _localSettings['customDutyHeader'] = 'No. of Duty';
           _localSettings['customUnitHeader'] = 'Duty / Days';
           _localSettings['customRateHeader'] = 'Rate / Salary per Month';
           _localSettings['customTaxHeader'] = 'GST (18%)';
           _localSettings['customAmountHeader'] = 'Total Amount';
+          _localSettings['showItemDuty'] = true;
           _localSettings['showItemUnit'] = true;
           _localSettings['showItemQty'] = true;
           _localSettings['showItemRate'] = true;
@@ -988,13 +990,25 @@ class _InvoiceSettingsScreenState extends State<InvoiceSettingsScreen>
 
               // Quantity Column
               _buildFieldTile(
-                title: 'Quantity Column',
-                description: 'Number of units purchased',
+                title: 'Quantity / Staff Column',
+                description: 'Number of units purchased or guards deployed',
                 toggleKey: 'showItemQty',
                 defaultToggle: true,
                 labelKey: 'customQtyHeader',
                 fallbackLabel: 'Qty',
-                hint: 'e.g. Units, Hours, Qty',
+                hint: 'e.g. Units, No. of Staff, Guards',
+              ),
+              const Divider(height: 24),
+
+              // Duty Column
+              _buildFieldTile(
+                title: 'No. of Duty / Days Column',
+                description: 'Duties, shifts, or days worked per staff (multiplies Staff × Duty × Rate)',
+                toggleKey: 'showItemDuty',
+                defaultToggle: false,
+                labelKey: 'customDutyHeader',
+                fallbackLabel: 'No. of Duty',
+                hint: 'e.g. No. of Duty, Duty Days, Shifts',
               ),
               const Divider(height: 24),
 

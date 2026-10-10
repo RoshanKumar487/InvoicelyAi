@@ -3,6 +3,7 @@ import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:printing/printing.dart';
+import 'package:qr/qr.dart';
 import 'package:share_plus/share_plus.dart';
 
 import '../../../core/api/api_exception.dart';
@@ -517,6 +518,39 @@ class _InvoicePreviewScreenState extends State<InvoicePreviewScreen>
     }
   }
 
+  void _openTemplatePickerSheet(BuildContext context) {
+    showModalBottomSheet<void>(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: Colors.transparent,
+      builder: (ctx) => _TemplatePickerModal(
+        selectedId: _template?.id,
+        onSelectTemplate: (preset) {
+          setState(() => _selectedTemplateId = preset.id);
+        },
+        onSetDefault: (preset) async {
+          final updated = Map<String, Object?>.from(_localSettings)
+            ..['preferredTemplateId'] = preset.id
+            ..['customTitle'] = preset.title
+            ..['customItemHeader'] = preset.itemHeader
+            ..['customQtyHeader'] = preset.quantityHeader
+            ..['customRateHeader'] = preset.rateHeader
+            ..['customAmountHeader'] = preset.amountHeader
+            ..['customDutyHeader'] = preset.dutyHeader
+            ..['showItemDuty'] = preset.showDuty;
+          await widget.onSaveLocalSettings?.call(updated);
+          if (mounted) {
+            setState(() {
+              _localSettings = updated;
+              _selectedTemplateId = preset.id;
+            });
+            _showMessage('✓ Template "${preset.name}" set as default!');
+          }
+        },
+      ),
+    );
+  }
+
   void _showMessage(String text) {
     ScaffoldMessenger.of(context)
       ..hideCurrentSnackBar()
@@ -548,80 +582,62 @@ class _InvoicePreviewScreenState extends State<InvoicePreviewScreen>
           onPressed: widget.onBack,
           icon: const Icon(Icons.arrow_back),
         ),
-        title: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Text(
-              invoice.invoiceNumber,
-              style: const TextStyle(
-                fontWeight: FontWeight.w800,
-                fontSize: 16,
-              ),
+        title: InkWell(
+          onTap: () => _openTemplatePickerSheet(context),
+          borderRadius: BorderRadius.circular(6),
+          child: Padding(
+            padding: const EdgeInsets.symmetric(vertical: 2, horizontal: 4),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Text(
+                  invoice.invoiceNumber,
+                  style: const TextStyle(
+                    fontWeight: FontWeight.w800,
+                    fontSize: 16,
+                  ),
+                ),
+                Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Flexible(
+                      child: Text(
+                        template?.name ?? 'Standard Template',
+                        style: TextStyle(
+                          fontSize: 11,
+                          fontWeight: FontWeight.w600,
+                          color: Theme.of(context).colorScheme.primary,
+                        ),
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                      ),
+                    ),
+                    const SizedBox(width: 2),
+                    Icon(
+                      Icons.arrow_drop_down_rounded,
+                      size: 16,
+                      color: Theme.of(context).colorScheme.primary,
+                    ),
+                  ],
+                ),
+              ],
             ),
-            Text(
-              template?.name ?? 'Standard Template',
-              style: TextStyle(
-                fontSize: 11,
-                fontWeight: FontWeight.w600,
-                color: Theme.of(context).colorScheme.primary,
-              ),
-            ),
-          ],
+          ),
         ),
         actions: [
-          // 1. SWITCH TEMPLATE (Icon pill button with popup menu)
+          // 1. SWITCH TEMPLATE (Palette button opening category-wise template studio sheet)
           _buildPillButton(
-            tooltip: 'Switch Template',
+            tooltip: 'Switch Template Style & Category',
             backgroundColor:
                 isDark ? const Color(0xFF334155) : const Color(0xFFF1F5F9),
-            child: PopupMenuButton<String>(
-              tooltip: 'Switch Template',
+            child: IconButton(
               icon: Icon(
-                Icons.tune_rounded,
+                Icons.palette_outlined,
                 size: 18,
                 color: isDark ? Colors.white : const Color(0xFF0F172A),
               ),
-              padding: EdgeInsets.zero,
-              onSelected: (id) => setState(() => _selectedTemplateId = id),
-              itemBuilder: (context) => [
-                for (final preset in templatePresets)
-                  PopupMenuItem(
-                    value: preset.id,
-                    child: Row(
-                      children: [
-                        Container(
-                          width: 14,
-                          height: 14,
-                          decoration: BoxDecoration(
-                            color: _templateColor(preset.color, Colors.blue),
-                            shape: BoxShape.circle,
-                          ),
-                        ),
-                        const SizedBox(width: 10),
-                        Expanded(
-                          child: Text(
-                            preset.name,
-                            style: TextStyle(
-                              fontWeight: preset.id == template?.id
-                                  ? FontWeight.bold
-                                  : FontWeight.normal,
-                              color: preset.id == template?.id
-                                  ? Theme.of(context).colorScheme.primary
-                                  : null,
-                            ),
-                          ),
-                        ),
-                        if (preset.id == template?.id)
-                          Icon(
-                            Icons.check,
-                            size: 16,
-                            color: Theme.of(context).colorScheme.primary,
-                          ),
-                      ],
-                    ),
-                  ),
-              ],
+              onPressed: () => _openTemplatePickerSheet(context),
             ),
           ),
 
@@ -1492,96 +1508,305 @@ class _InvoicePreviewScreenState extends State<InvoicePreviewScreen>
             ),
           ),
 
-          // BANK & PAYMENT DETAILS (Requested by user)
-          if (showBank &&
-              (bankName.isNotEmpty ||
-                  accountNumber.isNotEmpty ||
-                  upiId.isNotEmpty ||
-                  paymentLink.isNotEmpty)) ...[
-            const SizedBox(height: 18),
-            Container(
-              padding: const EdgeInsets.all(12),
-              decoration: BoxDecoration(
-                color: const Color(0xFFF0FDF4),
-                borderRadius: BorderRadius.circular(8),
-                border: Border.all(color: const Color(0xFFBBF7D0), width: 1.2),
-              ),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Row(
-                    children: [
-                      const Icon(Icons.account_balance_rounded,
-                          size: 16, color: Color(0xFF15803D)),
-                      const SizedBox(width: 6),
-                      Text(
-                        'BANK & PAYMENT DETAILS',
-                        style: TextStyle(
-                          fontSize: 11,
-                          fontWeight: FontWeight.w800,
-                          color: templateColor,
-                          letterSpacing: 0.5,
+          // -------------------------------------------------------------------
+          // ROW: BANK & PAYMENT DETAILS + QR CODE (LEFT) & SIGNATURE / STAMP (RIGHT)
+          // -------------------------------------------------------------------
+          const SizedBox(height: 20),
+          Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              // LEFT HALF: BANK & PAYMENT DETAILS WITH QR CODE (SCAN TO PAY)
+              Expanded(
+                flex: 6,
+                child: (showBank &&
+                        (bankName.isNotEmpty ||
+                            accountNumber.isNotEmpty ||
+                            upiId.isNotEmpty ||
+                            paymentLink.isNotEmpty ||
+                            (template?.showQrCode ?? true)))
+                    ? Container(
+                        padding: const EdgeInsets.all(12),
+                        decoration: BoxDecoration(
+                          color: const Color(0xFFF8FAFC),
+                          borderRadius: BorderRadius.circular(8),
+                          border: Border.all(color: const Color(0xFFE2E8F0), width: 1.2),
                         ),
-                      ),
-                    ],
-                  ),
-                  const SizedBox(height: 6),
-                  Wrap(
-                    spacing: 16,
-                    runSpacing: 4,
-                    children: [
-                      if (bankName.isNotEmpty)
-                        Text('Bank: $bankName',
-                            style: const TextStyle(
-                                fontSize: 12, fontWeight: FontWeight.w600)),
-                      if (accountHolder.isNotEmpty)
-                        Text('A/C Name: $accountHolder',
-                            style: const TextStyle(fontSize: 12)),
-                      if (accountNumber.isNotEmpty)
-                        Text('A/C No: $accountNumber',
-                            style: const TextStyle(
-                                fontSize: 12,
-                                fontWeight: FontWeight.bold,
-                                color: Color(0xFF0F172A))),
-                      if (ifscCode.isNotEmpty)
-                        Text('IFSC / SWIFT: $ifscCode',
-                            style: const TextStyle(
-                                fontSize: 12, fontWeight: FontWeight.w600)),
-                      if (upiId.isNotEmpty)
-                        Container(
-                          padding: const EdgeInsets.symmetric(
-                              horizontal: 6, vertical: 2),
-                          decoration: BoxDecoration(
-                            color: const Color(0xFFDCFCE7),
-                            borderRadius: BorderRadius.circular(4),
-                          ),
-                          child: Text('UPI: $upiId',
-                              style: const TextStyle(
-                                  fontSize: 11,
-                                  fontWeight: FontWeight.bold,
-                                  color: Color(0xFF166534))),
+                        child: Row(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            // Bank Details Text
+                            Expanded(
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  Row(
+                                    children: [
+                                      Icon(
+                                        Icons.account_balance_rounded,
+                                        size: 15,
+                                        color: templateColor,
+                                      ),
+                                      const SizedBox(width: 6),
+                                      Text(
+                                        'BANK & PAYMENT DETAILS',
+                                        style: TextStyle(
+                                          fontSize: 11,
+                                          fontWeight: FontWeight.w800,
+                                          color: templateColor,
+                                          letterSpacing: 0.5,
+                                        ),
+                                      ),
+                                    ],
+                                  ),
+                                  const SizedBox(height: 8),
+                                  if (bankName.isNotEmpty)
+                                    Padding(
+                                      padding: const EdgeInsets.only(bottom: 3),
+                                      child: Text(
+                                        'Bank: $bankName',
+                                        style: const TextStyle(
+                                          fontSize: 12,
+                                          fontWeight: FontWeight.w600,
+                                          color: Color(0xFF1E293B),
+                                        ),
+                                      ),
+                                    ),
+                                  if (accountHolder.isNotEmpty)
+                                    Padding(
+                                      padding: const EdgeInsets.only(bottom: 3),
+                                      child: Text(
+                                        'A/C Name: $accountHolder',
+                                        style: const TextStyle(
+                                          fontSize: 11.5,
+                                          color: Color(0xFF475569),
+                                        ),
+                                      ),
+                                    ),
+                                  if (accountNumber.isNotEmpty)
+                                    Padding(
+                                      padding: const EdgeInsets.only(bottom: 3),
+                                      child: Text(
+                                        'A/C No: $accountNumber',
+                                        style: const TextStyle(
+                                          fontSize: 12,
+                                          fontWeight: FontWeight.bold,
+                                          color: Color(0xFF0F172A),
+                                        ),
+                                      ),
+                                    ),
+                                  if (ifscCode.isNotEmpty)
+                                    Padding(
+                                      padding: const EdgeInsets.only(bottom: 3),
+                                      child: Text(
+                                        'IFSC / SWIFT: $ifscCode',
+                                        style: const TextStyle(
+                                          fontSize: 11.5,
+                                          fontWeight: FontWeight.w600,
+                                          color: Color(0xFF334155),
+                                        ),
+                                      ),
+                                    ),
+                                  if (upiId.isNotEmpty)
+                                    Padding(
+                                      padding: const EdgeInsets.only(top: 3),
+                                      child: Container(
+                                        padding: const EdgeInsets.symmetric(
+                                            horizontal: 7, vertical: 2.5),
+                                        decoration: BoxDecoration(
+                                          color: const Color(0xFFDCFCE7),
+                                          borderRadius: BorderRadius.circular(4),
+                                        ),
+                                        child: Text(
+                                          'UPI: $upiId',
+                                          style: const TextStyle(
+                                            fontSize: 11,
+                                            fontWeight: FontWeight.bold,
+                                            color: Color(0xFF166534),
+                                          ),
+                                        ),
+                                      ),
+                                    ),
+                                  if (paymentLink.isNotEmpty) ...[
+                                    const SizedBox(height: 4),
+                                    Text(
+                                      'Pay Link: $paymentLink',
+                                      style: const TextStyle(
+                                        fontSize: 10.5,
+                                        color: Color(0xFF2563EB),
+                                      ),
+                                      maxLines: 1,
+                                      overflow: TextOverflow.ellipsis,
+                                    ),
+                                  ],
+                                ],
+                              ),
+                            ),
+                            // QR Code with Scan to Pay badge
+                            if (template?.showQrCode ?? true) ...[
+                              const SizedBox(width: 10),
+                              Column(
+                                mainAxisSize: MainAxisSize.min,
+                                children: [
+                                  InvoiceQrCodeWidget(
+                                    data: upiId.isNotEmpty
+                                        ? 'upi://pay?pa=$upiId&pn=${Uri.encodeComponent(bizName.isNotEmpty ? bizName : "Merchant")}&am=${(invoice.balanceDue > 0 ? invoice.balanceDue : invoice.total).toStringAsFixed(2)}&cu=INR&tn=${Uri.encodeComponent("Invoice ${invoice.invoiceNumber}")}'
+                                        : (paymentLink.isNotEmpty
+                                            ? paymentLink
+                                            : (accountNumber.isNotEmpty
+                                                ? 'Bank: $bankName\nA/C: $accountNumber\nIFSC: $ifscCode\nBeneficiary: $accountHolder'
+                                                : 'Invoice: ${invoice.invoiceNumber}\nAmount: ${invoice.total} ${invoice.currencyCode}')),
+                                    size: 92,
+                                  ),
+                                  const SizedBox(height: 3),
+                                  Container(
+                                    padding: const EdgeInsets.symmetric(
+                                        horizontal: 6, vertical: 2),
+                                    decoration: BoxDecoration(
+                                      color: const Color(0xFF0F172A),
+                                      borderRadius: BorderRadius.circular(3),
+                                    ),
+                                    child: const Text(
+                                      'SCAN TO PAY',
+                                      style: TextStyle(
+                                        fontSize: 8,
+                                        fontWeight: FontWeight.w900,
+                                        color: Colors.white,
+                                        letterSpacing: 0.5,
+                                      ),
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            ],
+                          ],
                         ),
-                    ],
-                  ),
-                  if (paymentLink.isNotEmpty) ...[
-                    const SizedBox(height: 4),
-                    Text('Payment Link: $paymentLink',
-                        style: const TextStyle(
-                            fontSize: 11, color: Color(0xFF2563EB))),
-                  ],
-                ],
+                      )
+                    : const SizedBox.shrink(),
               ),
-            ),
-          ],
 
-          // NOTES, TERMS, PAYMENT INSTRUCTIONS
+              const SizedBox(width: 20),
+
+              // RIGHT HALF: SIGNATURE & STAMP SECTION (Ample Space for Sign/Stamp)
+              Expanded(
+                flex: 5,
+                child: ((_show('showSignature') && (template?.showSignature ?? true)) || _show('showStamp'))
+                    ? Column(
+                        crossAxisAlignment: CrossAxisAlignment.end,
+                        children: [
+                          if (bizName.isNotEmpty)
+                            Text(
+                              'For $bizName',
+                              style: const TextStyle(
+                                fontSize: 11.5,
+                                fontWeight: FontWeight.w700,
+                                color: Color(0xFF334155),
+                              ),
+                              textAlign: TextAlign.end,
+                            ),
+                          const SizedBox(height: 6),
+                          Row(
+                            mainAxisAlignment: MainAxisAlignment.end,
+                            crossAxisAlignment: CrossAxisAlignment.end,
+                            children: [
+                              if (stampImage != null)
+                                Padding(
+                                  padding: const EdgeInsets.only(right: 8),
+                                  child: stampImage,
+                                ),
+                              InkWell(
+                                onTap: _openDocuHubSigner,
+                                borderRadius: BorderRadius.circular(8),
+                                child: Container(
+                                  width: 165,
+                                  constraints: const BoxConstraints(minHeight: 75),
+                                  padding: const EdgeInsets.symmetric(
+                                      horizontal: 8, vertical: 4),
+                                  decoration: BoxDecoration(
+                                    border: Border.all(
+                                      color: signatureImage != null
+                                          ? Colors.transparent
+                                          : const Color(0xFF93C5FD).withAlpha(120),
+                                      style: signatureImage != null
+                                          ? BorderStyle.none
+                                          : BorderStyle.solid,
+                                    ),
+                                    borderRadius: BorderRadius.circular(6),
+                                    color: signatureImage == null
+                                        ? const Color(0xFFF8FAFC)
+                                        : Colors.transparent,
+                                  ),
+                                  child: Column(
+                                    mainAxisSize: MainAxisSize.min,
+                                    mainAxisAlignment: MainAxisAlignment.end,
+                                    children: [
+                                      if (signatureImage != null) ...[
+                                        signatureImage,
+                                        const SizedBox(height: 4),
+                                      ] else ...[
+                                        const SizedBox(height: 10),
+                                        const Icon(
+                                          Icons.draw_rounded,
+                                          size: 28,
+                                          color: Color(0xFF2563EB),
+                                        ),
+                                        const SizedBox(height: 2),
+                                        const Text(
+                                          'Tap to Sign',
+                                          style: TextStyle(
+                                            fontSize: 10,
+                                            color: Color(0xFF2563EB),
+                                            fontWeight: FontWeight.bold,
+                                          ),
+                                        ),
+                                        const SizedBox(height: 8),
+                                      ],
+                                      Container(
+                                        width: 145,
+                                        height: 1,
+                                        color: const Color(0xFF94A3B8),
+                                      ),
+                                    ],
+                                  ),
+                                ),
+                              ),
+                            ],
+                          ),
+                          const SizedBox(height: 5),
+                          Text(
+                            signeeTitle,
+                            style: const TextStyle(
+                              fontSize: 11,
+                              fontWeight: FontWeight.w700,
+                              color: Color(0xFF334155),
+                            ),
+                            textAlign: TextAlign.end,
+                          ),
+                          if (signeeName.isNotEmpty)
+                            Text(
+                              signeeName,
+                              style: const TextStyle(
+                                fontSize: 10.5,
+                                color: Color(0xFF64748B),
+                              ),
+                              textAlign: TextAlign.end,
+                            ),
+                        ],
+                      )
+                    : const SizedBox.shrink(),
+              ),
+            ],
+          ),
+
+          // -------------------------------------------------------------------
+          // FULL WIDTH (TOTAL DOWN): NOTES, TERMS & CONDITIONS, PAYMENT INSTRUCTIONS
+          // -------------------------------------------------------------------
           if ((_show('showNotes') && (template?.showNotes ?? true) && invoice.notes.isNotEmpty) ||
               (_show('showTerms') && (template?.showTerms ?? true) && invoice.terms.isNotEmpty) ||
               (_show('showPaymentInstructions') &&
                   (template?.showPaymentInstructions ?? true) &&
                   invoice.paymentInstructions.isNotEmpty) ||
               customFooter.any((f) => f['isVisible'] != false)) ...[
-            const Divider(height: 36),
+            const Divider(height: 32),
             if (_show('showNotes') && (template?.showNotes ?? true) && invoice.notes.isNotEmpty) ...[
               Text(
                 notesLabel.toUpperCase(),
@@ -1591,12 +1816,12 @@ class _InvoicePreviewScreenState extends State<InvoicePreviewScreen>
                   color: templateColor,
                 ),
               ),
-              const SizedBox(height: 4),
+              const SizedBox(height: 3),
               Text(
                 invoice.notes,
-                style: const TextStyle(fontSize: 13, color: Color(0xFF334155)),
+                style: const TextStyle(fontSize: 12.5, color: Color(0xFF334155)),
               ),
-              const SizedBox(height: 12),
+              const SizedBox(height: 10),
             ],
             if (_show('showTerms') && (template?.showTerms ?? true) && invoice.terms.isNotEmpty) ...[
               Text(
@@ -1607,12 +1832,12 @@ class _InvoicePreviewScreenState extends State<InvoicePreviewScreen>
                   color: templateColor,
                 ),
               ),
-              const SizedBox(height: 4),
+              const SizedBox(height: 3),
               Text(
                 invoice.terms,
-                style: const TextStyle(fontSize: 12, color: Color(0xFF475569)),
+                style: const TextStyle(fontSize: 11.5, color: Color(0xFF475569)),
               ),
-              const SizedBox(height: 12),
+              const SizedBox(height: 10),
             ],
             if (_show('showPaymentInstructions') &&
                 (template?.showPaymentInstructions ?? true) &&
@@ -1625,117 +1850,24 @@ class _InvoicePreviewScreenState extends State<InvoicePreviewScreen>
                   color: templateColor,
                 ),
               ),
-              const SizedBox(height: 4),
+              const SizedBox(height: 3),
               Text(
                 invoice.paymentInstructions,
-                style: const TextStyle(fontSize: 12, color: Color(0xFF475569)),
+                style: const TextStyle(fontSize: 11.5, color: Color(0xFF475569)),
               ),
             ],
             for (final foot in customFooter)
               if (foot['isVisible'] != false && foot['label']?.toString().isNotEmpty == true) ...[
-                const SizedBox(height: 10),
+                const SizedBox(height: 8),
                 Text(
                   foot['label'].toString().toUpperCase(),
                   style: TextStyle(fontSize: 11, fontWeight: FontWeight.w800, color: templateColor),
                 ),
                 if (foot['value']?.toString().isNotEmpty == true) ...[
                   const SizedBox(height: 2),
-                  Text(foot['value'].toString(), style: const TextStyle(fontSize: 12, color: Color(0xFF475569))),
+                  Text(foot['value'].toString(), style: const TextStyle(fontSize: 11.5, color: Color(0xFF475569))),
                 ],
               ],
-          ],
-
-          // SIGNATURE & STAMP BLOCK (with tap to capture sign via DocuHub)
-          if ((_show('showSignature') && (template?.showSignature ?? true)) || _show('showStamp')) ...[
-            const Divider(height: 36),
-            Row(
-              mainAxisAlignment: MainAxisAlignment.spaceBetween,
-              crossAxisAlignment: CrossAxisAlignment.end,
-              children: [
-                if (stampImage != null)
-                  Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      stampImage,
-                      const SizedBox(height: 4),
-                      const Text(
-                        'Official Stamp',
-                        style: TextStyle(fontSize: 11, color: Colors.grey),
-                      ),
-                    ],
-                  )
-                else
-                  const SizedBox.shrink(),
-
-                // Signature block
-                if (_show('showSignature') && (template?.showSignature ?? true))
-                  InkWell(
-                    onTap: _openDocuHubSigner,
-                    borderRadius: BorderRadius.circular(8),
-                    child: Container(
-                      padding: const EdgeInsets.all(8),
-                      decoration: BoxDecoration(
-                        border: Border.all(
-                          color: signatureImage != null
-                              ? Colors.transparent
-                              : Colors.blue.withAlpha(80),
-                          style: signatureImage != null
-                              ? BorderStyle.none
-                              : BorderStyle.solid,
-                        ),
-                        borderRadius: BorderRadius.circular(8),
-                      ),
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.center,
-                        children: [
-                          if (signatureImage != null) ...[
-                            signatureImage,
-                            const SizedBox(height: 6),
-                          ] else ...[
-                            const Icon(
-                              Icons.draw_rounded,
-                              size: 32,
-                              color: Color(0xFF2563EB),
-                            ),
-                            const SizedBox(height: 4),
-                            const Text(
-                              'Tap to add signature',
-                              style: TextStyle(
-                                fontSize: 11,
-                                color: Color(0xFF2563EB),
-                                fontWeight: FontWeight.bold,
-                              ),
-                            ),
-                            const SizedBox(height: 6),
-                          ],
-                          Container(
-                            width: 170,
-                            height: 1,
-                            color: const Color(0xFF94A3B8),
-                          ),
-                          const SizedBox(height: 4),
-                          Text(
-                            signeeTitle,
-                            style: const TextStyle(
-                              fontSize: 11,
-                              fontWeight: FontWeight.w700,
-                              color: Color(0xFF334155),
-                            ),
-                          ),
-                          if (signeeName.isNotEmpty)
-                            Text(
-                              signeeName,
-                              style: const TextStyle(
-                                fontSize: 11,
-                                color: Color(0xFF64748B),
-                              ),
-                            ),
-                        ],
-                      ),
-                    ),
-                  ),
-              ],
-            ),
           ],
           if (template?.footer.isNotEmpty == true) ...[
             const SizedBox(height: 20),
@@ -1809,6 +1941,9 @@ class _LineItemsTable extends StatelessWidget {
       }
     }
 
+    final showDuty = _show('showItemDuty') || invoice.items.any((it) => it.dutyCount > 0);
+    final dutyHeader = _label('customDutyHeader', 'Duty');
+
     return Column(
       children: [
         Container(
@@ -1833,6 +1968,11 @@ class _LineItemsTable extends StatelessWidget {
                   Expanded(
                     flex: 2,
                     child: Text(qtyHeader, textAlign: TextAlign.end),
+                  ),
+                if (showDuty)
+                  Expanded(
+                    flex: 2,
+                    child: Text(dutyHeader, textAlign: TextAlign.end),
                   ),
                 if (_show('showItemRate'))
                   Expanded(
@@ -1884,13 +2024,29 @@ class _LineItemsTable extends StatelessWidget {
                 children: [
                   Expanded(
                     flex: 5,
-                    child: Text(
-                      item.description,
-                      style: const TextStyle(
-                        fontSize: 13,
-                        fontWeight: FontWeight.w500,
-                        color: Color(0xFF1E293B),
-                      ),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          item.description,
+                          style: const TextStyle(
+                            fontSize: 13,
+                            fontWeight: FontWeight.w500,
+                            color: Color(0xFF1E293B),
+                          ),
+                        ),
+                        if (item.itemDetails.isNotEmpty)
+                          Padding(
+                            padding: const EdgeInsets.only(top: 2),
+                            child: Text(
+                              item.itemDetails,
+                              style: const TextStyle(
+                                fontSize: 11,
+                                color: Color(0xFF64748B),
+                              ),
+                            ),
+                          ),
+                      ],
                     ),
                   ),
                   if (_show('showItemQty'))
@@ -1899,6 +2055,15 @@ class _LineItemsTable extends StatelessWidget {
                       child: Text(
                         '${_quantity(item.quantity)}'
                         '${_show('showItemUnit') ? ' ${item.unit}' : ''}',
+                        textAlign: TextAlign.end,
+                        style: const TextStyle(fontSize: 13),
+                      ),
+                    ),
+                  if (showDuty)
+                    Expanded(
+                      flex: 2,
+                      child: Text(
+                        item.dutyCount > 0 ? _quantity(item.dutyCount) : '−',
                         textAlign: TextAlign.end,
                         style: const TextStyle(fontSize: 13),
                       ),
@@ -2053,4 +2218,469 @@ Color _templateColor(String? hex, Color fallback) {
     return fallback;
   }
   return Color(0xFF000000 | int.parse(value, radix: 16));
+}
+
+class InvoiceQrCodeWidget extends StatelessWidget {
+  const InvoiceQrCodeWidget({
+    required this.data,
+    this.size = 92,
+    this.color = const Color(0xFF0F172A),
+    this.backgroundColor = Colors.white,
+    super.key,
+  });
+
+  final String data;
+  final double size;
+  final Color color;
+  final Color backgroundColor;
+
+  @override
+  Widget build(BuildContext context) {
+    if (data.trim().isEmpty) return const SizedBox.shrink();
+    try {
+      final qrCode = QrCode.fromData(
+        data: data,
+        errorCorrectLevel: QrErrorCorrectLevel.M,
+      );
+      final qrImage = QrImage(qrCode);
+      return Container(
+        width: size,
+        height: size,
+        decoration: BoxDecoration(
+          color: backgroundColor,
+          borderRadius: BorderRadius.circular(6),
+          border: Border.all(color: const Color(0xFFCBD5E1)),
+        ),
+        padding: const EdgeInsets.all(5),
+        child: CustomPaint(
+          size: Size(size - 10, size - 10),
+          painter: _QrPainter(qrImage: qrImage, color: color),
+        ),
+      );
+    } catch (_) {
+      return const SizedBox.shrink();
+    }
+  }
+}
+
+class _QrPainter extends CustomPainter {
+  _QrPainter({required this.qrImage, required this.color});
+
+  final QrImage qrImage;
+  final Color color;
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    final paint = Paint()
+      ..color = color
+      ..style = PaintingStyle.fill;
+    final int count = qrImage.moduleCount;
+    final double pixelSize = size.width / count;
+
+    for (int r = 0; r < count; r++) {
+      for (int c = 0; c < count; c++) {
+        if (qrImage.isDark(r, c)) {
+          final rect = Rect.fromLTWH(
+            c * pixelSize,
+            r * pixelSize,
+            pixelSize,
+            pixelSize,
+          );
+          canvas.drawRect(rect, paint);
+        }
+      }
+    }
+  }
+
+  @override
+  bool shouldRepaint(covariant _QrPainter oldDelegate) =>
+      oldDelegate.qrImage != qrImage || oldDelegate.color != color;
+}
+
+class _TemplatePickerModal extends StatefulWidget {
+  const _TemplatePickerModal({
+    required this.selectedId,
+    required this.onSelectTemplate,
+    required this.onSetDefault,
+  });
+
+  final String? selectedId;
+  final ValueChanged<TemplateConfig> onSelectTemplate;
+  final ValueChanged<TemplateConfig> onSetDefault;
+
+  @override
+  State<_TemplatePickerModal> createState() => _TemplatePickerModalState();
+}
+
+class _TemplatePickerModalState extends State<_TemplatePickerModal> {
+  String _selectedCategory = 'All';
+  String _selectedStyle = 'All';
+  late String? _currentId = widget.selectedId;
+
+  static const _categories = [
+    ('All', 'All Categories', Icons.apps_rounded),
+    ('Security Agency', '🛡️ Security Agency', Icons.shield_outlined),
+    ('HR & Staffing', '👥 HR & Staffing', Icons.people_outline_rounded),
+    ('IT & Consulting', '💻 IT & Consulting', Icons.terminal_rounded),
+    ('Retail & GST', '🛍️ Retail & GST', Icons.storefront_rounded),
+    ('Corporate Suite', '🏢 Corporate Suite', Icons.apartment_rounded),
+  ];
+
+  static const _styles = [
+    'All',
+    'Modern',
+    'Classic',
+    'Corporate',
+    'Smart',
+    'Minimal',
+    'Industry',
+  ];
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final isDark = theme.brightness == Brightness.dark;
+
+    final filtered = templatePresets.where((p) {
+      final matchCat =
+          _selectedCategory == 'All' || p.businessCategory == _selectedCategory;
+      final matchStyle =
+          _selectedStyle == 'All' || p.designStyle == _selectedStyle;
+      return matchCat && matchStyle;
+    }).toList();
+
+    return Container(
+      constraints: BoxConstraints(
+        maxHeight: MediaQuery.sizeOf(context).height * 0.88,
+      ),
+      decoration: BoxDecoration(
+        color: isDark ? const Color(0xFF1E293B) : Colors.white,
+        borderRadius: const BorderRadius.vertical(top: Radius.circular(24)),
+      ),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          // Drag handle
+          Center(
+            child: Container(
+              margin: const EdgeInsets.only(top: 10, bottom: 8),
+              width: 44,
+              height: 4,
+              decoration: BoxDecoration(
+                color: Colors.grey.withAlpha(80),
+                borderRadius: BorderRadius.circular(2),
+              ),
+            ),
+          ),
+          // Title Header
+          Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 6),
+            child: Row(
+              children: [
+                Container(
+                  padding: const EdgeInsets.all(8),
+                  decoration: BoxDecoration(
+                    color: const Color(0xFF2563EB).withAlpha(30),
+                    borderRadius: BorderRadius.circular(10),
+                  ),
+                  child: const Icon(Icons.palette_rounded,
+                      color: Color(0xFF2563EB), size: 20),
+                ),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        'Select Invoice Template',
+                        style: theme.textTheme.titleMedium?.copyWith(
+                          fontWeight: FontWeight.w800,
+                        ),
+                      ),
+                      Text(
+                        'Industry presets with auto duty, rates & modern layouts',
+                        style: TextStyle(
+                          fontSize: 11,
+                          color: isDark
+                              ? Colors.grey[400]
+                              : const Color(0xFF64748B),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+                IconButton(
+                  icon: const Icon(Icons.close_rounded),
+                  onPressed: () => Navigator.pop(context),
+                ),
+              ],
+            ),
+          ),
+
+          // Category Filter Tabs
+          SingleChildScrollView(
+            scrollDirection: Axis.horizontal,
+            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 6),
+            child: Row(
+              children: _categories.map((cat) {
+                final isSelected = _selectedCategory == cat.$1;
+                return Padding(
+                  padding: const EdgeInsets.only(right: 8),
+                  child: ChoiceChip(
+                    label: Text(
+                      cat.$2,
+                      style: TextStyle(
+                        fontSize: 12,
+                        fontWeight:
+                            isSelected ? FontWeight.bold : FontWeight.w500,
+                        color: isSelected ? Colors.white : null,
+                      ),
+                    ),
+                    selected: isSelected,
+                    selectedColor: const Color(0xFF2563EB),
+                    onSelected: (val) {
+                      if (val) setState(() => _selectedCategory = cat.$1);
+                    },
+                  ),
+                );
+              }).toList(),
+            ),
+          ),
+
+          // Style Filter Chips
+          SingleChildScrollView(
+            scrollDirection: Axis.horizontal,
+            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
+            child: Row(
+              children: [
+                Text(
+                  'Style: ',
+                  style: TextStyle(
+                    fontSize: 11,
+                    fontWeight: FontWeight.bold,
+                    color: isDark ? Colors.grey[400] : const Color(0xFF64748B),
+                  ),
+                ),
+                ..._styles.map((style) {
+                  final isSelected = _selectedStyle == style;
+                  return Padding(
+                    padding: const EdgeInsets.only(right: 6),
+                    child: FilterChip(
+                      label: Text(
+                        style,
+                        style: TextStyle(
+                          fontSize: 11,
+                          fontWeight:
+                              isSelected ? FontWeight.bold : FontWeight.normal,
+                          color: isSelected ? const Color(0xFF2563EB) : null,
+                        ),
+                      ),
+                      selected: isSelected,
+                      showCheckmark: false,
+                      visualDensity: VisualDensity.compact,
+                      onSelected: (val) {
+                        setState(() => _selectedStyle = style);
+                      },
+                    ),
+                  );
+                }),
+              ],
+            ),
+          ),
+          const Divider(height: 16),
+
+          // Presets Grid / List
+          Expanded(
+            child: ListView.separated(
+              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+              itemCount: filtered.length,
+              separatorBuilder: (_, __) => const SizedBox(height: 10),
+              itemBuilder: (context, index) {
+                final preset = filtered[index];
+                final isSelected = preset.id == _currentId;
+                final color = _templateColor(preset.color, Colors.blue);
+
+                return InkWell(
+                  onTap: () {
+                    setState(() => _currentId = preset.id);
+                    widget.onSelectTemplate(preset);
+                    Navigator.pop(context);
+                  },
+                  borderRadius: BorderRadius.circular(12),
+                  child: Container(
+                    padding: const EdgeInsets.all(12),
+                    decoration: BoxDecoration(
+                      color: isSelected
+                          ? (isDark
+                              ? const Color(0xFF1E3A8A).withAlpha(60)
+                              : const Color(0xFFEFF6FF))
+                          : (isDark
+                              ? const Color(0xFF334155).withAlpha(50)
+                              : const Color(0xFFF8FAFC)),
+                      borderRadius: BorderRadius.circular(12),
+                      border: Border.all(
+                        color: isSelected
+                            ? const Color(0xFF2563EB)
+                            : (isDark
+                                ? const Color(0xFF475569)
+                                : const Color(0xFFE2E8F0)),
+                        width: isSelected ? 2 : 1,
+                      ),
+                    ),
+                    child: Row(
+                      crossAxisAlignment: CrossAxisAlignment.center,
+                      children: [
+                        // Color Pill & Icon
+                        Container(
+                          width: 42,
+                          height: 42,
+                          decoration: BoxDecoration(
+                            color: color.withAlpha(35),
+                            borderRadius: BorderRadius.circular(10),
+                            border: Border.all(color: color, width: 1.5),
+                          ),
+                          child: Center(
+                            child: Container(
+                              width: 14,
+                              height: 14,
+                              decoration: BoxDecoration(
+                                color: color,
+                                shape: BoxShape.circle,
+                              ),
+                            ),
+                          ),
+                        ),
+                        const SizedBox(width: 12),
+                        // Details
+                        Expanded(
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Row(
+                                children: [
+                                  Expanded(
+                                    child: Text(
+                                      preset.name,
+                                      style: TextStyle(
+                                        fontSize: 14,
+                                        fontWeight: isSelected
+                                            ? FontWeight.w800
+                                            : FontWeight.w700,
+                                        color: isDark
+                                            ? Colors.white
+                                            : const Color(0xFF0F172A),
+                                      ),
+                                    ),
+                                  ),
+                                  if (isSelected)
+                                    Container(
+                                      padding: const EdgeInsets.symmetric(
+                                          horizontal: 7, vertical: 2),
+                                      decoration: BoxDecoration(
+                                        color: const Color(0xFF10B981),
+                                        borderRadius:
+                                            BorderRadius.circular(12),
+                                      ),
+                                      child: const Text(
+                                        'ACTIVE',
+                                        style: TextStyle(
+                                          fontSize: 9,
+                                          fontWeight: FontWeight.w900,
+                                          color: Colors.white,
+                                        ),
+                                      ),
+                                    ),
+                                ],
+                              ),
+                              const SizedBox(height: 3),
+                              Wrap(
+                                spacing: 6,
+                                runSpacing: 4,
+                                children: [
+                                  Container(
+                                    padding: const EdgeInsets.symmetric(
+                                        horizontal: 6, vertical: 1.5),
+                                    decoration: BoxDecoration(
+                                      color: isDark
+                                          ? const Color(0xFF475569)
+                                          : const Color(0xFFE2E8F0),
+                                      borderRadius: BorderRadius.circular(4),
+                                    ),
+                                    child: Text(
+                                      preset.businessCategory,
+                                      style: TextStyle(
+                                        fontSize: 9.5,
+                                        fontWeight: FontWeight.w600,
+                                        color: isDark
+                                            ? Colors.grey[300]
+                                            : const Color(0xFF334155),
+                                      ),
+                                    ),
+                                  ),
+                                  Container(
+                                    padding: const EdgeInsets.symmetric(
+                                        horizontal: 6, vertical: 1.5),
+                                    decoration: BoxDecoration(
+                                      color:
+                                          const Color(0xFF3B82F6).withAlpha(30),
+                                      borderRadius: BorderRadius.circular(4),
+                                    ),
+                                    child: Text(
+                                      'Style: ${preset.designStyle}',
+                                      style: const TextStyle(
+                                        fontSize: 9.5,
+                                        fontWeight: FontWeight.w700,
+                                        color: Color(0xFF2563EB),
+                                      ),
+                                    ),
+                                  ),
+                                  if (preset.showDuty)
+                                    Container(
+                                      padding: const EdgeInsets.symmetric(
+                                          horizontal: 6, vertical: 1.5),
+                                      decoration: BoxDecoration(
+                                        color: const Color(0xFF10B981)
+                                            .withAlpha(25),
+                                        borderRadius: BorderRadius.circular(4),
+                                      ),
+                                      child: Text(
+                                        preset.dutyHeader,
+                                        style: const TextStyle(
+                                          fontSize: 9.5,
+                                          fontWeight: FontWeight.w700,
+                                          color: Color(0xFF059669),
+                                        ),
+                                      ),
+                                    ),
+                                ],
+                              ),
+                            ],
+                          ),
+                        ),
+                        const SizedBox(width: 8),
+                        // Set as Default button
+                        OutlinedButton(
+                          style: OutlinedButton.styleFrom(
+                            padding: const EdgeInsets.symmetric(
+                                horizontal: 10, vertical: 6),
+                            visualDensity: VisualDensity.compact,
+                          ),
+                          onPressed: () {
+                            widget.onSetDefault(preset);
+                            Navigator.pop(context);
+                          },
+                          child: const Text('Set Default',
+                              style: TextStyle(fontSize: 11)),
+                        ),
+                      ],
+                    ),
+                  ),
+                );
+              },
+            ),
+          ),
+        ],
+      ),
+    );
+  }
 }

@@ -37,6 +37,27 @@ class _TemplatesScreenState extends State<TemplatesScreen> {
   Map<String, dynamic> _profile = <String, dynamic>{};
   String _presetId = 'gst_tax';
   bool _saved = false;
+  String _selectedCategory = 'All';
+  String _selectedStyle = 'All';
+
+  static const _categories = [
+    ('All', 'All Categories'),
+    ('Security Agency', '🛡️ Security Agency'),
+    ('HR & Staffing', '👥 HR & Staffing'),
+    ('IT & Consulting', '💻 IT & Consulting'),
+    ('Retail & GST', '🛍️ Retail & GST'),
+    ('Corporate Suite', '🏢 Corporate Suite'),
+  ];
+
+  static const _styles = [
+    'All',
+    'Modern',
+    'Classic',
+    'Corporate',
+    'Smart',
+    'Minimal',
+    'Industry',
+  ];
 
   @override
   void initState() {
@@ -75,6 +96,8 @@ class _TemplatesScreenState extends State<TemplatesScreen> {
         showNotes: _config.showNotes,
         showTerms: _config.showTerms,
         showSignature: _config.showSignature,
+        showTaxBreakdown: preset.showTaxBreakdown,
+        showPaymentInstructions: preset.showPaymentInstructions,
       );
       _saved = false;
     });
@@ -159,6 +182,7 @@ class _TemplatesScreenState extends State<TemplatesScreen> {
 
     // Synchronize section visibility into localSettings so preview and editor follow
     final updatedSettings = Map<String, Object?>.from(_localSettings)
+      ..['preferredTemplateId'] = _config.id
       ..['showLogo'] = _config.showLogo
       ..['showBillFrom'] = _config.showBillFrom
       ..['showBillTo'] = _config.showBillTo
@@ -173,7 +197,9 @@ class _TemplatesScreenState extends State<TemplatesScreen> {
       ..['customItemHeader'] = _config.itemHeader
       ..['customQtyHeader'] = _config.quantityHeader
       ..['customRateHeader'] = _config.rateHeader
-      ..['customAmountHeader'] = _config.amountHeader;
+      ..['customAmountHeader'] = _config.amountHeader
+      ..['customDutyHeader'] = _config.dutyHeader
+      ..['showItemDuty'] = _config.showDuty;
 
     widget.onSave?.call(_config);
     widget.onSaveLocalSettings?.call(updatedSettings);
@@ -582,70 +608,103 @@ class _TemplatesScreenState extends State<TemplatesScreen> {
                   ),
                 ),
 
-                // BANK DETAILS SECTION (Requested by User)
-                if (_config.showBankDetails) ...[
-                  const SizedBox(height: 8),
-                  Container(
-                    width: double.infinity,
-                    padding: const EdgeInsets.all(7),
-                    decoration: BoxDecoration(
-                      color: const Color(0xFFF0FDF4),
-                      borderRadius: BorderRadius.circular(6),
-                      border: Border.all(color: const Color(0xFFBBF7D0)),
-                    ),
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Row(
-                          children: [
-                            const Icon(Icons.account_balance_rounded, size: 12, color: Color(0xFF15803D)),
-                            const SizedBox(width: 4),
-                            Text(
-                              'BANK & PAYMENT DETAILS',
-                              style: TextStyle(
-                                fontSize: 8,
-                                fontWeight: FontWeight.w800,
-                                color: brandColor,
+                // ROW: BANK & PAYMENT DETAILS + QR (LEFT) & SIGNATURE / STAMP (RIGHT)
+                const SizedBox(height: 10),
+                Row(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    // LEFT: Bank Details & Mini QR
+                    Expanded(
+                      flex: 6,
+                      child: _config.showBankDetails
+                          ? Container(
+                              padding: const EdgeInsets.all(7),
+                              decoration: BoxDecoration(
+                                color: const Color(0xFFF0FDF4),
+                                borderRadius: BorderRadius.circular(6),
+                                border: Border.all(color: const Color(0xFFBBF7D0)),
                               ),
-                            ),
-                          ],
-                        ),
-                        const SizedBox(height: 2),
-                        Text(
-                          'Bank: $bankName  |  A/C: $accNo  |  IFSC: $ifsc  |  UPI: $upi',
-                          style: const TextStyle(fontSize: 7.5, color: Color(0xFF166534), fontWeight: FontWeight.w500),
-                        ),
-                      ],
+                              child: Row(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  Expanded(
+                                    child: Column(
+                                      crossAxisAlignment: CrossAxisAlignment.start,
+                                      children: [
+                                        Row(
+                                          children: [
+                                            const Icon(Icons.account_balance_rounded, size: 11, color: Color(0xFF15803D)),
+                                            const SizedBox(width: 3),
+                                            Text(
+                                              'BANK & PAYMENT DETAILS',
+                                              style: TextStyle(
+                                                fontSize: 7.5,
+                                                fontWeight: FontWeight.w800,
+                                                color: brandColor,
+                                              ),
+                                            ),
+                                          ],
+                                        ),
+                                        const SizedBox(height: 2),
+                                        Text('Bank: $bankName  |  A/C: $accNo', style: const TextStyle(fontSize: 7, color: Color(0xFF166534))),
+                                        Text('IFSC: $ifsc  |  UPI: $upi', style: const TextStyle(fontSize: 7, fontWeight: FontWeight.bold, color: Color(0xFF166534))),
+                                      ],
+                                    ),
+                                  ),
+                                  if (_config.showQrCode) ...[
+                                    const SizedBox(width: 4),
+                                    Container(
+                                      width: 28,
+                                      height: 28,
+                                      decoration: BoxDecoration(
+                                        color: Colors.white,
+                                        border: Border.all(color: const Color(0xFFCBD5E1)),
+                                        borderRadius: BorderRadius.circular(3),
+                                      ),
+                                      child: const Icon(Icons.qr_code_2_rounded, size: 24, color: Color(0xFF0F172A)),
+                                    ),
+                                  ],
+                                ],
+                              ),
+                            )
+                          : const SizedBox.shrink(),
                     ),
-                  ),
-                ],
 
-                // NOTES & TERMS
+                    const SizedBox(width: 10),
+
+                    // RIGHT: Signature & Stamp
+                    Expanded(
+                      flex: 4,
+                      child: _config.showSignature
+                          ? Column(
+                              crossAxisAlignment: CrossAxisAlignment.end,
+                              children: [
+                                Text(
+                                  'For $bizName',
+                                  style: const TextStyle(fontSize: 7.5, fontWeight: FontWeight.bold, color: Color(0xFF334155)),
+                                  textAlign: TextAlign.end,
+                                ),
+                                const SizedBox(height: 12),
+                                Container(width: 80, height: 1, color: const Color(0xFF94A3B8)),
+                                const SizedBox(height: 2),
+                                const Text(
+                                  'Authorized Signatory',
+                                  style: TextStyle(fontSize: 7, fontStyle: FontStyle.italic, color: Color(0xFF475569)),
+                                ),
+                              ],
+                            )
+                          : const SizedBox.shrink(),
+                    ),
+                  ],
+                ),
+
+                // NOTES & TERMS (Full Width Below)
                 if (_config.showNotes || _config.showTerms) ...[
                   const SizedBox(height: 8),
                   if (_config.showNotes)
                     const Text('Notes: Thank you for your business!', style: TextStyle(fontSize: 7.5, color: Color(0xFF64748B))),
                   if (_config.showTerms)
                     const Text('Terms: Payment due within specified period.', style: TextStyle(fontSize: 7, color: Color(0xFF94A3B8))),
-                ],
-
-                // SIGNATURE BLOCK
-                if (_config.showSignature) ...[
-                  const SizedBox(height: 10),
-                  Align(
-                    alignment: Alignment.centerRight,
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.center,
-                      children: [
-                        Container(width: 90, height: 1, color: const Color(0xFF94A3B8)),
-                        const SizedBox(height: 2),
-                        const Text(
-                          'Authorized Signatory',
-                          style: TextStyle(fontSize: 7.5, fontStyle: FontStyle.italic, color: Color(0xFF475569)),
-                        ),
-                      ],
-                    ),
-                  ),
                 ],
 
                 if (_config.footer.isNotEmpty) ...[
@@ -971,33 +1030,143 @@ class _TemplatesScreenState extends State<TemplatesScreen> {
   }
 
   // ---------------------------------------------------------------------------
-  // SECTION 3: TEMPLATE PRESETS SELECTOR
+  // SECTION 3: TEMPLATE PRESETS SELECTOR (BY BUSINESS CATEGORY & STYLE)
   // ---------------------------------------------------------------------------
   Widget _buildPresetsCard() {
+    final filtered = templatePresets.where((p) {
+      final matchCat =
+          _selectedCategory == 'All' || p.businessCategory == _selectedCategory;
+      final matchStyle =
+          _selectedStyle == 'All' || p.designStyle == _selectedStyle;
+      return matchCat && matchStyle;
+    }).toList();
+
     return AppCard(
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Text('Choose Template Style / Preset', style: Theme.of(context).textTheme.titleMedium),
+          Row(
+            children: [
+              const Icon(Icons.category_rounded, color: Color(0xFF2563EB)),
+              const SizedBox(width: 8),
+              Expanded(
+                child: Text('Business Category & Style Templates',
+                    style: Theme.of(context).textTheme.titleMedium),
+              ),
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                decoration: BoxDecoration(
+                  color: const Color(0xFFEFF6FF),
+                  borderRadius: BorderRadius.circular(12),
+                  border: Border.all(color: const Color(0xFFBFDBFE)),
+                ),
+                child: Text(
+                  '${filtered.length} Templates',
+                  style: const TextStyle(
+                      fontSize: 11,
+                      fontWeight: FontWeight.bold,
+                      color: Color(0xFF1D4ED8)),
+                ),
+              ),
+            ],
+          ),
           const SizedBox(height: 4),
           const Text(
-            'Select an industry-tailored layout preset to quickly configure colors, headers, and format.',
+            'Select templates tailored for your industry (Security Agencies, Staffing, IT, Retail & GST) with specialized duty & salary formulas.',
             style: TextStyle(fontSize: 12, color: Color(0xFF64748B)),
           ),
           const SizedBox(height: 12),
 
+          // 1. Business Category Filter Chips
+          SingleChildScrollView(
+            scrollDirection: Axis.horizontal,
+            child: Row(
+              children: _categories.map((cat) {
+                final isSelected = _selectedCategory == cat.$1;
+                return Padding(
+                  padding: const EdgeInsets.only(right: 8),
+                  child: ChoiceChip(
+                    label: Text(
+                      cat.$2,
+                      style: TextStyle(
+                        fontSize: 12,
+                        fontWeight:
+                            isSelected ? FontWeight.bold : FontWeight.w500,
+                        color: isSelected ? Colors.white : null,
+                      ),
+                    ),
+                    selected: isSelected,
+                    selectedColor: const Color(0xFF2563EB),
+                    onSelected: (val) {
+                      if (val) setState(() => _selectedCategory = cat.$1);
+                    },
+                  ),
+                );
+              }).toList(),
+            ),
+          ),
+          const SizedBox(height: 8),
+
+          // 2. Design Style Filter Chips
+          SingleChildScrollView(
+            scrollDirection: Axis.horizontal,
+            child: Row(
+              children: [
+                const Text(
+                  'Style: ',
+                  style: TextStyle(
+                    fontSize: 11,
+                    fontWeight: FontWeight.bold,
+                    color: Color(0xFF64748B),
+                  ),
+                ),
+                ..._styles.map((style) {
+                  final isSelected = _selectedStyle == style;
+                  return Padding(
+                    padding: const EdgeInsets.only(right: 6),
+                    child: FilterChip(
+                      label: Text(
+                        style,
+                        style: TextStyle(
+                          fontSize: 11,
+                          fontWeight:
+                              isSelected ? FontWeight.bold : FontWeight.normal,
+                          color: isSelected ? const Color(0xFF2563EB) : null,
+                        ),
+                      ),
+                      selected: isSelected,
+                      showCheckmark: false,
+                      visualDensity: VisualDensity.compact,
+                      onSelected: (val) {
+                        setState(() => _selectedStyle = style);
+                      },
+                    ),
+                  );
+                }),
+              ],
+            ),
+          ),
+          const SizedBox(height: 12),
+
+          // 3. Grid of Filtered Templates
           LayoutBuilder(
             builder: (context, constraints) {
-              final crossAxisCount = constraints.maxWidth > 500 ? 3 : 2;
-              return GridView.count(
-                crossAxisCount: crossAxisCount,
-                crossAxisSpacing: 10,
-                mainAxisSpacing: 10,
+              final crossAxisCount = constraints.maxWidth > 550 ? 3 : 2;
+              return GridView.builder(
+                itemCount: filtered.length,
                 shrinkWrap: true,
                 physics: const NeverScrollableScrollPhysics(),
-                children: templatePresets.map((preset) {
+                gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
+                  crossAxisCount: crossAxisCount,
+                  crossAxisSpacing: 10,
+                  mainAxisSpacing: 10,
+                  childAspectRatio: constraints.maxWidth > 550 ? 1.4 : 1.15,
+                ),
+                itemBuilder: (context, index) {
+                  final preset = filtered[index];
                   final selected = preset.id == _presetId;
                   final color = _parseColor(preset.color);
+
                   return InkWell(
                     onTap: () => _selectPreset(preset.id),
                     borderRadius: BorderRadius.circular(12),
@@ -1006,11 +1175,16 @@ class _TemplatesScreenState extends State<TemplatesScreen> {
                       decoration: BoxDecoration(
                         borderRadius: BorderRadius.circular(12),
                         border: Border.all(
-                          color: selected ? Theme.of(context).colorScheme.primary : AppColors.border,
+                          color: selected
+                              ? Theme.of(context).colorScheme.primary
+                              : AppColors.border,
                           width: selected ? 2.2 : 1,
                         ),
                         color: selected
-                            ? Theme.of(context).colorScheme.primary.withValues(alpha: 0.08)
+                            ? Theme.of(context)
+                                .colorScheme
+                                .primary
+                                .withValues(alpha: 0.08)
                             : Theme.of(context).colorScheme.surface,
                       ),
                       child: Column(
@@ -1021,17 +1195,25 @@ class _TemplatesScreenState extends State<TemplatesScreen> {
                               Container(
                                 width: 14,
                                 height: 14,
-                                decoration: BoxDecoration(color: color, shape: BoxShape.circle),
+                                decoration: BoxDecoration(
+                                    color: color, shape: BoxShape.circle),
                               ),
                               const SizedBox(width: 6),
                               Expanded(
                                 child: Text(
-                                  preset.category,
-                                  style: const TextStyle(fontSize: 10, fontWeight: FontWeight.bold, color: Color(0xFF64748B)),
+                                  preset.businessCategory,
+                                  style: const TextStyle(
+                                    fontSize: 10,
+                                    fontWeight: FontWeight.bold,
+                                    color: Color(0xFF64748B),
+                                  ),
                                   maxLines: 1,
                                   overflow: TextOverflow.ellipsis,
                                 ),
                               ),
+                              if (selected)
+                                const Icon(Icons.check_circle,
+                                    size: 16, color: Color(0xFF10B981)),
                             ],
                           ),
                           const Spacer(),
@@ -1041,19 +1223,53 @@ class _TemplatesScreenState extends State<TemplatesScreen> {
                             overflow: TextOverflow.ellipsis,
                             style: TextStyle(
                               fontSize: 12,
-                              fontWeight: selected ? FontWeight.bold : FontWeight.w600,
+                              fontWeight:
+                                  selected ? FontWeight.bold : FontWeight.w600,
                             ),
                           ),
-                          if (selected)
-                            const Align(
-                              alignment: Alignment.centerRight,
-                              child: Icon(Icons.check_circle, size: 16, color: Color(0xFF10B981)),
-                            ),
+                          const SizedBox(height: 4),
+                          Wrap(
+                            spacing: 4,
+                            runSpacing: 2,
+                            children: [
+                              Container(
+                                padding: const EdgeInsets.symmetric(
+                                    horizontal: 5, vertical: 1.5),
+                                decoration: BoxDecoration(
+                                  color: const Color(0xFFF1F5F9),
+                                  borderRadius: BorderRadius.circular(3),
+                                ),
+                                child: Text(
+                                  preset.designStyle,
+                                  style: const TextStyle(
+                                      fontSize: 8.5,
+                                      fontWeight: FontWeight.bold,
+                                      color: Color(0xFF475569)),
+                                ),
+                              ),
+                              if (preset.showDuty)
+                                Container(
+                                  padding: const EdgeInsets.symmetric(
+                                      horizontal: 5, vertical: 1.5),
+                                  decoration: BoxDecoration(
+                                    color: const Color(0xFFDCFCE7),
+                                    borderRadius: BorderRadius.circular(3),
+                                  ),
+                                  child: const Text(
+                                    'Duty Calc',
+                                    style: TextStyle(
+                                        fontSize: 8.5,
+                                        fontWeight: FontWeight.bold,
+                                        color: Color(0xFF166534)),
+                                  ),
+                                ),
+                            ],
+                          ),
                         ],
                       ),
                     ),
                   );
-                }).toList(),
+                },
               );
             },
           ),
