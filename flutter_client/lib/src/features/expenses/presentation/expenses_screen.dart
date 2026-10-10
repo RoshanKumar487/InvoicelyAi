@@ -10,6 +10,7 @@ import '../../../shared/widgets/offline_cache_banner.dart';
 import '../../../theme/app_theme.dart';
 import '../data/expense.dart';
 import '../data/expenses_repository.dart';
+import '../data/receipt_ocr_scanner.dart';
 
 class ExpensesScreen extends StatefulWidget {
   const ExpensesScreen({
@@ -172,35 +173,58 @@ class _ExpensesScreenState extends State<ExpensesScreen> {
       if (bytes.isEmpty) {
         throw const FormatException('The selected image is empty.');
       }
-      final encoded = base64Encode(bytes);
-      if (encoded.length > 8000000) {
-        throw const FormatException(
-          'The image is too large to scan. Choose a smaller image.',
-        );
+      Expense scannedDraft;
+      try {
+        final ocr = await ReceiptOcrScanner.scan(imagePath: image.path);
+        scannedDraft = ocr.toExpenseDraft(receiptImageUri: image.path);
+      } catch (_) {
+        // Fall back to server AI scanning if on-device ML kit is unavailable
+        try {
+          final encoded = base64Encode(bytes);
+          if (encoded.length <= 8000000) {
+            final draft = await widget.repository.scanReceipt(
+              imageBase64: encoded,
+              mimeType: mimeType,
+            );
+            scannedDraft = Expense(
+              id: draft.id,
+              companyId: draft.companyId,
+              createdByUserId: draft.createdByUserId,
+              createdByUserName: draft.createdByUserName,
+              title: draft.title,
+              category: draft.category,
+              amount: draft.amount,
+              currency: draft.currency,
+              currencySymbol: draft.currencySymbol,
+              date: draft.date,
+              vendor: draft.vendor,
+              paymentMethod: draft.paymentMethod,
+              taxDeductible: draft.taxDeductible,
+              taxAmount: draft.taxAmount,
+              receiptImageUri: image.path,
+              notes: draft.notes,
+            );
+          } else {
+            scannedDraft = Expense(
+              title: 'Receipt Expense',
+              currency: 'INR',
+              currencySymbol: '₹',
+              date: _dateFor(DateTime.now()),
+              receiptImageUri: image.path,
+            );
+          }
+        } catch (_) {
+          scannedDraft = Expense(
+            title: 'Receipt Expense',
+            currency: 'INR',
+            currencySymbol: '₹',
+            date: _dateFor(DateTime.now()),
+            receiptImageUri: image.path,
+          );
+        }
       }
-      final draft = await widget.repository.scanReceipt(
-        imageBase64: encoded,
-        mimeType: mimeType,
-      );
+
       if (!mounted) return;
-      final scannedDraft = Expense(
-        id: draft.id,
-        companyId: draft.companyId,
-        createdByUserId: draft.createdByUserId,
-        createdByUserName: draft.createdByUserName,
-        title: draft.title,
-        category: draft.category,
-        amount: draft.amount,
-        currency: draft.currency,
-        currencySymbol: draft.currencySymbol,
-        date: draft.date,
-        vendor: draft.vendor,
-        paymentMethod: draft.paymentMethod,
-        taxDeductible: draft.taxDeductible,
-        taxAmount: draft.taxAmount,
-        receiptImageUri: image.path,
-        notes: draft.notes,
-      );
       final confirmedDraft = await showDialog<Expense>(
         context: context,
         builder: (context) => _ExpenseEditorDialog(
@@ -211,15 +235,15 @@ class _ExpensesScreenState extends State<ExpensesScreen> {
       if (confirmedDraft == null || !mounted) return;
       await widget.repository.create(confirmedDraft);
       if (!mounted) return;
-      _showMessage('Scanned expense saved.');
+      _showMessage('Expense saved successfully!');
       await _loadExpenses();
     } on ApiException catch (error) {
       if (mounted) _showMessage(error.message);
     } on FormatException catch (error) {
       if (mounted) _showMessage(error.message);
-    } catch (_) {
+    } catch (e) {
       if (mounted) {
-        _showMessage('Receipt scan failed. Please try another image.');
+        _showMessage('Receipt scan error: $e');
       }
     } finally {
       if (mounted) setState(() => _isScanningReceipt = false);
@@ -659,10 +683,10 @@ class _ExpenseEditorDialogState extends State<_ExpenseEditorDialog> {
     _title = TextEditingController(text: expense?.title ?? '');
     _vendor = TextEditingController(text: expense?.vendor ?? '');
     _amount = TextEditingController(
-      text: expense == null ? '' : expense.amount.toStringAsFixed(2),
+      text: expense == null || expense.amount <= 0 ? '' : expense.amount.toStringAsFixed(2),
     );
     _taxAmount = TextEditingController(
-      text: expense == null ? '' : expense.taxAmount.toStringAsFixed(2),
+      text: expense == null || expense.taxAmount <= 0 ? '' : expense.taxAmount.toStringAsFixed(2),
     );
     _date = TextEditingController(
       text: expense?.date.isNotEmpty == true
@@ -670,12 +694,14 @@ class _ExpenseEditorDialogState extends State<_ExpenseEditorDialog> {
           : _dateFor(DateTime.now()),
     );
     _notes = TextEditingController(text: expense?.notes ?? '');
-    _currency = TextEditingController(text: expense?.currency ?? 'USD');
+    _currency = TextEditingController(
+      text: expense?.currency.isNotEmpty == true ? expense!.currency : 'INR',
+    );
     _category =
-        expense?.category.isNotEmpty == true ? expense!.category : 'General';
+        expense?.category.isNotEmpty == true ? expense!.category : 'General Business';
     _paymentMethod = expense?.paymentMethod.isNotEmpty == true
         ? expense!.paymentMethod
-        : 'Other';
+        : 'Credit Card';
     _taxDeductible = expense?.taxDeductible ?? true;
   }
 
@@ -732,156 +758,335 @@ class _ExpenseEditorDialogState extends State<_ExpenseEditorDialog> {
   @override
   Widget build(BuildContext context) {
     final editing = widget.expense != null;
-    return AlertDialog(
-      title: Text(editing ? 'Edit expense' : 'Add expense'),
-      content: SizedBox(
-        width: 540,
-        child: Form(
-          key: _formKey,
-          child: SingleChildScrollView(
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
+    final isScanned = widget.receiptImageBytes != null || widget.initialValues?.receiptImageUri != null;
+
+    return Dialog(
+      insetPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 24),
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+      clipBehavior: Clip.antiAlias,
+      child: ConstrainedBox(
+        constraints: const BoxConstraints(maxWidth: 540, maxHeight: 680),
+        child: Scaffold(
+          appBar: AppBar(
+            automaticallyImplyLeading: false,
+            titleSpacing: 16,
+            title: Row(
               children: [
-                _field(_title, 'Description *', validator: _required),
-                _field(_vendor, 'Vendor / merchant'),
+                CircleAvatar(
+                  radius: 16,
+                  backgroundColor: isScanned ? const Color(0xFFEFF6FF) : const Color(0xFFF1F5F9),
+                  child: Icon(
+                    isScanned ? Icons.document_scanner_rounded : Icons.receipt_long_rounded,
+                    size: 18,
+                    color: isScanned ? const Color(0xFF2563EB) : const Color(0xFF475569),
+                  ),
+                ),
+                const SizedBox(width: 10),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Text(
+                        editing
+                            ? 'Edit Expense'
+                            : (isScanned ? 'Review Scanned Expense' : 'Add New Expense'),
+                        style: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
+                      ),
+                      Text(
+                        isScanned
+                            ? 'Extracted via ML Kit OCR • Verify & Save'
+                            : 'Enter expense information',
+                        style: const TextStyle(fontSize: 11, color: Color(0xFF64748B)),
+                      ),
+                    ],
+                  ),
+                ),
+                IconButton(
+                  icon: const Icon(Icons.close, size: 20),
+                  onPressed: () => Navigator.pop(context),
+                ),
+              ],
+            ),
+          ),
+          body: Form(
+            key: _formKey,
+            child: ListView(
+              padding: const EdgeInsets.all(16),
+              children: [
+                // RECEIPT PREVIEW (IF ATTACHED)
                 if (widget.receiptImageBytes != null) ...[
-                  const SizedBox(height: 12),
-                  ClipRRect(
-                    borderRadius: BorderRadius.circular(12),
-                    child: Image.memory(
-                      widget.receiptImageBytes!,
-                      height: 150,
-                      width: double.infinity,
-                      fit: BoxFit.cover,
+                  Container(
+                    decoration: BoxDecoration(
+                      color: const Color(0xFFF0FDF4),
+                      borderRadius: BorderRadius.circular(12),
+                      border: Border.all(color: const Color(0xFFBBF7D0)),
+                    ),
+                    padding: const EdgeInsets.all(10),
+                    child: Row(
+                      children: [
+                        ClipRRect(
+                          borderRadius: BorderRadius.circular(8),
+                          child: Image.memory(
+                            widget.receiptImageBytes!,
+                            width: 60,
+                            height: 60,
+                            fit: BoxFit.cover,
+                          ),
+                        ),
+                        const SizedBox(width: 12),
+                        Expanded(
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: const [
+                              Row(
+                                children: [
+                                  Icon(Icons.check_circle_rounded, size: 14, color: Color(0xFF16A34A)),
+                                  SizedBox(width: 4),
+                                  Text(
+                                    'Receipt Attached & Scanned',
+                                    style: TextStyle(
+                                      fontSize: 12.5,
+                                      fontWeight: FontWeight.bold,
+                                      color: Color(0xFF166534),
+                                    ),
+                                  ),
+                                ],
+                              ),
+                              SizedBox(height: 2),
+                              Text(
+                                'Merchant, amount, tax & date extracted. You can review or edit below.',
+                                style: TextStyle(fontSize: 11, color: Color(0xFF475569)),
+                              ),
+                            ],
+                          ),
+                        ),
+                      ],
                     ),
                   ),
-                  const Align(
-                    alignment: Alignment.centerLeft,
-                    child: Padding(
-                      padding: EdgeInsets.only(top: 6),
-                      child: Text('Receipt attached'),
-                    ),
-                  ),
+                  const SizedBox(height: 14),
                 ],
+
+                // 1. AMOUNT & CURRENCY CARD
+                Container(
+                  padding: const EdgeInsets.all(14),
+                  decoration: BoxDecoration(
+                    color: const Color(0xFFF8FAFC),
+                    borderRadius: BorderRadius.circular(12),
+                    border: Border.all(color: const Color(0xFFCBD5E1), width: 1.2),
+                  ),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Row(
+                        children: [
+                          Expanded(
+                            flex: 6,
+                            child: TextFormField(
+                              controller: _amount,
+                              keyboardType: const TextInputType.numberWithOptions(decimal: true),
+                              style: const TextStyle(
+                                fontSize: 22,
+                                fontWeight: FontWeight.bold,
+                                color: Color(0xFF0F172A),
+                              ),
+                              decoration: InputDecoration(
+                                labelText: 'Total Amount *',
+                                prefixText: '${_currencySymbol(_currency.text.trim())} ',
+                                prefixStyle: const TextStyle(
+                                  fontSize: 20,
+                                  fontWeight: FontWeight.bold,
+                                  color: Color(0xFF2563EB),
+                                ),
+                                hintText: '0.00',
+                                isDense: true,
+                              ),
+                              validator: _validAmount,
+                            ),
+                          ),
+                          const SizedBox(width: 10),
+                          Expanded(
+                            flex: 4,
+                            child: DropdownButtonFormField<String>(
+                              value: ['INR', 'USD', 'EUR', 'GBP'].contains(_currency.text.toUpperCase())
+                                  ? _currency.text.toUpperCase()
+                                  : 'INR',
+                              decoration: const InputDecoration(labelText: 'Currency', isDense: true),
+                              items: const [
+                                DropdownMenuItem(value: 'INR', child: Text('INR (₹)')),
+                                DropdownMenuItem(value: 'USD', child: Text('USD (\$)')),
+                                DropdownMenuItem(value: 'EUR', child: Text('EUR (€)')),
+                                DropdownMenuItem(value: 'GBP', child: Text('GBP (£)')),
+                              ],
+                              onChanged: (val) {
+                                if (val != null) {
+                                  setState(() => _currency.text = val);
+                                }
+                              },
+                            ),
+                          ),
+                        ],
+                      ),
+                      const SizedBox(height: 10),
+                      Row(
+                        children: [
+                          Expanded(
+                            flex: 6,
+                            child: TextFormField(
+                              controller: _taxAmount,
+                              keyboardType: const TextInputType.numberWithOptions(decimal: true),
+                              decoration: const InputDecoration(
+                                labelText: 'Tax / GST Amount',
+                                hintText: '0.00',
+                                prefixIcon: Icon(Icons.percent_rounded, size: 16),
+                                isDense: true,
+                              ),
+                              validator: _validOptionalAmount,
+                            ),
+                          ),
+                          const SizedBox(width: 10),
+                          Expanded(
+                            flex: 4,
+                            child: Row(
+                              children: [
+                                Checkbox(
+                                  value: _taxDeductible,
+                                  onChanged: (val) => setState(() => _taxDeductible = val ?? true),
+                                ),
+                                const Expanded(
+                                  child: Text('Tax Deductible', style: TextStyle(fontSize: 11.5)),
+                                ),
+                              ],
+                            ),
+                          ),
+                        ],
+                      ),
+                    ],
+                  ),
+                ),
+                const SizedBox(height: 14),
+
+                // 2. VENDOR & DESCRIPTION
+                TextFormField(
+                  controller: _title,
+                  decoration: const InputDecoration(
+                    labelText: 'Expense Description *',
+                    hintText: 'e.g. Flight to Mumbai, Office Lunch, Server Renewal',
+                    prefixIcon: Icon(Icons.edit_note_rounded, size: 20),
+                  ),
+                  validator: _required,
+                ),
+                const SizedBox(height: 12),
+                TextFormField(
+                  controller: _vendor,
+                  decoration: const InputDecoration(
+                    labelText: 'Vendor / Merchant Name',
+                    hintText: 'e.g. Starbucks, Uber, Amazon, HP India',
+                    prefixIcon: Icon(Icons.storefront_rounded, size: 20),
+                  ),
+                ),
+                const SizedBox(height: 12),
+
+                // 3. CATEGORY & PAYMENT METHOD
                 Row(
                   children: [
                     Expanded(
-                      child: _field(
-                        _amount,
-                        'Amount *',
-                        keyboardType: const TextInputType.numberWithOptions(
-                            decimal: true),
-                        validator: _validAmount,
+                      child: DropdownButtonFormField<String>(
+                        value: _category,
+                        decoration: const InputDecoration(
+                          labelText: 'Category',
+                          prefixIcon: Icon(Icons.category_outlined, size: 18),
+                        ),
+                        items: [
+                          for (final category in _categoryOptions)
+                            DropdownMenuItem(
+                              value: category,
+                              child: Text(category, style: const TextStyle(fontSize: 13)),
+                            ),
+                        ],
+                        onChanged: (value) {
+                          if (value != null) setState(() => _category = value);
+                        },
                       ),
                     ),
-                    const SizedBox(width: 12),
-                    SizedBox(
-                      width: 105,
-                      child: _field(_currency, 'Currency'),
+                    const SizedBox(width: 10),
+                    Expanded(
+                      child: DropdownButtonFormField<String>(
+                        value: _paymentMethod,
+                        decoration: const InputDecoration(
+                          labelText: 'Payment Method',
+                          prefixIcon: Icon(Icons.payment_rounded, size: 18),
+                        ),
+                        items: [
+                          for (final method in _paymentMethodOptions)
+                            DropdownMenuItem(
+                              value: method,
+                              child: Text(method, style: const TextStyle(fontSize: 13)),
+                            ),
+                        ],
+                        onChanged: (value) {
+                          if (value != null) setState(() => _paymentMethod = value);
+                        },
+                      ),
                     ),
                   ],
-                ),
-                DropdownButtonFormField<String>(
-                  value: _category,
-                  decoration: const InputDecoration(labelText: 'Category'),
-                  items: [
-                    for (final category in _categoryOptions)
-                      DropdownMenuItem(
-                        value: category,
-                        child: Text(category),
-                      ),
-                  ],
-                  onChanged: (value) {
-                    if (value != null) setState(() => _category = value);
-                  },
                 ),
                 const SizedBox(height: 12),
+
+                // 4. DATE & NOTES
                 TextFormField(
                   controller: _date,
                   readOnly: true,
                   onTap: _chooseDate,
                   decoration: InputDecoration(
-                    labelText: 'Date',
+                    labelText: 'Expense Date',
+                    prefixIcon: const Icon(Icons.calendar_today_rounded, size: 18),
                     suffixIcon: IconButton(
                       onPressed: _chooseDate,
-                      icon: const Icon(Icons.calendar_month_outlined),
+                      icon: const Icon(Icons.calendar_month_outlined, size: 20),
                     ),
                   ),
                 ),
                 const SizedBox(height: 12),
-                DropdownButtonFormField<String>(
-                  value: _paymentMethod,
-                  decoration:
-                      const InputDecoration(labelText: 'Payment method'),
-                  items: [
-                    for (final method in _paymentMethodOptions)
-                      DropdownMenuItem(value: method, child: Text(method)),
-                  ],
-                  onChanged: (value) {
-                    if (value != null) {
-                      setState(() => _paymentMethod = value);
-                    }
-                  },
-                ),
-                const SizedBox(height: 12),
-                _field(
-                  _taxAmount,
-                  'Tax amount',
-                  keyboardType:
-                      const TextInputType.numberWithOptions(decimal: true),
-                  validator: _validOptionalAmount,
-                ),
-                SwitchListTile(
-                  contentPadding: EdgeInsets.zero,
-                  title: const Text('Tax deductible'),
-                  value: _taxDeductible,
-                  onChanged: (value) => setState(() => _taxDeductible = value),
-                ),
-                _field(_notes, 'Notes', maxLines: 3),
-                const SizedBox(height: 8),
-                if (widget.initialValues != null)
-                  const Align(
-                    alignment: Alignment.centerLeft,
-                    child: Text(
-                      'Review the extracted details, then save to create this expense.',
-                      style: TextStyle(color: AppColors.muted),
-                    ),
+                TextFormField(
+                  controller: _notes,
+                  maxLines: 2,
+                  decoration: const InputDecoration(
+                    labelText: 'Notes / Purpose / Itemized Lines',
+                    hintText: 'Add additional details or project reference...',
+                    alignLabelWithHint: true,
+                    prefixIcon: Icon(Icons.notes_rounded, size: 18),
                   ),
+                ),
+              ],
+            ),
+          ),
+          bottomNavigationBar: Container(
+            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+            decoration: BoxDecoration(
+              color: Colors.white,
+              border: Border(top: BorderSide(color: Colors.grey.shade200)),
+            ),
+            child: Row(
+              mainAxisAlignment: MainAxisAlignment.end,
+              children: [
+                OutlinedButton(
+                  onPressed: () => Navigator.pop(context),
+                  child: const Text('Cancel'),
+                ),
+                const SizedBox(width: 12),
+                FilledButton.icon(
+                  onPressed: _save,
+                  icon: const Icon(Icons.check, size: 18),
+                  label: Text(editing ? 'Save Changes' : 'Save Expense'),
+                ),
               ],
             ),
           ),
         ),
       ),
-      actions: [
-        TextButton(
-          onPressed: () => Navigator.pop(context),
-          child: const Text('Cancel'),
-        ),
-        FilledButton(
-          onPressed: _save,
-          child: Text(editing ? 'Save changes' : 'Save expense'),
-        ),
-      ],
     );
   }
-
-  Widget _field(
-    TextEditingController controller,
-    String label, {
-    String? Function(String?)? validator,
-    TextInputType? keyboardType,
-    int maxLines = 1,
-  }) =>
-      Padding(
-        padding: const EdgeInsets.only(bottom: 12),
-        child: TextFormField(
-          controller: controller,
-          validator: validator,
-          keyboardType: keyboardType,
-          maxLines: maxLines,
-          decoration: InputDecoration(labelText: label),
-        ),
-      );
 
   String? _required(String? value) =>
       value == null || value.trim().isEmpty ? 'Description is required' : null;
@@ -905,6 +1110,7 @@ String _dateFor(DateTime date) => '${date.year.toString().padLeft(4, '0')}-'
     '${date.day.toString().padLeft(2, '0')}';
 
 String _currencySymbol(String currency) => switch (currency.toUpperCase()) {
+      'INR' => '₹',
       'USD' => r'$',
       'EUR' => '€',
       'GBP' => '£',

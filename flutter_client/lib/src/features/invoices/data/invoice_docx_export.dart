@@ -218,12 +218,17 @@ class InvoiceDocxExport {
         ..write(_paragraph('Shipping details', bold: true))
         ..writeAll(shipping.map(_paragraph));
     }
+    final showDuty = show('showItemDuty') || invoice.items.any((it) => it.dutyCount > 0);
+    final dutyHeader = localSettings['customDutyHeader']?.toString().trim().isNotEmpty == true
+        ? localSettings['customDutyHeader'].toString()
+        : 'Duty / Days';
     body
       ..write(_paragraph(''))
       ..write(_paragraph(
         <String>[
           itemHeader,
           if (show('showItemQty')) qtyHeader,
+          if (showDuty) dutyHeader,
           if (show('showItemRate')) rateHeader,
           if (show('showItemDiscount', fallback: false))
             localSettings['customDiscountHeader']?.toString() ?? 'Discount',
@@ -239,9 +244,13 @@ class InvoiceDocxExport {
     for (final item in invoice.items) {
       body.write(_paragraph(
         <String>[
-          item.description,
+          item.itemDetails.isNotEmpty
+              ? '${item.description} (${item.itemDetails})'
+              : item.description,
           if (show('showItemQty'))
             '${item.quantity}${show('showItemUnit') ? ' ${item.unit}' : ''}',
+          if (showDuty)
+            item.dutyCount > 0 ? '${item.dutyCount}' : '-',
           if (show('showItemRate'))
             '${invoice.currencySymbol}${item.unitPrice.toStringAsFixed(2)}',
           if (show('showItemDiscount', fallback: false)) '${item.discountRate}%',
@@ -317,6 +326,20 @@ class InvoiceDocxExport {
         body.write(_paragraph('IFSC / SWIFT: $ifscCode'));
       }
       if (upiId.isNotEmpty) body.write(_paragraph('UPI ID: $upiId', bold: true));
+    }
+
+    if ((show('showSignature') && (template?.showSignature ?? true)) || show('showStamp')) {
+      body
+        ..write(_paragraph(''))
+        ..write(_paragraph(bizName.isNotEmpty ? 'For $bizName' : 'Authorized Signatory', bold: true));
+      if (localSettings['signeeTitle']?.toString().trim().isNotEmpty == true) {
+        body.write(_paragraph(localSettings['signeeTitle'].toString()));
+      } else {
+        body.write(_paragraph('Authorized Signatory'));
+      }
+      if (localSettings['signeeName']?.toString().trim().isNotEmpty == true) {
+        body.write(_paragraph(localSettings['signeeName'].toString()));
+      }
     }
 
     if (show('showNotes') &&
