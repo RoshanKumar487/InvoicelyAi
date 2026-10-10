@@ -1692,6 +1692,7 @@ class _LineItemEditorState extends State<_LineItemEditor> {
   late final TextEditingController _unit;
   late final TextEditingController _discount;
   bool _showSuggestions = false;
+  bool? _isDescriptionCollapsed;
 
   @override
   void initState() {
@@ -1758,12 +1759,10 @@ class _LineItemEditorState extends State<_LineItemEditor> {
 
   List<_ItemSuggestion> _matchingSuggestions(bool isSecurity) {
     final query = _description.text.trim().toLowerCase();
+    if (query.isEmpty) return const [];
     final pool = isSecurity
         ? _securitySuggestions
         : <_ItemSuggestion>[..._securitySuggestions, ..._generalSuggestions];
-    if (query.isEmpty) {
-      return pool.take(6).toList(growable: false);
-    }
     return pool
         .where((s) =>
             s.title.toLowerCase().contains(query) ||
@@ -1780,19 +1779,6 @@ class _LineItemEditorState extends State<_LineItemEditor> {
       visualDensity: VisualDensity.compact,
       onPressed: () {
         setState(() => _unit.text = text);
-        _notify();
-      },
-    );
-  }
-
-  Widget _dutyChip(String label, double value) {
-    return ActionChip(
-      avatar: const Icon(Icons.date_range_outlined, size: 13),
-      label: Text(label, style: const TextStyle(fontSize: 11)),
-      padding: EdgeInsets.zero,
-      visualDensity: VisualDensity.compact,
-      onPressed: () {
-        setState(() => _duty.text = _num(value));
         _notify();
       },
     );
@@ -1847,8 +1833,9 @@ class _LineItemEditorState extends State<_LineItemEditor> {
     final discAmt = gross * (discVal / 100);
     final lineTotal = gross - discAmt;
 
-    final isDescOpen =
-        widget.showDescriptionField || _itemDetails.text.trim().isNotEmpty;
+    final isDescOpen = _isDescriptionCollapsed != null
+        ? !_isDescriptionCollapsed!
+        : (widget.showDescriptionField || _itemDetails.text.trim().isNotEmpty);
     final suggestions = _matchingSuggestions(isSecurityOrStaffing);
 
     return Column(
@@ -1876,27 +1863,31 @@ class _LineItemEditorState extends State<_LineItemEditor> {
           decoration: InputDecoration(
             labelText: itemLabel,
             hintText: isSecurityOrStaffing
-                ? 'e.g. Security Guard (12h Shift), Supervisor'
-                : 'What are you billing for?',
+                ? 'Type to search (e.g. Guard, Supervisor...)'
+                : 'What are you billing for? (Type to search)',
             suffixIcon: _description.text.isNotEmpty
                 ? IconButton(
                     icon: const Icon(Icons.clear, size: 16),
                     onPressed: () {
                       setState(() {
                         _description.clear();
-                        _showSuggestions = true;
+                        _showSuggestions = false;
                       });
                       _notify();
                     },
                   )
-                : const Icon(Icons.arrow_drop_down),
+                : const Icon(Icons.search, size: 18),
           ),
           validator: (value) => value == null || value.trim().isEmpty
               ? 'Add a $itemLabel'
               : null,
-          onTap: () => setState(() => _showSuggestions = true),
+          onTap: () {
+            if (_description.text.trim().isNotEmpty) {
+              setState(() => _showSuggestions = true);
+            }
+          },
           onChanged: (_) {
-            setState(() => _showSuggestions = true);
+            setState(() => _showSuggestions = _description.text.trim().isNotEmpty);
             _notify();
           },
         ),
@@ -1976,30 +1967,47 @@ class _LineItemEditorState extends State<_LineItemEditor> {
         ],
         if (!isDescOpen)
           Padding(
-            padding: const EdgeInsets.only(top: 4, bottom: 4),
-            child: Align(
-              alignment: Alignment.centerLeft,
-              child: InkWell(
-                onTap: () => widget.onToggleDescription(true),
-                borderRadius: BorderRadius.circular(6),
-                child: Padding(
-                  padding:
-                      const EdgeInsets.symmetric(horizontal: 4, vertical: 3),
-                  child: Row(
-                    mainAxisSize: MainAxisSize.min,
-                    children: const [
-                      Icon(Icons.add, size: 14, color: Color(0xFF2563EB)),
-                      SizedBox(width: 4),
-                      Text(
-                        '+ Description / Scope of Work',
-                        style: TextStyle(
-                          fontSize: 12,
-                          fontWeight: FontWeight.w600,
-                          color: Color(0xFF2563EB),
+            padding: const EdgeInsets.symmetric(vertical: 4),
+            child: InkWell(
+              onTap: () {
+                setState(() => _isDescriptionCollapsed = false);
+                widget.onToggleDescription(true);
+              },
+              borderRadius: BorderRadius.circular(6),
+              child: Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 4),
+                child: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    const Icon(Icons.add_circle_outline, size: 15, color: Color(0xFF2563EB)),
+                    const SizedBox(width: 5),
+                    Text(
+                      _itemDetails.text.trim().isNotEmpty
+                          ? '+ Description: "${_itemDetails.text.trim().split('\n').first}" (Expand)'
+                          : '+ Description / Scope of Work',
+                      style: const TextStyle(
+                        fontSize: 12,
+                        fontWeight: FontWeight.w600,
+                        color: Color(0xFF2563EB),
+                      ),
+                    ),
+                    if (_itemDetails.text.trim().isNotEmpty) ...[
+                      const SizedBox(width: 8),
+                      Tooltip(
+                        message: 'Clear description',
+                        child: InkWell(
+                          onTap: () {
+                            setState(() {
+                              _itemDetails.clear();
+                              _isDescriptionCollapsed = true;
+                            });
+                            _notify();
+                          },
+                          child: const Icon(Icons.close, size: 14, color: Color(0xFF94A3B8)),
                         ),
                       ),
                     ],
-                  ),
+                  ],
                 ),
               ),
             ),
@@ -2007,34 +2015,77 @@ class _LineItemEditorState extends State<_LineItemEditor> {
         else
           Padding(
             padding: const EdgeInsets.only(top: 6, bottom: 6),
-            child: TextFormField(
-              controller: _itemDetails,
-              maxLines: 2,
-              minLines: 1,
-              style: const TextStyle(fontSize: 13),
-              decoration: InputDecoration(
-                isDense: true,
-                labelText: 'Description / Scope of Work',
-                hintText:
-                    'Specifications, post location, shift hours, duties...',
-                prefixIcon: const Icon(Icons.notes_rounded, size: 18),
-                suffixIcon: _itemDetails.text.isNotEmpty
-                    ? IconButton(
-                        tooltip: 'Clear description',
-                        icon: const Icon(Icons.clear, size: 16),
-                        onPressed: () {
-                          _itemDetails.clear();
-                          _notify();
-                        },
-                      )
-                    : null,
-                contentPadding:
-                    const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
-                border: OutlineInputBorder(
-                  borderRadius: BorderRadius.circular(8),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                  children: [
+                    const Text(
+                      'Description / Scope of Work',
+                      style: TextStyle(
+                        fontSize: 11.5,
+                        fontWeight: FontWeight.w600,
+                        color: Color(0xFF475569),
+                      ),
+                    ),
+                    InkWell(
+                      onTap: () {
+                        setState(() => _isDescriptionCollapsed = true);
+                        widget.onToggleDescription(false);
+                      },
+                      borderRadius: BorderRadius.circular(4),
+                      child: Padding(
+                        padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 2),
+                        child: Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: const [
+                            Icon(Icons.unfold_less, size: 14, color: Color(0xFF64748B)),
+                            SizedBox(width: 3),
+                            Text(
+                              'Collapse',
+                              style: TextStyle(
+                                fontSize: 11,
+                                fontWeight: FontWeight.w500,
+                                color: Color(0xFF64748B),
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ),
+                  ],
                 ),
-              ),
-              onChanged: (_) => _notify(),
+                const SizedBox(height: 4),
+                TextFormField(
+                  controller: _itemDetails,
+                  maxLines: 2,
+                  minLines: 1,
+                  style: const TextStyle(fontSize: 13),
+                  decoration: InputDecoration(
+                    isDense: true,
+                    hintText:
+                        'Specifications, post location, shift hours, duties...',
+                    prefixIcon: const Icon(Icons.notes_rounded, size: 18),
+                    suffixIcon: _itemDetails.text.isNotEmpty
+                        ? IconButton(
+                            tooltip: 'Clear description',
+                            icon: const Icon(Icons.clear, size: 16),
+                            onPressed: () {
+                              _itemDetails.clear();
+                              _notify();
+                            },
+                          )
+                        : null,
+                    contentPadding:
+                        const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+                    border: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(8),
+                    ),
+                  ),
+                  onChanged: (_) => _notify(),
+                ),
+              ],
             ),
           ),
         const SizedBox(height: 6),
@@ -2084,10 +2135,6 @@ class _LineItemEditorState extends State<_LineItemEditor> {
           runSpacing: 4,
           children: [
             if (showDuty) ...[
-              _dutyChip('26 Duties', 26),
-              _dutyChip('30 Duties', 30),
-              _dutyChip('31 Duties', 31),
-              _dutyChip('15 Duties', 15),
               _unitChip('Duty'),
               _unitChip('Shift'),
             ],

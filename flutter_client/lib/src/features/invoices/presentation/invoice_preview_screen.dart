@@ -1522,8 +1522,7 @@ class _InvoicePreviewScreenState extends State<InvoicePreviewScreen>
                         (bankName.isNotEmpty ||
                             accountNumber.isNotEmpty ||
                             upiId.isNotEmpty ||
-                            paymentLink.isNotEmpty ||
-                            (template?.showQrCode ?? true)))
+                            paymentLink.isNotEmpty))
                     ? Container(
                         padding: const EdgeInsets.all(12),
                         decoration: BoxDecoration(
@@ -1641,8 +1640,10 @@ class _InvoicePreviewScreenState extends State<InvoicePreviewScreen>
                                 ],
                               ),
                             ),
-                            // QR Code with Scan to Pay badge
-                            if (template?.showQrCode ?? true) ...[
+                            // QR Code with Scan to Pay badge (Optional: only if upiId or paymentLink is provided)
+                            if ((template?.showQrCode ?? true) &&
+                                (_localSettings['showQrCode'] != false) &&
+                                (upiId.isNotEmpty || paymentLink.isNotEmpty)) ...[
                               const SizedBox(width: 10),
                               Column(
                                 mainAxisSize: MainAxisSize.min,
@@ -1650,11 +1651,7 @@ class _InvoicePreviewScreenState extends State<InvoicePreviewScreen>
                                   InvoiceQrCodeWidget(
                                     data: upiId.isNotEmpty
                                         ? 'upi://pay?pa=$upiId&pn=${Uri.encodeComponent(bizName.isNotEmpty ? bizName : "Merchant")}&am=${(invoice.balanceDue > 0 ? invoice.balanceDue : invoice.total).toStringAsFixed(2)}&cu=INR&tn=${Uri.encodeComponent("Invoice ${invoice.invoiceNumber}")}'
-                                        : (paymentLink.isNotEmpty
-                                            ? paymentLink
-                                            : (accountNumber.isNotEmpty
-                                                ? 'Bank: $bankName\nA/C: $accountNumber\nIFSC: $ifscCode\nBeneficiary: $accountHolder'
-                                                : 'Invoice: ${invoice.invoiceNumber}\nAmount: ${invoice.total} ${invoice.currencyCode}')),
+                                        : paymentLink,
                                     size: 92,
                                   ),
                                   const SizedBox(height: 3),

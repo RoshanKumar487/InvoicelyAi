@@ -90,11 +90,14 @@ class InvoicePdfExport {
             ? localSettings['upiId'].toString()
             : '');
 
+    final paymentLink = businessProfile['paymentLink']?.toString().trim().isNotEmpty == true
+        ? businessProfile['paymentLink'].toString()
+        : (localSettings['paymentLink']?.toString().trim().isNotEmpty == true
+            ? localSettings['paymentLink'].toString()
+            : '');
     final qrPayload = upiId.isNotEmpty
         ? 'upi://pay?pa=$upiId&pn=${Uri.encodeComponent(bizName.isNotEmpty ? bizName : "Merchant")}&am=${(invoice.balanceDue > 0 ? invoice.balanceDue : invoice.total).toStringAsFixed(2)}&cu=INR&tn=${Uri.encodeComponent("Invoice ${invoice.invoiceNumber}")}'
-        : (accountNumber.isNotEmpty
-            ? 'Bank: $bankName\nA/C: $accountNumber\nIFSC: $ifscCode\nBeneficiary: $accountHolder'
-            : 'Invoice: ${invoice.invoiceNumber}\nAmount: ${invoice.total} ${invoice.currencyCode}');
+        : paymentLink;
 
     List<Map<String, dynamic>> customFields(String key) {
       final raw = localSettings[key];
@@ -432,7 +435,7 @@ class InvoicePdfExport {
                         (bankName.isNotEmpty ||
                             accountNumber.isNotEmpty ||
                             upiId.isNotEmpty ||
-                            (template?.showQrCode ?? true)))
+                            paymentLink.isNotEmpty))
                     ? pw.Container(
                         padding: const pw.EdgeInsets.all(9),
                         decoration: pw.BoxDecoration(
@@ -466,10 +469,14 @@ class InvoicePdfExport {
                                     pw.Text('IFSC / SWIFT: $ifscCode', style: const pw.TextStyle(fontSize: 8)),
                                   if (upiId.isNotEmpty)
                                     pw.Text('UPI ID: $upiId', style: pw.TextStyle(fontSize: 8, fontWeight: pw.FontWeight.bold, color: PdfColors.green800)),
+                                  if (paymentLink.isNotEmpty)
+                                    pw.Text('Pay Link: $paymentLink', style: const pw.TextStyle(fontSize: 7.5, color: PdfColors.blue700)),
                                 ],
                               ),
                             ),
-                            if (template?.showQrCode ?? true) ...[
+                            if ((template?.showQrCode ?? true) &&
+                                (localSettings['showQrCode'] != false) &&
+                                qrPayload.isNotEmpty) ...[
                               pw.SizedBox(width: 8),
                               pw.Column(
                                 children: [

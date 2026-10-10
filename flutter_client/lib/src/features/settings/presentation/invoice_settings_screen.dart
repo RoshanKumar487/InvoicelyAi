@@ -354,6 +354,8 @@ class _InvoiceSettingsScreenState extends State<InvoiceSettingsScreen>
           _localSettings['showItemTax'] = true;
           _localSettings['defaultNotes'] = 'Security attendance verified by client site supervisor. Statutory EPF & ESIC challans enclosed.';
           _localSettings['defaultTerms'] = 'Payment due within 15 days of bill submission. RCM / GST compliance applicable.';
+          _profile['defaultNotes'] = _localSettings['defaultNotes'];
+          _profile['defaultTerms'] = _localSettings['defaultTerms'];
           final secCols = _getCustomFields('customColumns_items');
           if (!secCols.any((c) => c['label'] == 'SAC Code')) {
             secCols.add({
@@ -398,6 +400,8 @@ class _InvoiceSettingsScreenState extends State<InvoiceSettingsScreen>
           _localSettings['showItemTax'] = true;
           _localSettings['defaultNotes'] = 'Salary attendance muster roll attached. Net salaries disbursed to employee accounts.';
           _localSettings['defaultTerms'] = 'Monthly reimbursement payable by 5th of every calendar month.';
+          _profile['defaultNotes'] = _localSettings['defaultNotes'];
+          _profile['defaultTerms'] = _localSettings['defaultTerms'];
           final hrCols = _getCustomFields('customColumns_items');
           if (!hrCols.any((c) => c['label'] == 'SAC Code')) {
             hrCols.add({
@@ -481,8 +485,8 @@ class _InvoiceSettingsScreenState extends State<InvoiceSettingsScreen>
   }
 
   Future<void> _save() async {
-    final rate = double.tryParse(_profile['defaultTaxRate']?.toString() ?? '');
-    if (rate == null || rate < 0 || rate > 100) {
+    final rate = double.tryParse(_profile['defaultTaxRate']?.toString() ?? '18') ?? 18.0;
+    if (rate < 0 || rate > 100) {
       _showFeedback('Enter a default tax rate from 0 to 100.');
       return;
     }
@@ -501,8 +505,19 @@ class _InvoiceSettingsScreenState extends State<InvoiceSettingsScreen>
               _profile['defaultPaymentTerms']?.toString().trim().isNotEmpty == true
                   ? _profile['defaultPaymentTerms']
                   : 'Net 30',
-          'defaultNotes': _profile['defaultNotes'] ?? '',
-          'defaultTerms': _profile['defaultTerms'] ?? '',
+          'bankName': _profile['bankName'] ?? _localSettings['bankName'] ?? '',
+          'accountHolder': _profile['accountHolder'] ?? _localSettings['accountHolder'] ?? '',
+          'accountNumber': _profile['accountNumber'] ?? _localSettings['accountNumber'] ?? '',
+          'ifscCode': _profile['ifscCode'] ?? _localSettings['ifscCode'] ?? '',
+          'swiftBic': _profile['swiftBic'] ?? _localSettings['swiftBic'] ?? '',
+          'upiId': _profile['upiId'] ?? _localSettings['upiId'] ?? '',
+          'paymentLink': _profile['paymentLink'] ?? _localSettings['paymentLink'] ?? '',
+          'defaultNotes': _profile['defaultNotes'] ?? _localSettings['defaultNotes'] ?? '',
+          'defaultTerms': _profile['defaultTerms'] ?? _localSettings['defaultTerms'] ?? '',
+          'defaultPaymentInstructions': _localSettings['defaultPaymentInstructions'] ?? '',
+          'defaultShippingDetails': _localSettings['defaultShippingDetails'] ?? '',
+          'showBankDetails': _localSettings['showBankDetails'] ?? true,
+          'showQrCode': _localSettings['showQrCode'] ?? true,
         });
       await widget.onSaveLocalSettings?.call(
         Map<String, Object?>.unmodifiable(localSettings),
@@ -519,7 +534,7 @@ class _InvoiceSettingsScreenState extends State<InvoiceSettingsScreen>
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
           backgroundColor: Color(0xFF047857),
-          content: Text('✓ All customizations, custom fields & labels saved!'),
+          content: Text('✓ All customizations, bank details & defaults saved!'),
         ),
       );
     } on ApiException catch (error) {
@@ -555,7 +570,7 @@ class _InvoiceSettingsScreenState extends State<InvoiceSettingsScreen>
   @override
   Widget build(BuildContext context) {
     return DefaultTabController(
-      length: 5,
+      length: 6,
       child: Scaffold(
         appBar: AppBar(
           leading: widget.onBack == null
@@ -592,6 +607,7 @@ class _InvoiceSettingsScreenState extends State<InvoiceSettingsScreen>
               Tab(icon: Icon(Icons.person_pin_outlined), text: 'Bills & Client'),
               Tab(icon: Icon(Icons.table_chart_outlined), text: 'Line Items'),
               Tab(icon: Icon(Icons.calculate_outlined), text: 'Adjustments'),
+              Tab(icon: Icon(Icons.account_balance_outlined), text: 'Bank & UPI'),
               Tab(icon: Icon(Icons.draw_outlined), text: 'Brand & Terms'),
             ],
           ),
@@ -633,6 +649,7 @@ class _InvoiceSettingsScreenState extends State<InvoiceSettingsScreen>
                         _buildBillingTab(),
                         _buildLineItemsTab(),
                         _buildAdjustmentsTab(),
+                        _buildBankTab(),
                         _buildBrandingAndTermsTab(),
                       ],
                     ),
@@ -1240,7 +1257,239 @@ class _InvoiceSettingsScreenState extends State<InvoiceSettingsScreen>
   }
 
   // ---------------------------------------------------------------------------
-  // TAB 5: BRANDING, NOTES & SIGNATURE
+  // TAB 5: BANK & DIGITAL PAYMENT (UPI)
+  // ---------------------------------------------------------------------------
+  Widget _buildBankTab() {
+    final bankName = _profile['bankName']?.toString() ??
+        _localSettings['bankName']?.toString() ??
+        '';
+    final accHolder = _profile['accountHolder']?.toString() ??
+        _localSettings['accountHolder']?.toString() ??
+        '';
+    final accNo = _profile['accountNumber']?.toString() ??
+        _localSettings['accountNumber']?.toString() ??
+        '';
+    final ifsc = _profile['ifscCode']?.toString() ??
+        _localSettings['ifscCode']?.toString() ??
+        '';
+    final swift = _profile['swiftBic']?.toString() ??
+        _localSettings['swiftBic']?.toString() ??
+        '';
+    final upi = _profile['upiId']?.toString() ??
+        _localSettings['upiId']?.toString() ??
+        '';
+    final payLink = _profile['paymentLink']?.toString() ??
+        _localSettings['paymentLink']?.toString() ??
+        '';
+
+    final showBank = _localSettings['showBankDetails'] != false;
+    final showQr = _localSettings['showQrCode'] != false;
+
+    return ListView(
+      padding: const EdgeInsets.all(16),
+      children: [
+        _buildInfoBanner(
+          'Bank & Digital Payment Configuration',
+          'Configure your company bank account and optional UPI ID. When UPI ID or payment link is provided, a Scan-to-Pay QR code will be generated on invoices.',
+        ),
+        const SizedBox(height: 14),
+
+        AppCard(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                'Display Options',
+                style: Theme.of(context).textTheme.titleMedium,
+              ),
+              const SizedBox(height: 6),
+              SwitchListTile(
+                contentPadding: EdgeInsets.zero,
+                title: const Text('Show Bank & Payment Details on Invoices',
+                    style: TextStyle(fontSize: 14, fontWeight: FontWeight.w600)),
+                subtitle: const Text(
+                  'Displays account number, IFSC code, and beneficiary details on invoices',
+                  style: TextStyle(fontSize: 11, color: Color(0xFF64748B)),
+                ),
+                value: showBank,
+                onChanged: (val) =>
+                    setState(() => _localSettings['showBankDetails'] = val),
+              ),
+              const Divider(height: 16),
+              SwitchListTile(
+                contentPadding: EdgeInsets.zero,
+                title: const Text('Show Scan-to-Pay QR Code (Optional)',
+                    style: TextStyle(fontSize: 14, fontWeight: FontWeight.w600)),
+                subtitle: const Text(
+                  'Strictly optional: generated only if UPI ID or payment link is provided below. If left blank, QR code is hidden.',
+                  style: TextStyle(fontSize: 11, color: Color(0xFF64748B)),
+                ),
+                value: showQr,
+                onChanged: (val) =>
+                    setState(() => _localSettings['showQrCode'] = val),
+              ),
+            ],
+          ),
+        ),
+
+        const SizedBox(height: 14),
+
+        AppCard(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Row(
+                children: const [
+                  Icon(Icons.account_balance, color: Color(0xFF2563EB), size: 20),
+                  SizedBox(width: 8),
+                  Text(
+                    'Bank Account Information',
+                    style: TextStyle(fontSize: 15, fontWeight: FontWeight.bold),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 14),
+              TextFormField(
+                initialValue: bankName,
+                decoration: const InputDecoration(
+                  labelText: 'Bank Name',
+                  hintText: 'e.g. HDFC Bank, State Bank of India, ICICI Bank',
+                  prefixIcon: Icon(Icons.business_outlined, size: 18),
+                ),
+                onChanged: (val) {
+                  _profile['bankName'] = val.trim();
+                  _localSettings['bankName'] = val.trim();
+                },
+              ),
+              const SizedBox(height: 12),
+              TextFormField(
+                initialValue: accHolder,
+                decoration: const InputDecoration(
+                  labelText: 'Account Holder / Beneficiary Name',
+                  hintText: 'e.g. Acme Security Services Pvt Ltd',
+                  prefixIcon: Icon(Icons.person_outline, size: 18),
+                ),
+                onChanged: (val) {
+                  _profile['accountHolder'] = val.trim();
+                  _localSettings['accountHolder'] = val.trim();
+                },
+              ),
+              const SizedBox(height: 12),
+              Row(
+                children: [
+                  Expanded(
+                    flex: 6,
+                    child: TextFormField(
+                      initialValue: accNo,
+                      decoration: const InputDecoration(
+                        labelText: 'Account Number',
+                        hintText: 'e.g. 50200012345678',
+                        prefixIcon: Icon(Icons.credit_card_outlined, size: 18),
+                      ),
+                      onChanged: (val) {
+                        _profile['accountNumber'] = val.trim();
+                        _localSettings['accountNumber'] = val.trim();
+                      },
+                    ),
+                  ),
+                  const SizedBox(width: 10),
+                  Expanded(
+                    flex: 4,
+                    child: TextFormField(
+                      initialValue: ifsc,
+                      textCapitalization: TextCapitalization.characters,
+                      decoration: const InputDecoration(
+                        labelText: 'IFSC Code',
+                        hintText: 'e.g. HDFC0001234',
+                        prefixIcon: Icon(Icons.pin_outlined, size: 18),
+                      ),
+                      onChanged: (val) {
+                        _profile['ifscCode'] = val.trim().toUpperCase();
+                        _localSettings['ifscCode'] = val.trim().toUpperCase();
+                      },
+                    ),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 12),
+              TextFormField(
+                initialValue: swift,
+                textCapitalization: TextCapitalization.characters,
+                decoration: const InputDecoration(
+                  labelText: 'SWIFT / BIC (Optional for international)',
+                  hintText: 'e.g. HDFCINBBXXX',
+                  prefixIcon: Icon(Icons.language_outlined, size: 18),
+                ),
+                onChanged: (val) {
+                  _profile['swiftBic'] = val.trim().toUpperCase();
+                  _localSettings['swiftBic'] = val.trim().toUpperCase();
+                },
+              ),
+            ],
+          ),
+        ),
+
+        const SizedBox(height: 14),
+
+        AppCard(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Row(
+                children: const [
+                  Icon(Icons.qr_code_2, color: Color(0xFF047857), size: 20),
+                  SizedBox(width: 8),
+                  Text(
+                    'Instant Digital Payment & UPI (Optional)',
+                    style: TextStyle(fontSize: 15, fontWeight: FontWeight.bold),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 6),
+              const Text(
+                'Customers can scan the QR code using Google Pay, PhonePe, Paytm, BHIM, or any UPI app to pay invoice balance directly.',
+                style: TextStyle(fontSize: 12, color: Color(0xFF64748B)),
+              ),
+              const SizedBox(height: 14),
+              TextFormField(
+                initialValue: upi,
+                decoration: const InputDecoration(
+                  labelText: 'UPI ID / VPA (Optional)',
+                  hintText: 'e.g. yourbusiness@okhdfcbank, 9876543210@paytm',
+                  prefixIcon: Icon(Icons.flash_on_outlined, size: 18, color: Color(0xFF047857)),
+                  helperText: 'Creates dynamic Scan-to-Pay QR code on invoice',
+                ),
+                onChanged: (val) {
+                  _profile['upiId'] = val.trim();
+                  _localSettings['upiId'] = val.trim();
+                },
+              ),
+              const SizedBox(height: 14),
+              TextFormField(
+                initialValue: payLink,
+                decoration: const InputDecoration(
+                  labelText: 'Payment Gateway Link (Optional)',
+                  hintText: 'e.g. https://rzp.io/l/yourlink or https://stripe.com/...',
+                  prefixIcon: Icon(Icons.link_outlined, size: 18),
+                  helperText: 'Shown as clickable payment link on invoice & PDF',
+                ),
+                onChanged: (val) {
+                  _profile['paymentLink'] = val.trim();
+                  _localSettings['paymentLink'] = val.trim();
+                },
+              ),
+            ],
+          ),
+        ),
+
+        const SizedBox(height: 24),
+        _buildBottomSaveButton(),
+      ],
+    );
+  }
+
+  // ---------------------------------------------------------------------------
+  // TAB 6: BRANDING, NOTES & TERMS
   // ---------------------------------------------------------------------------
   Widget _buildBrandingAndTermsTab() {
     return ListView(
@@ -1427,6 +1676,98 @@ class _InvoiceSettingsScreenState extends State<InvoiceSettingsScreen>
                     ),
                   ),
                 ],
+              ),
+            ],
+          ),
+        ),
+
+        const SizedBox(height: 14),
+
+        // DEFAULT INVOICE CONTENT (PRE-FILLED ON EVERY NEW INVOICE)
+        AppCard(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Row(
+                children: const [
+                  Icon(Icons.feed_outlined, color: Color(0xFF2563EB), size: 20),
+                  SizedBox(width: 8),
+                  Text(
+                    'Default Invoice Content & Defaults',
+                    style: TextStyle(fontSize: 15, fontWeight: FontWeight.bold),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 6),
+              const Text(
+                'These texts are automatically pre-filled into all new invoices, saving you repetitive typing:',
+                style: TextStyle(fontSize: 12, color: Color(0xFF64748B)),
+              ),
+              const SizedBox(height: 14),
+              TextFormField(
+                initialValue: _profile['defaultNotes']?.toString() ??
+                    _localSettings['defaultNotes']?.toString() ??
+                    '',
+                maxLines: 3,
+                decoration: const InputDecoration(
+                  labelText: 'Default Notes & Remarks',
+                  hintText:
+                      'e.g. Thank you for your business. Security attendance verified by site supervisor.',
+                  alignLabelWithHint: true,
+                  prefixIcon: Icon(Icons.notes_rounded, size: 18),
+                ),
+                onChanged: (val) {
+                  _profile['defaultNotes'] = val;
+                  _localSettings['defaultNotes'] = val;
+                },
+              ),
+              const SizedBox(height: 12),
+              TextFormField(
+                initialValue: _profile['defaultTerms']?.toString() ??
+                    _localSettings['defaultTerms']?.toString() ??
+                    '',
+                maxLines: 3,
+                decoration: const InputDecoration(
+                  labelText: 'Default Terms & Conditions',
+                  hintText:
+                      'e.g. Payment due within 15 days of bill submission. Interest @ 18% p.a. on overdue bills.',
+                  alignLabelWithHint: true,
+                  prefixIcon: Icon(Icons.gavel_rounded, size: 18),
+                ),
+                onChanged: (val) {
+                  _profile['defaultTerms'] = val;
+                  _localSettings['defaultTerms'] = val;
+                },
+              ),
+              const SizedBox(height: 12),
+              TextFormField(
+                initialValue: _localSettings['defaultPaymentInstructions']?.toString() ?? '',
+                maxLines: 2,
+                decoration: const InputDecoration(
+                  labelText: 'Default Payment Instructions',
+                  hintText:
+                      'e.g. Please mention Invoice # in NEFT narration. Cheques payable to Acme Security.',
+                  alignLabelWithHint: true,
+                  prefixIcon: Icon(Icons.payment_rounded, size: 18),
+                ),
+                onChanged: (val) {
+                  _localSettings['defaultPaymentInstructions'] = val;
+                },
+              ),
+              const SizedBox(height: 12),
+              TextFormField(
+                initialValue: _localSettings['defaultShippingDetails']?.toString() ?? '',
+                maxLines: 2,
+                decoration: const InputDecoration(
+                  labelText: 'Default Delivery / Site Shipping Details',
+                  hintText:
+                      'e.g. Unit deployment post, gate supervisor contact, delivery terms.',
+                  alignLabelWithHint: true,
+                  prefixIcon: Icon(Icons.local_shipping_outlined, size: 18),
+                ),
+                onChanged: (val) {
+                  _localSettings['defaultShippingDetails'] = val;
+                },
               ),
             ],
           ),
