@@ -143,7 +143,7 @@ Typed and voice chat both use the authenticated Spring backend. Speech is transc
 left editable for review before it is sent. The Android build no longer contains Gemini API calls or
 loads a Gemini key from `.env`; configure `GEMINI_API_KEY` only in the backend deployment environment.
 `GEMINI_MODEL` optionally selects the chat/vision model; `GEMINI_EMBEDDING_MODEL` defaults to
-`gemini-embedding-001`.
+`text-embedding-004`.
 
 The `/api/v1/ai/chat` endpoint answers using tenant-scoped live database summaries and recent
 invoice/expense/client records, plus semantically retrieved company reference text. It can prepare

@@ -14,6 +14,14 @@ class TemplateConfig {
     this.rateHeader = 'Rate',
     this.amountHeader = 'Amount',
     this.showLogo = true,
+    this.showBillFrom = true,
+    this.showBillTo = true,
+    this.showBankDetails = true,
+    this.showShipping = false,
+    this.showNotes = true,
+    this.showTerms = true,
+    this.headerLayout = 'modern',
+    this.tableStyle = 'clean',
     this.showTaxBreakdown = true,
     this.showPaymentInstructions = true,
     this.showSignature = true,
@@ -33,6 +41,14 @@ class TemplateConfig {
   final String rateHeader;
   final String amountHeader;
   final bool showLogo;
+  final bool showBillFrom;
+  final bool showBillTo;
+  final bool showBankDetails;
+  final bool showShipping;
+  final bool showNotes;
+  final bool showTerms;
+  final String headerLayout;
+  final String tableStyle;
   final bool showTaxBreakdown;
   final bool showPaymentInstructions;
   final bool showSignature;
@@ -51,6 +67,14 @@ class TemplateConfig {
         'rateHeader': rateHeader,
         'amountHeader': amountHeader,
         'showLogo': showLogo,
+        'showBillFrom': showBillFrom,
+        'showBillTo': showBillTo,
+        'showBankDetails': showBankDetails,
+        'showShipping': showShipping,
+        'showNotes': showNotes,
+        'showTerms': showTerms,
+        'headerLayout': headerLayout,
+        'tableStyle': tableStyle,
         'showTaxBreakdown': showTaxBreakdown,
         'showPaymentInstructions': showPaymentInstructions,
         'showSignature': showSignature,
@@ -72,6 +96,14 @@ class TemplateConfig {
         rateHeader: json['rateHeader'] as String? ?? 'Rate',
         amountHeader: json['amountHeader'] as String? ?? 'Amount',
         showLogo: json['showLogo'] as bool? ?? true,
+        showBillFrom: json['showBillFrom'] as bool? ?? true,
+        showBillTo: json['showBillTo'] as bool? ?? true,
+        showBankDetails: json['showBankDetails'] as bool? ?? true,
+        showShipping: json['showShipping'] as bool? ?? false,
+        showNotes: json['showNotes'] as bool? ?? true,
+        showTerms: json['showTerms'] as bool? ?? true,
+        headerLayout: json['headerLayout'] as String? ?? 'modern',
+        tableStyle: json['tableStyle'] as String? ?? 'clean',
         showTaxBreakdown: json['showTaxBreakdown'] as bool? ?? true,
         showPaymentInstructions:
             json['showPaymentInstructions'] as bool? ?? true,
@@ -104,6 +136,14 @@ class TemplateConfig {
     String? rateHeader,
     String? amountHeader,
     bool? showLogo,
+    bool? showBillFrom,
+    bool? showBillTo,
+    bool? showBankDetails,
+    bool? showShipping,
+    bool? showNotes,
+    bool? showTerms,
+    String? headerLayout,
+    String? tableStyle,
     bool? showTaxBreakdown,
     bool? showPaymentInstructions,
     bool? showSignature,
@@ -122,6 +162,14 @@ class TemplateConfig {
         rateHeader: rateHeader ?? this.rateHeader,
         amountHeader: amountHeader ?? this.amountHeader,
         showLogo: showLogo ?? this.showLogo,
+        showBillFrom: showBillFrom ?? this.showBillFrom,
+        showBillTo: showBillTo ?? this.showBillTo,
+        showBankDetails: showBankDetails ?? this.showBankDetails,
+        showShipping: showShipping ?? this.showShipping,
+        showNotes: showNotes ?? this.showNotes,
+        showTerms: showTerms ?? this.showTerms,
+        headerLayout: headerLayout ?? this.headerLayout,
+        tableStyle: tableStyle ?? this.tableStyle,
         showTaxBreakdown: showTaxBreakdown ?? this.showTaxBreakdown,
         showPaymentInstructions:
             showPaymentInstructions ?? this.showPaymentInstructions,
