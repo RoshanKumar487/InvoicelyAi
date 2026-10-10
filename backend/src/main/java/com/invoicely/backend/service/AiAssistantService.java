@@ -150,7 +150,13 @@ public class AiAssistantService {
                 : List.of();
         long clientCount = canReadClients ? clientRepository.countByCompanyId(companyId) : 0;
 
-        List<KnowledgeChunk> knowledge = knowledgeService.retrieve(companyId, message.trim());
+        List<KnowledgeChunk> knowledge;
+        try {
+            knowledge = knowledgeService.retrieve(companyId, message.trim());
+        } catch (Exception ex) {
+            LOGGER.warn("Knowledge retrieval fallback in answer: {}", ex.getMessage());
+            knowledge = List.of();
+        }
         String context = buildContext(invoices, expenses, clients, knowledge, invoiceCount, overdueCount, collected,
                 expenseCount, expenseTotal, clientCount,
                 canReadInvoices, canReadExpenses, canReadClients);
@@ -184,7 +190,13 @@ public class AiAssistantService {
         String clientContext = "Saved clients available for invoice drafts:\n" + clients.stream()
                 .map(client -> "- " + safe(client.getName()) + " | " + safe(client.getCompanyName()))
                 .collect(Collectors.joining("\n"));
-        List<KnowledgeChunk> knowledge = knowledgeService.retrieve(principal.getCompanyId(), message.trim());
+        List<KnowledgeChunk> knowledge;
+        try {
+            knowledge = knowledgeService.retrieve(principal.getCompanyId(), message.trim());
+        } catch (Exception ex) {
+            LOGGER.warn("Knowledge retrieval fallback in invoice draft: {}", ex.getMessage());
+            knowledge = List.of();
+        }
         StringBuilder context = new StringBuilder(clientContext);
         if (!knowledge.isEmpty()) {
             context.append("\nCompany reference material:\n");

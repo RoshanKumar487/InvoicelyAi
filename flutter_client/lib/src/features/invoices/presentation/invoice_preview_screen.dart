@@ -89,12 +89,29 @@ class _InvoicePreviewScreenState extends State<InvoicePreviewScreen>
     super.dispose();
   }
 
-  void _setZoom(double targetScale, {bool animate = true}) {
-    final bounded = targetScale.clamp(0.5, 3.5).toDouble();
-    final targetMatrix = Matrix4.identity()
-      ..scale(bounded, bounded, bounded);
+  static const double a4PaperWidth = 760.0;
+  static const double a4PaperMinHeight = 1075.0;
 
-    if (animate && _animController != null) {
+  double? _initialFitScale;
+  double _lastViewportWidth = 0.0;
+
+  void _initFitZoom(double viewportWidth) {
+    if (_initialFitScale != null && (_lastViewportWidth - viewportWidth).abs() < 2.0) {
+      return;
+    }
+    _lastViewportWidth = viewportWidth;
+    final fit = ((viewportWidth - 24) / a4PaperWidth).clamp(0.25, 1.2);
+    _initialFitScale = fit;
+    final tx = (viewportWidth - a4PaperWidth * fit) / 2;
+    final targetMatrix = Matrix4.identity()
+      ..translate(tx, 16.0)
+      ..scale(fit, fit);
+    _zoomController.value = targetMatrix;
+    _zoomScale = fit;
+  }
+
+  void _animateToMatrix(Matrix4 targetMatrix, double targetScale) {
+    if (_animController != null) {
       _zoomAnimation = Matrix4Tween(
         begin: _zoomController.value,
         end: targetMatrix,
@@ -104,17 +121,43 @@ class _InvoicePreviewScreenState extends State<InvoicePreviewScreen>
       _animController!.forward(from: 0);
     } else {
       _zoomController.value = targetMatrix;
-      setState(() => _zoomScale = bounded);
+      setState(() => _zoomScale = targetScale);
     }
   }
 
-  void _handleDoubleTap() {
-    if (_zoomScale > 1.15) {
-      _setZoom(1.0);
-    } else if (_zoomScale > 0.8) {
-      _setZoom(0.65);
+  void _zoomToFit(double viewportWidth) {
+    final fit = ((viewportWidth - 24) / a4PaperWidth).clamp(0.25, 1.2);
+    final tx = (viewportWidth - a4PaperWidth * fit) / 2;
+    final targetMatrix = Matrix4.identity()
+      ..translate(tx, 16.0)
+      ..scale(fit, fit);
+    _animateToMatrix(targetMatrix, fit);
+  }
+
+  void _zoomToActual(double viewportWidth) {
+    const actual = 1.0;
+    final tx = ((viewportWidth - a4PaperWidth) / 2).clamp(-380.0, 16.0);
+    final targetMatrix = Matrix4.identity()
+      ..translate(tx, 16.0)
+      ..scale(actual, actual);
+    _animateToMatrix(targetMatrix, actual);
+  }
+
+  void _setZoomStep(double delta, double viewportWidth) {
+    final newScale = (_zoomScale + delta).clamp(0.25, 3.5);
+    final tx = (viewportWidth - a4PaperWidth * newScale) / 2;
+    final targetMatrix = Matrix4.identity()
+      ..translate(tx.clamp(-400.0, 24.0), 16.0)
+      ..scale(newScale, newScale);
+    _animateToMatrix(targetMatrix, newScale);
+  }
+
+  void _handleDoubleTap(double viewportWidth) {
+    final fit = ((viewportWidth - 24) / a4PaperWidth).clamp(0.25, 1.2);
+    if ((_zoomScale - fit).abs() < 0.12) {
+      _zoomToActual(viewportWidth);
     } else {
-      _setZoom(1.0);
+      _zoomToFit(viewportWidth);
     }
   }
 
@@ -749,33 +792,33 @@ class _InvoicePreviewScreenState extends State<InvoicePreviewScreen>
           const SizedBox(width: 4),
         ],
       ),
-      body: Stack(
-        children: [
-          // FULL PAGE ZOOMABLE CANVAS
-          GestureDetector(
-            onDoubleTap: _handleDoubleTap,
-            child: InteractiveViewer(
-              transformationController: _zoomController,
-              minScale: 0.5,
-              maxScale: 3.5,
-              boundaryMargin: const EdgeInsets.all(120),
-              clipBehavior: Clip.none,
-              onInteractionUpdate: (_) {
-                final currentScale =
-                    _zoomController.value.getMaxScaleOnAxis();
-                if ((currentScale - _zoomScale).abs() > 0.02) {
-                  setState(() => _zoomScale = currentScale);
-                }
-              },
-              child: SingleChildScrollView(
-                padding: EdgeInsets.symmetric(
-                  horizontal: isMobile ? 8 : 16,
-                  vertical: 12,
-                ),
-                child: Center(
-                  child: ConstrainedBox(
-                    constraints: const BoxConstraints(maxWidth: 720),
+      body: LayoutBuilder(
+        builder: (context, constraints) {
+          final viewportWidth = constraints.maxWidth;
+          _initFitZoom(viewportWidth);
+
+          return Stack(
+            children: [
+              // FULL PAGE ZOOMABLE CANVAS (EXACT A4 PROPORTIONS)
+              GestureDetector(
+                onDoubleTap: () => _handleDoubleTap(viewportWidth),
+                child: InteractiveViewer(
+                  transformationController: _zoomController,
+                  minScale: 0.25,
+                  maxScale: 3.5,
+                  boundaryMargin: const EdgeInsets.symmetric(horizontal: 160, vertical: 200),
+                  constrained: false,
+                  clipBehavior: Clip.none,
+                  onInteractionUpdate: (_) {
+                    final currentScale = _zoomController.value.getMaxScaleOnAxis();
+                    if ((currentScale - _zoomScale).abs() > 0.02) {
+                      setState(() => _zoomScale = currentScale);
+                    }
+                  },
+                  child: SizedBox(
+                    width: a4PaperWidth,
                     child: Column(
+                      mainAxisSize: MainAxisSize.min,
                       children: [
                         // Quotation / Estimate conversion banner (Kotlin style)
                         if (isEstimate) ...[
@@ -797,8 +840,7 @@ class _InvoicePreviewScreenState extends State<InvoicePreviewScreen>
                               children: [
                                 Expanded(
                                   child: Column(
-                                    crossAxisAlignment:
-                                        CrossAxisAlignment.start,
+                                    crossAxisAlignment: CrossAxisAlignment.start,
                                     children: [
                                       Row(
                                         children: [
@@ -812,15 +854,13 @@ class _InvoicePreviewScreenState extends State<InvoicePreviewScreen>
                                           ),
                                           const SizedBox(width: 8),
                                           Container(
-                                            padding:
-                                                const EdgeInsets.symmetric(
+                                            padding: const EdgeInsets.symmetric(
                                               horizontal: 6,
                                               vertical: 2,
                                             ),
                                             decoration: BoxDecoration(
                                               color: const Color(0xFF10B981),
-                                              borderRadius:
-                                                  BorderRadius.circular(4),
+                                              borderRadius: BorderRadius.circular(4),
                                             ),
                                             child: const Text(
                                               'ESTIMATE',
@@ -845,9 +885,7 @@ class _InvoicePreviewScreenState extends State<InvoicePreviewScreen>
                                   ),
                                 ),
                                 FilledButton(
-                                  onPressed: _busy
-                                      ? null
-                                      : _convertEstimateToInvoice,
+                                  onPressed: _busy ? null : _convertEstimateToInvoice,
                                   style: FilledButton.styleFrom(
                                     backgroundColor: const Color(0xFF10B981),
                                     shape: RoundedRectangleBorder(
@@ -871,7 +909,7 @@ class _InvoicePreviewScreenState extends State<InvoicePreviewScreen>
                           ),
                         ],
 
-                        // A4 PAPER DOCUMENT CARD
+                        // A4 PAPER DOCUMENT CARD (EXACT PDF PRINT SIZE)
                         _buildA4Paper(
                           invoice: invoice,
                           template: template,
@@ -879,94 +917,87 @@ class _InvoicePreviewScreenState extends State<InvoicePreviewScreen>
                           isMobile: isMobile,
                         ),
 
-                        const SizedBox(height: 120), // generous spacing so footer & DocuHub signature are never cut off
+                        const SizedBox(height: 140), // generous bottom clearance
                       ],
                     ),
                   ),
                 ),
               ),
-            ),
-          ),
 
-          // FLOATING QUICK ZOOM THUMB CONTROLLER (Kotlin style)
-          Positioned(
-            right: 16,
-            bottom: 16,
-            child: Material(
-              color: isDark
-                  ? const Color(0xEE1E293B)
-                  : Colors.white.withAlpha(240),
-              elevation: 8,
-              borderRadius: BorderRadius.circular(24),
-              child: Container(
-                padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 4),
-                decoration: BoxDecoration(
+              // FLOATING QUICK ZOOM THUMB CONTROLLER
+              Positioned(
+                right: 16,
+                bottom: 16,
+                child: Material(
+                  color: isDark
+                      ? const Color(0xEE1E293B)
+                      : Colors.white.withAlpha(245),
+                  elevation: 8,
                   borderRadius: BorderRadius.circular(24),
-                  border: Border.all(
-                    color: isDark
-                        ? Colors.white.withAlpha(40)
-                        : Colors.black.withAlpha(25),
-                  ),
-                ),
-                child: Row(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    IconButton(
-                      icon: const Icon(Icons.zoom_out, size: 18),
-                      tooltip: 'Zoom Out',
-                      onPressed: () => _setZoom(_zoomScale - 0.2),
-                      constraints:
-                          const BoxConstraints(minWidth: 32, minHeight: 32),
-                      padding: EdgeInsets.zero,
-                    ),
-                    IconButton(
-                      icon: const Icon(Icons.fit_screen_rounded, size: 18),
-                      tooltip: 'Full A4 Fit',
-                      onPressed: () => _setZoom(0.65),
-                      constraints:
-                          const BoxConstraints(minWidth: 32, minHeight: 32),
-                      padding: EdgeInsets.zero,
-                    ),
-                    InkWell(
-                      onTap: () => _setZoom(_zoomScale == 1.0 ? 0.65 : 1.0),
-                      borderRadius: BorderRadius.circular(8),
-                      child: Padding(
-                        padding: const EdgeInsets.symmetric(
-                          horizontal: 8,
-                          vertical: 4,
-                        ),
-                        child: Text(
-                          '${(_zoomScale * 100).round()}%',
-                          style: TextStyle(
-                            fontSize: 12,
-                            fontWeight: FontWeight.bold,
-                            color: Theme.of(context).colorScheme.primary,
-                          ),
-                        ),
+                  child: Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 4),
+                    decoration: BoxDecoration(
+                      borderRadius: BorderRadius.circular(24),
+                      border: Border.all(
+                        color: isDark
+                            ? Colors.white.withAlpha(40)
+                            : Colors.black.withAlpha(25),
                       ),
                     ),
-                    IconButton(
-                      icon: const Icon(Icons.zoom_in, size: 18),
-                      tooltip: 'Zoom In',
-                      onPressed: () => _setZoom(_zoomScale + 0.2),
-                      constraints:
-                          const BoxConstraints(minWidth: 32, minHeight: 32),
-                      padding: EdgeInsets.zero,
+                    child: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        IconButton(
+                          icon: const Icon(Icons.zoom_out, size: 18),
+                          tooltip: 'Zoom Out',
+                          onPressed: () => _setZoomStep(-0.15, viewportWidth),
+                          constraints: const BoxConstraints(minWidth: 32, minHeight: 32),
+                          padding: EdgeInsets.zero,
+                        ),
+                        IconButton(
+                          icon: const Icon(Icons.fit_screen_rounded, size: 18),
+                          tooltip: 'Fit Page to Screen',
+                          onPressed: () => _zoomToFit(viewportWidth),
+                          constraints: const BoxConstraints(minWidth: 32, minHeight: 32),
+                          padding: EdgeInsets.zero,
+                        ),
+                        InkWell(
+                          onTap: () => _handleDoubleTap(viewportWidth),
+                          borderRadius: BorderRadius.circular(8),
+                          child: Padding(
+                            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                            child: Text(
+                              '${(_zoomScale * 100).round()}%',
+                              style: TextStyle(
+                                fontSize: 12,
+                                fontWeight: FontWeight.bold,
+                                color: Theme.of(context).colorScheme.primary,
+                              ),
+                            ),
+                          ),
+                        ),
+                        IconButton(
+                          icon: const Icon(Icons.zoom_in, size: 18),
+                          tooltip: 'Zoom In',
+                          onPressed: () => _setZoomStep(0.15, viewportWidth),
+                          constraints: const BoxConstraints(minWidth: 32, minHeight: 32),
+                          padding: EdgeInsets.zero,
+                        ),
+                        IconButton(
+                          icon: const Icon(Icons.restart_alt_rounded, size: 18),
+                          tooltip: '100% Print Actual Size',
+                          onPressed: () => _zoomToActual(viewportWidth),
+                          constraints: const BoxConstraints(minWidth: 32, minHeight: 32),
+                          padding: EdgeInsets.zero,
+                        ),
+                      ],
                     ),
-                    IconButton(
-                      icon: const Icon(Icons.restart_alt_rounded, size: 18),
-                      tooltip: 'Reset to 100%',
-                      onPressed: () => _setZoom(1.0),
-                      constraints:
-                          const BoxConstraints(minWidth: 32, minHeight: 32),
-                      padding: EdgeInsets.zero,
-                    ),
-                  ],
+                  ),
                 ),
               ),
-            ),
-          ),
-        ],
+            ],
+          );
+        },
       ),
     );
   }
@@ -1101,20 +1132,21 @@ class _InvoicePreviewScreenState extends State<InvoicePreviewScreen>
             : '');
 
     return Container(
-      width: double.infinity,
+      width: a4PaperWidth,
+      constraints: const BoxConstraints(minHeight: a4PaperMinHeight),
       decoration: BoxDecoration(
         color: Colors.white,
-        borderRadius: BorderRadius.circular(12),
+        borderRadius: BorderRadius.circular(8),
         boxShadow: const [
           BoxShadow(
             color: Color(0x66000000),
-            blurRadius: 24,
-            spreadRadius: 2,
-            offset: Offset(0, 10),
+            blurRadius: 28,
+            spreadRadius: 4,
+            offset: Offset(0, 12),
           ),
         ],
       ),
-      padding: EdgeInsets.all(isMobile ? 16 : 32),
+      padding: const EdgeInsets.symmetric(horizontal: 36, vertical: 36),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
@@ -1799,6 +1831,7 @@ class _LineItemsTable extends StatelessWidget {
                 ),
                 if (_show('showItemQty'))
                   Expanded(
+                    flex: 2,
                     child: Text(qtyHeader, textAlign: TextAlign.end),
                   ),
                 if (_show('showItemRate'))
@@ -1808,10 +1841,12 @@ class _LineItemsTable extends StatelessWidget {
                   ),
                 if (_show('showItemDiscount'))
                   Expanded(
+                    flex: 2,
                     child: Text(_label('customDiscountHeader', 'Discount'), textAlign: TextAlign.end),
                   ),
                 if (_show('showItemTax'))
                   Expanded(
+                    flex: 2,
                     child: Text(_label('customTaxHeader', 'Tax'), textAlign: TextAlign.end),
                   ),
                 for (final col in customCols)
@@ -1820,7 +1855,7 @@ class _LineItemsTable extends StatelessWidget {
                     child: Text(col['label']?.toString() ?? '', textAlign: TextAlign.end),
                   ),
                 Expanded(
-                  flex: 2,
+                  flex: 3,
                   child: Text(amountHeader, textAlign: TextAlign.end),
                 ),
               ],
@@ -1860,6 +1895,7 @@ class _LineItemsTable extends StatelessWidget {
                   ),
                   if (_show('showItemQty'))
                     Expanded(
+                      flex: 2,
                       child: Text(
                         '${_quantity(item.quantity)}'
                         '${_show('showItemUnit') ? ' ${item.unit}' : ''}',
@@ -1878,6 +1914,7 @@ class _LineItemsTable extends StatelessWidget {
                     ),
                   if (_show('showItemDiscount'))
                     Expanded(
+                      flex: 2,
                       child: Text(
                         '${item.discountRate}%',
                         textAlign: TextAlign.end,
@@ -1886,6 +1923,7 @@ class _LineItemsTable extends StatelessWidget {
                     ),
                   if (_show('showItemTax'))
                     Expanded(
+                      flex: 2,
                       child: Text(
                         '${item.taxRate}%',
                         textAlign: TextAlign.end,
@@ -1902,7 +1940,7 @@ class _LineItemsTable extends StatelessWidget {
                       ),
                     ),
                   Expanded(
-                    flex: 2,
+                    flex: 3,
                     child: Text(
                       _money(item.total, invoice.currencySymbol),
                       textAlign: TextAlign.end,

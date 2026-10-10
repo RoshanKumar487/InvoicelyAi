@@ -445,7 +445,10 @@ class _AiChatScreenState extends State<AiChatScreen> {
                     ),
                   if (_errorMessage != null) ...[
                     const SizedBox(height: 12),
-                    _ErrorCard(message: _errorMessage!),
+                    _ErrorCard(
+                      message: _errorMessage!,
+                      onDismiss: () => setState(() => _errorMessage = null),
+                    ),
                   ],
                 ],
               ),
@@ -795,9 +798,10 @@ class _InfoBadge extends StatelessWidget {
 }
 
 class _ErrorCard extends StatelessWidget {
-  const _ErrorCard({required this.message});
+  const _ErrorCard({required this.message, this.onDismiss});
 
   final String message;
+  final VoidCallback? onDismiss;
 
   @override
   Widget build(BuildContext context) {
@@ -815,6 +819,18 @@ class _ErrorCard extends StatelessWidget {
               style: TextStyle(color: colors.error),
             ),
           ),
+          if (onDismiss != null)
+            Padding(
+              padding: const EdgeInsets.only(left: 8),
+              child: InkWell(
+                onTap: onDismiss,
+                borderRadius: BorderRadius.circular(12),
+                child: Padding(
+                  padding: const EdgeInsets.all(4),
+                  child: Icon(Icons.close, size: 18, color: colors.error),
+                ),
+              ),
+            ),
         ],
       ),
     );

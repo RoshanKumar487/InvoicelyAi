@@ -334,6 +334,86 @@ class _InvoiceSettingsScreenState extends State<InvoiceSettingsScreen>
           _localSettings['customAmountHeader'] = 'Line Total';
           _localSettings['showShippingSection'] = true;
           _localSettings['showPoNumber'] = true;
+        case 'security':
+          _localSettings['industryPresetId'] = 'security_agency';
+          _localSettings['customTitle'] = 'Security Services Tax Invoice';
+          _localSettings['customBillToLabel'] = 'Client / Principal Employer';
+          _localSettings['customShipToLabel'] = 'Deployment Site / Unit Location';
+          _localSettings['showShippingSection'] = true;
+          _localSettings['customItemHeader'] = 'Designation / Deployment (Supervisor, Guard, etc.)';
+          _localSettings['customQtyHeader'] = 'No. of Guards / Staff';
+          _localSettings['customUnitHeader'] = 'Duty / Days';
+          _localSettings['customRateHeader'] = 'Rate / Salary per Month';
+          _localSettings['customTaxHeader'] = 'GST (18%)';
+          _localSettings['customAmountHeader'] = 'Total Amount';
+          _localSettings['showItemUnit'] = true;
+          _localSettings['showItemQty'] = true;
+          _localSettings['showItemRate'] = true;
+          _localSettings['showItemTax'] = true;
+          _localSettings['defaultNotes'] = 'Security attendance verified by client site supervisor. Statutory EPF & ESIC challans enclosed.';
+          _localSettings['defaultTerms'] = 'Payment due within 15 days of bill submission. RCM / GST compliance applicable.';
+          final secCols = _getCustomFields('customColumns_items');
+          if (!secCols.any((c) => c['label'] == 'SAC Code')) {
+            secCols.add({
+              'id': 'col_sec_sac',
+              'label': 'SAC Code',
+              'value': '998525',
+              'isVisible': true,
+            });
+          }
+          if (!secCols.any((c) => c['label'] == 'Shift / Hours')) {
+            secCols.add({
+              'id': 'col_sec_shift',
+              'label': 'Shift / Hours',
+              'value': '12 Hrs Shift',
+              'isVisible': true,
+            });
+          }
+          if (!secCols.any((c) => c['label'] == 'Duty Days')) {
+            secCols.add({
+              'id': 'col_sec_duty',
+              'label': 'Duty Days',
+              'value': '26 / 30 Days',
+              'isVisible': true,
+            });
+          }
+          _localSettings['customColumns_items'] = secCols;
+        case 'hr_staffing':
+          _localSettings['industryPresetId'] = 'hr_staffing';
+          _localSettings['customTitle'] = 'Staffing & Salary Reimbursement Invoice';
+          _localSettings['customBillToLabel'] = 'Client Organization';
+          _localSettings['customShipToLabel'] = 'Office / Branch Location';
+          _localSettings['showShippingSection'] = true;
+          _localSettings['customItemHeader'] = 'Employee Name / Designation';
+          _localSettings['customQtyHeader'] = 'Staff Count';
+          _localSettings['customUnitHeader'] = 'Days Worked';
+          _localSettings['customRateHeader'] = 'Monthly Salary / Rate';
+          _localSettings['customTaxHeader'] = 'GST (18%)';
+          _localSettings['customAmountHeader'] = 'Total Salary Due';
+          _localSettings['showItemUnit'] = true;
+          _localSettings['showItemQty'] = true;
+          _localSettings['showItemRate'] = true;
+          _localSettings['showItemTax'] = true;
+          _localSettings['defaultNotes'] = 'Salary attendance muster roll attached. Net salaries disbursed to employee accounts.';
+          _localSettings['defaultTerms'] = 'Monthly reimbursement payable by 5th of every calendar month.';
+          final hrCols = _getCustomFields('customColumns_items');
+          if (!hrCols.any((c) => c['label'] == 'SAC Code')) {
+            hrCols.add({
+              'id': 'col_hr_sac',
+              'label': 'SAC Code',
+              'value': '998519',
+              'isVisible': true,
+            });
+          }
+          if (!hrCols.any((c) => c['label'] == 'Emp ID')) {
+            hrCols.add({
+              'id': 'col_hr_empid',
+              'label': 'Emp ID',
+              'value': 'EMP-101',
+              'isVisible': true,
+            });
+          }
+          _localSettings['customColumns_items'] = hrCols;
         case 'freelance':
           _localSettings['customTitle'] = 'INVOICE';
           _localSettings['customItemHeader'] = 'Project Milestone / Task';
@@ -344,6 +424,58 @@ class _InvoiceSettingsScreenState extends State<InvoiceSettingsScreen>
       }
     });
     _showFeedback('Applied $type preset. Review & tap Save to keep.');
+  }
+
+  Widget _presetChip(String id, String label, String subtitle) {
+    final currentId = _localSettings['industryPresetId']?.toString();
+    final isSelected = currentId == id ||
+        (id == 'security' && (currentId == 'security_agency' || _localSettings['customItemHeader']?.toString().contains('Guards') == true)) ||
+        (id == 'hr_staffing' && (currentId == 'hr_staffing' || _localSettings['customItemHeader']?.toString().contains('Employee') == true)) ||
+        (id == 'gst' && (_localSettings['customTaxHeader']?.toString().contains('GST') == true && currentId != 'security' && currentId != 'security_agency')) ||
+        (id == 'it' && _localSettings['customQtyHeader']?.toString() == 'Hours') ||
+        (id == 'freelance' && _localSettings['customRateHeader']?.toString() == 'Fee');
+    return InkWell(
+      onTap: () => _applyQuickPreset(id),
+      borderRadius: BorderRadius.circular(10),
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+        decoration: BoxDecoration(
+          color: isSelected ? const Color(0xFFEFF6FF) : const Color(0xFFF8FAFC),
+          borderRadius: BorderRadius.circular(10),
+          border: Border.all(
+            color: isSelected ? const Color(0xFF2563EB) : const Color(0xFFE2E8F0),
+            width: isSelected ? 1.6 : 1.0,
+          ),
+        ),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Text(
+                  label,
+                  style: TextStyle(
+                    fontSize: 13,
+                    fontWeight: isSelected ? FontWeight.bold : FontWeight.w600,
+                    color: isSelected ? const Color(0xFF1D4ED8) : const Color(0xFF1E293B),
+                  ),
+                ),
+                if (isSelected) ...[
+                  const SizedBox(width: 6),
+                  const Icon(Icons.check_circle, size: 14, color: Color(0xFF2563EB)),
+                ],
+              ],
+            ),
+            const SizedBox(height: 2),
+            Text(
+              subtitle,
+              style: const TextStyle(fontSize: 10, color: Color(0xFF64748B)),
+            ),
+          ],
+        ),
+      ),
+    );
   }
 
   Future<void> _save() async {
@@ -790,6 +922,45 @@ class _InvoiceSettingsScreenState extends State<InvoiceSettingsScreen>
         _buildInfoBanner(
           'Line Items & Table Columns',
           'Rename all column headers, show/hide optional columns (tax, discount, units), and add brand new custom columns like HSN/SAC Code or SKU.',
+        ),
+        const SizedBox(height: 14),
+
+        AppCard(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Row(
+                children: [
+                  const Icon(Icons.business_center_outlined, color: Color(0xFF2563EB)),
+                  const SizedBox(width: 8),
+                  Text(
+                    'Business Industry Presets',
+                    style: Theme.of(context).textTheme.titleMedium?.copyWith(
+                          fontWeight: FontWeight.bold,
+                        ),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 6),
+              const Text(
+                'Select your business category to instantly set the right column labels, duty/salary formulas, and SAC codes:',
+                style: TextStyle(fontSize: 12, color: Color(0xFF64748B)),
+              ),
+              const SizedBox(height: 12),
+              Wrap(
+                spacing: 8,
+                runSpacing: 8,
+                children: [
+                  _presetChip('security', '🛡️ Security Agency & Guards', 'Supervisor, Guard, Days, Rate/Salary'),
+                  _presetChip('hr_staffing', '👤 HR Staffing & Payroll', 'Staff, Days Worked, Monthly Salary'),
+                  _presetChip('gst', '⚖️ GST Tax Invoice', 'Goods / Services, HSN/SAC, Qty, Rate'),
+                  _presetChip('it', '💻 IT & Software Consulting', 'Deliverables, Hours, Hourly Rate'),
+                  _presetChip('retail', '🛍️ Retail & Wholesale', 'Product, Qty, Price, Discount'),
+                  _presetChip('freelance', '🎨 Freelance Services', 'Tasks, Milestones, Units, Fee'),
+                ],
+              ),
+            ],
+          ),
         ),
         const SizedBox(height: 14),
 

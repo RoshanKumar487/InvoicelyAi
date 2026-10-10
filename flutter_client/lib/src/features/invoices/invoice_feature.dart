@@ -96,6 +96,8 @@ class _InvoiceFeatureScreenState extends State<InvoiceFeatureScreen> {
             preferredTemplate: widget.preferredTemplate,
             initialLocalSettings: widget.localSettings,
             clientRepository: ClientsRepository(apiClient: widget.apiClient),
+            onOpenInvoiceSettings: widget.onOpenBusinessSettings,
+            onSaveLocalSettings: widget.onSaveLocalSettings,
             onCancel: _selected == null
                 ? _backToList
                 : () => _setPage(_InvoicePage.preview),
