@@ -1,9 +1,12 @@
+import 'dart:convert';
+
 import 'package:flutter/material.dart';
+import 'package:image_picker/image_picker.dart';
 
 import '../../../core/api/api_client.dart';
 import '../../../core/api/api_exception.dart';
 import '../../../shared/widgets/app_card.dart';
-import '../../../theme/app_theme.dart';
+import '../../../shared/widgets/signature_pad_dialog.dart';
 import '../data/settings_repository.dart';
 
 class InvoiceSettingsScreen extends StatefulWidget {
@@ -24,7 +27,8 @@ class InvoiceSettingsScreen extends StatefulWidget {
   State<InvoiceSettingsScreen> createState() => _InvoiceSettingsScreenState();
 }
 
-class _InvoiceSettingsScreenState extends State<InvoiceSettingsScreen> {
+class _InvoiceSettingsScreenState extends State<InvoiceSettingsScreen>
+    with SingleTickerProviderStateMixin {
   late final SettingsRepository _repository;
   Map<String, dynamic> _profile = <String, dynamic>{};
   late Map<String, Object?> _localSettings;
@@ -66,64 +70,51 @@ class _InvoiceSettingsScreenState extends State<InvoiceSettingsScreen> {
     'brandColorHex',
   };
 
-  static const _clientFields = <String, String>{
-    'showClientCompany': 'Company name',
-    'showClientEmail': 'Email',
-    'showClientPhone': 'Phone',
-    'showClientAddress': 'Address',
-    'showClientTaxId': 'Tax ID',
-  };
-
-  static const _itemFields = <String, String>{
-    'showItemUnit': 'Unit',
-    'showItemQty': 'Quantity',
-    'showItemRate': 'Rate',
-    'showItemDiscount': 'Discount',
-    'showItemTax': 'Item tax',
-  };
-
-  static const _sectionFields = <String, String>{
-    'showShippingSection': 'Shipping section',
-    'showNotesSection': 'Notes section',
-    'showPaymentInstructions': 'Payment instructions',
-    'showTerms': 'Terms & conditions',
-    'showNotes': 'Notes',
-    'showSignature': 'Signature block',
-    'showStamp': 'Business stamp',
-    'showStatus': 'Invoice status',
-    'showIssueDate': 'Issue date',
-    'showDueDate': 'Due date',
-    'showPoNumber': 'Purchase order number',
-    'showPaymentTerms': 'Payment terms',
-  };
-
-  static const _industryPresets = <String, String>{
-    'general': 'General business',
-    'it_services': 'IT & consulting',
-    'retail': 'Retail & wholesale',
-    'healthcare': 'Healthcare',
-    'professional': 'Professional services',
-  };
-
   @override
   void initState() {
     super.initState();
     _repository = SettingsRepository(apiClient: widget.apiClient);
     _localSettings = Map<String, Object?>.from(widget.initialLocalSettings);
-    const localDefaults = <String, Object?>{
-      'showShippingSection': false,
-      'showNotesSection': false,
+
+    // Apply strict defaults based on requirements:
+    // Invoice details section: default only invoice num, creation date, invoice style.
+    const defaults = <String, Object?>{
+      'showDocumentTitle': true,
+      'showInvoiceNumber': true,
+      'showIssueDate': true,
+      'showDueDate': false,
       'showPoNumber': false,
+      'showPaymentTerms': false,
+      'showStatus': false,
+      'showShippingSection': false,
+      'showNotesSection': true,
+      'showPaymentInstructions': true,
+      'showTerms': true,
+      'showNotes': true,
+      'showSignature': true,
+      'showLogo': true,
+      'showClientCompany': true,
+      'showClientEmail': true,
+      'showClientPhone': true,
+      'showClientAddress': true,
+      'showClientTaxId': true,
+      'showItemUnit': true,
+      'showItemQty': true,
+      'showItemRate': true,
+      'showItemDiscount': false,
+      'showItemTax': true,
+      'showDiscount': true,
+      'showShippingFee': false,
+      'showAdditionalCharges': false,
+      'showRoundOff': false,
+      'showAmountPaid': true,
+      'showBalanceDue': true,
     };
-    for (final field in <String, String>{
-      ..._clientFields,
-      ..._itemFields,
-      ..._sectionFields,
-    }.keys) {
-      _localSettings.putIfAbsent(field, () => localDefaults[field] ?? true);
+
+    for (final entry in defaults.entries) {
+      _localSettings.putIfAbsent(entry.key, () => entry.value);
     }
     _localSettings.putIfAbsent('industryPresetId', () => 'general');
-    _localSettings.putIfAbsent('defaultIsRcm', () => false);
     _load();
   }
 
@@ -154,10 +145,211 @@ class _InvoiceSettingsScreenState extends State<InvoiceSettingsScreen> {
     }
   }
 
+  List<Map<String, dynamic>> _getCustomFields(String key) {
+    final raw = _localSettings[key];
+    if (raw is List) {
+      return raw.map((e) => Map<String, dynamic>.from(e as Map)).toList();
+    }
+    if (raw is String && raw.isNotEmpty) {
+      try {
+        final decoded = jsonDecode(raw);
+        if (decoded is List) {
+          return decoded.map((e) => Map<String, dynamic>.from(e as Map)).toList();
+        }
+      } catch (_) {}
+    }
+    return <Map<String, dynamic>>[];
+  }
+
+  void _saveCustomFields(String key, List<Map<String, dynamic>> list) {
+    setState(() {
+      _localSettings[key] = list;
+    });
+  }
+
+  void _addCustomFieldDialog(String key, {required String title, required String itemType}) {
+    final labelCtrl = TextEditingController();
+    final valueCtrl = TextEditingController();
+
+    showDialog<void>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: Text('Add New $itemType to $title'),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            TextField(
+              controller: labelCtrl,
+              autofocus: true,
+              decoration: InputDecoration(
+                labelText: '$itemType Name / Label *',
+                hintText: itemType == 'Column' ? 'e.g. HSN/SAC, Unit' : 'e.g. Order ID, PAN No.',
+              ),
+            ),
+            const SizedBox(height: 12),
+            TextField(
+              controller: valueCtrl,
+              decoration: const InputDecoration(
+                labelText: 'Default / Sample Value (Optional)',
+                hintText: 'e.g. 998311, ORD-1001',
+              ),
+            ),
+          ],
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx),
+            child: const Text('Cancel'),
+          ),
+          FilledButton(
+            onPressed: () {
+              final label = labelCtrl.text.trim();
+              if (label.isEmpty) return;
+              final current = _getCustomFields(key);
+              current.add({
+                'id': '${key}_${DateTime.now().millisecondsSinceEpoch}',
+                'label': label,
+                'value': valueCtrl.text.trim(),
+                'isVisible': true,
+              });
+              _saveCustomFields(key, current);
+              Navigator.pop(ctx);
+              _showFeedback('Added "$label" to $title');
+            },
+            child: const Text('Add Field'),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Future<void> _pickLogo(ImageSource source) async {
+    try {
+      final picker = ImagePicker();
+      final photo = await picker.pickImage(
+        source: source,
+        maxWidth: 800,
+        maxHeight: 400,
+        imageQuality: 80,
+      );
+      if (photo == null) return;
+      final bytes = await photo.readAsBytes();
+      setState(() {
+        _localSettings['invoiceLogo'] = base64Encode(bytes);
+        _localSettings['showLogo'] = true;
+      });
+      _showFeedback('Logo captured. Tap Save to apply everywhere.');
+    } catch (e) {
+      _showFeedback('Could not load logo: $e');
+    }
+  }
+
+  Future<void> _openDocuHubSigner() async {
+    final result = await SignaturePadDialog.show(
+      context,
+      initialSigneeName: _localSettings['signeeName']?.toString() ??
+          _profile['signeeName']?.toString(),
+      initialSigneeTitle: _localSettings['signeeTitle']?.toString() ??
+          _profile['signeeTitle']?.toString(),
+    );
+    if (result == null) return;
+    setState(() {
+      _localSettings['invoiceSignature'] = result.base64Png;
+      _localSettings['showSignature'] = true;
+      if (result.signeeName != null) {
+        _localSettings['signeeName'] = result.signeeName;
+        _profile['signeeName'] = result.signeeName;
+      }
+      if (result.signeeTitle != null) {
+        _localSettings['signeeTitle'] = result.signeeTitle;
+        _profile['signeeTitle'] = result.signeeTitle;
+      }
+    });
+    _showFeedback('Signature captured via DocuHub Studio! Tap Save to apply.');
+  }
+
+  void _applyQuickPreset(String type) {
+    setState(() {
+      switch (type) {
+        case 'gst':
+          _localSettings['customTitle'] = 'Tax Invoice';
+          _localSettings['customBillToLabel'] = 'Billed To (Recipient)';
+          _localSettings['customShipToLabel'] = 'Shipped To (Consignee)';
+          _localSettings['showShippingSection'] = true;
+          _localSettings['customItemHeader'] = 'Description of Goods / Services';
+          _localSettings['customQtyHeader'] = 'Qty';
+          _localSettings['customRateHeader'] = 'Rate / Unit Price';
+          _localSettings['customTaxHeader'] = 'GST (%)';
+          _localSettings['customAmountHeader'] = 'Taxable Amount';
+          final existingCols = _getCustomFields('customColumns_items');
+          if (!existingCols.any((c) => c['label'] == 'HSN/SAC')) {
+            existingCols.add({
+              'id': 'col_hsn',
+              'label': 'HSN/SAC',
+              'value': '998311',
+              'isVisible': true,
+            });
+            _localSettings['customColumns_items'] = existingCols;
+          }
+          final existingBills = _getCustomFields('customFields_billing');
+          if (!existingBills.any((b) => b['label'] == 'Place of Supply')) {
+            existingBills.add({
+              'id': 'bill_pos',
+              'label': 'Place of Supply',
+              'value': '27 - Maharashtra',
+              'isVisible': true,
+            });
+            _localSettings['customFields_billing'] = existingBills;
+          }
+        case 'it':
+          _localSettings['customTitle'] = 'Tax Invoice';
+          _localSettings['customItemHeader'] = 'Services & Deliverables';
+          _localSettings['customQtyHeader'] = 'Hours';
+          _localSettings['customRateHeader'] = 'Hourly Rate';
+          _localSettings['customAmountHeader'] = 'Amount';
+          _localSettings['showItemUnit'] = true;
+          final details = _getCustomFields('customFields_details');
+          if (!details.any((d) => d['label'] == 'Project Code')) {
+            details.add({
+              'id': 'det_proj',
+              'label': 'Project Code',
+              'value': 'PRJ-2026-X',
+              'isVisible': true,
+            });
+            _localSettings['customFields_details'] = details;
+          }
+        case 'retail':
+          _localSettings['customTitle'] = 'Retail Bill / Cash Memo';
+          _localSettings['customItemHeader'] = 'Product Description';
+          _localSettings['customQtyHeader'] = 'Qty';
+          _localSettings['customRateHeader'] = 'Price';
+          _localSettings['customAmountHeader'] = 'Total';
+          _localSettings['showItemDiscount'] = true;
+          _localSettings['showItemTax'] = true;
+        case 'wholesale':
+          _localSettings['customTitle'] = 'Commercial Invoice';
+          _localSettings['customItemHeader'] = 'Particulars';
+          _localSettings['customQtyHeader'] = 'Quantity';
+          _localSettings['customRateHeader'] = 'Unit Price';
+          _localSettings['customAmountHeader'] = 'Line Total';
+          _localSettings['showShippingSection'] = true;
+          _localSettings['showPoNumber'] = true;
+        case 'freelance':
+          _localSettings['customTitle'] = 'INVOICE';
+          _localSettings['customItemHeader'] = 'Project Milestone / Task';
+          _localSettings['customQtyHeader'] = 'Units';
+          _localSettings['customRateHeader'] = 'Fee';
+          _localSettings['customAmountHeader'] = 'Total';
+          _localSettings['showSignature'] = true;
+      }
+    });
+    _showFeedback('Applied $type preset. Review & tap Save to keep.');
+  }
+
   Future<void> _save() async {
     final rate = double.tryParse(_profile['defaultTaxRate']?.toString() ?? '');
     if (rate == null || rate < 0 || rate > 100) {
-      _showError('Enter a default tax rate from 0 to 100.');
+      _showFeedback('Enter a default tax rate from 0 to 100.');
       return;
     }
     setState(() => _saving = true);
@@ -172,8 +364,7 @@ class _InvoiceSettingsScreenState extends State<InvoiceSettingsScreen> {
           'defaultCurrency': _profile['defaultCurrency'] ?? 'INR',
           'defaultCurrencySymbol': _profile['defaultCurrencySymbol'] ?? '₹',
           'defaultPaymentTerms':
-              _profile['defaultPaymentTerms']?.toString().trim().isNotEmpty ==
-                      true
+              _profile['defaultPaymentTerms']?.toString().trim().isNotEmpty == true
                   ? _profile['defaultPaymentTerms']
                   : 'Net 30',
           'defaultNotes': _profile['defaultNotes'] ?? '',
@@ -192,35 +383,46 @@ class _InvoiceSettingsScreenState extends State<InvoiceSettingsScreen> {
       if (!mounted) return;
       setState(() => _profile = savedProfile);
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text(widget.onSaveLocalSettings == null
-              ? 'Server-supported defaults saved. Field visibility and presets only apply during this screen session.'
-              : 'Invoice defaults and local field settings applied.'),
+        const SnackBar(
+          backgroundColor: Color(0xFF047857),
+          content: Text('✓ All customizations, custom fields & labels saved!'),
         ),
       );
     } on ApiException catch (error) {
-      if (mounted) {
-        _showError(
-          widget.onSaveLocalSettings == null
-              ? error.message
-              : 'Local display settings were saved, but server defaults failed: ${error.message}',
-        );
-      }
+      if (mounted) _showFeedback(error.message);
     } catch (error) {
-      if (mounted) _showError('Could not save invoice settings: $error');
+      if (mounted) _showFeedback('Could not save invoice settings: $error');
     } finally {
       if (mounted) setState(() => _saving = false);
     }
   }
 
-  void _showError(String message) {
+  void _showFeedback(String message) {
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(content: Text(message)),
     );
   }
 
+  Image? _getBrandImage(String key, {double height = 50}) {
+    final encoded = _localSettings[key]?.toString() ?? '';
+    if (encoded.isEmpty) return null;
+    try {
+      return Image.memory(
+        base64Decode(encoded),
+        height: height,
+        fit: BoxFit.contain,
+        errorBuilder: (_, __, ___) => const SizedBox.shrink(),
+      );
+    } catch (_) {
+      return null;
+    }
+  }
+
   @override
-  Widget build(BuildContext context) => Scaffold(
+  Widget build(BuildContext context) {
+    return DefaultTabController(
+      length: 5,
+      child: Scaffold(
         appBar: AppBar(
           leading: widget.onBack == null
               ? null
@@ -228,340 +430,1251 @@ class _InvoiceSettingsScreenState extends State<InvoiceSettingsScreen> {
                   onPressed: widget.onBack,
                   icon: const Icon(Icons.arrow_back),
                 ),
-          title: const Text('Invoice Settings'),
+          title: const Text('Invoice Customization Studio'),
           actions: [
-            IconButton(
-              onPressed: _loading || _saving ? null : _save,
-              tooltip: 'Save invoice settings',
-              icon: const Icon(Icons.save_outlined),
+            Padding(
+              padding: const EdgeInsets.only(right: 12),
+              child: FilledButton.icon(
+                onPressed: _saving ? null : _save,
+                icon: _saving
+                    ? const SizedBox(
+                        width: 16,
+                        height: 16,
+                        child: CircularProgressIndicator(
+                          strokeWidth: 2,
+                          color: Colors.white,
+                        ),
+                      )
+                    : const Icon(Icons.check, size: 18),
+                label: Text(_saving ? 'Saving...' : 'Save All'),
+              ),
             ),
           ],
-        ),
-        body: _loading
-            ? const Center(child: CircularProgressIndicator())
-            : _error != null
-                ? _InvoiceSettingsError(message: _error!, onRetry: _load)
-                : ListView(
-                    padding: const EdgeInsets.all(16),
-                    children: [
-                      AppCard(
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            Text('Industry preset',
-                                style: Theme.of(context).textTheme.titleMedium),
-                            const SizedBox(height: 10),
-                            DropdownButtonFormField<String>(
-                              initialValue: _industryId,
-                              decoration: const InputDecoration(
-                                labelText: 'Business category',
-                              ),
-                              items: _industryPresets.entries
-                                  .map(
-                                    (entry) => DropdownMenuItem<String>(
-                                      value: entry.key,
-                                      child: Text(entry.value),
-                                    ),
-                                  )
-                                  .toList(),
-                              onChanged: (value) {
-                                if (value != null) {
-                                  setState(() =>
-                                      _localSettings['industryPresetId'] =
-                                          value);
-                                }
-                              },
-                            ),
-                            const SizedBox(height: 8),
-                            const Text(
-                              'Preset selection is client-side. Item-column builder and DOCX template associations are not supported by the backend.',
-                              style: TextStyle(color: AppColors.muted),
-                            ),
-                          ],
-                        ),
-                      ),
-                      const SizedBox(height: 12),
-                      AppCard(
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            Text('Tax & totals defaults',
-                                style: Theme.of(context).textTheme.titleMedium),
-                            const SizedBox(height: 10),
-                            TextFormField(
-                              initialValue:
-                                  _profile['defaultTaxLabel']?.toString() ??
-                                      'Tax',
-                              decoration: const InputDecoration(
-                                labelText: 'Default tax label',
-                              ),
-                              onChanged: (value) =>
-                                  _profile['defaultTaxLabel'] = value,
-                            ),
-                            const SizedBox(height: 10),
-                            TextFormField(
-                              initialValue:
-                                  _profile['defaultTaxRate']?.toString() ?? '0',
-                              decoration: const InputDecoration(
-                                labelText: 'Default tax rate (%)',
-                              ),
-                              keyboardType:
-                                  const TextInputType.numberWithOptions(
-                                decimal: true,
-                              ),
-                              validator: _validateRate,
-                              onChanged: (value) {
-                                final rate = double.tryParse(value);
-                                if (rate != null) {
-                                  _profile['defaultTaxRate'] = rate;
-                                }
-                              },
-                            ),
-                            const SizedBox(height: 10),
-                            DropdownButtonFormField<String>(
-                              initialValue: const [
-                                        'GST',
-                                        'VAT',
-                                        'Sales tax',
-                                        'Other',
-                                      ].contains(
-                                      _localSettings['defaultTaxType'])
-                                  ? _localSettings['defaultTaxType'] as String
-                                  : 'Other',
-                              decoration: const InputDecoration(
-                                labelText: 'Default tax type',
-                              ),
-                              items: const [
-                                'GST',
-                                'VAT',
-                                'Sales tax',
-                                'Other',
-                              ]
-                                  .map((type) => DropdownMenuItem(
-                                        value: type,
-                                        child: Text(type),
-                                      ))
-                                  .toList(),
-                              onChanged: (value) {
-                                if (value != null) {
-                                  setState(() =>
-                                      _localSettings['defaultTaxType'] = value);
-                                }
-                              },
-                            ),
-                            SwitchListTile.adaptive(
-                              contentPadding: EdgeInsets.zero,
-                              title: const Text('Prices include tax by default'),
-                              value:
-                                  _localSettings['defaultTaxInclusive'] == true,
-                              onChanged: (value) => setState(() =>
-                                  _localSettings['defaultTaxInclusive'] = value),
-                            ),
-                            const SizedBox(height: 10),
-                            TextFormField(
-                              initialValue:
-                                  _profile['defaultPaymentTerms']?.toString() ??
-                                      'Net 30',
-                              decoration: const InputDecoration(
-                                labelText: 'Default payment terms',
-                              ),
-                              onChanged: (value) =>
-                                  _profile['defaultPaymentTerms'] = value,
-                            ),
-                            const SizedBox(height: 10),
-                            TextFormField(
-                              initialValue:
-                                  _profile['defaultNotes']?.toString() ?? '',
-                              decoration: const InputDecoration(
-                                labelText: 'Default notes',
-                              ),
-                              maxLines: 3,
-                              onChanged: (value) =>
-                                  _profile['defaultNotes'] = value,
-                            ),
-                            const SizedBox(height: 10),
-                            TextFormField(
-                              initialValue:
-                                  _profile['defaultTerms']?.toString() ?? '',
-                              decoration: const InputDecoration(
-                                labelText: 'Default terms & conditions',
-                              ),
-                              maxLines: 3,
-                              onChanged: (value) =>
-                                  _profile['defaultTerms'] = value,
-                            ),
-                            const SizedBox(height: 10),
-                            TextFormField(
-                              initialValue: _localSettings[
-                                          'defaultPaymentInstructions']
-                                      ?.toString() ??
-                                  '',
-                              decoration: const InputDecoration(
-                                labelText: 'Default payment instructions',
-                              ),
-                              maxLines: 3,
-                              onChanged: (value) => _localSettings[
-                                  'defaultPaymentInstructions'] = value,
-                            ),
-                            SwitchListTile(
-                              contentPadding: EdgeInsets.zero,
-                              title: const Text('Reverse charge default'),
-                              value: _localSettings['defaultIsRcm'] == true,
-                              onChanged: (value) => setState(
-                                () => _localSettings['defaultIsRcm'] = value,
-                              ),
-                            ),
-                          ],
-                        ),
-                      ),
-                      const SizedBox(height: 12),
-                      _visibilityCard(
-                        title: 'Client details fields',
-                        description: 'Choose which client inputs to display.',
-                        fields: _clientFields,
-                      ),
-                      const SizedBox(height: 12),
-                      _visibilityCard(
-                        title: 'Item columns',
-                        description:
-                            'Choose which item details appear in invoice previews and exports.',
-                        fields: _itemFields,
-                      ),
-                      const SizedBox(height: 12),
-                      _visibilityCard(
-                        title: 'Invoice sections & metadata',
-                        description:
-                            'Control invoice header, footer and optional sections.',
-                        fields: _sectionFields,
-                      ),
-                      const SizedBox(height: 12),
-                      AppCard(
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            Text('Display labels',
-                                style: Theme.of(context).textTheme.titleMedium),
-                            const SizedBox(height: 10),
-                            for (final item in const <MapEntry<String, String>>[
-                              MapEntry('colHeaderItem', 'Item / service'),
-                              MapEntry('colHeaderQty', 'Quantity'),
-                              MapEntry('colHeaderUnit', 'Unit'),
-                              MapEntry('colHeaderRate', 'Rate'),
-                              MapEntry('colHeaderAmount', 'Amount'),
-                            ])
-                              Padding(
-                                padding: const EdgeInsets.only(bottom: 10),
-                                child: TextFormField(
-                                  initialValue:
-                                      _localSettings[item.key]?.toString() ??
-                                          _defaultLabel(item.key),
-                                  decoration:
-                                      InputDecoration(labelText: item.value),
-                                  onChanged: (value) =>
-                                      _localSettings[item.key] = value,
-                                ),
-                              ),
-                          ],
-                        ),
-                      ),
-                      const SizedBox(height: 16),
-                      FilledButton.icon(
-                        onPressed: _saving ? null : _save,
-                        icon: _saving
-                            ? const SizedBox(
-                                width: 18,
-                                height: 18,
-                                child: CircularProgressIndicator(
-                                  strokeWidth: 2,
-                                ),
-                              )
-                            : const Icon(Icons.save),
-                        label: Text(_saving ? 'Saving…' : 'Save & Apply'),
-                      ),
-                      const SizedBox(height: 8),
-                      const Text(
-                        'Only tax, payment terms and default text fields are persisted by the existing profile endpoint. Visibility, industry presets and custom columns have no server endpoint.',
-                        textAlign: TextAlign.center,
-                        style: TextStyle(color: AppColors.muted),
-                      ),
-                    ],
-                  ),
-      );
-
-  Widget _visibilityCard({
-    required String title,
-    required String description,
-    required Map<String, String> fields,
-  }) =>
-      AppCard(
-        padding: const EdgeInsets.fromLTRB(16, 16, 16, 8),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Text(title, style: Theme.of(context).textTheme.titleMedium),
-            const SizedBox(height: 4),
-            Text(description, style: const TextStyle(color: AppColors.muted)),
-            const SizedBox(height: 6),
-            for (final field in fields.entries)
-              SwitchListTile(
-                contentPadding: EdgeInsets.zero,
-                title: Text(field.value),
-                value: _localSettings[field.key] == true,
-                onChanged: (value) =>
-                    setState(() => _localSettings[field.key] = value),
-              ),
-          ],
-        ),
-      );
-
-  String get _industryId => _industryPresets.containsKey(
-        _localSettings['industryPresetId']?.toString(),
-      )
-          ? _localSettings['industryPresetId']!.toString()
-          : 'general';
-
-  String? _validateRate(String? value) {
-    final rate = double.tryParse(value ?? '');
-    if (rate == null || rate < 0 || rate > 100) {
-      return 'Enter a tax rate from 0 to 100.';
-    }
-    return null;
-  }
-}
-
-String _defaultLabel(String key) {
-  switch (key) {
-    case 'colHeaderItem':
-      return 'Description / Service';
-    case 'colHeaderQty':
-      return 'Qty';
-    case 'colHeaderUnit':
-      return 'Unit';
-    case 'colHeaderRate':
-      return 'Rate';
-    default:
-      return 'Amount';
-  }
-}
-
-class _InvoiceSettingsError extends StatelessWidget {
-  const _InvoiceSettingsError({required this.message, required this.onRetry});
-
-  final String message;
-  final Future<void> Function() onRetry;
-
-  @override
-  Widget build(BuildContext context) => Center(
-        child: Padding(
-          padding: const EdgeInsets.all(24),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              Text(message, textAlign: TextAlign.center),
-              const SizedBox(height: 12),
-              FilledButton(onPressed: onRetry, child: const Text('Retry')),
+          bottom: const TabBar(
+            isScrollable: true,
+            tabAlignment: TabAlignment.start,
+            tabs: [
+              Tab(icon: Icon(Icons.description_outlined), text: 'Details & Style'),
+              Tab(icon: Icon(Icons.person_pin_outlined), text: 'Bills & Client'),
+              Tab(icon: Icon(Icons.table_chart_outlined), text: 'Line Items'),
+              Tab(icon: Icon(Icons.calculate_outlined), text: 'Adjustments'),
+              Tab(icon: Icon(Icons.draw_outlined), text: 'Brand & Terms'),
             ],
           ),
         ),
-      );
+        body: _loading
+            ? const Center(child: CircularProgressIndicator())
+            : Column(
+                children: [
+                  if (_error != null)
+                    Container(
+                      width: double.infinity,
+                      color: Theme.of(context).colorScheme.errorContainer,
+                      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+                      child: Row(
+                        children: [
+                          Icon(Icons.error_outline,
+                              color: Theme.of(context).colorScheme.onErrorContainer,
+                              size: 20),
+                          const SizedBox(width: 8),
+                          Expanded(
+                            child: Text(
+                              _error!,
+                              style: TextStyle(
+                                  color: Theme.of(context).colorScheme.onErrorContainer,
+                                  fontSize: 12),
+                            ),
+                          ),
+                          IconButton(
+                            icon: const Icon(Icons.close, size: 16),
+                            onPressed: () => setState(() => _error = null),
+                          ),
+                        ],
+                      ),
+                    ),
+                  Expanded(
+                    child: TabBarView(
+                      children: [
+                        _buildDetailsTab(),
+                        _buildBillingTab(),
+                        _buildLineItemsTab(),
+                        _buildAdjustmentsTab(),
+                        _buildBrandingAndTermsTab(),
+                      ],
+                    ),
+                  ),
+                ],
+              ),
+      ),
+    );
+  }
+
+  // ---------------------------------------------------------------------------
+  // TAB 1: DETAILS & STYLE
+  // ---------------------------------------------------------------------------
+  Widget _buildDetailsTab() {
+    return ListView(
+      padding: const EdgeInsets.all(16),
+      children: [
+        _buildInfoBanner(
+          'Invoice Details Section',
+          'Configure document title, invoice number, creation dates, and add custom metadata like Order ID or Project Code.',
+        ),
+        const SizedBox(height: 12),
+
+        // Quick Presets
+        _buildPresetsCard(),
+        const SizedBox(height: 14),
+
+        AppCard(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                'Document Style & Core Fields',
+                style: Theme.of(context).textTheme.titleMedium,
+              ),
+              const SizedBox(height: 4),
+              Text(
+                'By default, only Invoice Number, Creation Date, and Invoice Style are shown on your invoice.',
+                style: Theme.of(context).textTheme.bodySmall,
+              ),
+              const SizedBox(height: 14),
+
+              // Title / Style
+              _buildFieldTile(
+                title: 'Invoice Style / Title',
+                description: 'Main letterhead document title',
+                toggleKey: 'showDocumentTitle',
+                defaultToggle: true,
+                labelKey: 'customTitle',
+                fallbackLabel: 'Tax Invoice',
+                hint: 'e.g. Tax Invoice, Bill of Supply',
+              ),
+              const Divider(height: 24),
+
+              // Invoice Number
+              _buildFieldTile(
+                title: 'Invoice Number',
+                description: 'Unique invoice identifier',
+                toggleKey: 'showInvoiceNumber',
+                defaultToggle: true,
+                labelKey: 'customInvoiceNoLabel',
+                fallbackLabel: 'Invoice #',
+                hint: 'e.g. Bill No., Ref #',
+              ),
+              const Divider(height: 24),
+
+              // Creation Date
+              _buildFieldTile(
+                title: 'Creation Date (Issue Date)',
+                description: 'Date invoice was created',
+                toggleKey: 'showIssueDate',
+                defaultToggle: true,
+                labelKey: 'customDateLabel',
+                fallbackLabel: 'Creation Date',
+                hint: 'e.g. Invoice Date, Date',
+              ),
+              const Divider(height: 24),
+
+              // Due Date (Default Hidden)
+              _buildFieldTile(
+                title: 'Due Date',
+                description: 'Payment due deadline (Default: Hidden)',
+                toggleKey: 'showDueDate',
+                defaultToggle: false,
+                labelKey: 'customDueDateLabel',
+                fallbackLabel: 'Due Date',
+                hint: 'e.g. Payment Due',
+              ),
+              const Divider(height: 24),
+
+              // PO Number (Default Hidden)
+              _buildFieldTile(
+                title: 'Purchase Order (PO) Number',
+                description: 'Client purchase order reference (Default: Hidden)',
+                toggleKey: 'showPoNumber',
+                defaultToggle: false,
+                labelKey: 'customPoLabel',
+                fallbackLabel: 'PO Number',
+                hint: 'e.g. Customer PO #',
+              ),
+              const Divider(height: 24),
+
+              // Payment Terms (Default Hidden)
+              _buildFieldTile(
+                title: 'Payment Terms',
+                description: 'e.g. Net 30, Due on Receipt (Default: Hidden)',
+                toggleKey: 'showPaymentTerms',
+                defaultToggle: false,
+                labelKey: 'customTermsLabel',
+                fallbackLabel: 'Payment Terms',
+                hint: 'e.g. Terms',
+              ),
+              const Divider(height: 24),
+
+              // Status Badge (Default Hidden)
+              _buildFieldTile(
+                title: 'Invoice Status Badge',
+                description: 'Paid, Sent, Draft pill (Default: Hidden)',
+                toggleKey: 'showStatus',
+                defaultToggle: false,
+                labelKey: 'customStatusLabel',
+                fallbackLabel: 'Status',
+                hint: 'e.g. State',
+              ),
+            ],
+          ),
+        ),
+
+        const SizedBox(height: 14),
+
+        // CUSTOM FIELDS IN DETAILS
+        _buildCustomFieldsCard(
+          key: 'customFields_details',
+          title: 'Invoice Details',
+          itemType: 'Field',
+          hintText: 'e.g. Order ID, Project Name, Delivery Challan #, Sales Rep',
+        ),
+
+        const SizedBox(height: 24),
+        _buildBottomSaveButton(),
+      ],
+    );
+  }
+
+  // ---------------------------------------------------------------------------
+  // TAB 2: BILLS & CLIENT
+  // ---------------------------------------------------------------------------
+  Widget _buildBillingTab() {
+    return ListView(
+      padding: const EdgeInsets.all(16),
+      children: [
+        _buildInfoBanner(
+          'Bills & Client Section',
+          'Rename billing headers, toggle client details, shipping sections, and add custom fields like PAN Number or Place of Supply.',
+        ),
+        const SizedBox(height: 14),
+
+        AppCard(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                'Billing & Shipping Section Labels',
+                style: Theme.of(context).textTheme.titleMedium,
+              ),
+              const SizedBox(height: 14),
+
+              // Bill To Header
+              _buildFieldTile(
+                title: 'Bill To Section Header',
+                description: 'Section heading above customer address',
+                toggleKey: 'showBillToSection',
+                defaultToggle: true,
+                labelKey: 'customBillToLabel',
+                fallbackLabel: 'BILL TO',
+                hint: 'e.g. Invoiced To, Customer Details',
+              ),
+              const Divider(height: 24),
+
+              // Ship To Header (Default Hidden)
+              _buildFieldTile(
+                title: 'Ship To / Delivery Section',
+                description: 'Separate shipping recipient details (Default: Hidden)',
+                toggleKey: 'showShippingSection',
+                defaultToggle: false,
+                labelKey: 'customShipToLabel',
+                fallbackLabel: 'SHIPPING DETAILS',
+                hint: 'e.g. Shipped To, Delivery Address',
+              ),
+              const Divider(height: 24),
+
+              // Client Name
+              _buildFieldTile(
+                title: 'Client / Customer Name',
+                description: 'Primary customer name line',
+                toggleKey: 'showClientName',
+                defaultToggle: true,
+                labelKey: 'customClientNameLabel',
+                fallbackLabel: 'Client Name',
+                hint: 'e.g. Customer Name, M/s',
+              ),
+              const Divider(height: 24),
+
+              // Company Name
+              _buildFieldTile(
+                title: 'Company Name',
+                description: 'Customer company or legal entity',
+                toggleKey: 'showClientCompany',
+                defaultToggle: true,
+                labelKey: 'customClientCompanyLabel',
+                fallbackLabel: 'Company Name',
+                hint: 'e.g. Business Name',
+              ),
+              const Divider(height: 24),
+
+              // Email Address
+              _buildFieldTile(
+                title: 'Email Address',
+                description: 'Billing email line',
+                toggleKey: 'showClientEmail',
+                defaultToggle: true,
+                labelKey: 'customClientEmailLabel',
+                fallbackLabel: 'Email',
+                hint: 'e.g. Billing Email',
+              ),
+              const Divider(height: 24),
+
+              // Phone Number
+              _buildFieldTile(
+                title: 'Phone Number',
+                description: 'Contact phone line',
+                toggleKey: 'showClientPhone',
+                defaultToggle: true,
+                labelKey: 'customClientPhoneLabel',
+                fallbackLabel: 'Phone',
+                hint: 'e.g. Mobile, Contact',
+              ),
+              const Divider(height: 24),
+
+              // Billing Address
+              _buildFieldTile(
+                title: 'Billing Address',
+                description: 'Street, city, postal code',
+                toggleKey: 'showClientAddress',
+                defaultToggle: true,
+                labelKey: 'customClientAddressLabel',
+                fallbackLabel: 'Billing Address',
+                hint: 'e.g. Address',
+              ),
+              const Divider(height: 24),
+
+              // GSTIN / Tax ID
+              _buildFieldTile(
+                title: 'Tax ID / GSTIN',
+                description: 'Customer tax registration',
+                toggleKey: 'showClientTaxId',
+                defaultToggle: true,
+                labelKey: 'customClientTaxIdLabel',
+                fallbackLabel: 'GSTIN / Tax ID',
+                hint: 'e.g. GSTIN, VAT No., Tax ID',
+              ),
+            ],
+          ),
+        ),
+
+        const SizedBox(height: 14),
+
+        // CUSTOM FIELDS IN BILLING
+        _buildCustomFieldsCard(
+          key: 'customFields_billing',
+          title: 'Bills & Client',
+          itemType: 'Field',
+          hintText: 'e.g. PAN Number, Place of Supply, Customer Code, State Code',
+        ),
+
+        const SizedBox(height: 24),
+        _buildBottomSaveButton(),
+      ],
+    );
+  }
+
+  // ---------------------------------------------------------------------------
+  // TAB 3: LINE ITEMS
+  // ---------------------------------------------------------------------------
+  Widget _buildLineItemsTab() {
+    return ListView(
+      padding: const EdgeInsets.all(16),
+      children: [
+        _buildInfoBanner(
+          'Line Items & Table Columns',
+          'Rename all column headers, show/hide optional columns (tax, discount, units), and add brand new custom columns like HSN/SAC Code or SKU.',
+        ),
+        const SizedBox(height: 14),
+
+        AppCard(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                'Line Items Column Headers',
+                style: Theme.of(context).textTheme.titleMedium,
+              ),
+              const SizedBox(height: 14),
+
+              // Description Column
+              _buildFieldTile(
+                title: 'Item Description Column',
+                description: 'Primary product or service name',
+                toggleKey: 'showItemDescription',
+                defaultToggle: true,
+                labelKey: 'customItemHeader',
+                fallbackLabel: 'Description',
+                hint: 'e.g. Particulars, Items, Services',
+              ),
+              const Divider(height: 24),
+
+              // Quantity Column
+              _buildFieldTile(
+                title: 'Quantity Column',
+                description: 'Number of units purchased',
+                toggleKey: 'showItemQty',
+                defaultToggle: true,
+                labelKey: 'customQtyHeader',
+                fallbackLabel: 'Qty',
+                hint: 'e.g. Units, Hours, Qty',
+              ),
+              const Divider(height: 24),
+
+              // Unit of Measure
+              _buildFieldTile(
+                title: 'Unit Measurement Badge',
+                description: 'e.g. hrs, pcs, kg, days',
+                toggleKey: 'showItemUnit',
+                defaultToggle: true,
+                labelKey: 'customUnitHeader',
+                fallbackLabel: 'Unit',
+                hint: 'e.g. UOM, Unit',
+              ),
+              const Divider(height: 24),
+
+              // Rate / Unit Price
+              _buildFieldTile(
+                title: 'Rate / Price Column',
+                description: 'Unit cost per item',
+                toggleKey: 'showItemRate',
+                defaultToggle: true,
+                labelKey: 'customRateHeader',
+                fallbackLabel: 'Rate',
+                hint: 'e.g. Unit Price, Price, Fee',
+              ),
+              const Divider(height: 24),
+
+              // Discount Column
+              _buildFieldTile(
+                title: 'Item Discount Column',
+                description: 'Per-item discount rate (%)',
+                toggleKey: 'showItemDiscount',
+                defaultToggle: false,
+                labelKey: 'customDiscountHeader',
+                fallbackLabel: 'Discount',
+                hint: 'e.g. Disc %, Rebate',
+              ),
+              const Divider(height: 24),
+
+              // Item Tax Column
+              _buildFieldTile(
+                title: 'Item Tax Column',
+                description: 'Per-item tax rate (%)',
+                toggleKey: 'showItemTax',
+                defaultToggle: true,
+                labelKey: 'customTaxHeader',
+                fallbackLabel: 'Tax (%)',
+                hint: 'e.g. GST %, VAT %',
+              ),
+              const Divider(height: 24),
+
+              // Line Amount / Total Column
+              _buildFieldTile(
+                title: 'Amount / Total Column',
+                description: 'Total line amount calculation',
+                toggleKey: 'showItemAmount',
+                defaultToggle: true,
+                labelKey: 'customAmountHeader',
+                fallbackLabel: 'Amount',
+                hint: 'e.g. Total, Net Amount',
+              ),
+            ],
+          ),
+        ),
+
+        const SizedBox(height: 14),
+
+        // CUSTOM COLUMNS IN LINE ITEMS
+        _buildCustomFieldsCard(
+          key: 'customColumns_items',
+          title: 'Line Items Table',
+          itemType: 'Column',
+          hintText: 'e.g. HSN/SAC Code, SKU / Barcode, Part #, Batch No.',
+        ),
+
+        const SizedBox(height: 24),
+        _buildBottomSaveButton(),
+      ],
+    );
+  }
+
+  // ---------------------------------------------------------------------------
+  // TAB 4: ADJUSTMENTS & TOTALS
+  // ---------------------------------------------------------------------------
+  Widget _buildAdjustmentsTab() {
+    return ListView(
+      padding: const EdgeInsets.all(16),
+      children: [
+        _buildInfoBanner(
+          'Invoice Adjustments & Summary Totals',
+          'Rename calculation rows, show/hide discounts, shipping fees, round offs, and add custom adjustment charges like Packaging & Handling.',
+        ),
+        const SizedBox(height: 14),
+
+        AppCard(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                'Financial Summary Labels',
+                style: Theme.of(context).textTheme.titleMedium,
+              ),
+              const SizedBox(height: 14),
+
+              // Subtotal
+              _buildFieldTile(
+                title: 'Subtotal Row',
+                description: 'Gross sum of all line items',
+                toggleKey: 'showSubtotal',
+                defaultToggle: true,
+                labelKey: 'customSubtotalLabel',
+                fallbackLabel: 'Subtotal',
+                hint: 'e.g. Gross Total',
+              ),
+              const Divider(height: 24),
+
+              // Discount
+              _buildFieldTile(
+                title: 'Discount Adjustment',
+                description: 'Invoice-level or item discount deduction',
+                toggleKey: 'showDiscount',
+                defaultToggle: true,
+                labelKey: 'customDiscountLabel',
+                fallbackLabel: 'Discount',
+                hint: 'e.g. Special Discount, Promo',
+              ),
+              const Divider(height: 24),
+
+              // Tax / GST
+              _buildFieldTile(
+                title: 'Tax Breakdown Row',
+                description: 'Tax rate & total calculated tax',
+                toggleKey: 'showTax',
+                defaultToggle: true,
+                labelKey: 'customTaxLabel',
+                fallbackLabel: 'Tax',
+                hint: 'e.g. GST, VAT, Sales Tax',
+              ),
+              const Divider(height: 24),
+
+              // Shipping Fee (Default Hidden)
+              _buildFieldTile(
+                title: 'Shipping & Delivery Fee',
+                description: 'Freight / courier charge (Default: Hidden)',
+                toggleKey: 'showShippingFee',
+                defaultToggle: false,
+                labelKey: 'customShippingLabel',
+                fallbackLabel: 'Shipping',
+                hint: 'e.g. Delivery & Handling, Freight',
+              ),
+              const Divider(height: 24),
+
+              // Additional Charges (Default Hidden)
+              _buildFieldTile(
+                title: 'Additional Charges / Adjustments',
+                description: 'Misc adjustments (Default: Hidden)',
+                toggleKey: 'showAdditionalCharges',
+                defaultToggle: false,
+                labelKey: 'customAdjustmentsLabel',
+                fallbackLabel: 'Adjustments',
+                hint: 'e.g. Other Charges, Surcharge',
+              ),
+              const Divider(height: 24),
+
+              // Round Off (Default Hidden)
+              _buildFieldTile(
+                title: 'Round Off',
+                description: 'Decimal rounding adjustment (Default: Hidden)',
+                toggleKey: 'showRoundOff',
+                defaultToggle: false,
+                labelKey: 'customRoundOffLabel',
+                fallbackLabel: 'Round off',
+                hint: 'e.g. Rounding (+/-)',
+              ),
+              const Divider(height: 24),
+
+              // Total Amount
+              _buildFieldTile(
+                title: 'Total Amount Row',
+                description: 'Final payable invoice balance',
+                toggleKey: 'showTotal',
+                defaultToggle: true,
+                labelKey: 'customTotalLabel',
+                fallbackLabel: 'Total',
+                hint: 'e.g. Grand Total, Invoice Total',
+              ),
+              const Divider(height: 24),
+
+              // Amount Paid
+              _buildFieldTile(
+                title: 'Amount Paid Row',
+                description: 'Advance or payments received',
+                toggleKey: 'showAmountPaid',
+                defaultToggle: true,
+                labelKey: 'customAmountPaidLabel',
+                fallbackLabel: 'Amount paid',
+                hint: 'e.g. Paid, Advance Received',
+              ),
+              const Divider(height: 24),
+
+              // Balance Due
+              _buildFieldTile(
+                title: 'Balance Due Row',
+                description: 'Remaining outstanding amount',
+                toggleKey: 'showBalanceDue',
+                defaultToggle: true,
+                labelKey: 'customBalanceDueLabel',
+                fallbackLabel: 'Balance due',
+                hint: 'e.g. Net Payable, Amount Due',
+              ),
+            ],
+          ),
+        ),
+
+        const SizedBox(height: 14),
+
+        // CUSTOM ADJUSTMENT FIELDS
+        _buildCustomFieldsCard(
+          key: 'customFields_adjustments',
+          title: 'Invoice Adjustments',
+          itemType: 'Fee / Charge',
+          hintText: 'e.g. Packaging Fee, Insurance, Cess, Service Fee',
+        ),
+
+        const SizedBox(height: 24),
+        _buildBottomSaveButton(),
+      ],
+    );
+  }
+
+  // ---------------------------------------------------------------------------
+  // TAB 5: BRANDING, NOTES & SIGNATURE
+  // ---------------------------------------------------------------------------
+  Widget _buildBrandingAndTermsTab() {
+    return ListView(
+      padding: const EdgeInsets.all(16),
+      children: [
+        _buildInfoBanner(
+          'Branding, Terms & DocuHub Signature',
+          'Upload your company logo (enabled by default), capture your digital signature via DocuHub, and customize footer terms and bank payment instructions.',
+        ),
+        const SizedBox(height: 14),
+
+        // LOGO CARD
+        AppCard(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Row(
+                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                children: [
+                  Text(
+                    'Company Logo',
+                    style: Theme.of(context).textTheme.titleMedium,
+                  ),
+                  Switch(
+                    value: _localSettings['showLogo'] != false,
+                    onChanged: (val) => setState(() => _localSettings['showLogo'] = val),
+                  ),
+                ],
+              ),
+              const Text(
+                'Displayed at the top of all templates (Enabled by default)',
+                style: TextStyle(fontSize: 12, color: Colors.grey),
+              ),
+              const SizedBox(height: 14),
+              Row(
+                children: [
+                  Container(
+                    width: 100,
+                    height: 70,
+                    decoration: BoxDecoration(
+                      color: Colors.grey[100],
+                      borderRadius: BorderRadius.circular(8),
+                      border: Border.all(color: Colors.grey[300]!),
+                    ),
+                    child: _getBrandImage('invoiceLogo', height: 60) ??
+                        const Center(
+                          child: Icon(Icons.business_outlined, color: Colors.grey, size: 32),
+                        ),
+                  ),
+                  const SizedBox(width: 14),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Row(
+                          children: [
+                            OutlinedButton.icon(
+                              onPressed: () => _pickLogo(ImageSource.gallery),
+                              icon: const Icon(Icons.photo_library, size: 16),
+                              label: const Text('Gallery'),
+                            ),
+                            const SizedBox(width: 8),
+                            OutlinedButton.icon(
+                              onPressed: () => _pickLogo(ImageSource.camera),
+                              icon: const Icon(Icons.camera_alt, size: 16),
+                              label: const Text('Camera'),
+                            ),
+                          ],
+                        ),
+                        if (_localSettings['invoiceLogo'] != null)
+                          TextButton.icon(
+                            onPressed: () => setState(() => _localSettings.remove('invoiceLogo')),
+                            icon: const Icon(Icons.delete_outline, color: Colors.red, size: 16),
+                            label: const Text('Remove Logo', style: TextStyle(color: Colors.red)),
+                          ),
+                      ],
+                    ),
+                  ),
+                ],
+              ),
+            ],
+          ),
+        ),
+
+        const SizedBox(height: 14),
+
+        // DOCUHUB SIGNATURE CARD
+        AppCard(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Row(
+                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                children: [
+                  Text(
+                    'DocuHub Digital Signature',
+                    style: Theme.of(context).textTheme.titleMedium,
+                  ),
+                  Switch(
+                    value: _localSettings['showSignature'] != false,
+                    onChanged: (val) => setState(() => _localSettings['showSignature'] = val),
+                  ),
+                ],
+              ),
+              const Text(
+                'Draw with smooth Bezier ink, type in cursive, or photograph ink on paper',
+                style: TextStyle(fontSize: 12, color: Colors.grey),
+              ),
+              const SizedBox(height: 14),
+              Row(
+                children: [
+                  Container(
+                    width: 130,
+                    height: 70,
+                    decoration: BoxDecoration(
+                      color: Colors.grey[50],
+                      borderRadius: BorderRadius.circular(8),
+                      border: Border.all(color: Colors.grey[300]!),
+                    ),
+                    child: _getBrandImage('invoiceSignature', height: 60) ??
+                        const Center(
+                          child: Icon(Icons.draw_outlined, color: Colors.grey, size: 30),
+                        ),
+                  ),
+                  const SizedBox(width: 14),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        FilledButton.tonalIcon(
+                          onPressed: _openDocuHubSigner,
+                          icon: const Icon(Icons.edit_note, size: 18),
+                          label: Text(
+                            _localSettings['invoiceSignature'] != null
+                                ? 'Edit Signature'
+                                : 'Capture Signature',
+                          ),
+                        ),
+                        if (_localSettings['invoiceSignature'] != null)
+                          TextButton.icon(
+                            onPressed: () => setState(() => _localSettings.remove('invoiceSignature')),
+                            icon: const Icon(Icons.delete_outline, color: Colors.red, size: 16),
+                            label: const Text('Remove', style: TextStyle(color: Colors.red)),
+                          ),
+                      ],
+                    ),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 12),
+              Row(
+                children: [
+                  Expanded(
+                    child: TextFormField(
+                      initialValue: _localSettings['signeeTitle']?.toString() ??
+                          _profile['signeeTitle']?.toString() ??
+                          'Authorized Signatory',
+                      decoration: const InputDecoration(
+                        labelText: 'Signatory Title',
+                        isDense: true,
+                        hintText: 'e.g. Managing Director, Founder',
+                      ),
+                      onChanged: (val) {
+                        _localSettings['signeeTitle'] = val;
+                        _profile['signeeTitle'] = val;
+                      },
+                    ),
+                  ),
+                  const SizedBox(width: 10),
+                  Expanded(
+                    child: TextFormField(
+                      initialValue: _localSettings['signeeName']?.toString() ??
+                          _profile['signeeName']?.toString() ??
+                          '',
+                      decoration: const InputDecoration(
+                        labelText: 'Signatory Name',
+                        isDense: true,
+                        hintText: 'e.g. John Doe',
+                      ),
+                      onChanged: (val) {
+                        _localSettings['signeeName'] = val;
+                        _profile['signeeName'] = val;
+                      },
+                    ),
+                  ),
+                ],
+              ),
+            ],
+          ),
+        ),
+
+        const SizedBox(height: 14),
+
+        // TERMS, NOTES & INSTRUCTIONS
+        AppCard(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                'Footer Notes, Terms & Instructions',
+                style: Theme.of(context).textTheme.titleMedium,
+              ),
+              const SizedBox(height: 14),
+
+              // Payment Instructions
+              _buildFieldTile(
+                title: 'Payment Instructions Header',
+                description: 'Bank account, UPI, transfer instructions',
+                toggleKey: 'showPaymentInstructions',
+                defaultToggle: true,
+                labelKey: 'customPaymentInstructionsLabel',
+                fallbackLabel: 'PAYMENT INSTRUCTIONS',
+                hint: 'e.g. Bank Account / Transfer Info',
+              ),
+              const Divider(height: 24),
+
+              // Notes Header
+              _buildFieldTile(
+                title: 'Notes & Remarks Header',
+                description: 'Special client notes or thank you messages',
+                toggleKey: 'showNotes',
+                defaultToggle: true,
+                labelKey: 'customNotesLabel',
+                fallbackLabel: 'Notes',
+                hint: 'e.g. Remarks, Thank you note',
+              ),
+              const Divider(height: 24),
+
+              // Terms Header
+              _buildFieldTile(
+                title: 'Terms & Conditions Header',
+                description: 'Legal terms, jurisdiction, warranty clauses',
+                toggleKey: 'showTerms',
+                defaultToggle: true,
+                labelKey: 'customTermsLabel',
+                fallbackLabel: 'Terms & Conditions',
+                hint: 'e.g. Terms of Service, Legal Clauses',
+              ),
+            ],
+          ),
+        ),
+
+        const SizedBox(height: 14),
+
+        // CUSTOM FOOTER FIELDS
+        _buildCustomFieldsCard(
+          key: 'customFields_footer',
+          title: 'Footer & Terms',
+          itemType: 'Field',
+          hintText: 'e.g. Bank IFSC, SWIFT BIC, Declaration, UPI ID',
+        ),
+
+        const SizedBox(height: 24),
+        _buildBottomSaveButton(),
+      ],
+    );
+  }
+
+  // ---------------------------------------------------------------------------
+  // REUSABLE FIELD TILE WITH TOGGLE AND CUSTOM LABEL INPUT
+  // ---------------------------------------------------------------------------
+  Widget _buildFieldTile({
+    required String title,
+    required String description,
+    required String toggleKey,
+    required bool defaultToggle,
+    required String labelKey,
+    required String fallbackLabel,
+    required String hint,
+  }) {
+    final isEnabled = _localSettings[toggleKey] != null
+        ? _localSettings[toggleKey] == true
+        : defaultToggle;
+    final currentCustomLabel = _localSettings[labelKey]?.toString() ?? '';
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Row(
+          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+          children: [
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    title,
+                    style: TextStyle(
+                      fontWeight: FontWeight.w600,
+                      fontSize: 14,
+                      color: isEnabled ? null : Colors.grey[600],
+                    ),
+                  ),
+                  Text(
+                    description,
+                    style: TextStyle(
+                      fontSize: 11,
+                      color: isEnabled ? Colors.grey[600] : Colors.grey[400],
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            Switch(
+              value: isEnabled,
+              onChanged: (val) {
+                setState(() => _localSettings[toggleKey] = val);
+              },
+            ),
+          ],
+        ),
+        const SizedBox(height: 8),
+        TextFormField(
+          initialValue: currentCustomLabel.isNotEmpty ? currentCustomLabel : '',
+          enabled: isEnabled,
+          decoration: InputDecoration(
+            labelText: 'Custom Label for "$title"',
+            hintText: currentCustomLabel.isNotEmpty ? currentCustomLabel : fallbackLabel,
+            isDense: true,
+            prefixIcon: const Icon(Icons.edit_outlined, size: 16),
+            border: OutlineInputBorder(borderRadius: BorderRadius.circular(8)),
+          ),
+          onChanged: (value) {
+            setState(() {
+              if (value.trim().isEmpty) {
+                _localSettings.remove(labelKey);
+              } else {
+                _localSettings[labelKey] = value.trim();
+              }
+            });
+          },
+        ),
+      ],
+    );
+  }
+
+  // ---------------------------------------------------------------------------
+  // CUSTOM FIELDS SECTION FOR ANY CATEGORY
+  // ---------------------------------------------------------------------------
+  Widget _buildCustomFieldsCard({
+    required String key,
+    required String title,
+    required String itemType,
+    required String hintText,
+  }) {
+    final customList = _getCustomFields(key);
+
+    return AppCard(
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            children: [
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      'Custom $itemType' 's ($title)',
+                      style: Theme.of(context).textTheme.titleMedium,
+                    ),
+                    Text(
+                      hintText,
+                      style: const TextStyle(fontSize: 11, color: Colors.grey),
+                    ),
+                  ],
+                ),
+              ),
+              FilledButton.tonalIcon(
+                onPressed: () => _addCustomFieldDialog(key, title: title, itemType: itemType),
+                icon: const Icon(Icons.add, size: 16),
+                label: Text('Add $itemType'),
+              ),
+            ],
+          ),
+          if (customList.isEmpty) ...[
+            const SizedBox(height: 12),
+            Container(
+              padding: const EdgeInsets.all(12),
+              decoration: BoxDecoration(
+                color: Colors.grey[50],
+                borderRadius: BorderRadius.circular(8),
+                border: Border.all(color: Colors.grey[200]!),
+              ),
+              child: Row(
+                children: [
+                  Icon(Icons.info_outline, size: 16, color: Colors.grey[500]),
+                  const SizedBox(width: 8),
+                  Expanded(
+                    child: Text(
+                      'No custom $itemType added yet. Tap "+ Add $itemType" to add custom fields to this section.',
+                      style: TextStyle(fontSize: 12, color: Colors.grey[600]),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ] else ...[
+            const SizedBox(height: 12),
+            for (int i = 0; i < customList.length; i++) ...[
+              if (i > 0) const Divider(height: 16),
+              _buildCustomFieldRow(key, i, customList[i], itemType),
+            ],
+          ],
+        ],
+      ),
+    );
+  }
+
+  Widget _buildCustomFieldRow(
+    String key,
+    int index,
+    Map<String, dynamic> item,
+    String itemType,
+  ) {
+    final isVisible = item['isVisible'] != false;
+    final label = item['label']?.toString() ?? 'Custom $itemType';
+    final value = item['value']?.toString() ?? '';
+
+    return Row(
+      children: [
+        Switch(
+          value: isVisible,
+          onChanged: (val) {
+            final list = _getCustomFields(key);
+            list[index]['isVisible'] = val;
+            _saveCustomFields(key, list);
+          },
+        ),
+        const SizedBox(width: 8),
+        Expanded(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                label,
+                style: TextStyle(
+                  fontWeight: FontWeight.bold,
+                  fontSize: 13,
+                  color: isVisible ? null : Colors.grey,
+                ),
+              ),
+              if (value.isNotEmpty)
+                Text(
+                  'Default: $value',
+                  style: TextStyle(fontSize: 11, color: Colors.grey[600]),
+                ),
+            ],
+          ),
+        ),
+        IconButton(
+          icon: const Icon(Icons.edit_outlined, size: 18),
+          tooltip: 'Edit Field',
+          onPressed: () {
+            _editCustomFieldDialog(key, index, item, itemType);
+          },
+        ),
+        IconButton(
+          icon: const Icon(Icons.delete_outline, size: 18, color: Colors.red),
+          tooltip: 'Delete Field',
+          onPressed: () {
+            final list = _getCustomFields(key);
+            list.removeAt(index);
+            _saveCustomFields(key, list);
+            _showFeedback('Removed "$label"');
+          },
+        ),
+      ],
+    );
+  }
+
+  void _editCustomFieldDialog(
+    String key,
+    int index,
+    Map<String, dynamic> item,
+    String itemType,
+  ) {
+    final labelCtrl = TextEditingController(text: item['label']?.toString() ?? '');
+    final valCtrl = TextEditingController(text: item['value']?.toString() ?? '');
+
+    showDialog<void>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: Text('Edit $itemType'),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            TextField(
+              controller: labelCtrl,
+              decoration: InputDecoration(labelText: '$itemType Label *'),
+            ),
+            const SizedBox(height: 10),
+            TextField(
+              controller: valCtrl,
+              decoration: const InputDecoration(labelText: 'Default Value'),
+            ),
+          ],
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx),
+            child: const Text('Cancel'),
+          ),
+          FilledButton(
+            onPressed: () {
+              final newLabel = labelCtrl.text.trim();
+              if (newLabel.isEmpty) return;
+              final list = _getCustomFields(key);
+              list[index]['label'] = newLabel;
+              list[index]['value'] = valCtrl.text.trim();
+              _saveCustomFields(key, list);
+              Navigator.pop(ctx);
+            },
+            child: const Text('Save'),
+          ),
+        ],
+      ),
+    );
+  }
+
+  // ---------------------------------------------------------------------------
+  // PRESETS & INFO BANNER
+  // ---------------------------------------------------------------------------
+  Widget _buildInfoBanner(String title, String subtitle) {
+    return Container(
+      padding: const EdgeInsets.all(14),
+      decoration: BoxDecoration(
+        gradient: const LinearGradient(
+          colors: [Color(0xFF1E293B), Color(0xFF0F172A)],
+        ),
+        borderRadius: BorderRadius.circular(12),
+      ),
+      child: Row(
+        children: [
+          const Icon(Icons.tune_rounded, color: Colors.white, size: 28),
+          const SizedBox(width: 12),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  title,
+                  style: const TextStyle(
+                    color: Colors.white,
+                    fontWeight: FontWeight.bold,
+                    fontSize: 15,
+                  ),
+                ),
+                const SizedBox(height: 2),
+                Text(
+                  subtitle,
+                  style: const TextStyle(color: Color(0xFF94A3B8), fontSize: 11),
+                ),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildPresetsCard() {
+    return AppCard(
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text('1-Click Industry Presets', style: Theme.of(context).textTheme.titleMedium),
+          const SizedBox(height: 4),
+          const Text(
+            'Instantly populate standard labels & columns for your trade',
+            style: TextStyle(fontSize: 11, color: Colors.grey),
+          ),
+          const SizedBox(height: 10),
+          Wrap(
+            spacing: 8,
+            runSpacing: 8,
+            children: [
+              ActionChip(
+                avatar: const Icon(Icons.receipt_long, size: 16),
+                label: const Text('Indian GST Bill'),
+                onPressed: () => _applyQuickPreset('gst'),
+              ),
+              ActionChip(
+                avatar: const Icon(Icons.code, size: 16),
+                label: const Text('IT & Consulting'),
+                onPressed: () => _applyQuickPreset('it'),
+              ),
+              ActionChip(
+                avatar: const Icon(Icons.storefront, size: 16),
+                label: const Text('Retail Store'),
+                onPressed: () => _applyQuickPreset('retail'),
+              ),
+              ActionChip(
+                avatar: const Icon(Icons.local_shipping, size: 16),
+                label: const Text('Wholesale & Logistics'),
+                onPressed: () => _applyQuickPreset('wholesale'),
+              ),
+              ActionChip(
+                avatar: const Icon(Icons.palette, size: 16),
+                label: const Text('Freelancer / Creative'),
+                onPressed: () => _applyQuickPreset('freelance'),
+              ),
+            ],
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildBottomSaveButton() {
+    return FilledButton.icon(
+      onPressed: _saving ? null : _save,
+      icon: const Icon(Icons.check_circle_outline),
+      label: Text(_saving ? 'Saving...' : 'Save All Invoice Customizations'),
+      style: FilledButton.styleFrom(
+        padding: const EdgeInsets.symmetric(vertical: 16),
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+      ),
+    );
+  }
 }

@@ -60,6 +60,7 @@ class _AppShellState extends State<AppShell> {
   late final LocalPreferences _localPreferences;
   TemplateConfig? _preferredTemplate;
   Map<String, Object?> _invoiceLocalSettings = <String, Object?>{};
+  bool _invoiceFullscreen = false;
 
   @override
   void initState() {
@@ -125,25 +126,30 @@ class _AppShellState extends State<AppShell> {
     final isWide = MediaQuery.sizeOf(context).width >= 760;
     final page = _buildPage();
     if (!isWide) {
+      final showBottomBar = !_invoiceFullscreen &&
+          !(_destination == _Destination.menu && _moreSection != null);
       return Scaffold(
         body: page,
-        bottomNavigationBar: NavigationBar(
-          selectedIndex: _destination.index,
-          onDestinationSelected: (index) => setState(() {
-            _destination = _Destination.values[index];
-            _moreSection = null;
-            if (_destination == _Destination.invoices) {
-              _invoiceStatusFilter = 'All';
-            }
-          }),
-          destinations: [
-            for (final item in _Destination.values)
-              NavigationDestination(
-                icon: Icon(item.icon),
-                label: item.label,
-              ),
-          ],
-        ),
+        bottomNavigationBar: showBottomBar
+            ? NavigationBar(
+                selectedIndex: _destination.index,
+                onDestinationSelected: (index) => setState(() {
+                  _destination = _Destination.values[index];
+                  _moreSection = null;
+                  _invoiceFullscreen = false;
+                  if (_destination == _Destination.invoices) {
+                    _invoiceStatusFilter = 'All';
+                  }
+                }),
+                destinations: [
+                  for (final item in _Destination.values)
+                    NavigationDestination(
+                      icon: Icon(item.icon),
+                      label: item.label,
+                    ),
+                ],
+              )
+            : null,
       );
     }
 
@@ -215,7 +221,10 @@ class _AppShellState extends State<AppShell> {
           preferredTemplate: _preferredTemplate,
           localSettings: _invoiceLocalSettings,
           onOpenBusinessSettings: _openBusinessSettings,
+          onSaveLocalSettings: _saveInvoiceSettings,
           initialStatusFilter: _invoiceStatusFilter,
+          onFullscreenChanged: (fullscreen) =>
+              setState(() => _invoiceFullscreen = fullscreen),
         ),
       _Destination.aiAgent => AiChatScreen(
           apiClient: widget.apiClient,
@@ -246,7 +255,10 @@ class _AppShellState extends State<AppShell> {
       'Team management' =>
         TeamManagementScreen(apiClient: widget.apiClient, onBack: onBack),
       'Templates' => TemplatesScreen(
+          apiClient: widget.apiClient,
           initialConfig: _preferredTemplate,
+          initialLocalSettings: _invoiceLocalSettings,
+          onSaveLocalSettings: _saveInvoiceSettings,
           onBack: onBack,
           onSave: _saveTemplate,
         ),

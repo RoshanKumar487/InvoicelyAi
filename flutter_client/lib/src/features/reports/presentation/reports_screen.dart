@@ -586,7 +586,7 @@ class _ReportsScreenState extends State<ReportsScreen> {
             SizedBox(
               width: 190,
               child: DropdownButtonFormField<String>(
-                initialValue: _statusFilter,
+                value: _statusFilter,
                 decoration: const InputDecoration(
                   labelText: 'Invoice status',
                   prefixIcon: Icon(Icons.flag_outlined),
@@ -605,7 +605,7 @@ class _ReportsScreenState extends State<ReportsScreen> {
             SizedBox(
               width: 220,
               child: DropdownButtonFormField<String>(
-                initialValue: _creatorFilter,
+                value: _creatorFilter,
                 decoration: const InputDecoration(
                   labelText: 'Created by',
                   prefixIcon: Icon(Icons.person_outline),

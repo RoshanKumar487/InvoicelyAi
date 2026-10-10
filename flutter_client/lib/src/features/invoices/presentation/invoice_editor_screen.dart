@@ -566,7 +566,7 @@ class _InvoiceEditorScreenState extends State<InvoiceEditorScreen> {
                       onTap: () => _pickDate(issue: false),
                     ),
                     DropdownButtonFormField<String>(
-                      initialValue: _paymentTerms,
+                      value: _paymentTerms,
                       isExpanded: true,
                       decoration:
                           const InputDecoration(labelText: 'Payment terms'),
@@ -599,7 +599,7 @@ class _InvoiceEditorScreenState extends State<InvoiceEditorScreen> {
                       isRequired: false,
                     ),
                     DropdownButtonFormField<String>(
-                      initialValue: _template,
+                      value: _template,
                       isExpanded: true,
                       decoration:
                           const InputDecoration(labelText: 'Invoice style'),
