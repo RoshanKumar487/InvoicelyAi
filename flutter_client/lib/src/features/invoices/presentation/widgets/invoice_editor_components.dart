@@ -16,6 +16,15 @@ class TotalsPreview extends StatelessWidget {
 
   final Invoice invoice;
 
+  String get _symbol {
+    final sym = invoice.currencySymbol.trim();
+    if (sym.isNotEmpty && sym != r'$') return sym;
+    if (invoice.currencyCode.isNotEmpty && invoice.currencyCode != 'USD') {
+      return currencySymbolFor(invoice.currencyCode);
+    }
+    return '₹';
+  }
+
   @override
   Widget build(BuildContext context) => AppCard(
         padding: const EdgeInsets.all(16),
@@ -23,34 +32,40 @@ class TotalsPreview extends StatelessWidget {
           children: [
             TotalLine(
               label: 'Subtotal',
-              value: _money(invoice.subtotal, invoice.currencySymbol),
+              value: _money(invoice.subtotal, _symbol),
             ),
             TotalLine(
               label: 'Discount',
               value:
-                  '−${_money(invoice.totalDiscount, invoice.currencySymbol)}',
+                  '−${_money(invoice.totalDiscount, _symbol)}',
             ),
-            TotalLine(
-              label:
-                  '${invoice.taxLabel} (${_num(invoice.taxRate)}%${invoice.isTaxInclusive ? ', included' : ''})',
-              value: _money(invoice.taxAmount, invoice.currencySymbol),
-            ),
+            if (invoice.isRcm)
+              const TotalLine(
+                label: 'Reverse Charge (RCM)',
+                value: 'Tax payable by recipient (0.00)',
+              )
+            else
+              TotalLine(
+                label:
+                    '${invoice.taxLabel} (${_num(invoice.taxRate)}%${invoice.isTaxInclusive ? ', included' : ''})',
+                value: _money(invoice.taxAmount, _symbol),
+              ),
             TotalLine(
               label: 'Shipping & additional charges',
               value: _money(
                 invoice.shippingFee + invoice.additionalCharges,
-                invoice.currencySymbol,
+                _symbol,
               ),
             ),
             const Divider(),
             TotalLine(
               label: 'Total',
-              value: _money(invoice.total, invoice.currencySymbol),
+              value: _money(invoice.total, _symbol),
               emphasized: true,
             ),
             TotalLine(
               label: 'Balance due',
-              value: _money(invoice.balanceDue, invoice.currencySymbol),
+              value: _money(invoice.balanceDue, _symbol),
               emphasized: true,
             ),
           ],
@@ -289,6 +304,8 @@ InvoiceItem makeNewLineItem([bool isSecurity = false]) => InvoiceItem(
       dutyCount: isSecurity ? 26 : 0,
       unitPrice: 0,
       unit: isSecurity ? 'Duty' : 'pcs',
+      calculationFormula: isSecurity ? 'monthly_salary_26' : null,
+      standardDutyDays: 26,
     );
 
 String formatDateString(DateTime date) =>

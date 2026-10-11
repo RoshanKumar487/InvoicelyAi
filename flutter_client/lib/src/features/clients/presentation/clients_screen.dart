@@ -449,7 +449,7 @@ class _ClientEditorDialogState extends State<_ClientEditorDialog> {
     _phone = TextEditingController(text: client?.phone ?? '');
     _address = TextEditingController(text: client?.address ?? '');
     _taxId = TextEditingController(text: client?.taxId ?? '');
-    _currency = TextEditingController(text: client?.preferredCurrency ?? 'USD');
+    _currency = TextEditingController(text: client?.preferredCurrency ?? 'INR');
     _terms =
         TextEditingController(text: client?.defaultPaymentTerms ?? 'Net 30');
     _notes = TextEditingController(text: client?.notes ?? '');
@@ -484,7 +484,7 @@ class _ClientEditorDialogState extends State<_ClientEditorDialog> {
         address: _address.text.trim(),
         taxId: _taxId.text.trim(),
         preferredCurrency:
-            _currency.text.trim().isEmpty ? 'USD' : _currency.text.trim(),
+            _currency.text.trim().isEmpty ? 'INR' : _currency.text.trim(),
         defaultPaymentTerms:
             _terms.text.trim().isEmpty ? 'Net 30' : _terms.text.trim(),
         notes: _notes.text.trim(),

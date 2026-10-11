@@ -9,7 +9,12 @@ class DashboardRepository {
 
   final ApiClient _apiClient;
 
+  ApiClient get apiClient => _apiClient;
+
   bool get lastLoadUsedCache => _apiClient.lastGetUsedCache;
+
+  Future<Map<String, dynamic>> loadProfile() =>
+      _apiClient.getJson('api/v1/profile');
 
   Future<DashboardStatistics> loadStatistics({int? companyId}) async {
     final queryParameters =

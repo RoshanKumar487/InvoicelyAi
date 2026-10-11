@@ -8,7 +8,7 @@ class Client {
     this.phone = '',
     this.address = '',
     this.taxId = '',
-    this.preferredCurrency = 'USD',
+    this.preferredCurrency = 'INR',
     this.defaultPaymentTerms = 'Net 30',
     this.notes = '',
     this.createdAt,
@@ -37,7 +37,7 @@ class Client {
       phone: _readString(json['phone']),
       address: _readString(json['address']),
       taxId: _readString(json['taxId']),
-      preferredCurrency: _readString(json['preferredCurrency'], fallback: 'USD'),
+      preferredCurrency: _readString(json['preferredCurrency'], fallback: 'INR'),
       defaultPaymentTerms:
           _readString(json['defaultPaymentTerms'], fallback: 'Net 30'),
       notes: _readString(json['notes']),

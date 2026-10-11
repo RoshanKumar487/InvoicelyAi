@@ -93,6 +93,7 @@ void main() {
       dutyCount: 26, // 26 days/duty
       unitPrice: 500, // 500 per duty
       unit: 'guards',
+      calculationFormula: 'per_duty',
     );
 
     expect(item.grossLineAmount, 4 * 26 * 500); // 52,000

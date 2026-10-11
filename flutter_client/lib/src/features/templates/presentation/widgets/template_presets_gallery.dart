@@ -1,7 +1,6 @@
 import 'package:flutter/material.dart';
 
 import '../../../../shared/widgets/app_card.dart';
-import '../../../../theme/app_theme.dart';
 import '../../data/template_config.dart';
 import 'template_live_preview.dart';
 
@@ -147,16 +146,16 @@ class TemplatePresetsGallery extends StatelessWidget {
           // 3. Grid of Filtered Templates
           LayoutBuilder(
             builder: (context, constraints) {
-              final crossAxisCount = constraints.maxWidth > 550 ? 3 : 2;
+              final crossAxisCount = constraints.maxWidth > 600 ? 3 : 2;
               return GridView.builder(
                 itemCount: filtered.length,
                 shrinkWrap: true,
                 physics: const NeverScrollableScrollPhysics(),
                 gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
                   crossAxisCount: crossAxisCount,
-                  crossAxisSpacing: 10,
-                  mainAxisSpacing: 10,
-                  childAspectRatio: constraints.maxWidth > 550 ? 1.4 : 1.15,
+                  crossAxisSpacing: 12,
+                  mainAxisSpacing: 12,
+                  childAspectRatio: constraints.maxWidth > 600 ? 0.95 : 0.82,
                 ),
                 itemBuilder: (context, index) {
                   final preset = filtered[index];
@@ -165,102 +164,222 @@ class TemplatePresetsGallery extends StatelessWidget {
 
                   return InkWell(
                     onTap: () => onSelectPreset(preset.id),
-                    borderRadius: BorderRadius.circular(12),
+                    borderRadius: BorderRadius.circular(14),
                     child: Container(
-                      padding: const EdgeInsets.all(10),
                       decoration: BoxDecoration(
-                        borderRadius: BorderRadius.circular(12),
+                        borderRadius: BorderRadius.circular(14),
                         border: Border.all(
                           color: selected
-                              ? Theme.of(context).colorScheme.primary
-                              : AppColors.border,
-                          width: selected ? 2.2 : 1,
+                              ? const Color(0xFF2563EB)
+                              : const Color(0xFFE2E8F0),
+                          width: selected ? 2.2 : 1.0,
                         ),
                         color: selected
-                            ? Theme.of(context)
-                                .colorScheme
-                                .primary
-                                .withValues(alpha: 0.08)
+                            ? const Color(0xFFEFF6FF)
                             : Theme.of(context).colorScheme.surface,
+                        boxShadow: [
+                          BoxShadow(
+                            color: Colors.black.withAlpha(selected ? 15 : 6),
+                            blurRadius: 6,
+                            offset: const Offset(0, 2),
+                          ),
+                        ],
                       ),
+                      padding: const EdgeInsets.all(8),
                       child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
+                        crossAxisAlignment: CrossAxisAlignment.stretch,
                         children: [
+                          // Mini Visual Invoice Sheet Representation
+                          Expanded(
+                            child: Container(
+                              decoration: BoxDecoration(
+                                color: Colors.white,
+                                borderRadius: BorderRadius.circular(8),
+                                border: Border.all(color: const Color(0xFFCBD5E1)),
+                                boxShadow: const [
+                                  BoxShadow(
+                                    color: Color(0x0F000000),
+                                    blurRadius: 4,
+                                    offset: Offset(0, 1),
+                                  ),
+                                ],
+                              ),
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.stretch,
+                                children: [
+                                  // Top Colored Header Stripe
+                                  Container(
+                                    height: 14,
+                                    decoration: BoxDecoration(
+                                      color: color,
+                                      borderRadius: const BorderRadius.vertical(top: Radius.circular(7)),
+                                    ),
+                                    padding: const EdgeInsets.symmetric(horizontal: 6),
+                                    alignment: Alignment.centerLeft,
+                                    child: Container(
+                                      width: 24,
+                                      height: 3,
+                                      decoration: BoxDecoration(
+                                        color: Colors.white.withAlpha(180),
+                                        borderRadius: BorderRadius.circular(2),
+                                      ),
+                                    ),
+                                  ),
+                                  // Mock Header Area
+                                  Padding(
+                                    padding: const EdgeInsets.fromLTRB(6, 5, 6, 3),
+                                    child: Row(
+                                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                                      children: [
+                                        Container(
+                                          width: 32,
+                                          height: 4,
+                                          decoration: BoxDecoration(
+                                            color: const Color(0xFF94A3B8),
+                                            borderRadius: BorderRadius.circular(2),
+                                          ),
+                                        ),
+                                        Container(
+                                          width: 18,
+                                          height: 4,
+                                          decoration: BoxDecoration(
+                                            color: color,
+                                            borderRadius: BorderRadius.circular(2),
+                                          ),
+                                        ),
+                                      ],
+                                    ),
+                                  ),
+                                  // Mock Mini Table Header
+                                  Container(
+                                    margin: const EdgeInsets.symmetric(horizontal: 6, vertical: 3),
+                                    height: 7,
+                                    decoration: BoxDecoration(
+                                      color: color.withAlpha(30),
+                                      borderRadius: BorderRadius.circular(2),
+                                    ),
+                                  ),
+                                  // Mock Table Rows
+                                  for (int r = 0; r < 2; r++)
+                                    Padding(
+                                      padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                                      child: Row(
+                                        children: [
+                                          Container(
+                                            width: 22,
+                                            height: 3,
+                                            decoration: BoxDecoration(
+                                              color: const Color(0xFFCBD5E1),
+                                              borderRadius: BorderRadius.circular(1.5),
+                                            ),
+                                          ),
+                                          const Spacer(),
+                                          Container(
+                                            width: 12,
+                                            height: 3,
+                                            decoration: BoxDecoration(
+                                              color: const Color(0xFFE2E8F0),
+                                              borderRadius: BorderRadius.circular(1.5),
+                                            ),
+                                          ),
+                                        ],
+                                      ),
+                                    ),
+                                  const Spacer(),
+                                  // Mock Total Box
+                                  Padding(
+                                    padding: const EdgeInsets.fromLTRB(6, 2, 6, 6),
+                                    child: Row(
+                                      mainAxisAlignment: MainAxisAlignment.end,
+                                      children: [
+                                        Container(
+                                          padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 2),
+                                          decoration: BoxDecoration(
+                                            color: color.withAlpha(25),
+                                            borderRadius: BorderRadius.circular(3),
+                                          ),
+                                          child: Text(
+                                            'TOTAL',
+                                            style: TextStyle(
+                                              fontSize: 6.5,
+                                              fontWeight: FontWeight.bold,
+                                              color: color,
+                                            ),
+                                          ),
+                                        ),
+                                      ],
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            ),
+                          ),
+                          const SizedBox(height: 8),
+
+                          // Template Title & Active Status
                           Row(
                             children: [
-                              Container(
-                                width: 14,
-                                height: 14,
-                                decoration: BoxDecoration(
-                                    color: color, shape: BoxShape.circle),
-                              ),
-                              const SizedBox(width: 6),
                               Expanded(
                                 child: Text(
-                                  preset.businessCategory,
-                                  style: const TextStyle(
-                                    fontSize: 10,
-                                    fontWeight: FontWeight.bold,
-                                    color: Color(0xFF64748B),
-                                  ),
+                                  preset.name,
                                   maxLines: 1,
                                   overflow: TextOverflow.ellipsis,
+                                  style: TextStyle(
+                                    fontSize: 12,
+                                    fontWeight: selected ? FontWeight.w800 : FontWeight.w600,
+                                    color: selected ? const Color(0xFF1E3A8A) : null,
+                                  ),
                                 ),
                               ),
                               if (selected)
-                                const Icon(Icons.check_circle,
-                                    size: 16, color: Color(0xFF10B981)),
+                                Container(
+                                  padding: const EdgeInsets.all(2),
+                                  decoration: const BoxDecoration(
+                                    color: Color(0xFF10B981),
+                                    shape: BoxShape.circle,
+                                  ),
+                                  child: const Icon(Icons.check, size: 10, color: Colors.white),
+                                ),
                             ],
                           ),
-                          const Spacer(),
-                          Text(
-                            preset.name,
-                            maxLines: 2,
-                            overflow: TextOverflow.ellipsis,
-                            style: TextStyle(
-                              fontSize: 12,
-                              fontWeight:
-                                  selected ? FontWeight.bold : FontWeight.w600,
-                            ),
-                          ),
                           const SizedBox(height: 4),
-                          Wrap(
-                            spacing: 4,
-                            runSpacing: 2,
+
+                          // Badges Row
+                          Row(
                             children: [
                               Container(
-                                padding: const EdgeInsets.symmetric(
-                                    horizontal: 5, vertical: 1.5),
+                                padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 1.5),
                                 decoration: BoxDecoration(
                                   color: const Color(0xFFF1F5F9),
-                                  borderRadius: BorderRadius.circular(3),
+                                  borderRadius: BorderRadius.circular(4),
                                 ),
                                 child: Text(
                                   preset.designStyle,
                                   style: const TextStyle(
-                                    fontSize: 8.5,
+                                    fontSize: 9,
                                     fontWeight: FontWeight.bold,
                                     color: Color(0xFF475569),
                                   ),
                                 ),
                               ),
-                              if (preset.showDuty)
+                              if (preset.showDuty) ...[
+                                const SizedBox(width: 4),
                                 Container(
-                                  padding: const EdgeInsets.symmetric(
-                                      horizontal: 5, vertical: 1.5),
+                                  padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 1.5),
                                   decoration: BoxDecoration(
                                     color: const Color(0xFFDCFCE7),
-                                    borderRadius: BorderRadius.circular(3),
+                                    borderRadius: BorderRadius.circular(4),
                                   ),
                                   child: const Text(
-                                    'Duty Calc',
+                                    'Duty / 26',
                                     style: TextStyle(
-                                      fontSize: 8.5,
+                                      fontSize: 9,
                                       fontWeight: FontWeight.bold,
                                       color: Color(0xFF166534),
                                     ),
                                   ),
                                 ),
+                              ],
                             ],
                           ),
                         ],

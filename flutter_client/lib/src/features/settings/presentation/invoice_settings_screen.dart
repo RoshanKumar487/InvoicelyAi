@@ -6,8 +6,6 @@ import '../../../core/api/api_client.dart';
 import '../../../core/api/api_exception.dart';
 import '../../../shared/widgets/app_card.dart';
 import '../data/settings_repository.dart';
-import 'widgets/invoice_settings_bank_tab.dart';
-import 'widgets/invoice_settings_brand_terms_tab.dart';
 import 'widgets/invoice_settings_general_tabs.dart';
 import 'widgets/invoice_settings_line_items_tab.dart';
 
@@ -309,6 +307,10 @@ class _InvoiceSettingsScreenState extends State<InvoiceSettingsScreen>
           _localSettings['showItemQty'] = true;
           _localSettings['showItemRate'] = true;
           _localSettings['showItemTax'] = true;
+          _localSettings['showItemDiscount'] = false;
+          _localSettings['itemCalculationFormula'] = 'monthly_salary_26';
+          _localSettings['standardDutyDays'] = 26.0;
+          _localSettings['isRcmApplicable'] = true;
           _localSettings['defaultNotes'] = 'Security attendance verified by client site supervisor. Statutory EPF & ESIC challans enclosed.';
           _localSettings['defaultTerms'] = 'Payment due within 15 days of bill submission. RCM / GST compliance applicable.';
           _profile['defaultNotes'] = _localSettings['defaultNotes'];
@@ -460,7 +462,7 @@ class _InvoiceSettingsScreenState extends State<InvoiceSettingsScreen>
   @override
   Widget build(BuildContext context) {
     return DefaultTabController(
-      length: 6,
+      length: 4,
       child: Scaffold(
         appBar: AppBar(
           leading: widget.onBack == null
@@ -495,10 +497,8 @@ class _InvoiceSettingsScreenState extends State<InvoiceSettingsScreen>
             tabs: [
               Tab(icon: Icon(Icons.description_outlined), text: 'Details & Style'),
               Tab(icon: Icon(Icons.person_pin_outlined), text: 'Bills & Client'),
-              Tab(icon: Icon(Icons.table_chart_outlined), text: 'Line Items'),
-              Tab(icon: Icon(Icons.calculate_outlined), text: 'Adjustments'),
-              Tab(icon: Icon(Icons.account_balance_outlined), text: 'Bank & UPI'),
-              Tab(icon: Icon(Icons.draw_outlined), text: 'Brand & Terms'),
+              Tab(icon: Icon(Icons.table_chart_outlined), text: 'Line Items & Formulas'),
+              Tab(icon: Icon(Icons.calculate_outlined), text: 'Adjustments & RCM'),
             ],
           ),
         ),
@@ -558,18 +558,8 @@ class _InvoiceSettingsScreenState extends State<InvoiceSettingsScreen>
                           fieldTileBuilder: _buildFieldTile,
                           customFieldsCardBuilder: _buildCustomFieldsCard,
                           onSave: _save,
-                        ),
-                        InvoiceSettingsBankTab(
-                          profile: _profile,
                           localSettings: _localSettings,
                           onChanged: () => setState(() {}),
-                          onSave: _save,
-                        ),
-                        InvoiceSettingsBrandTermsTab(
-                          profile: _profile,
-                          localSettings: _localSettings,
-                          onChanged: () => setState(() {}),
-                          onSave: _save,
                         ),
                       ],
                     ),

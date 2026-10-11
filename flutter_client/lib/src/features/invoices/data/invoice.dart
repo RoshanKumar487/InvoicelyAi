@@ -11,6 +11,8 @@ class InvoiceItem {
     this.itemDetails = '',
     this.taxRate = 0,
     this.discountRate = 0,
+    this.calculationFormula,
+    this.standardDutyDays = 26,
   });
 
   final String id;
@@ -22,10 +24,35 @@ class InvoiceItem {
   final String itemDetails;
   final double taxRate;
   final double discountRate;
+  final String? calculationFormula;
+  final double standardDutyDays;
 
-  double get grossLineAmount => dutyCount > 0
-      ? quantity * dutyCount * unitPrice
-      : quantity * unitPrice;
+  double get grossLineAmount {
+    if (dutyCount <= 0) return quantity * unitPrice;
+    switch (calculationFormula) {
+      case 'calendar_month':
+      case 'monthly_salary_calendar':
+        final divisor = standardDutyDays > 0 ? standardDutyDays : 30.0;
+        return (quantity * dutyCount * unitPrice) / divisor;
+      case 'monthly_salary':
+      case 'monthly_salary_26':
+        final divisor = standardDutyDays > 0 ? standardDutyDays : 26.0;
+        return (quantity * dutyCount * unitPrice) / divisor;
+      case 'monthly_salary_30':
+        return (quantity * dutyCount * unitPrice) / 30.0;
+      case 'flat_monthly':
+        return quantity * unitPrice;
+      case 'per_duty':
+      case 'daily_duty':
+        return quantity * dutyCount * unitPrice;
+      case 'standard':
+        return quantity * unitPrice;
+      default:
+        final divisor = standardDutyDays > 0 ? standardDutyDays : 26.0;
+        return (quantity * dutyCount * unitPrice) / divisor;
+    }
+  }
+
   double get discountAmount => grossLineAmount * discountRate / 100;
   double get total => grossLineAmount - discountAmount;
 
@@ -39,6 +66,8 @@ class InvoiceItem {
     String? itemDetails,
     double? taxRate,
     double? discountRate,
+    String? calculationFormula,
+    double? standardDutyDays,
   }) =>
       InvoiceItem(
         id: id ?? this.id,
@@ -50,6 +79,8 @@ class InvoiceItem {
         itemDetails: itemDetails ?? this.itemDetails,
         taxRate: taxRate ?? this.taxRate,
         discountRate: discountRate ?? this.discountRate,
+        calculationFormula: calculationFormula ?? this.calculationFormula,
+        standardDutyDays: standardDutyDays ?? this.standardDutyDays,
       );
 
   factory InvoiceItem.fromJson(Map<String, dynamic> json) => InvoiceItem(
@@ -62,6 +93,8 @@ class InvoiceItem {
         itemDetails: _string(json['itemDetails']),
         taxRate: _number(json['taxRate']),
         discountRate: _number(json['discountRate']),
+        calculationFormula: json['calculationFormula']?.toString(),
+        standardDutyDays: _number(json['standardDutyDays'], fallback: 26),
       );
 
   Map<String, Object?> toJson() => {
@@ -74,6 +107,8 @@ class InvoiceItem {
         if (itemDetails.isNotEmpty) 'itemDetails': itemDetails,
         'taxRate': taxRate,
         'discountRate': discountRate,
+        if (calculationFormula != null) 'calculationFormula': calculationFormula,
+        if (standardDutyDays != 26) 'standardDutyDays': standardDutyDays,
       };
 }
 
@@ -103,6 +138,7 @@ class Invoice {
     this.taxLabel = 'Tax',
     this.taxType = 'GST',
     this.isTaxInclusive = false,
+    this.isRcm = false,
     this.discountPercent = 0,
     this.discountAmount = 0,
     this.shippingFee = 0,
@@ -139,6 +175,7 @@ class Invoice {
   final String taxLabel;
   final String taxType;
   final bool isTaxInclusive;
+  final bool isRcm;
   final double discountPercent;
   final double discountAmount;
   final double shippingFee;
@@ -158,9 +195,12 @@ class Invoice {
       itemDiscount + (subtotal - itemDiscount) * discountPercent / 100 + discountAmount;
   double get taxableAmount =>
       (subtotal - totalDiscount).clamp(0, double.infinity).toDouble();
-  double get taxAmount => isTaxInclusive
-      ? taxableAmount - taxableAmount / (1 + taxRate / 100)
-      : taxableAmount * taxRate / 100;
+  double get taxAmount {
+    if (isRcm) return 0.0;
+    return isTaxInclusive
+        ? taxableAmount - taxableAmount / (1 + taxRate / 100)
+        : taxableAmount * taxRate / 100;
+  }
   double get total => (taxableAmount +
           (isTaxInclusive ? 0 : taxAmount) +
           shippingFee +
@@ -220,6 +260,7 @@ class Invoice {
       taxLabel: _string(json['taxLabel'], fallback: 'Tax'),
       taxType: _string(json['taxType'], fallback: 'GST'),
       isTaxInclusive: json['isTaxInclusive'] as bool? ?? false,
+      isRcm: json['isRcm'] == true || json['isRcmApplicable'] == true,
       discountPercent: _number(json['discountPercent']),
       discountAmount: _number(json['discountAmount']),
       shippingFee: _number(json['shippingFee']),
@@ -258,6 +299,7 @@ class Invoice {
         'taxLabel': taxLabel,
         'taxType': taxType,
         'isTaxInclusive': isTaxInclusive,
+        if (isRcm) 'isRcm': true,
         'discountPercent': discountPercent,
         'discountAmount': discountAmount,
         'shippingFee': shippingFee,
@@ -295,6 +337,7 @@ class Invoice {
     String? taxLabel,
     String? taxType,
     bool? isTaxInclusive,
+    bool? isRcm,
     double? discountPercent,
     double? discountAmount,
     double? shippingFee,
@@ -331,6 +374,7 @@ class Invoice {
         taxLabel: taxLabel ?? this.taxLabel,
         taxType: taxType ?? this.taxType,
         isTaxInclusive: isTaxInclusive ?? this.isTaxInclusive,
+        isRcm: isRcm ?? this.isRcm,
         discountPercent: discountPercent ?? this.discountPercent,
         discountAmount: discountAmount ?? this.discountAmount,
         shippingFee: shippingFee ?? this.shippingFee,

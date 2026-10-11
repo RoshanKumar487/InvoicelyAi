@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 
 import '../../../../shared/widgets/app_card.dart';
+import 'item_formula_builder_dialog.dart';
 
 class InvoiceSettingsLineItemsTab extends StatelessWidget {
   const InvoiceSettingsLineItemsTab({
@@ -131,6 +132,256 @@ class InvoiceSettingsLineItemsTab extends StatelessWidget {
                   _presetChip(context, 'retail', '🛍️ Retail & Wholesale', 'Product, Qty, Price, Discount'),
                   _presetChip(context, 'freelance', '🎨 Freelance Services', 'Tasks, Milestones, Units, Fee'),
                 ],
+              ),
+            ],
+          ),
+        ),
+        const SizedBox(height: 14),
+        AppCard(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Row(
+                children: [
+                  Container(
+                    padding: const EdgeInsets.all(8),
+                    decoration: BoxDecoration(
+                      color: const Color(0xFF2563EB).withAlpha(25),
+                      borderRadius: BorderRadius.circular(8),
+                    ),
+                    child: const Icon(Icons.calculate_outlined, color: Color(0xFF2563EB), size: 22),
+                  ),
+                  const SizedBox(width: 10),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          'Item Total Calculation Formula',
+                          style: Theme.of(context).textTheme.titleMedium?.copyWith(fontWeight: FontWeight.bold),
+                        ),
+                        const SizedBox(height: 2),
+                        const Text(
+                          'Select how Staff / Duty / Salary computes line item totals',
+                          style: TextStyle(fontSize: 11, color: Color(0xFF64748B)),
+                        ),
+                      ],
+                    ),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 14),
+              DropdownButtonFormField<String>(
+                value: () {
+                  final cur = localSettings['itemCalculationFormula']?.toString();
+                  if (cur == 'calendar_month' ||
+                      cur == 'monthly_salary_calendar' ||
+                      cur == 'monthly_salary_26' ||
+                      cur == 'monthly_salary_30' ||
+                      cur == 'monthly_salary' ||
+                      cur == 'per_duty' ||
+                      cur == 'flat_monthly' ||
+                      cur == 'standard') {
+                    if (cur == 'monthly_salary_calendar') return 'calendar_month';
+                    if (cur == 'monthly_salary') return 'monthly_salary_26';
+                    return cur;
+                  }
+                  return 'calendar_month';
+                }(),
+                decoration: InputDecoration(
+                  labelText: 'Calculation Formula',
+                  border: OutlineInputBorder(borderRadius: BorderRadius.circular(10)),
+                  contentPadding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+                ),
+                items: const [
+                  DropdownMenuItem(
+                    value: 'calendar_month',
+                    child: Text('🗓️ Calendar Month: (Salary ÷ Month Days) × Duties (Auto 30/31/28)'),
+                  ),
+                  DropdownMenuItem(
+                    value: 'monthly_salary_26',
+                    child: Text('🛡️ Security (26 Days): (Salary ÷ 26) × Duties × Staff'),
+                  ),
+                  DropdownMenuItem(
+                    value: 'monthly_salary_30',
+                    child: Text('📅 Commercial (30 Days): (Salary ÷ 30) × Duties × Staff'),
+                  ),
+                  DropdownMenuItem(
+                    value: 'per_duty',
+                    child: Text('⚡ Per-Duty Rate: Daily Rate × Duties × Staff'),
+                  ),
+                  DropdownMenuItem(
+                    value: 'flat_monthly',
+                    child: Text('💼 Flat Monthly: Monthly Salary × Staff'),
+                  ),
+                  DropdownMenuItem(
+                    value: 'standard',
+                    child: Text('📦 Standard Commercial: Quantity × Rate'),
+                  ),
+                ],
+                onChanged: (val) {
+                  if (val != null) {
+                    localSettings['itemCalculationFormula'] = val;
+                    if (val == 'calendar_month') {
+                      final now = DateTime.now();
+                      final daysInCurrentMonth = DateTime(now.year, now.month + 1, 0).day;
+                      localSettings['standardDutyDays'] = daysInCurrentMonth.toDouble();
+                    } else if (val == 'monthly_salary_26') {
+                      localSettings['standardDutyDays'] = 26.0;
+                    } else if (val == 'monthly_salary_30') {
+                      localSettings['standardDutyDays'] = 30.0;
+                    }
+                    onChanged();
+                  }
+                },
+              ),
+              const SizedBox(height: 10),
+              Wrap(
+                spacing: 6,
+                runSpacing: 6,
+                children: [
+                  ActionChip(
+                    avatar: const Icon(Icons.calendar_month, size: 14, color: Color(0xFF2563EB)),
+                    label: const Text('Auto Calendar Month', style: TextStyle(fontSize: 11)),
+                    onPressed: () {
+                      localSettings['itemCalculationFormula'] = 'calendar_month';
+                      final now = DateTime.now();
+                      localSettings['standardDutyDays'] = DateTime(now.year, now.month + 1, 0).day.toDouble();
+                      onChanged();
+                    },
+                  ),
+                  ActionChip(
+                    avatar: const Icon(Icons.shield_outlined, size: 14, color: Color(0xFF059669)),
+                    label: const Text('Security 26 Days', style: TextStyle(fontSize: 11)),
+                    onPressed: () {
+                      localSettings['itemCalculationFormula'] = 'monthly_salary_26';
+                      localSettings['standardDutyDays'] = 26.0;
+                      onChanged();
+                    },
+                  ),
+                  ActionChip(
+                    avatar: const Icon(Icons.business_outlined, size: 14, color: Color(0xFFD97706)),
+                    label: const Text('30 Days Standard', style: TextStyle(fontSize: 11)),
+                    onPressed: () {
+                      localSettings['itemCalculationFormula'] = 'monthly_salary_30';
+                      localSettings['standardDutyDays'] = 30.0;
+                      onChanged();
+                    },
+                  ),
+                ],
+              ),
+              const SizedBox(height: 12),
+              Container(
+                padding: const EdgeInsets.all(12),
+                decoration: BoxDecoration(
+                  color: const Color(0xFF0F172A),
+                  borderRadius: BorderRadius.circular(10),
+                  border: Border.all(color: const Color(0xFF334155)),
+                ),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Row(
+                      children: const [
+                        Icon(Icons.functions_rounded, size: 16, color: Color(0xFF38BDF8)),
+                        SizedBox(width: 6),
+                        Text(
+                          'SALARY CALCULATION FORMULA',
+                          style: TextStyle(
+                            fontSize: 10.5,
+                            fontWeight: FontWeight.w800,
+                            letterSpacing: 1.1,
+                            color: Color(0xFF94A3B8),
+                          ),
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 8),
+                    const Text(
+                      'Salary = (Total Net Salary ÷ Total Month Days) × Duty Days',
+                      style: TextStyle(
+                        fontFamily: 'monospace',
+                        fontSize: 13,
+                        fontWeight: FontWeight.bold,
+                        color: Color(0xFF38BDF8),
+                      ),
+                    ),
+                    const SizedBox(height: 6),
+                    const Text(
+                      'Example: Total Net Salary = ₹30,000 • Month Days = 30 • Duty Days = 21\n= (₹30,000 / 30) × 21 = ₹21,000 Result',
+                      style: TextStyle(fontSize: 11.5, color: Color(0xFFE2E8F0)),
+                    ),
+                  ],
+                ),
+              ),
+              const SizedBox(height: 12),
+              TextFormField(
+                initialValue: (localSettings['standardDutyDays'] as num?)?.toString() ?? '30',
+                keyboardType: const TextInputType.numberWithOptions(decimal: true),
+                decoration: InputDecoration(
+                  labelText: 'Standard Duty Days / Divisor',
+                  helperText: 'Days considered full month (e.g. 30, 31, or 26)',
+                  border: OutlineInputBorder(borderRadius: BorderRadius.circular(10)),
+                  contentPadding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+                ),
+                onChanged: (val) {
+                  final parsed = double.tryParse(val.trim());
+                  if (parsed != null && parsed > 0) {
+                    localSettings['standardDutyDays'] = parsed;
+                    onChanged();
+                  }
+                },
+              ),
+              const SizedBox(height: 10),
+              Container(
+                padding: const EdgeInsets.all(10),
+                decoration: BoxDecoration(
+                  color: const Color(0xFF2563EB).withAlpha(15),
+                  borderRadius: BorderRadius.circular(8),
+                ),
+                child: Row(
+                  children: [
+                    const Icon(Icons.info_outline, size: 16, color: Color(0xFF2563EB)),
+                    const SizedBox(width: 8),
+                    Expanded(
+                      child: Text(
+                        _formulaExplanation(
+                          localSettings['itemCalculationFormula']?.toString() ?? 'calendar_month',
+                          (localSettings['standardDutyDays'] as num?)?.toDouble() ?? 30.0,
+                        ),
+                        style: const TextStyle(fontSize: 11, color: Color(0xFF1E40AF), fontWeight: FontWeight.w500),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              const SizedBox(height: 12),
+              SizedBox(
+                width: double.infinity,
+                child: FilledButton.tonalIcon(
+                  onPressed: () async {
+                    final curKey = localSettings['itemCalculationFormula']?.toString() ?? 'monthly_salary_26';
+                    final curDays = (localSettings['standardDutyDays'] as num?)?.toDouble() ?? 26.0;
+                    final curSym = localSettings['defaultCurrencySymbol']?.toString() ?? '₹';
+                    final res = await ItemFormulaBuilderDialog.show(
+                      context,
+                      initialFormulaKey: curKey,
+                      initialStandardDutyDays: curDays,
+                      currencySymbol: curSym,
+                    );
+                    if (res != null) {
+                      localSettings['itemCalculationFormula'] = res.formulaKey;
+                      localSettings['standardDutyDays'] = res.standardDutyDays;
+                      onChanged();
+                    }
+                  },
+                  icon: const Icon(Icons.auto_awesome, size: 18),
+                  label: const Text('Open Visual Formula Studio (Tokens & Simulator)'),
+                  style: FilledButton.styleFrom(
+                    padding: const EdgeInsets.symmetric(vertical: 12),
+                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+                  ),
+                ),
               ),
             ],
           ),
@@ -267,5 +518,27 @@ class InvoiceSettingsLineItemsTab extends StatelessWidget {
         ),
       ],
     );
+  }
+
+  String _formulaExplanation(String formula, double days) {
+    final d = days > 0 ? days : 26.0;
+    final dStr = d == d.toInt() ? d.toInt().toString() : '$d';
+    switch (formula) {
+      case 'calendar_month':
+      case 'monthly_salary_calendar':
+        return 'Calendar Month Auto-Days: Daily rate = Net Salary ÷ Month Days (e.g. 30/31/28 days). Salary = (Salary ÷ Month Days) × Duty Days. Example: (₹30,000 ÷ 30) × 21 = ₹21,000.';
+      case 'monthly_salary_26':
+      case 'monthly_salary':
+        return 'Formula: (Staff × Duty × Salary) / $dStr. Example: 1 Guard × 26 Duties × ₹18,500 / 26 = ₹18,500.';
+      case 'monthly_salary_30':
+        return 'Formula: (Staff × Duty × Salary) / 30. Example: 1 Guard × 21 Duties × ₹30,000 / 30 = ₹21,000.';
+      case 'per_duty':
+        return 'Formula: Staff × Duty × Daily Rate. Example: 1 Guard × 26 Duties × ₹700/day = ₹18,200.';
+      case 'flat_monthly':
+        return 'Formula: Staff × Monthly Salary. Example: 1 Guard × ₹18,500 = ₹18,500.';
+      case 'standard':
+      default:
+        return 'Formula: Quantity × Rate. Example: 10 units × ₹500 = ₹5,000.';
+    }
   }
 }

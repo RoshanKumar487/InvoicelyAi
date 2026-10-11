@@ -8,12 +8,14 @@ class TemplatePickerModal extends StatefulWidget {
     required this.selectedId,
     required this.onSelectTemplate,
     required this.onSetDefault,
+    this.activeBusinessCategory,
     super.key,
   });
 
   final String? selectedId;
   final ValueChanged<TemplateConfig> onSelectTemplate;
   final ValueChanged<TemplateConfig> onSetDefault;
+  final String? activeBusinessCategory;
 
   @override
   State<TemplatePickerModal> createState() => _TemplatePickerModalState();
@@ -23,6 +25,17 @@ class _TemplatePickerModalState extends State<TemplatePickerModal> {
   String _selectedCategory = 'All';
   String _selectedStyle = 'All';
   late String? _currentId = widget.selectedId;
+
+  @override
+  void initState() {
+    super.initState();
+    if (widget.activeBusinessCategory != null &&
+        widget.activeBusinessCategory!.isNotEmpty &&
+        widget.activeBusinessCategory != 'General' &&
+        widget.activeBusinessCategory != 'All') {
+      _selectedCategory = widget.activeBusinessCategory!;
+    }
+  }
 
   static const _categories = [
     ('All', 'All Categories', Icons.apps_rounded),
@@ -48,9 +61,17 @@ class _TemplatePickerModalState extends State<TemplatePickerModal> {
     final theme = Theme.of(context);
     final isDark = theme.brightness == Brightness.dark;
 
+    final domainCat = widget.activeBusinessCategory;
+    final isCategoryLocked = domainCat != null &&
+        domainCat.isNotEmpty &&
+        domainCat != 'All' &&
+        domainCat != 'General';
+
+    final effectiveCategory = isCategoryLocked ? domainCat : _selectedCategory;
+
     final filtered = templatePresets.where((TemplateConfig p) {
       final matchCat =
-          _selectedCategory == 'All' || p.businessCategory == _selectedCategory;
+          effectiveCategory == 'All' || p.businessCategory == effectiveCategory;
       final matchStyle =
           _selectedStyle == 'All' || p.designStyle == _selectedStyle;
       return matchCat && matchStyle;
@@ -125,34 +146,63 @@ class _TemplatePickerModalState extends State<TemplatePickerModal> {
           ),
 
           // Category Filter Tabs
-          SingleChildScrollView(
-            scrollDirection: Axis.horizontal,
-            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 6),
-            child: Row(
-              children: _categories.map((cat) {
-                final isSelected = _selectedCategory == cat.$1;
-                return Padding(
-                  padding: const EdgeInsets.only(right: 8),
-                  child: ChoiceChip(
-                    label: Text(
-                      cat.$2,
-                      style: TextStyle(
-                        fontSize: 12,
-                        fontWeight:
-                            isSelected ? FontWeight.bold : FontWeight.w500,
-                        color: isSelected ? Colors.white : null,
+          if (!isCategoryLocked)
+            SingleChildScrollView(
+              scrollDirection: Axis.horizontal,
+              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 6),
+              child: Row(
+                children: _categories.map((cat) {
+                  final isSelected = _selectedCategory == cat.$1;
+                  return Padding(
+                    padding: const EdgeInsets.only(right: 8),
+                    child: ChoiceChip(
+                      label: Text(
+                        cat.$2,
+                        style: TextStyle(
+                          fontSize: 12,
+                          fontWeight:
+                              isSelected ? FontWeight.bold : FontWeight.w500,
+                          color: isSelected ? Colors.white : null,
+                        ),
+                      ),
+                      selected: isSelected,
+                      selectedColor: const Color(0xFF2563EB),
+                      onSelected: (val) {
+                        if (val) setState(() => _selectedCategory = cat.$1);
+                      },
+                    ),
+                  );
+                }).toList(),
+              ),
+            )
+          else
+            Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
+              child: Container(
+                padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                decoration: BoxDecoration(
+                  color: const Color(0xFF2563EB).withAlpha(18),
+                  borderRadius: BorderRadius.circular(8),
+                  border: Border.all(color: const Color(0xFF2563EB).withAlpha(60)),
+                ),
+                child: Row(
+                  children: [
+                    const Icon(Icons.shield_outlined, size: 16, color: Color(0xFF2563EB)),
+                    const SizedBox(width: 6),
+                    Expanded(
+                      child: Text(
+                        'Showing $domainCat templates (Active Domain in Business Settings)',
+                        style: const TextStyle(
+                          fontSize: 11,
+                          fontWeight: FontWeight.w600,
+                          color: Color(0xFF1D4ED8),
+                        ),
                       ),
                     ),
-                    selected: isSelected,
-                    selectedColor: const Color(0xFF2563EB),
-                    onSelected: (val) {
-                      if (val) setState(() => _selectedCategory = cat.$1);
-                    },
-                  ),
-                );
-              }).toList(),
+                  ],
+                ),
+              ),
             ),
-          ),
 
           // Style Filter Chips
           SingleChildScrollView(

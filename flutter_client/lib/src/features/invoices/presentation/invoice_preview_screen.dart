@@ -14,6 +14,7 @@ import '../data/invoice_pdf_export.dart';
 import '../data/invoice_repository.dart';
 import 'widgets/invoice_preview_a4_paper.dart';
 import 'widgets/invoice_preview_widgets.dart';
+import 'widgets/invoice_share_dialog.dart';
 import 'widgets/invoice_template_picker_modal.dart';
 
 class InvoicePreviewScreen extends StatefulWidget {
@@ -200,13 +201,45 @@ class _InvoicePreviewScreenState extends State<InvoicePreviewScreen>
 
   String get _activeCurrencySymbol {
     final s = _localSettings['defaultCurrencySymbol']?.toString().trim();
-    if (s != null && s.isNotEmpty) return s;
+    if (s != null && s.isNotEmpty && s != r'$') return s;
     final c = _localSettings['defaultCurrency']?.toString().trim();
-    if (c != null && c.isNotEmpty) return currencySymbolFor(c);
+    if (c != null && c.isNotEmpty && c != 'USD') return currencySymbolFor(c);
     if (_invoice.currencySymbol.isNotEmpty && _invoice.currencySymbol != r'$') {
       return _invoice.currencySymbol;
     }
-    return '₹';
+    if (_invoice.currencyCode.isNotEmpty && _invoice.currencyCode != 'USD') {
+      return currencySymbolFor(_invoice.currencyCode);
+    }
+    return (s != null && s.isNotEmpty) ? s : '₹';
+  }
+
+  Invoice get _effectiveInvoice {
+    final effectiveSymbol = _activeCurrencySymbol;
+    final effectiveCode = _localSettings['defaultCurrency']?.toString().trim().isNotEmpty == true
+        ? _localSettings['defaultCurrency']!.toString().trim().toUpperCase()
+        : 'INR';
+    if (_invoice.currencyCode == 'USD' || _invoice.currencySymbol == r'$') {
+      return _invoice.copyWith(
+        currencyCode: effectiveCode,
+        currencySymbol: effectiveSymbol,
+      );
+    }
+    return _invoice;
+  }
+
+  String? get _activeBusinessCategory {
+    final domain = _localSettings['businessType']?.toString() ??
+        _profile['businessType']?.toString() ??
+        _localSettings['industryPresetId']?.toString();
+    if (domain == 'security') return 'Security Agency';
+    if (domain == 'it') return 'IT & Consulting';
+    if (domain == 'retail') return 'Retail & GST';
+    if (domain == 'wholesale') return 'Wholesale & Logistics';
+    if (domain == 'freelance') return 'Freelance & Creative';
+    final cat = _localSettings['businessCategory']?.toString() ??
+        _profile['businessCategory']?.toString();
+    if (cat != null && cat.isNotEmpty && cat != 'General') return cat;
+    return null;
   }
 
 
@@ -317,7 +350,7 @@ class _InvoicePreviewScreenState extends State<InvoicePreviewScreen>
     setState(() => _busy = true);
     try {
       final bytes = await InvoicePdfExport.build(
-        _invoice,
+        _effectiveInvoice,
         template: _template,
         localSettings: _localSettings,
         businessProfile: _profile,
@@ -327,7 +360,28 @@ class _InvoicePreviewScreenState extends State<InvoicePreviewScreen>
         onLayout: (_) async => bytes,
       );
     } catch (error) {
-      if (mounted) _showMessage('Could not create PDF: $error');
+      if (mounted) _showMessage('Could not print invoice: $error');
+    } finally {
+      if (mounted) setState(() => _busy = false);
+    }
+  }
+
+  Future<void> _downloadOrSharePdf() async {
+    setState(() => _busy = true);
+    try {
+      final bytes = await InvoicePdfExport.build(
+        _effectiveInvoice,
+        template: _template,
+        localSettings: _localSettings,
+        businessProfile: _profile,
+      );
+      final pdfName = 'Invoice_$_safeFileName.pdf';
+      await Printing.sharePdf(
+        bytes: bytes,
+        filename: pdfName,
+      );
+    } catch (error) {
+      if (mounted) _showMessage('Could not export PDF: $error');
     } finally {
       if (mounted) setState(() => _busy = false);
     }
@@ -337,7 +391,7 @@ class _InvoicePreviewScreenState extends State<InvoicePreviewScreen>
     setState(() => _busy = true);
     try {
       final bytes = InvoiceDocxExport.build(
-        _invoice,
+        _effectiveInvoice,
         template: _template,
         localSettings: _localSettings,
         businessProfile: _profile,
@@ -367,42 +421,30 @@ class _InvoicePreviewScreenState extends State<InvoicePreviewScreen>
     }
   }
 
-  Future<void> _shareWhatsApp() async {
-    setState(() => _busy = true);
-    try {
-      final bytes = await InvoicePdfExport.build(
-        _invoice,
-        template: _template,
-        localSettings: _localSettings,
-        businessProfile: _profile,
-      );
-      final pdfName = 'Invoice_$_safeFileName.pdf';
-      final shareText =
-          '${_template?.title ?? "Invoice"} #${_invoice.invoiceNumber}\n'
-          'Amount Due: ${_money(_invoice.balanceDue, _activeCurrencySymbol)}\n'
-          'Due Date: ${_invoice.dueDate}\n\n'
-          'Thank you for your business!';
-
-      await SharePlus.instance.share(
-        ShareParams(
-          text: shareText,
-          files: [
-            XFile.fromData(
-              bytes,
-              mimeType: 'application/pdf',
-              name: pdfName,
-            ),
-          ],
-          fileNameOverrides: [pdfName],
-          subject: 'Invoice ${_invoice.invoiceNumber}',
-        ),
-      );
-    } catch (error) {
-      if (mounted) _showMessage('Could not share on WhatsApp: $error');
-    } finally {
-      if (mounted) setState(() => _busy = false);
-    }
+  Future<void> _openShareDialog({int initialTab = 0}) async {
+    await InvoiceShareDialog.show(
+      context,
+      invoice: _effectiveInvoice,
+      localSettings: _localSettings,
+      businessProfile: _profile,
+      template: _template,
+      onSaveDefaultTemplate: (channel, text, subject) async {
+        final updated = Map<String, Object?>.from(_localSettings);
+        if (channel == 'whatsapp') {
+          updated['whatsappDefaultTemplate'] = text;
+        } else {
+          updated['emailDefaultTemplate'] = text;
+          if (subject != null) updated['emailDefaultSubject'] = subject;
+        }
+        await widget.onSaveLocalSettings?.call(updated);
+        if (mounted) setState(() => _localSettings = updated);
+      },
+    );
   }
+
+  Future<void> _shareWhatsApp() => _openShareDialog(initialTab: 0);
+
+  Future<void> _shareEmail() => _openShareDialog(initialTab: 1);
 
   Future<void> _sendPaymentReminder() async {
     final invoice = _invoice;
@@ -468,6 +510,7 @@ class _InvoicePreviewScreenState extends State<InvoicePreviewScreen>
       backgroundColor: Colors.transparent,
       builder: (ctx) => TemplatePickerModal(
         selectedId: _template?.id,
+        activeBusinessCategory: _activeBusinessCategory,
         onSelectTemplate: (preset) {
           setState(() {
             _selectedTemplateId = preset.id;
@@ -505,7 +548,7 @@ class _InvoicePreviewScreenState extends State<InvoicePreviewScreen>
 
   @override
   Widget build(BuildContext context) {
-    final invoice = _invoice;
+    final invoice = _effectiveInvoice;
     final template = _template;
     final templateColor = _templateColor(
       template?.color,
@@ -587,9 +630,9 @@ class _InvoicePreviewScreenState extends State<InvoicePreviewScreen>
             ),
           ),
 
-          // 2. DOWNLOAD / PRINT PDF (Red circular pill)
+          // 2. EXPORT / SHARE PDF (Red circular pill)
           _buildPillButton(
-            tooltip: 'Download / Print PDF',
+            tooltip: 'Export / Download PDF',
             backgroundColor:
                 isDark ? const Color(0xFF7F1D1D) : const Color(0xFFFEE2E2),
             child: IconButton(
@@ -598,37 +641,26 @@ class _InvoicePreviewScreenState extends State<InvoicePreviewScreen>
                 size: 18,
                 color: isDark ? const Color(0xFFFCA5A5) : const Color(0xFFDC2626),
               ),
-              onPressed: _busy ? null : _printPdf,
+              onPressed: _busy ? null : _downloadOrSharePdf,
             ),
           ),
 
-          // 3. GENERATE DOCX (Blue circular pill)
+          // 3. PRINT DIRECTLY TO PRINTER (Blue circular pill)
           _buildPillButton(
-            tooltip: 'Generate DOCX',
+            tooltip: 'Print to printer',
             backgroundColor:
                 isDark ? const Color(0xFF1E3A8A) : const Color(0xFFDBEAFE),
             child: IconButton(
               icon: Icon(
-                Icons.download_rounded,
+                Icons.print_rounded,
                 size: 18,
                 color: isDark ? const Color(0xFF93C5FD) : const Color(0xFF2563EB),
               ),
-              onPressed: _busy ? null : _shareDocx,
+              onPressed: _busy ? null : _printPdf,
             ),
           ),
 
-          // 4. WHATSAPP SHARE (Green circular pill)
-          _buildPillButton(
-            tooltip: 'Share via WhatsApp',
-            backgroundColor:
-                isDark ? const Color(0xFF064E3B) : const Color(0xFFDCFCE7),
-            child: IconButton(
-              icon: const WhatsAppIcon(size: 19),
-              onPressed: _busy ? null : _shareWhatsApp,
-            ),
-          ),
-
-          // 5. EDIT INVOICE (Pill button)
+          // 4. EDIT INVOICE (Pill button)
           _buildPillButton(
             tooltip: 'Edit Invoice',
             backgroundColor:
@@ -639,30 +671,11 @@ class _InvoicePreviewScreenState extends State<InvoicePreviewScreen>
                 size: 17,
                 color: isDark ? Colors.white : const Color(0xFF0F172A),
               ),
-              onPressed: _busy ? null : () => widget.onEdit(_invoice),
+              onPressed: _busy ? null : () => widget.onEdit(_effectiveInvoice),
             ),
           ),
 
-          // 6. SEND REMINDER (Amber circular pill when unpaid)
-          if (invoice.balanceDue > 0 &&
-              invoice.status.toLowerCase() != 'paid')
-            _buildPillButton(
-              tooltip: 'Send Payment Reminder',
-              backgroundColor:
-                  isDark ? const Color(0xFF78350F) : const Color(0xFFFEF3C7),
-              child: IconButton(
-                icon: Icon(
-                  Icons.notifications_active_rounded,
-                  size: 17,
-                  color: isDark
-                      ? const Color(0xFFFCD34D)
-                      : const Color(0xFFD97706),
-                ),
-                onPressed: _busy ? null : _sendPaymentReminder,
-              ),
-            ),
-
-          // 7. OVERFLOW MENU
+          // 4. OVERFLOW MENU (3 dots: Sign, WhatsApp, DOCX, Reminder, Copy, Status, Delete)
           PopupMenuButton<String>(
             tooltip: 'More actions',
             enabled: !_busy,
@@ -671,6 +684,14 @@ class _InvoicePreviewScreenState extends State<InvoicePreviewScreen>
               switch (action) {
                 case 'sign':
                   _openDocuHubSigner();
+                case 'whatsapp':
+                  _shareWhatsApp();
+                case 'email':
+                  _shareEmail();
+                case 'docx':
+                  _shareDocx();
+                case 'reminder':
+                  _sendPaymentReminder();
                 case 'copy':
                   _copySummary();
                 case 'delete':
@@ -692,6 +713,40 @@ class _InvoicePreviewScreenState extends State<InvoicePreviewScreen>
                   contentPadding: EdgeInsets.zero,
                 ),
               ),
+              const PopupMenuItem(
+                value: 'whatsapp',
+                child: ListTile(
+                  leading: WhatsAppIcon(size: 20),
+                  title: Text('Share via WhatsApp'),
+                  contentPadding: EdgeInsets.zero,
+                ),
+              ),
+              const PopupMenuItem(
+                value: 'email',
+                child: ListTile(
+                  leading: Icon(Icons.email_outlined, color: Color(0xFF2563EB)),
+                  title: Text('Share via Email'),
+                  contentPadding: EdgeInsets.zero,
+                ),
+              ),
+              const PopupMenuItem(
+                value: 'docx',
+                child: ListTile(
+                  leading: Icon(Icons.download_rounded, color: Color(0xFF2563EB)),
+                  title: Text('Generate DOCX file'),
+                  contentPadding: EdgeInsets.zero,
+                ),
+              ),
+              if (invoice.balanceDue > 0 &&
+                  invoice.status.toLowerCase() != 'paid')
+                const PopupMenuItem(
+                  value: 'reminder',
+                  child: ListTile(
+                    leading: Icon(Icons.notifications_active_rounded, color: Color(0xFFD97706)),
+                    title: Text('Send payment reminder'),
+                    contentPadding: EdgeInsets.zero,
+                  ),
+                ),
               const PopupMenuItem(
                 value: 'copy',
                 child: ListTile(
