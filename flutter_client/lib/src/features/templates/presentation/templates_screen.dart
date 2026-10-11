@@ -61,15 +61,56 @@ class _TemplatesScreenState extends State<TemplatesScreen> {
     'Industry',
   ];
 
+  String get _activeBusinessCategory {
+    final bt = _profile['businessType']?.toString() ??
+        _localSettings['businessType']?.toString() ??
+        _localSettings['industryPresetId']?.toString() ??
+        'security';
+    switch (bt) {
+      case 'security':
+        return 'Security Agency';
+      case 'it':
+        return 'IT & Consulting';
+      case 'retail':
+        return 'Retail & GST';
+      case 'wholesale':
+        return 'Corporate Suite';
+      case 'hr_staffing':
+        return 'HR & Staffing';
+      default:
+        return 'Security Agency';
+    }
+  }
+
+  List<(String, String)> get _availableCategories {
+    final cat = _activeBusinessCategory;
+    if (cat.isNotEmpty && cat != 'All') {
+      return [
+        (cat, cat == 'Security Agency' ? '🛡️ Security Agency (Business Mode)' : '🏢 $cat (Business Mode)'),
+      ];
+    }
+    return _categories;
+  }
+
   @override
   void initState() {
     super.initState();
     _localSettings = Map<String, Object?>.from(widget.initialLocalSettings);
-    _config = widget.initialConfig ??
-        templatePresets.firstWhere((preset) => preset.id == 'gst_tax');
-    _presetId = templatePresets.any((preset) => preset.id == _config.id)
-        ? _config.id
-        : 'gst_tax';
+    final activeCat = _activeBusinessCategory;
+    _selectedCategory = activeCat;
+
+    final catPresets = templatePresets.where((p) => p.businessCategory == activeCat).toList();
+    if (widget.initialConfig != null &&
+        (catPresets.isEmpty || catPresets.any((p) => p.id == widget.initialConfig!.id))) {
+      _config = widget.initialConfig!;
+      _presetId = _config.id;
+    } else if (catPresets.isNotEmpty) {
+      _config = catPresets.first;
+      _presetId = catPresets.first.id;
+    } else {
+      _config = templatePresets.firstWhere((preset) => preset.id == 'gst_tax');
+      _presetId = _config.id;
+    }
 
     _loadProfile();
   }
@@ -80,7 +121,10 @@ class _TemplatesScreenState extends State<TemplatesScreen> {
       final repo = SettingsRepository(apiClient: widget.apiClient!);
       final profile = await repo.loadProfile();
       if (!mounted) return;
-      setState(() => _profile = profile);
+      setState(() {
+        _profile = profile;
+        _selectedCategory = _activeBusinessCategory;
+      });
     } catch (_) {}
   }
 
@@ -278,7 +322,7 @@ class _TemplatesScreenState extends State<TemplatesScreen> {
               selectedPresetId: _presetId,
               selectedCategory: _selectedCategory,
               selectedStyle: _selectedStyle,
-              categories: _categories,
+              categories: _availableCategories,
               styles: _styles,
               onSelectPreset: _selectPreset,
               onCategoryChanged: (cat) => setState(() => _selectedCategory = cat),

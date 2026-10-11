@@ -92,7 +92,17 @@ class _AppShellState extends State<AppShell> {
                 (cur == 'INR' ? '₹' : (cur == 'USD' ? r'$' : cur));
             merged['defaultCurrencyFormat'] = profile['defaultCurrencyFormat']?.toString() ?? 'before';
           }
-          if (profile['companyName'] != null) merged['businessName'] ??= profile['companyName'];
+          final bName = profile['businessName']?.toString().trim().isNotEmpty == true
+              ? profile['businessName'].toString().trim()
+              : (profile['companyName']?.toString().trim().isNotEmpty == true
+                  ? profile['companyName'].toString().trim()
+                  : (profile['legalName']?.toString().trim().isNotEmpty == true
+                      ? profile['legalName'].toString().trim()
+                      : null));
+          if (bName != null && bName.isNotEmpty) {
+            merged['businessName'] = bName;
+            merged['companyName'] = bName;
+          }
           if (profile['address'] != null) merged['businessAddress'] ??= profile['address'];
           if (profile['gstin'] != null) merged['businessGstin'] ??= profile['gstin'];
           if (profile['panNumber'] != null) merged['businessPan'] ??= profile['panNumber'];
@@ -227,6 +237,12 @@ class _AppShellState extends State<AppShell> {
       _Destination.dashboard => DashboardScreen(
           session: widget.session,
           repository: widget.dashboardRepository,
+          localSettings: _invoiceLocalSettings,
+          registeredCompanyName: _invoiceLocalSettings['businessName']?.toString().trim().isNotEmpty == true
+              ? _invoiceLocalSettings['businessName']!.toString().trim()
+              : (_invoiceLocalSettings['companyName']?.toString().trim().isNotEmpty == true
+                  ? _invoiceLocalSettings['companyName']!.toString().trim()
+                  : widget.session.company?.name),
           onLogout: widget.onLogout,
           onCreateInvoice: () => setState(() {
             _invoiceStatusFilter = 'All';
@@ -295,7 +311,7 @@ class _AppShellState extends State<AppShell> {
           onBack: onBack,
           onSave: _saveTemplate,
         ),
-      'Settings' => SettingsScreen(
+      'Settings' || 'Business Settings' || 'Business settings' => SettingsScreen(
           apiClient: widget.apiClient,
           localPreferences: _localPreferences,
           initialLocalSettings: _invoiceLocalSettings,
@@ -368,7 +384,7 @@ class _MoreMenu extends StatelessWidget {
         ('Reports', Icons.bar_chart_outlined),
       if (isAdmin) ('Team management', Icons.groups_outlined),
       if (canSeeInvoices) ('Templates', Icons.dashboard_customize_outlined),
-      if (isAdmin) ('Settings', Icons.settings_outlined),
+      if (isAdmin) ('Business Settings', Icons.settings_outlined),
       if (isAdmin) ('Invoice settings', Icons.tune_outlined),
       ('Tax calculator', Icons.calculate_outlined),
     ];

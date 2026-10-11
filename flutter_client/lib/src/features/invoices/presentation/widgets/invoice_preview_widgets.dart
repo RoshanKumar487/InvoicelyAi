@@ -91,7 +91,7 @@ class LineItemsTable extends StatelessWidget {
     final dutyHeader = _label('customDutyHeader', 'Duty');
     final hasQty = _show('showItemQty');
     final hasRate = _show('showItemRate');
-    final hasDiscount = _show('showItemDiscount');
+    final hasDiscount = localSettings['showItemDiscount'] == true;
     final hasTax = _show('showItemTax');
 
     final totalExtraCols = (hasQty ? 1 : 0) +

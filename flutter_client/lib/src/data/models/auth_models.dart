@@ -71,7 +71,9 @@ class CompanySummary {
   factory CompanySummary.fromJson(Map<String, dynamic> json) =>
       CompanySummary(
         id: (json['id'] as num?)?.toInt(),
-        name: json['companyName'] as String? ?? '',
+        name: (json['companyName'] ?? json['name'] ?? json['businessName'] ?? '')
+            as String? ??
+            '',
         code: json['companyCode'] as String?,
       );
 }

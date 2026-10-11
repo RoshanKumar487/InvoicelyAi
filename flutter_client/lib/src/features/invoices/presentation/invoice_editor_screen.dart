@@ -286,10 +286,20 @@ class _InvoiceEditorScreenState extends State<InvoiceEditorScreen> {
             Duration(days: _paymentTermDays(_paymentTerms)),
           ),
         );
-        if (client.preferredCurrency.trim().isNotEmpty) {
-          _currencyCode.text = client.preferredCurrency.toUpperCase();
-          _currencySymbol.text =
-              _currencySymbolFor(client.preferredCurrency);
+        final clientCur = client.preferredCurrency.trim().toUpperCase();
+        final defaultCurrency =
+            _settingString(_localSettings['defaultCurrency'], 'INR');
+        final defaultCurrencySymbol = _settingString(
+          _localSettings['defaultCurrencySymbol'],
+          _currencySymbolFor(defaultCurrency),
+        );
+        if (clientCur.isNotEmpty && clientCur != 'USD') {
+          _currencyCode.text = clientCur;
+          _currencySymbol.text = _currencySymbolFor(clientCur);
+        } else if (_currencyCode.text.trim().isEmpty ||
+            _currencyCode.text.trim().toUpperCase() == 'USD') {
+          _currencyCode.text = defaultCurrency;
+          _currencySymbol.text = defaultCurrencySymbol;
         }
       }
       _showClientSuggestions = false;
@@ -311,7 +321,7 @@ class _InvoiceEditorScreenState extends State<InvoiceEditorScreen> {
           address: _address.text.trim(),
           taxId: _clientTaxId.text.trim(),
           preferredCurrency: _currencyCode.text.trim().isEmpty
-              ? 'USD'
+              ? 'INR'
               : _currencyCode.text.trim().toUpperCase(),
           defaultPaymentTerms: _paymentTerms,
         ),
@@ -446,6 +456,7 @@ class _InvoiceEditorScreenState extends State<InvoiceEditorScreen> {
         templateId: _template,
         createdAt: widget.invoice?.createdAt,
         paidDate: widget.invoice?.paidDate,
+        isRcm: widget.invoice?.isRcm ?? (_localSettings['isRcmApplicable'] == true),
       );
 
   Future<void> _pickDate({required bool issue}) async {
@@ -525,6 +536,8 @@ class _InvoiceEditorScreenState extends State<InvoiceEditorScreen> {
                 unit: 'Duty',
                 taxRate: _items[0].taxRate,
                 discountRate: _items[0].discountRate,
+                calculationFormula: 'monthly_salary_26',
+                standardDutyDays: 26,
               );
             }
           });
@@ -551,6 +564,17 @@ class _InvoiceEditorScreenState extends State<InvoiceEditorScreen> {
     }
   }
 
+  bool _show(String key, {bool fallback = true}) {
+    final val = _localSettings[key];
+    if (val is bool) return val;
+    return fallback;
+  }
+
+  String _label(String key, String fallback) {
+    final val = _localSettings[key]?.toString().trim();
+    return (val != null && val.isNotEmpty) ? val : fallback;
+  }
+
   @override
   Widget build(BuildContext context) {
     final draft = _draft;
@@ -563,6 +587,13 @@ class _InvoiceEditorScreenState extends State<InvoiceEditorScreen> {
           .contains(_paymentTerms))
         _paymentTerms,
     ];
+    final hasNotesOpt = _show('showNotesSection', fallback: true) ||
+        _notes.text.isNotEmpty ||
+        _terms.text.isNotEmpty;
+    final hasShippingOpt = _show('showShippingSection', fallback: false) ||
+        _shippingDetails.text.isNotEmpty;
+    final hasPaymentOpt = _show('showPaymentInstructions', fallback: false) ||
+        _paymentInstructions.text.isNotEmpty;
     return Scaffold(
       appBar: AppBar(
         leading: IconButton(
@@ -600,59 +631,65 @@ class _InvoiceEditorScreenState extends State<InvoiceEditorScreen> {
               const SizedBox(height: 14),
             ],
             _SectionCard(
-              title: 'Invoice details',
+              title: _label('customTitle', 'Invoice details'),
               subtitle: 'Number, dates and payment terms',
               children: [
                 _ResponsiveFields(
                   children: [
-                    _textField(
-                      controller: _number,
-                      label: 'Invoice number',
-                      validator: _required,
-                    ),
-                    _dateField(
-                      label: 'Issue date',
-                      date: _issueDate,
-                      onTap: () => _pickDate(issue: true),
-                    ),
-                    _dateField(
-                      label: 'Due date',
-                      date: _dueDate,
-                      onTap: () => _pickDate(issue: false),
-                    ),
-                    DropdownButtonFormField<String>(
-                      value: _paymentTerms,
-                      isExpanded: true,
-                      decoration:
-                          const InputDecoration(labelText: 'Payment terms'),
-                      items: paymentTermOptions
-                          .map((value) => DropdownMenuItem(
-                                value: value,
-                                child: Text(
-                                  value,
-                                  maxLines: 1,
-                                  overflow: TextOverflow.ellipsis,
-                                ),
-                              ))
-                          .toList(),
-                      selectedItemBuilder: (context) => paymentTermOptions
-                          .map((value) => Align(
-                                alignment: Alignment.centerLeft,
-                                child: Text(
-                                  value,
-                                  maxLines: 1,
-                                  overflow: TextOverflow.ellipsis,
-                                ),
-                              ))
-                          .toList(),
-                      onChanged: (value) =>
-                          setState(() => _paymentTerms = value ?? 'Net 30'),
-                    ),
-                    _textField(
-                      controller: _poNumber,
-                      label: 'Purchase order number',
-                      isRequired: false,
-                    ),
+                    if (_show('showInvoiceNumber', fallback: true))
+                      _textField(
+                        controller: _number,
+                        label: _label('customInvoiceNoLabel', 'Invoice number'),
+                        validator: _required,
+                      ),
+                    if (_show('showIssueDate', fallback: true))
+                      _dateField(
+                        label: _label('customDateLabel', 'Issue date'),
+                        date: _issueDate,
+                        onTap: () => _pickDate(issue: true),
+                      ),
+                    if (_show('showDueDate', fallback: false))
+                      _dateField(
+                        label: _label('customDueDateLabel', 'Due date'),
+                        date: _dueDate,
+                        onTap: () => _pickDate(issue: false),
+                      ),
+                    if (_show('showPaymentTerms', fallback: false))
+                      DropdownButtonFormField<String>(
+                        value: _paymentTerms,
+                        isExpanded: true,
+                        decoration: InputDecoration(
+                          labelText: _label('customTermsLabel', 'Payment terms'),
+                        ),
+                        items: paymentTermOptions
+                            .map((value) => DropdownMenuItem(
+                                  value: value,
+                                  child: Text(
+                                    value,
+                                    maxLines: 1,
+                                    overflow: TextOverflow.ellipsis,
+                                  ),
+                                ))
+                            .toList(),
+                        selectedItemBuilder: (context) => paymentTermOptions
+                            .map((value) => Align(
+                                  alignment: Alignment.centerLeft,
+                                  child: Text(
+                                    value,
+                                    maxLines: 1,
+                                    overflow: TextOverflow.ellipsis,
+                                  ),
+                                ))
+                            .toList(),
+                        onChanged: (value) =>
+                            setState(() => _paymentTerms = value ?? 'Net 30'),
+                      ),
+                    if (_show('showPoNumber', fallback: false))
+                      _textField(
+                        controller: _poNumber,
+                        label: _label('customPoLabel', 'Purchase order number'),
+                        isRequired: false,
+                      ),
                     DropdownButtonFormField<String>(
                       value: _template,
                       isExpanded: true,
@@ -712,9 +749,11 @@ class _InvoiceEditorScreenState extends State<InvoiceEditorScreen> {
                 ),
               ],
             ),
-            const SizedBox(height: 14),
-            ClientBillingCard(
-              clientNameController: _clientName,
+            if (_show('showBillToSection', fallback: true)) ...[
+              const SizedBox(height: 14),
+              ClientBillingCard(
+                localSettings: _localSettings,
+                clientNameController: _clientName,
               companyController: _company,
               emailController: _email,
               phoneController: _phone,
@@ -746,7 +785,8 @@ class _InvoiceEditorScreenState extends State<InvoiceEditorScreen> {
                 _showClientSuggestions = _clientName.text.isNotEmpty;
               }),
             ),
-            const SizedBox(height: 14),
+          ],
+          const SizedBox(height: 14),
             _SectionCard(
               title: 'Line items',
               subtitle: 'Quantities, rates and optional line discounts',
@@ -797,6 +837,7 @@ class _InvoiceEditorScreenState extends State<InvoiceEditorScreen> {
                     item: _items[index],
                     currencySymbol: _currencySymbol.text,
                     localSettings: _localSettings,
+                    issueDate: _issueDate,
                     showDescriptionField: _globalShowItemDescriptions ||
                         _items[index].itemDetails.isNotEmpty,
                     onToggleDescription: (open) {
@@ -823,116 +864,127 @@ class _InvoiceEditorScreenState extends State<InvoiceEditorScreen> {
                 const SizedBox(height: 14),
                 _ResponsiveFields(
                   children: [
-                    _decimalField(
-                      controller: _discountPercent,
-                      label: 'Discount (%)',
-                      min: 0,
-                      max: 100,
-                      onChanged: () => setState(() {}),
-                    ),
-                    _decimalField(
-                      controller: _discountAmount,
-                      label: 'Discount amount',
-                      min: 0,
-                      onChanged: () => setState(() {}),
-                    ),
-                    _decimalField(
-                      controller: _shippingFee,
-                      label: 'Shipping',
-                      min: 0,
-                      onChanged: () => setState(() {}),
-                    ),
-                    _decimalField(
-                      controller: _additionalCharges,
-                      label: 'Additional charges',
-                      min: 0,
-                      onChanged: () => setState(() {}),
-                    ),
-                    _decimalField(
-                      controller: _roundOff,
-                      label: 'Round off (+/−)',
-                      min: -1000,
-                      allowNegative: true,
-                      onChanged: () => setState(() {}),
-                    ),
-                    _decimalField(
-                      controller: _amountPaid,
-                      label: 'Amount already paid',
-                      min: 0,
-                      onChanged: () => setState(() {}),
-                    ),
+                    if (_show('showDiscount', fallback: true)) ...[
+                      _decimalField(
+                        controller: _discountPercent,
+                        label: '${_label('customDiscountLabel', 'Discount')} (%)',
+                        min: 0,
+                        max: 100,
+                        onChanged: () => setState(() {}),
+                      ),
+                      _decimalField(
+                        controller: _discountAmount,
+                        label: '${_label('customDiscountLabel', 'Discount')} amount',
+                        min: 0,
+                        onChanged: () => setState(() {}),
+                      ),
+                    ],
+                    if (_show('showShippingFee', fallback: false) || _value(_shippingFee) > 0)
+                      _decimalField(
+                        controller: _shippingFee,
+                        label: _label('customShippingLabel', 'Shipping'),
+                        min: 0,
+                        onChanged: () => setState(() {}),
+                      ),
+                    if (_show('showAdditionalCharges', fallback: false) || _value(_additionalCharges) > 0)
+                      _decimalField(
+                        controller: _additionalCharges,
+                        label: _label('customAdjustmentsLabel', 'Additional charges'),
+                        min: 0,
+                        onChanged: () => setState(() {}),
+                      ),
+                    if (_show('showRoundOff', fallback: false) || _value(_roundOff) != 0)
+                      _decimalField(
+                        controller: _roundOff,
+                        label: '${_label('customRoundOffLabel', 'Round off')} (+/−)',
+                        min: -1000,
+                        allowNegative: true,
+                        onChanged: () => setState(() {}),
+                      ),
+                    if (_show('showAmountPaid', fallback: true))
+                      _decimalField(
+                        controller: _amountPaid,
+                        label: _label('customAmountPaidLabel', 'Amount already paid'),
+                        min: 0,
+                        onChanged: () => setState(() {}),
+                      ),
                   ],
                 ),
                 const SizedBox(height: 8),
                 _TotalsPreview(invoice: draft),
               ],
             ),
-            const SizedBox(height: 14),
-            _SectionCard(
-              title: 'Optional details',
-              subtitle: 'Only add the sections needed for this invoice',
-              children: [
-                Wrap(
-                  spacing: 8,
-                  runSpacing: 8,
-                  children: [
-                    FilterChip(
-                      label: const Text('Notes & terms'),
-                      selected: _showNotesSection,
-                      onSelected: (value) =>
-                          setState(() => _showNotesSection = value),
+            if (hasNotesOpt || hasShippingOpt || hasPaymentOpt) ...[
+              const SizedBox(height: 14),
+              _SectionCard(
+                title: 'Optional details',
+                subtitle: 'Only add the sections needed for this invoice',
+                children: [
+                  Wrap(
+                    spacing: 8,
+                    runSpacing: 8,
+                    children: [
+                      if (hasNotesOpt)
+                        FilterChip(
+                          label: const Text('Notes & terms'),
+                          selected: _showNotesSection,
+                          onSelected: (value) =>
+                              setState(() => _showNotesSection = value),
+                        ),
+                      if (hasShippingOpt)
+                        FilterChip(
+                          label: Text(_label('customShipToLabel', 'Delivery details')),
+                          selected: _showShippingSection,
+                          onSelected: (value) =>
+                              setState(() => _showShippingSection = value),
+                        ),
+                      if (hasPaymentOpt)
+                        FilterChip(
+                          label: const Text('Payment instructions'),
+                          selected: _showPaymentSection,
+                          onSelected: (value) =>
+                              setState(() => _showPaymentSection = value),
+                        ),
+                    ],
+                  ),
+                  if (_showNotesSection && hasNotesOpt) ...[
+                    const SizedBox(height: 14),
+                    _textField(
+                      controller: _notes,
+                      label: 'Notes to client',
+                      isRequired: false,
+                      maxLines: 3,
                     ),
-                    FilterChip(
-                      label: const Text('Delivery details'),
-                      selected: _showShippingSection,
-                      onSelected: (value) =>
-                          setState(() => _showShippingSection = value),
-                    ),
-                    FilterChip(
-                      label: const Text('Payment instructions'),
-                      selected: _showPaymentSection,
-                      onSelected: (value) =>
-                          setState(() => _showPaymentSection = value),
+                    const SizedBox(height: 12),
+                    _textField(
+                      controller: _terms,
+                      label: 'Terms and conditions',
+                      isRequired: false,
+                      maxLines: 3,
                     ),
                   ],
-                ),
-                if (_showNotesSection) ...[
-                  const SizedBox(height: 14),
-                  _textField(
-                    controller: _notes,
-                    label: 'Notes to client',
-                    isRequired: false,
-                    maxLines: 3,
-                  ),
-                  const SizedBox(height: 12),
-                  _textField(
-                    controller: _terms,
-                    label: 'Terms and conditions',
-                    isRequired: false,
-                    maxLines: 3,
-                  ),
+                  if (_showShippingSection && hasShippingOpt) ...[
+                    const SizedBox(height: 12),
+                    _textField(
+                      controller: _shippingDetails,
+                      label: _label('customShipToLabel', 'Delivery / shipping details'),
+                      hintText: 'Address, delivery date, carrier or tracking',
+                      isRequired: false,
+                      maxLines: 3,
+                    ),
+                  ],
+                  if (_showPaymentSection && hasPaymentOpt) ...[
+                    const SizedBox(height: 12),
+                    _textField(
+                      controller: _paymentInstructions,
+                      label: 'Payment instructions',
+                      isRequired: false,
+                      maxLines: 3,
+                    ),
+                  ],
                 ],
-                if (_showShippingSection) ...[
-                  const SizedBox(height: 12),
-                  _textField(
-                    controller: _shippingDetails,
-                    label: 'Delivery / shipping details',
-                    hintText: 'Address, delivery date, carrier or tracking',
-                    isRequired: false,
-                    maxLines: 3,
-                  ),
-                ],
-                if (_showPaymentSection) ...[
-                  const SizedBox(height: 12),
-                  _textField(
-                    controller: _paymentInstructions,
-                    label: 'Payment instructions',
-                    isRequired: false,
-                    maxLines: 3,
-                  ),
-                ],
-              ],
-            ),
+              ),
+            ],
             const SizedBox(height: 20),
             FilledButton.icon(
               onPressed: _saving ? null : _save,

@@ -7,6 +7,7 @@ import 'invoice_editor_components.dart';
 class ClientBillingCard extends StatelessWidget {
   const ClientBillingCard({
     super.key,
+    this.localSettings = const {},
     required this.clientNameController,
     required this.companyController,
     required this.emailController,
@@ -27,6 +28,7 @@ class ClientBillingCard extends StatelessWidget {
     required this.onNameTap,
   });
 
+  final Map<String, Object?> localSettings;
   final TextEditingController clientNameController;
   final TextEditingController companyController;
   final TextEditingController emailController;
@@ -50,19 +52,31 @@ class ClientBillingCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    bool show(String key, {bool fallback = true}) {
+      final val = localSettings[key];
+      if (val is bool) return val;
+      return fallback;
+    }
+
+    String label(String key, String fallback) {
+      final val = localSettings[key]?.toString().trim();
+      return (val != null && val.isNotEmpty) ? val : fallback;
+    }
+
     return SectionCard(
-      title: 'Bill to',
+      title: label('customBillToLabel', 'Bill to'),
       subtitle: 'Client contact details',
       children: [
         ResponsiveFields(
           children: [
-            Column(
-              crossAxisAlignment: CrossAxisAlignment.stretch,
-              children: [
-                TextFormField(
-                  controller: clientNameController,
-                  decoration: InputDecoration(
-                    labelText: 'Client name',
+            if (show('showClientName', fallback: true))
+              Column(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  TextFormField(
+                    controller: clientNameController,
+                    decoration: InputDecoration(
+                      labelText: label('customClientNameLabel', 'Client name'),
                     prefixIcon: const Icon(Icons.person_outline),
                     suffixIcon: loadingClients
                         ? const Padding(
@@ -160,42 +174,47 @@ class ClientBillingCard extends StatelessWidget {
                   ),
               ],
             ),
-            appTextField(
-              controller: companyController,
-              label: 'Company',
-              isRequired: false,
-            ),
-            appTextField(
-              controller: emailController,
-              label: 'Email address',
-              isRequired: false,
-              keyboardType: TextInputType.emailAddress,
-              validator: (value) {
-                final email = value?.trim() ?? '';
-                if (email.isNotEmpty &&
-                    !RegExp(r'^[^@\s]+@[^@\s]+\.[^@\s]+$').hasMatch(email)) {
-                  return 'Enter a valid email address';
-                }
-                return null;
-              },
-            ),
-            appTextField(
-              controller: phoneController,
-              label: 'Phone',
-              isRequired: false,
-              keyboardType: TextInputType.phone,
-            ),
-            appTextField(
-              controller: taxIdController,
-              label: 'Client tax ID',
-              isRequired: false,
-            ),
-            appTextField(
-              controller: addressController,
-              label: 'Billing address',
-              isRequired: false,
-              maxLines: 2,
-            ),
+            if (show('showClientCompany', fallback: true))
+              appTextField(
+                controller: companyController,
+                label: label('customClientCompanyLabel', 'Company'),
+                isRequired: false,
+              ),
+            if (show('showClientEmail', fallback: true))
+              appTextField(
+                controller: emailController,
+                label: label('customClientEmailLabel', 'Email address'),
+                isRequired: false,
+                keyboardType: TextInputType.emailAddress,
+                validator: (value) {
+                  final email = value?.trim() ?? '';
+                  if (email.isNotEmpty &&
+                      !RegExp(r'^[^@\s]+@[^@\s]+\.[^@\s]+$').hasMatch(email)) {
+                    return 'Enter a valid email address';
+                  }
+                  return null;
+                },
+              ),
+            if (show('showClientPhone', fallback: true))
+              appTextField(
+                controller: phoneController,
+                label: label('customClientPhoneLabel', 'Phone'),
+                isRequired: false,
+                keyboardType: TextInputType.phone,
+              ),
+            if (show('showClientTaxId', fallback: true))
+              appTextField(
+                controller: taxIdController,
+                label: label('customClientTaxIdLabel', 'Client tax ID'),
+                isRequired: false,
+              ),
+            if (show('showClientAddress', fallback: true))
+              appTextField(
+                controller: addressController,
+                label: label('customClientAddressLabel', 'Billing address'),
+                isRequired: false,
+                maxLines: 2,
+              ),
           ],
         ),
       ],
