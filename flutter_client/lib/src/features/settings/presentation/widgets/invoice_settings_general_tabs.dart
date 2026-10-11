@@ -413,6 +413,8 @@ class InvoiceSettingsAdjustmentsTab extends StatelessWidget {
     required this.fieldTileBuilder,
     required this.customFieldsCardBuilder,
     required this.onSave,
+    this.localSettings,
+    this.onChanged,
   });
 
   final Widget Function({
@@ -431,6 +433,8 @@ class InvoiceSettingsAdjustmentsTab extends StatelessWidget {
     required String hintText,
   }) customFieldsCardBuilder;
   final VoidCallback onSave;
+  final Map<String, Object?>? localSettings;
+  final VoidCallback? onChanged;
 
   @override
   Widget build(BuildContext context) {
@@ -440,6 +444,105 @@ class InvoiceSettingsAdjustmentsTab extends StatelessWidget {
         buildSettingsInfoBanner(
           'Invoice Adjustments & Summary Totals',
           'Rename calculation rows, show/hide discounts, shipping fees, round offs, and add custom adjustment charges like Packaging & Handling.',
+        ),
+        const SizedBox(height: 14),
+
+        AppCard(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Row(
+                children: [
+                  Container(
+                    padding: const EdgeInsets.all(8),
+                    decoration: BoxDecoration(
+                      color: const Color(0xFF16A34A).withAlpha(25),
+                      borderRadius: BorderRadius.circular(8),
+                    ),
+                    child: const Icon(Icons.receipt_long_rounded, color: Color(0xFF16A34A), size: 22),
+                  ),
+                  const SizedBox(width: 10),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          'Reverse Charge Mechanism (RCM)',
+                          style: Theme.of(context).textTheme.titleMedium?.copyWith(fontWeight: FontWeight.bold),
+                        ),
+                        const SizedBox(height: 2),
+                        const Text(
+                          'Section 9(3) / 9(4) GST Act - Tax payable by recipient',
+                          style: TextStyle(fontSize: 11, color: Color(0xFF64748B)),
+                        ),
+                      ],
+                    ),
+                  ),
+                  Switch(
+                    value: localSettings?['isRcmApplicable'] == true,
+                    activeColor: const Color(0xFF16A34A),
+                    onChanged: (val) {
+                      if (localSettings != null) {
+                        localSettings!['isRcmApplicable'] = val;
+                        onChanged?.call();
+                      }
+                    },
+                  ),
+                ],
+              ),
+              const SizedBox(height: 10),
+              Container(
+                padding: const EdgeInsets.all(12),
+                decoration: BoxDecoration(
+                  color: (localSettings?['isRcmApplicable'] == true)
+                      ? const Color(0xFF16A34A).withAlpha(15)
+                      : Theme.of(context).colorScheme.surfaceContainerHighest.withAlpha(80),
+                  borderRadius: BorderRadius.circular(10),
+                  border: Border.all(
+                    color: (localSettings?['isRcmApplicable'] == true)
+                        ? const Color(0xFF16A34A).withAlpha(80)
+                        : Colors.transparent,
+                  ),
+                ),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Row(
+                      children: [
+                        Icon(
+                          (localSettings?['isRcmApplicable'] == true)
+                              ? Icons.check_circle_rounded
+                              : Icons.info_outline_rounded,
+                          size: 16,
+                          color: (localSettings?['isRcmApplicable'] == true)
+                              ? const Color(0xFF16A34A)
+                              : const Color(0xFF64748B),
+                        ),
+                        const SizedBox(width: 6),
+                        Text(
+                          (localSettings?['isRcmApplicable'] == true)
+                              ? 'RCM Active: Tax on Bill = ₹0.00 (No Tax Added)'
+                              : 'RCM Disabled (Standard Forward Charge)',
+                          style: TextStyle(
+                            fontWeight: FontWeight.bold,
+                            fontSize: 12,
+                            color: (localSettings?['isRcmApplicable'] == true)
+                                ? const Color(0xFF16A34A)
+                                : const Color(0xFF64748B),
+                          ),
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 4),
+                    const Text(
+                      'Security agency services provided to registered persons fall under RCM. When enabled, invoice tax rate is 0%, no GST is added to the bill amount, and the invoice is marked: "Tax payable on Reverse Charge basis: YES".',
+                      style: TextStyle(fontSize: 11, color: Color(0xFF64748B), height: 1.3),
+                    ),
+                  ],
+                ),
+              ),
+            ],
+          ),
         ),
         const SizedBox(height: 14),
 

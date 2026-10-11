@@ -196,6 +196,7 @@ class LineItemEditor extends StatefulWidget {
     required this.onToggleDescription,
     required this.onChanged,
     required this.onRemove,
+    this.issueDate,
     super.key,
   });
 
@@ -207,6 +208,7 @@ class LineItemEditor extends StatefulWidget {
   final ValueChanged<bool> onToggleDescription;
   final ValueChanged<InvoiceItem> onChanged;
   final VoidCallback onRemove;
+  final String? issueDate;
 
   @override
   State<LineItemEditor> createState() => _LineItemEditorState();
@@ -249,7 +251,27 @@ class _LineItemEditorState extends State<LineItemEditor> {
     super.dispose();
   }
 
+  int get _calendarDays {
+    final parsed = DateTime.tryParse(widget.issueDate ?? '') ?? DateTime.now();
+    return DateTime(parsed.year, parsed.month + 1, 0).day;
+  }
+
   void _notify() {
+    final ls = widget.localSettings;
+    final isSecurity = ls['industryPresetId'] == 'security' ||
+        ls['businessType'] == 'security' ||
+        ls['showItemDuty'] == true;
+    final dutyValue = double.tryParse(_duty.text) ?? 0;
+    final formula = ls['itemCalculationFormula']?.toString() ??
+        (isSecurity ? 'monthly_salary_26' : (dutyValue > 0 ? 'monthly_salary_26' : 'standard'));
+    final double standardDays = (formula == 'calendar_month' || formula == 'monthly_salary_calendar')
+        ? _calendarDays.toDouble()
+        : (formula == 'monthly_salary_30'
+            ? 30.0
+            : (formula == 'monthly_salary_26'
+                ? 26.0
+                : (double.tryParse(ls['standardDutyDays']?.toString() ?? '26') ?? 26.0)));
+
     widget.onChanged(InvoiceItem(
       id: widget.item.id,
       description: _description.text,
@@ -259,7 +281,11 @@ class _LineItemEditorState extends State<LineItemEditor> {
       unitPrice: double.tryParse(_unitPrice.text) ?? 0,
       unit: _unit.text.trim().isEmpty ? 'pcs' : _unit.text.trim(),
       taxRate: widget.item.taxRate,
-      discountRate: double.tryParse(_discount.text) ?? 0,
+      discountRate: (ls['showItemDiscount'] == true)
+          ? (double.tryParse(_discount.text) ?? 0)
+          : 0,
+      calculationFormula: formula,
+      standardDutyDays: standardDays,
     ));
   }
 
@@ -340,6 +366,7 @@ class _LineItemEditorState extends State<LineItemEditor> {
             : 'Discount (%)';
 
     final isSecurityOrStaffing = ls['industryPresetId'] == 'security' ||
+        ls['businessType'] == 'security' ||
         ls['industryPresetId'] == 'hr_staffing' ||
         itemLabel.toLowerCase().contains('guard') ||
         itemLabel.toLowerCase().contains('designation');
@@ -353,10 +380,49 @@ class _LineItemEditorState extends State<LineItemEditor> {
     final qtyVal = double.tryParse(_quantity.text) ?? 0;
     final dutyVal = double.tryParse(_duty.text) ?? 0;
     final rateVal = double.tryParse(_unitPrice.text) ?? 0;
-    final discVal = double.tryParse(_discount.text) ?? 0;
+    final discVal = showDiscount ? (double.tryParse(_discount.text) ?? 0) : 0.0;
 
-    final gross =
-        dutyVal > 0 ? (qtyVal * dutyVal * rateVal) : (qtyVal * rateVal);
+    final formula = ls['itemCalculationFormula']?.toString() ??
+        (isSecurityOrStaffing ? 'monthly_salary_26' : (dutyVal > 0 ? 'monthly_salary_26' : 'standard'));
+    final int calendarDays = _calendarDays;
+    final standardDays = (formula == 'calendar_month' || formula == 'monthly_salary_calendar')
+        ? calendarDays.toDouble()
+        : (formula == 'monthly_salary_30'
+            ? 30.0
+            : (formula == 'monthly_salary_26'
+                ? 26.0
+                : (double.tryParse(ls['standardDutyDays']?.toString() ?? '26') ?? 26.0)));
+
+    double gross;
+    if (dutyVal <= 0) {
+      gross = qtyVal * rateVal;
+    } else {
+      switch (formula) {
+        case 'calendar_month':
+        case 'monthly_salary_calendar':
+          gross = (qtyVal * dutyVal * rateVal) / (calendarDays > 0 ? calendarDays : 30.0);
+          break;
+        case 'monthly_salary_30':
+          gross = (qtyVal * dutyVal * rateVal) / 30.0;
+          break;
+        case 'flat_monthly':
+          gross = qtyVal * rateVal;
+          break;
+        case 'per_duty':
+        case 'daily_duty':
+          gross = qtyVal * dutyVal * rateVal;
+          break;
+        case 'standard':
+          gross = qtyVal * rateVal;
+          break;
+        case 'monthly_salary':
+        case 'monthly_salary_26':
+        default:
+          final div = standardDays > 0 ? standardDays : 26.0;
+          gross = (qtyVal * dutyVal * rateVal) / div;
+          break;
+      }
+    }
     final discAmt = gross * (discVal / 100);
     final lineTotal = gross - discAmt;
 
@@ -672,7 +738,9 @@ class _LineItemEditorState extends State<LineItemEditor> {
           ],
         ),
         const SizedBox(height: 8),
-        Container(
+        () {
+          final dailyRate = standardDays > 0 ? (rateVal / standardDays) : (rateVal / 26.0);
+          return Container(
           padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
           decoration: BoxDecoration(
             color: const Color(0xFFF1F5F9),
@@ -685,8 +753,16 @@ class _LineItemEditorState extends State<LineItemEditor> {
               Expanded(
                 child: Text(
                   dutyVal > 0
-                      ? 'Auto Calculation: ${_num(qtyVal)} Staff × ${_num(dutyVal)} Duties × ${widget.currencySymbol}${_num(rateVal)}${discVal > 0 ? " (−$discVal%)" : ""}'
-                      : 'Auto Calculation: ${_num(qtyVal)} × ${widget.currencySymbol}${_num(rateVal)}${discVal > 0 ? " (−$discVal%)" : ""}',
+                      ? ((formula == 'calendar_month' || formula == 'monthly_salary_calendar')
+                          ? 'Calendar Month (${calendarDays}d): ${widget.currencySymbol}${dailyRate.toStringAsFixed(2)}/day (${widget.currencySymbol}${_num(rateVal)} ÷ $calendarDays) × ${_num(qtyVal)} Staff × ${_num(dutyVal)} Duties'
+                          : formula == 'monthly_salary_30'
+                              ? '30-Day Rate: ${widget.currencySymbol}${(rateVal / 30.0).toStringAsFixed(2)}/day (${widget.currencySymbol}${_num(rateVal)} ÷ 30) × ${_num(qtyVal)} Staff × ${_num(dutyVal)} Duties'
+                              : formula == 'flat_monthly'
+                                  ? 'Monthly Flat Rate: ${_num(qtyVal)} Staff × ${widget.currencySymbol}${_num(rateVal)} / Month'
+                                  : (formula == 'per_duty' || formula == 'daily_duty')
+                                      ? 'Per Duty: ${_num(qtyVal)} Staff × ${_num(dutyVal)} Duties × ${widget.currencySymbol}${_num(rateVal)}/Duty'
+                                      : 'Standard (26d): ${widget.currencySymbol}${dailyRate.toStringAsFixed(2)}/day (${widget.currencySymbol}${_num(rateVal)} ÷ ${_num(standardDays)}) × ${_num(qtyVal)} Staff × ${_num(dutyVal)} Duties')
+                      : 'Auto Calculation: ${_num(qtyVal)} × ${widget.currencySymbol}${_num(rateVal)}${showDiscount && discVal > 0 ? " (−$discVal%)" : ""}',
                   style: const TextStyle(
                     fontSize: 12,
                     color: Color(0xFF475569),
@@ -707,7 +783,8 @@ class _LineItemEditorState extends State<LineItemEditor> {
               ),
             ],
           ),
-        ),
+        );
+      }(),
       ],
     );
   }

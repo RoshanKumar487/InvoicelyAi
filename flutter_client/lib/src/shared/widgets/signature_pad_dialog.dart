@@ -50,9 +50,12 @@ class SignaturePadDialog extends StatefulWidget {
       showDialog<SignatureResult>(
         context: context,
         barrierDismissible: false,
-        builder: (context) => SignaturePadDialog(
-          initialSigneeName: initialSigneeName,
-          initialSigneeTitle: initialSigneeTitle,
+        useSafeArea: false,
+        builder: (context) => Dialog.fullscreen(
+          child: SignaturePadDialog(
+            initialSigneeName: initialSigneeName,
+            initialSigneeTitle: initialSigneeTitle,
+          ),
         ),
       );
 
@@ -326,174 +329,129 @@ class _SignaturePadDialogState extends State<SignaturePadDialog>
     final theme = Theme.of(context);
     final isDark = theme.brightness == Brightness.dark;
 
-    return Dialog(
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
-      backgroundColor: isDark ? const Color(0xFF1E293B) : Colors.white,
-      insetPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 24),
-      child: ConstrainedBox(
-        constraints: const BoxConstraints(maxWidth: 640),
-        child: SingleChildScrollView(
-          child: Padding(
-            padding: const EdgeInsets.all(20),
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              crossAxisAlignment: CrossAxisAlignment.stretch,
-              children: [
-                // Header
-                Row(
-                  children: [
-                    Container(
-                      padding: const EdgeInsets.all(10),
-                      decoration: BoxDecoration(
-                        color: theme.colorScheme.primary.withAlpha(30),
-                        shape: BoxShape.circle,
-                      ),
-                      child: Icon(
-                        Icons.draw_rounded,
-                        color: theme.colorScheme.primary,
-                        size: 24,
-                      ),
-                    ),
-                    const SizedBox(width: 14),
-                    Expanded(
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Text(
-                            'DocuHub Digital Signer',
-                            style: theme.textTheme.titleLarge?.copyWith(
-                              fontWeight: FontWeight.bold,
-                              fontSize: 19,
-                            ),
-                          ),
-                          Text(
-                            'Create a legally binding signature for all your invoices',
-                            style: theme.textTheme.bodySmall?.copyWith(
-                              color: isDark ? Colors.grey[400] : Colors.grey[600],
-                            ),
-                          ),
-                        ],
-                      ),
-                    ),
-                    IconButton(
-                      icon: const Icon(Icons.close),
-                      onPressed: () => Navigator.of(context).pop(),
-                    ),
-                  ],
-                ),
-                const SizedBox(height: 16),
-
-                // Mode Tabs
-                Container(
-                  decoration: BoxDecoration(
-                    color: isDark ? const Color(0xFF0F172A) : const Color(0xFFF1F5F9),
-                    borderRadius: BorderRadius.circular(12),
-                  ),
-                  child: TabBar(
-                    controller: _tabController,
-                    indicatorSize: TabBarIndicatorSize.tab,
-                    indicator: BoxDecoration(
-                      color: theme.colorScheme.primary,
-                      borderRadius: BorderRadius.circular(10),
-                    ),
-                    labelColor: Colors.white,
-                    unselectedLabelColor:
-                        isDark ? Colors.grey[400] : Colors.grey[600],
-                    dividerColor: Colors.transparent,
-                    tabs: const [
-                      Tab(icon: Icon(Icons.gesture, size: 18), text: 'Draw'),
-                      Tab(icon: Icon(Icons.text_fields, size: 18), text: 'Type'),
-                      Tab(icon: Icon(Icons.camera_alt, size: 18), text: 'Capture'),
-                    ],
-                  ),
-                ),
-                const SizedBox(height: 16),
-
-                // Tab Content
-                SizedBox(
-                  height: 240,
-                  child: TabBarView(
-                    controller: _tabController,
-                    physics: const NeverScrollableScrollPhysics(),
-                    children: [
-                      // TAB 1: DRAW CANVAS
-                      _buildDrawTab(isDark),
-
-                      // TAB 2: TYPE SIGNATURE
-                      _buildTypeTab(isDark),
-
-                      // TAB 3: UPLOAD / CAMERA
-                      _buildCaptureTab(isDark),
-                    ],
-                  ),
-                ),
-
-                const SizedBox(height: 16),
-
-                // Signee Metadata Section
-                Row(
-                  children: [
-                    Expanded(
-                      child: TextField(
-                        controller: _nameController,
-                        decoration: InputDecoration(
-                          labelText: 'Signatory Name',
-                          hintText: 'e.g. John Doe',
-                          prefixIcon: const Icon(Icons.person_outline, size: 20),
-                          isDense: true,
-                          border: OutlineInputBorder(
-                            borderRadius: BorderRadius.circular(10),
-                          ),
-                        ),
-                      ),
-                    ),
-                    const SizedBox(width: 12),
-                    Expanded(
-                      child: TextField(
-                        controller: _titleController,
-                        decoration: InputDecoration(
-                          labelText: 'Signatory Title',
-                          hintText: 'e.g. Authorized Signatory',
-                          prefixIcon: const Icon(Icons.badge_outlined, size: 20),
-                          isDense: true,
-                          border: OutlineInputBorder(
-                            borderRadius: BorderRadius.circular(10),
-                          ),
-                        ),
-                      ),
-                    ),
-                  ],
-                ),
-
-                const SizedBox(height: 20),
-
-                // Dialog Buttons
-                Row(
-                  mainAxisAlignment: MainAxisAlignment.end,
-                  children: [
-                    TextButton(
-                      onPressed: () => Navigator.of(context).pop(),
-                      child: const Text('Cancel'),
-                    ),
-                    const SizedBox(width: 10),
-                    FilledButton.icon(
-                      onPressed: _exportAndSave,
-                      icon: const Icon(Icons.check_circle_outline, size: 18),
-                      label: const Text('Apply Signature'),
-                      style: FilledButton.styleFrom(
-                        padding: const EdgeInsets.symmetric(
-                          horizontal: 20,
-                          vertical: 12,
-                        ),
-                        shape: RoundedRectangleBorder(
-                          borderRadius: BorderRadius.circular(10),
-                        ),
-                      ),
-                    ),
-                  ],
-                ),
+    return Scaffold(
+      backgroundColor: isDark ? const Color(0xFF0F172A) : const Color(0xFFF8FAFC),
+      appBar: AppBar(
+        elevation: 0,
+        leading: IconButton(
+          icon: const Icon(Icons.close_rounded),
+          tooltip: 'Close',
+          onPressed: () => Navigator.of(context).pop(),
+        ),
+        title: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            const Text(
+              'DocuHub Digital Signer',
+              style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16),
+            ),
+            Text(
+              'Draw, type, or capture signature with maximum canvas area',
+              style: TextStyle(
+                fontSize: 11,
+                color: isDark ? const Color(0xFF94A3B8) : const Color(0xFF64748B),
+              ),
+            ),
+          ],
+        ),
+        actions: [
+          Padding(
+            padding: const EdgeInsets.only(right: 12),
+            child: FilledButton.icon(
+              onPressed: _exportAndSave,
+              icon: const Icon(Icons.check, size: 16),
+              label: const Text('Apply Signature'),
+              style: FilledButton.styleFrom(
+                visualDensity: VisualDensity.compact,
+                padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
+              ),
+            ),
+          ),
+        ],
+        bottom: PreferredSize(
+          preferredSize: const Size.fromHeight(42),
+          child: Container(
+            margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
+            decoration: BoxDecoration(
+              color: isDark ? const Color(0xFF1E293B) : const Color(0xFFE2E8F0),
+              borderRadius: BorderRadius.circular(10),
+            ),
+            child: TabBar(
+              controller: _tabController,
+              indicatorSize: TabBarIndicatorSize.tab,
+              indicator: BoxDecoration(
+                color: theme.colorScheme.primary,
+                borderRadius: BorderRadius.circular(8),
+              ),
+              labelColor: Colors.white,
+              unselectedLabelColor:
+                  isDark ? Colors.grey[400] : const Color(0xFF475569),
+              dividerColor: Colors.transparent,
+              tabs: const [
+                Tab(icon: Icon(Icons.gesture, size: 16), text: 'Draw', height: 36),
+                Tab(icon: Icon(Icons.text_fields, size: 16), text: 'Type', height: 36),
+                Tab(icon: Icon(Icons.camera_alt, size: 16), text: 'Capture', height: 36),
               ],
             ),
+          ),
+        ),
+      ),
+      body: SafeArea(
+        child: Padding(
+          padding: const EdgeInsets.fromLTRB(14, 8, 14, 12),
+          child: Column(
+            children: [
+              Expanded(
+                child: TabBarView(
+                  controller: _tabController,
+                  physics: const NeverScrollableScrollPhysics(),
+                  children: [
+                    _buildDrawTab(isDark),
+                    _buildTypeTab(isDark),
+                    _buildCaptureTab(isDark),
+                  ],
+                ),
+              ),
+              const SizedBox(height: 10),
+              // Compact Signatory Metadata Section
+              Row(
+                children: [
+                  Expanded(
+                    child: TextField(
+                      controller: _nameController,
+                      decoration: InputDecoration(
+                        labelText: 'Signatory Name',
+                        hintText: 'e.g. John Doe',
+                        prefixIcon: const Icon(Icons.person_outline, size: 18),
+                        isDense: true,
+                        contentPadding:
+                            const EdgeInsets.symmetric(horizontal: 10, vertical: 10),
+                        border: OutlineInputBorder(
+                          borderRadius: BorderRadius.circular(8),
+                        ),
+                      ),
+                    ),
+                  ),
+                  const SizedBox(width: 8),
+                  Expanded(
+                    child: TextField(
+                      controller: _titleController,
+                      decoration: InputDecoration(
+                        labelText: 'Signatory Title',
+                        hintText: 'e.g. Authorized Signatory',
+                        prefixIcon: const Icon(Icons.badge_outlined, size: 18),
+                        isDense: true,
+                        contentPadding:
+                            const EdgeInsets.symmetric(horizontal: 10, vertical: 10),
+                        border: OutlineInputBorder(
+                          borderRadius: BorderRadius.circular(8),
+                        ),
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ],
           ),
         ),
       ),
@@ -610,7 +568,10 @@ class _SignaturePadDialogState extends State<SignaturePadDialog>
                       children: [
                         IconButton(
                           tooltip: 'Undo',
-                          icon: const Icon(Icons.undo_rounded, size: 20),
+                          icon: const Icon(Icons.undo_rounded, size: 17),
+                          visualDensity: VisualDensity.compact,
+                          padding: const EdgeInsets.all(6),
+                          constraints: const BoxConstraints(minWidth: 32, minHeight: 32),
                           onPressed: _strokes.isEmpty ? null : _undo,
                           style: IconButton.styleFrom(
                             backgroundColor: Colors.grey[100],
@@ -620,7 +581,10 @@ class _SignaturePadDialogState extends State<SignaturePadDialog>
                         const SizedBox(width: 4),
                         IconButton(
                           tooltip: 'Redo',
-                          icon: const Icon(Icons.redo_rounded, size: 20),
+                          icon: const Icon(Icons.redo_rounded, size: 17),
+                          visualDensity: VisualDensity.compact,
+                          padding: const EdgeInsets.all(6),
+                          constraints: const BoxConstraints(minWidth: 32, minHeight: 32),
                           onPressed: _undoneStrokes.isEmpty ? null : _redo,
                           style: IconButton.styleFrom(
                             backgroundColor: Colors.grey[100],
@@ -630,7 +594,10 @@ class _SignaturePadDialogState extends State<SignaturePadDialog>
                         const SizedBox(width: 4),
                         IconButton(
                           tooltip: 'Clear',
-                          icon: const Icon(Icons.delete_outline_rounded, size: 20),
+                          icon: const Icon(Icons.delete_outline_rounded, size: 17),
+                          visualDensity: VisualDensity.compact,
+                          padding: const EdgeInsets.all(6),
+                          constraints: const BoxConstraints(minWidth: 32, minHeight: 32),
                           onPressed: (_strokes.isEmpty && _currentPoints.isEmpty)
                               ? null
                               : _clearCanvas,

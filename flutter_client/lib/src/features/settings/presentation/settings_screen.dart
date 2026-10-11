@@ -1,6 +1,4 @@
 import 'dart:convert';
-import 'dart:typed_data';
-import 'dart:ui' as ui;
 
 import 'package:flutter/material.dart';
 import 'package:image_picker/image_picker.dart';
@@ -8,9 +6,9 @@ import 'package:image_picker/image_picker.dart';
 import '../../../core/api/api_client.dart';
 import '../../../core/api/api_exception.dart';
 import '../../../core/storage/local_preferences.dart';
-import '../../../shared/widgets/app_card.dart';
-import '../../../theme/app_theme.dart';
+import '../../../shared/widgets/signature_pad_dialog.dart';
 import '../data/settings_repository.dart';
+import 'widgets/business_settings_tabs.dart';
 
 class SettingsScreen extends StatefulWidget {
   const SettingsScreen({
@@ -38,33 +36,20 @@ class _SettingsScreenState extends State<SettingsScreen> {
   Map<String, dynamic> _profile = <String, dynamic>{};
   bool _loading = true;
   bool _saving = false;
-  bool _savingBranding = false;
   String? _error;
   late Map<String, Object?> _localSettings;
 
-  static const _editableStringFields = <String, String>{
-    'businessName': 'Business name',
-    'legalName': 'Legal name',
-    'email': 'Business email',
-    'phone': 'Phone',
-    'website': 'Website',
-    'address': 'Business address',
-    'taxId': 'Tax ID',
-    'gstin': 'GSTIN',
-    'panNumber': 'PAN number',
-    'placeOfSupply': 'Place of supply',
-    'upiId': 'UPI ID',
-    'bankName': 'Bank name',
-    'accountHolder': 'Account holder',
-    'accountNumber': 'Account number',
-    'ifscCode': 'IFSC code',
-    'routingNumber': 'Routing number',
-    'swiftBic': 'SWIFT / BIC',
-    'paymentLink': 'Payment link',
-    'defaultNotes': 'Default invoice notes',
-    'defaultTerms': 'Default invoice terms',
-    'signeeName': 'Authorized signatory',
-    'signeeTitle': 'Signatory title',
+  static const _currencySymbols = <String, String>{
+    'INR': '₹',
+    'USD': r'$',
+    'EUR': '€',
+    'GBP': '£',
+    'AED': 'AED',
+    'CAD': r'CA$',
+    'AUD': r'AU$',
+    'JPY': '¥',
+    'SGD': r'SG$',
+    'SAR': 'SAR',
   };
 
   @override
@@ -139,25 +124,36 @@ class _SettingsScreenState extends State<SettingsScreen> {
   }
 
   Future<void> _save() async {
-    if (!_formKey.currentState!.validate()) return;
+    if (_formKey.currentState != null && !_formKey.currentState!.validate()) {
+      return;
+    }
     setState(() => _saving = true);
     try {
+      final currency = _profile['defaultCurrency']?.toString() ?? 'INR';
+      final currencySymbol =
+          _currencySymbols[currency] ?? _profile['defaultCurrencySymbol']?.toString() ?? '₹';
+      final currencyFormat = _profile['defaultCurrencyFormat']?.toString() ?? 'before';
+
+      _profile['defaultCurrency'] = currency;
+      _profile['defaultCurrencySymbol'] = currencySymbol;
+      _profile['defaultCurrencyFormat'] = currencyFormat;
+
+      // Sync companyName and businessName
+      if (_profile['businessName'] != null) {
+        _profile['companyName'] = _profile['businessName'];
+      }
+
       final result = await _repository.saveProfile(_profile);
-      final currency = result['defaultCurrency']?.toString() ??
-          _profile['defaultCurrency']?.toString() ??
-          'INR';
-      final currencySymbol = result['defaultCurrencySymbol']?.toString() ??
-          _currencySymbols[currency] ??
-          '₹';
-      final currencyFormat = result['defaultCurrencyFormat']?.toString() ??
-          _profile['defaultCurrencyFormat']?.toString() ??
-          'before';
 
       final updatedLocal = Map<String, Object?>.from(_localSettings)
         ..['defaultCurrency'] = currency
         ..['defaultCurrencySymbol'] = currencySymbol
         ..['defaultCurrencyFormat'] = currencyFormat
         ..['businessName'] = result['companyName'] ??
+            _profile['companyName'] ??
+            _localSettings['businessName'] ??
+            ''
+        ..['companyName'] = result['companyName'] ??
             _profile['companyName'] ??
             _localSettings['businessName'] ??
             ''
@@ -204,6 +200,30 @@ class _SettingsScreenState extends State<SettingsScreen> {
         ..['ifscCode'] = result['ifscCode'] ??
             _profile['ifscCode'] ??
             _localSettings['ifscCode'] ??
+            ''
+        ..['routingNumber'] = result['routingNumber'] ??
+            _profile['routingNumber'] ??
+            _localSettings['routingNumber'] ??
+            ''
+        ..['swiftBic'] = result['swiftBic'] ??
+            _profile['swiftBic'] ??
+            _localSettings['swiftBic'] ??
+            ''
+        ..['paymentLink'] = result['paymentLink'] ??
+            _profile['paymentLink'] ??
+            _localSettings['paymentLink'] ??
+            ''
+        ..['defaultNotes'] = _profile['defaultNotes'] ??
+            _localSettings['defaultNotes'] ??
+            ''
+        ..['defaultTerms'] = _profile['defaultTerms'] ??
+            _localSettings['defaultTerms'] ??
+            ''
+        ..['signeeName'] = _profile['signeeName'] ??
+            _localSettings['signeeName'] ??
+            ''
+        ..['signeeTitle'] = _profile['signeeTitle'] ??
+            _localSettings['signeeTitle'] ??
             '';
 
       _localSettings = updatedLocal;
@@ -214,9 +234,12 @@ class _SettingsScreenState extends State<SettingsScreen> {
       }
 
       if (!mounted) return;
-      setState(() => _profile = result);
+      setState(() => _profile = Map<String, dynamic>.from(result));
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Business settings saved.')),
+        const SnackBar(
+          backgroundColor: Color(0xFF047857),
+          content: Text('✓ All business profile, bank & branding settings saved!'),
+        ),
       );
     } on ApiException catch (error) {
       if (mounted) _showError(error.message);
@@ -227,75 +250,53 @@ class _SettingsScreenState extends State<SettingsScreen> {
     }
   }
 
-  Future<void> _saveBranding() async {
-    final preferences = widget.localPreferences;
-    if (preferences == null) {
-      _showError('Local settings are unavailable on this device.');
-      return;
-    }
-    setState(() => _savingBranding = true);
-    try {
-      await preferences.writeMap('invoice_settings', _localSettings);
-      widget.onSaveLocalSettings?.call(
-        Map<String, Object?>.from(_localSettings),
-      );
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Invoice branding saved on this device.')),
-        );
-      }
-    } catch (error) {
-      if (mounted) _showError('Could not save invoice branding: $error');
-    } finally {
-      if (mounted) setState(() => _savingBranding = false);
-    }
-  }
-
   Future<void> _pickBrandImage(String key, String label) async {
     try {
       final image = await ImagePicker().pickImage(
         source: ImageSource.gallery,
         maxWidth: 1000,
-        imageQuality: 70,
+        imageQuality: 75,
       );
       if (image == null) return;
       final bytes = await image.readAsBytes();
       if (!mounted) return;
       setState(() => _localSettings[key] = base64Encode(bytes));
+      widget.onSaveLocalSettings?.call(Map<String, Object?>.from(_localSettings));
+      widget.localPreferences?.writeMap('invoice_settings', _localSettings);
     } catch (error) {
       if (mounted) _showError('Could not select $label: $error');
     }
   }
 
   Future<void> _captureSignature() async {
-    final points = await showDialog<List<Offset?>>(
-      context: context,
-      builder: (context) => const _SignatureDialog(),
+    final result = await SignaturePadDialog.show(
+      context,
+      initialSigneeName: _profile['signeeName']?.toString() ??
+          _localSettings['signeeName']?.toString(),
+      initialSigneeTitle: _profile['signeeTitle']?.toString() ??
+          _localSettings['signeeTitle']?.toString(),
     );
-    if (points == null || points.isEmpty) return;
-    try {
-      final recorder = ui.PictureRecorder();
-      final canvas = Canvas(recorder);
-      canvas.drawColor(Colors.white, BlendMode.src);
-      const size = Size(700, 220);
-      _SignaturePainter(points).paint(canvas, size);
-      final picture = recorder.endRecording();
-      final image = await picture.toImage(size.width.toInt(), size.height.toInt());
-      final data = await image.toByteData(format: ui.ImageByteFormat.png);
-      image.dispose();
-      picture.dispose();
-      if (data == null) throw StateError('Could not render the signature.');
-      if (mounted) {
-        setState(() => _localSettings['invoiceSignature'] =
-            base64Encode(data.buffer.asUint8List()));
-      }
-    } catch (error) {
-      if (mounted) _showError('Could not save signature: $error');
+    if (result != null) {
+      setState(() {
+        _localSettings['invoiceSignature'] = result.base64Png;
+        if (result.signeeName != null) {
+          _localSettings['signeeName'] = result.signeeName;
+          _profile['signeeName'] = result.signeeName;
+        }
+        if (result.signeeTitle != null) {
+          _localSettings['signeeTitle'] = result.signeeTitle;
+          _profile['signeeTitle'] = result.signeeTitle;
+        }
+      });
+      widget.onSaveLocalSettings?.call(Map<String, Object?>.from(_localSettings));
+      widget.localPreferences?.writeMap('invoice_settings', _localSettings);
     }
   }
 
   void _removeBrandingAsset(String key) {
     setState(() => _localSettings.remove(key));
+    widget.onSaveLocalSettings?.call(Map<String, Object?>.from(_localSettings));
+    widget.localPreferences?.writeMap('invoice_settings', _localSettings);
   }
 
   void _showError(String message) {
@@ -304,8 +305,91 @@ class _SettingsScreenState extends State<SettingsScreen> {
     );
   }
 
+  void _onBusinessTypeChanged(String val) {
+    setState(() {
+      _profile['businessType'] = val;
+      _profile['industryPresetId'] = val;
+      final updated = Map<String, Object?>.from(_localSettings)
+        ..['businessType'] = val
+        ..['industryPresetId'] = val;
+      if (val == 'security') {
+        updated['businessCategory'] = 'Security Agency';
+        updated['showItemDuty'] = true;
+        updated['customDutyHeader'] = 'Duties';
+        updated['customQtyHeader'] = 'Guards Count';
+        updated['customRateHeader'] = 'Monthly Salary / Rate';
+        updated['customItemHeader'] = 'Post / Designation';
+        updated['defaultUnit'] = 'Duty';
+        updated['itemCalculationFormula'] = 'monthly_salary_26';
+        updated['standardDutyDays'] = 26.0;
+        updated['showItemDiscount'] = false;
+        updated['customTitle'] = 'SECURITY SERVICES BILL';
+        updated['defaultNotes'] =
+            'Thank you for your business. Security attendance verified by client site supervisor.';
+        updated['defaultTerms'] =
+            'Payment due within 15 days of bill submission. Statutory EPF & ESIC compliances met.';
+        _profile['defaultNotes'] = updated['defaultNotes'];
+        _profile['defaultTerms'] = updated['defaultTerms'];
+      } else if (val == 'it') {
+        updated['businessCategory'] = 'IT & Consulting';
+        updated['showItemDuty'] = false;
+        updated['customItemHeader'] = 'Services & Deliverables';
+        updated['customQtyHeader'] = 'Hours';
+        updated['customRateHeader'] = 'Hourly Rate';
+        updated['defaultUnit'] = 'hrs';
+        updated['itemCalculationFormula'] = 'standard';
+        updated['showItemDiscount'] = false;
+        updated['customTitle'] = 'Tax Invoice';
+      } else if (val == 'retail') {
+        updated['businessCategory'] = 'Retail & GST';
+        updated['showItemDuty'] = false;
+        updated['customItemHeader'] = 'Product Description';
+        updated['customQtyHeader'] = 'Qty';
+        updated['customRateHeader'] = 'Price';
+        updated['defaultUnit'] = 'pcs';
+        updated['itemCalculationFormula'] = 'standard';
+        updated['showItemDiscount'] = false;
+      } else if (val == 'wholesale') {
+        updated['businessCategory'] = 'Corporate Suite';
+        updated['showItemDuty'] = false;
+        updated['customItemHeader'] = 'Material / Consignment';
+        updated['customQtyHeader'] = 'Quantity';
+        updated['customRateHeader'] = 'Rate per Unit';
+        updated['defaultUnit'] = 'boxes';
+        updated['itemCalculationFormula'] = 'standard';
+        updated['showItemDiscount'] = false;
+      }
+      _localSettings = updated;
+      widget.onSaveLocalSettings?.call(updated);
+      widget.localPreferences?.writeMap('invoice_settings', updated);
+    });
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(content: Text('Business domain set to ${_domainLabel(val)}. Custom templates & items applied!')),
+    );
+  }
+
+  String _domainLabel(String key) {
+    switch (key) {
+      case 'security':
+        return 'Security Agency';
+      case 'it':
+        return 'IT & Consulting';
+      case 'retail':
+        return 'Retail Store';
+      case 'wholesale':
+        return 'Wholesale & Logistics';
+      case 'freelance':
+        return 'Freelance & Creative';
+      default:
+        return 'General Trade';
+    }
+  }
+
   @override
-  Widget build(BuildContext context) => Scaffold(
+  Widget build(BuildContext context) {
+    return DefaultTabController(
+      length: 3,
+      child: Scaffold(
         appBar: AppBar(
           leading: widget.onBack == null
               ? null
@@ -315,12 +399,31 @@ class _SettingsScreenState extends State<SettingsScreen> {
                 ),
           title: const Text('Business Settings'),
           actions: [
-            IconButton(
-              onPressed: _loading || _saving ? null : _save,
-              tooltip: 'Save settings',
-              icon: const Icon(Icons.save_outlined),
+            Padding(
+              padding: const EdgeInsets.only(right: 12),
+              child: FilledButton.icon(
+                onPressed: _loading || _saving ? null : _save,
+                icon: _saving
+                    ? const SizedBox(
+                        width: 16,
+                        height: 16,
+                        child: CircularProgressIndicator(
+                          strokeWidth: 2,
+                          color: Colors.white,
+                        ),
+                      )
+                    : const Icon(Icons.check, size: 18),
+                label: Text(_saving ? 'Saving...' : 'Save All'),
+              ),
             ),
           ],
+          bottom: const TabBar(
+            tabs: [
+              Tab(icon: Icon(Icons.business_rounded), text: 'Business Profile'),
+              Tab(icon: Icon(Icons.account_balance_rounded), text: 'Bank & UPI'),
+              Tab(icon: Icon(Icons.draw_rounded), text: 'Brand & Terms'),
+            ],
+          ),
         ),
         body: _loading
             ? const Center(child: CircularProgressIndicator())
@@ -328,541 +431,44 @@ class _SettingsScreenState extends State<SettingsScreen> {
                 ? _SettingsError(message: _error!, onRetry: _load)
                 : Form(
                     key: _formKey,
-                    child: ListView(
-                      padding: const EdgeInsets.all(16),
+                    child: TabBarView(
                       children: [
-                        AppCard(
-                          child: Column(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: [
-                              Text('Business profile',
-                                  style:
-                                      Theme.of(context).textTheme.titleMedium),
-                              const SizedBox(height: 12),
-                              ..._editableStringFields.entries.map(
-                                (field) => Padding(
-                                  padding: const EdgeInsets.only(bottom: 12),
-                                  child: TextFormField(
-                                    initialValue:
-                                        _profile[field.key]?.toString() ?? '',
-                                    decoration: InputDecoration(
-                                      labelText: field.value,
-                                    ),
-                                    keyboardType: field.key == 'email'
-                                        ? TextInputType.emailAddress
-                                        : field.key == 'address' ||
-                                                field.key == 'defaultNotes' ||
-                                                field.key == 'defaultTerms'
-                                            ? TextInputType.multiline
-                                            : TextInputType.text,
-                                    maxLines: field.key == 'address' ||
-                                            field.key == 'defaultNotes' ||
-                                            field.key == 'defaultTerms'
-                                        ? 3
-                                        : 1,
-                                    validator: field.key == 'email'
-                                        ? _validateEmail
-                                        : null,
-                                    onChanged: (value) =>
-                                        _profile[field.key] = value,
-                                  ),
-                                ),
-                              ),
-                            ],
-                          ),
+                        BusinessProfileTab(
+                          profile: _profile,
+                          localSettings: _localSettings,
+                          currencySymbols: _currencySymbols,
+                          onBusinessTypeChanged: _onBusinessTypeChanged,
+                          onSave: _save,
+                          saving: _saving,
                         ),
-                        const SizedBox(height: 12),
-                        AppCard(
-                          child: Column(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: [
-                              Text(
-                                'Invoice branding',
-                                style: Theme.of(context).textTheme.titleMedium,
-                              ),
-                              const SizedBox(height: 4),
-                              Text(
-                                'Assets are stored on this device and included in invoice previews and PDFs.',
-                                style: Theme.of(context).textTheme.bodySmall,
-                              ),
-                              const SizedBox(height: 16),
-                              _BrandingAssetTile(
-                                label: 'Company logo',
-                                base64:
-                                    _localSettings['invoiceLogo']?.toString(),
-                                onPick: () =>
-                                    _pickBrandImage('invoiceLogo', 'logo'),
-                                onRemove: () =>
-                                    _removeBrandingAsset('invoiceLogo'),
-                              ),
-                              const SizedBox(height: 10),
-                              _BrandingAssetTile(
-                                label: 'Company stamp',
-                                base64:
-                                    _localSettings['invoiceStamp']?.toString(),
-                                onPick: () =>
-                                    _pickBrandImage('invoiceStamp', 'stamp'),
-                                onRemove: () =>
-                                    _removeBrandingAsset('invoiceStamp'),
-                              ),
-                              const SizedBox(height: 10),
-                              _BrandingAssetTile(
-                                label: 'Authorized signature',
-                                base64: _localSettings['invoiceSignature']
-                                    ?.toString(),
-                                onPick: _captureSignature,
-                                onRemove: () =>
-                                    _removeBrandingAsset('invoiceSignature'),
-                                pickLabel: 'Draw',
-                              ),
-                              const SizedBox(height: 10),
-                              _BrandingAssetTile(
-                                label: 'Payment QR code (Optional)',
-                                base64: _localSettings['invoiceQrCode']
-                                    ?.toString(),
-                                onPick: () =>
-                                    _pickBrandImage('invoiceQrCode', 'QR code'),
-                                onRemove: () =>
-                                    _removeBrandingAsset('invoiceQrCode'),
-                              ),
-                              const SizedBox(height: 16),
-                              Align(
-                                alignment: Alignment.centerRight,
-                                child: FilledButton.icon(
-                                  onPressed: _savingBranding
-                                      ? null
-                                      : _saveBranding,
-                                  icon: _savingBranding
-                                      ? const SizedBox(
-                                          width: 18,
-                                          height: 18,
-                                          child: CircularProgressIndicator(
-                                            strokeWidth: 2,
-                                          ),
-                                        )
-                                      : const Icon(Icons.save_outlined),
-                                  label: const Text('Save branding'),
-                                ),
-                              ),
-                            ],
-                          ),
+                        BusinessBankUpiTab(
+                          profile: _profile,
+                          localSettings: _localSettings,
+                          onPickQr: () => _pickBrandImage('invoiceQrCode', 'Payment QR Code'),
+                          onRemoveQr: () => _removeBrandingAsset('invoiceQrCode'),
+                          onToggleBank: (val) => setState(() => _localSettings['showBankDetails'] = val),
+                          onToggleQr: (val) => setState(() => _localSettings['showQrCode'] = val),
+                          onSave: _save,
+                          saving: _saving,
                         ),
-                        const SizedBox(height: 12),
-                        AppCard(
-                          child: Column(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: [
-                              Text(
-                                'Currency & invoice defaults',
-                                style: Theme.of(context).textTheme.titleMedium,
-                              ),
-                              const SizedBox(height: 12),
-                              DropdownButtonFormField<String>(
-                                value: _currencyCode,
-                                decoration: const InputDecoration(
-                                  labelText: 'Default currency',
-                                ),
-                                items: const [
-                                  DropdownMenuItem(
-                                      value: 'INR', child: Text('INR — ₹')),
-                                  DropdownMenuItem(
-                                      value: 'USD', child: Text('USD — \$')),
-                                  DropdownMenuItem(
-                                      value: 'EUR', child: Text('EUR — €')),
-                                  DropdownMenuItem(
-                                      value: 'GBP', child: Text('GBP — £')),
-                                  DropdownMenuItem(
-                                      value: 'AED', child: Text('AED')),
-                                  DropdownMenuItem(
-                                      value: 'CAD', child: Text('CAD — C\$')),
-                                  DropdownMenuItem(
-                                      value: 'AUD', child: Text('AUD — A\$')),
-                                  DropdownMenuItem(
-                                      value: 'JPY', child: Text('JPY — ¥')),
-                                  DropdownMenuItem(
-                                      value: 'SGD', child: Text('SGD — S\$')),
-                                  DropdownMenuItem(
-                                      value: 'SAR', child: Text('SAR')),
-                                ],
-                                onChanged: (value) {
-                                  if (value == null) return;
-                                  setState(() {
-                                    _profile['defaultCurrency'] = value;
-                                    _profile['defaultCurrencySymbol'] =
-                                        _currencySymbols[value] ?? value;
-                                  });
-                                },
-                              ),
-                              const SizedBox(height: 12),
-                              DropdownButtonFormField<String>(
-                                value: _currencyFormat,
-                                decoration: const InputDecoration(
-                                  labelText: 'Currency symbol position',
-                                ),
-                                items: const [
-                                  DropdownMenuItem(
-                                    value: 'before',
-                                    child: Text('Prefix (₹ 1,500.00)'),
-                                  ),
-                                  DropdownMenuItem(
-                                    value: 'after',
-                                    child: Text('Suffix (1,500.00 ₹)'),
-                                  ),
-                                ],
-                                onChanged: (value) {
-                                  if (value != null) {
-                                    setState(() =>
-                                        _profile['defaultCurrencyFormat'] =
-                                            value);
-                                  }
-                                },
-                              ),
-                              const SizedBox(height: 12),
-                              TextFormField(
-                                initialValue:
-                                    _profile['defaultTaxLabel']?.toString() ??
-                                        'Tax',
-                                decoration: const InputDecoration(
-                                  labelText: 'Default tax label',
-                                ),
-                                onChanged: (value) =>
-                                    _profile['defaultTaxLabel'] = value,
-                              ),
-                              const SizedBox(height: 12),
-                              TextFormField(
-                                initialValue: _profile['defaultTaxRate']
-                                        ?.toString() ??
-                                    '0',
-                                decoration: const InputDecoration(
-                                  labelText: 'Default tax rate (%)',
-                                ),
-                                keyboardType:
-                                    const TextInputType.numberWithOptions(
-                                  decimal: true,
-                                ),
-                                validator: _validateRate,
-                                onChanged: (value) {
-                                  final rate = double.tryParse(value);
-                                  if (rate != null) {
-                                    _profile['defaultTaxRate'] = rate;
-                                  }
-                                },
-                              ),
-                              const SizedBox(height: 12),
-                              TextFormField(
-                                initialValue:
-                                    _profile['defaultPaymentTerms']?.toString() ??
-                                        'Net 30',
-                                decoration: const InputDecoration(
-                                  labelText: 'Default payment terms',
-                                ),
-                                onChanged: (value) =>
-                                    _profile['defaultPaymentTerms'] = value,
-                              ),
-                            ],
-                          ),
-                        ),
-                        const SizedBox(height: 12),
-                        AppCard(
-                          child: Column(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: [
-                              Text('Brand color',
-                                  style:
-                                      Theme.of(context).textTheme.titleMedium),
-                              const SizedBox(height: 8),
-                              TextFormField(
-                                initialValue:
-                                    _profile['brandColorHex']?.toString() ??
-                                        '#1E3A8A',
-                                decoration: const InputDecoration(
-                                  labelText: 'Hex color (for example #1E3A8A)',
-                                ),
-                                validator: _validateHexColor,
-                                onChanged: (value) =>
-                                    _profile['brandColorHex'] = value,
-                              ),
-                            ],
-                          ),
-                        ),
-                        const SizedBox(height: 16),
-                        FilledButton.icon(
-                          onPressed: _saving ? null : _save,
-                          icon: _saving
-                              ? const SizedBox(
-                                  width: 18,
-                                  height: 18,
-                                  child: CircularProgressIndicator(
-                                    strokeWidth: 2,
-                                  ),
-                                )
-                              : const Icon(Icons.save),
-                          label: Text(_saving ? 'Saving…' : 'Save settings'),
-                        ),
-                        const SizedBox(height: 8),
-                        const Text(
-                          'Server URL, account sync controls, invoice deletion and local reset actions are not exposed by the Flutter backend API.',
-                          textAlign: TextAlign.center,
-                          style: TextStyle(color: AppColors.muted),
+                        BusinessBrandTermsTab(
+                          profile: _profile,
+                          localSettings: _localSettings,
+                          onPickLogo: () => _pickBrandImage('invoiceLogo', 'Company Logo'),
+                          onRemoveLogo: () => _removeBrandingAsset('invoiceLogo'),
+                          onPickStamp: () => _pickBrandImage('invoiceStamp', 'Company Stamp'),
+                          onRemoveStamp: () => _removeBrandingAsset('invoiceStamp'),
+                          onCaptureSignature: _captureSignature,
+                          onRemoveSignature: () => _removeBrandingAsset('invoiceSignature'),
+                          onSave: _save,
+                          saving: _saving,
                         ),
                       ],
                     ),
                   ),
-      );
-
-  String get _currencyCode =>
-      _profile['defaultCurrency']?.toString() ?? 'INR';
-
-  String get _currencyFormat =>
-      _profile['defaultCurrencyFormat']?.toString() ?? 'before';
-
-  String? _validateEmail(String? value) {
-    final email = value?.trim() ?? '';
-    if (email.isNotEmpty && !RegExp(r'^[^@\s]+@[^@\s]+\.[^@\s]+$').hasMatch(email)) {
-      return 'Enter a valid email address.';
-    }
-    return null;
-  }
-
-  String? _validateRate(String? value) {
-    final rate = double.tryParse(value ?? '');
-    if (rate == null || rate < 0 || rate > 100) {
-      return 'Enter a rate from 0 to 100.';
-    }
-    return null;
-  }
-
-  String? _validateHexColor(String? value) {
-    if (!RegExp(r'^#[0-9A-Fa-f]{6}$').hasMatch(value?.trim() ?? '')) {
-      return 'Use a six-digit hex color such as #1E3A8A.';
-    }
-    return null;
-  }
-}
-
-const _currencySymbols = <String, String>{
-  'INR': '₹',
-  'USD': r'$',
-  'EUR': '€',
-  'GBP': '£',
-  'AED': 'AED',
-  'CAD': 'C\$',
-  'AUD': 'A\$',
-  'JPY': '¥',
-  'SGD': 'S\$',
-  'SAR': 'SAR',
-};
-
-class _BrandingAssetTile extends StatelessWidget {
-  const _BrandingAssetTile({
-    required this.label,
-    required this.base64,
-    required this.onPick,
-    required this.onRemove,
-    this.pickLabel = 'Choose',
-  });
-
-  final String label;
-  final String? base64;
-  final VoidCallback onPick;
-  final VoidCallback onRemove;
-  final String pickLabel;
-
-  @override
-  Widget build(BuildContext context) {
-    Uint8List? bytes;
-    try {
-      if (base64 != null && base64!.isNotEmpty) {
-        bytes = base64Decode(base64!);
-      }
-    } on FormatException {
-      bytes = null;
-    }
-    return Row(
-      children: [
-        Container(
-          width: 64,
-          height: 54,
-          alignment: Alignment.center,
-          decoration: BoxDecoration(
-            color: Theme.of(context).colorScheme.surfaceContainerHighest,
-            borderRadius: BorderRadius.circular(10),
-          ),
-          child: bytes == null
-              ? const Icon(Icons.image_outlined)
-              : ClipRRect(
-                  borderRadius: BorderRadius.circular(8),
-                  child: Image.memory(
-                    bytes,
-                    width: 62,
-                    height: 52,
-                    fit: BoxFit.contain,
-                    errorBuilder: (_, __, ___) =>
-                        const Icon(Icons.broken_image_outlined),
-                  ),
-                ),
-        ),
-        const SizedBox(width: 12),
-        Expanded(
-          child: Text(
-            label,
-            style: const TextStyle(fontWeight: FontWeight.w600),
-            maxLines: 2,
-            overflow: TextOverflow.ellipsis,
-          ),
-        ),
-        if (bytes != null)
-          IconButton(
-            tooltip: 'Remove $label',
-            onPressed: onRemove,
-            icon: const Icon(Icons.delete_outline),
-          ),
-        OutlinedButton(
-          onPressed: onPick,
-          child: Text(pickLabel),
-        ),
-      ],
+      ),
     );
   }
-}
-
-class _SignatureDialog extends StatefulWidget {
-  const _SignatureDialog();
-
-  @override
-  State<_SignatureDialog> createState() => _SignatureDialogState();
-}
-
-class _SignatureDialogState extends State<_SignatureDialog> {
-  final List<Offset?> _points = [];
-
-  @override
-  Widget build(BuildContext context) => AlertDialog(
-        title: const Text('Draw your signature'),
-        content: SizedBox(
-          width: (MediaQuery.sizeOf(context).width - 80).clamp(280, 520),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              Row(
-                children: [
-                  const Expanded(
-                    child: Text('Sign using your finger or mouse.'),
-                  ),
-                  IconButton(
-                    tooltip: 'Undo last stroke',
-                    onPressed: _points.whereType<Offset>().isEmpty
-                        ? null
-                        : () => setState(_undoStroke),
-                    icon: const Icon(Icons.undo),
-                  ),
-                ],
-              ),
-              const SizedBox(height: 12),
-              AspectRatio(
-                aspectRatio: 3.2,
-                child: LayoutBuilder(
-                  builder: (context, constraints) => GestureDetector(
-                    onPanStart: (event) => setState(
-                      () => _points.add(_normalize(
-                        event.localPosition,
-                        constraints.biggest,
-                      )),
-                    ),
-                    onPanUpdate: (event) => setState(
-                      () => _points.add(_normalize(
-                        event.localPosition,
-                        constraints.biggest,
-                      )),
-                    ),
-                    onPanEnd: (_) => setState(() => _points.add(null)),
-                    child: DecoratedBox(
-                      decoration: BoxDecoration(
-                        color: Colors.white,
-                        border: Border.all(color: AppColors.border),
-                        borderRadius: BorderRadius.circular(10),
-                      ),
-                      child: CustomPaint(
-                        foregroundPainter: _SignaturePainter(_points),
-                        child: const SizedBox.expand(),
-                      ),
-                    ),
-                  ),
-                ),
-              ),
-            ],
-          ),
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => setState(_points.clear),
-            child: const Text('Clear'),
-          ),
-          TextButton(
-            onPressed: () => Navigator.of(context).pop(),
-            child: const Text('Cancel'),
-          ),
-          FilledButton(
-            onPressed: _points.whereType<Offset>().isEmpty
-                ? null
-                : () => Navigator.of(context).pop(_points),
-            child: const Text('Use signature'),
-          ),
-        ],
-      );
-
-  Offset _normalize(Offset point, Size size) => Offset(
-        point.dx / size.width * 700,
-        point.dy / size.height * 220,
-      );
-
-  void _undoStroke() {
-    if (_points.isEmpty) return;
-    if (_points.last == null) _points.removeLast();
-    while (_points.isNotEmpty && _points.last != null) {
-      _points.removeLast();
-    }
-    if (_points.isNotEmpty) _points.removeLast();
-  }
-}
-
-class _SignaturePainter extends CustomPainter {
-  const _SignaturePainter(this.points);
-
-  final List<Offset?> points;
-
-  @override
-  void paint(Canvas canvas, Size size) {
-    final paint = Paint()
-      ..color = const Color(0xFF172554)
-      ..strokeWidth = 3
-      ..strokeCap = StrokeCap.round
-      ..strokeJoin = StrokeJoin.round
-      ..style = PaintingStyle.stroke;
-    final path = Path();
-    var drawing = false;
-    for (final point in points) {
-      if (point == null) {
-        drawing = false;
-        continue;
-      }
-      final scaled = Offset(
-        point.dx * size.width / 700,
-        point.dy * size.height / 220,
-      );
-      if (!drawing) {
-        path.moveTo(scaled.dx, scaled.dy);
-        drawing = true;
-      } else {
-        path.lineTo(scaled.dx, scaled.dy);
-      }
-    }
-    canvas.drawPath(path, paint);
-  }
-
-  @override
-  bool shouldRepaint(covariant _SignaturePainter oldDelegate) =>
-      !identical(points, oldDelegate.points);
 }
 
 class _SettingsError extends StatelessWidget {

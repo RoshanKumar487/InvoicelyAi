@@ -399,32 +399,37 @@ class InvoicePdfExport {
                           pw.Text([if (bizGstin.isNotEmpty) 'GSTIN: ${_cleanText(bizGstin)}', if (bizPan.isNotEmpty) 'PAN: ${_cleanText(bizPan)}'].join('  |  '), style: pw.TextStyle(fontSize: 7.5, fontWeight: pw.FontWeight.bold)),
                         if (bizPhone.isNotEmpty || bizEmail.isNotEmpty)
                           pw.Text([if (bizPhone.isNotEmpty) _cleanText(bizPhone), if (bizEmail.isNotEmpty) _cleanText(bizEmail)].join(' - '), style: const pw.TextStyle(fontSize: 7.5, color: PdfColors.grey700)),
-                        pw.SizedBox(height: 6),
                       ],
-                      pw.Text(
-                        _cleanText(title),
-                        style: pw.TextStyle(
-                          color: brand,
-                          fontSize: 18,
-                          fontWeight: pw.FontWeight.bold,
-                        ),
-                      ),
-                      pw.SizedBox(height: 3),
-                      pw.Text('${_cleanText(invoiceNoLabel)} ${_cleanText(invoice.invoiceNumber)}', style: pw.TextStyle(fontWeight: pw.FontWeight.bold, fontSize: 9.5)),
-                      if (show('showStatus', fallback: false))
-                        pw.Text('Status: ${invoice.status}', style: const pw.TextStyle(fontSize: 8, color: PdfColors.grey700)),
                     ],
                   ),
                 ),
+                pw.SizedBox(width: 14),
                 pw.Column(
                   crossAxisAlignment: pw.CrossAxisAlignment.end,
                   children: [
+                    pw.Text(
+                      _cleanText(title),
+                      style: pw.TextStyle(
+                        color: brand,
+                        fontSize: 20,
+                        fontWeight: pw.FontWeight.bold,
+                      ),
+                    ),
+                    pw.SizedBox(height: 3),
+                    pw.Text(
+                      '${_cleanText(invoiceNoLabel)}: ${_cleanText(invoice.invoiceNumber)}',
+                      style: pw.TextStyle(fontWeight: pw.FontWeight.bold, fontSize: 10),
+                    ),
                     if (show('showIssueDate', fallback: true))
                       pw.Text('${_cleanText(dateLabel)}: ${invoice.issueDate}', style: const pw.TextStyle(fontSize: 8.5)),
                     if (show('showDueDate', fallback: false))
                       pw.Text('${_cleanText(dueDateLabel)}: ${invoice.dueDate}', style: pw.TextStyle(fontSize: 8.5, fontWeight: pw.FontWeight.bold)),
                     if (show('showPoNumber', fallback: false) && invoice.poNumber.isNotEmpty)
                       pw.Text('PO: ${_cleanText(invoice.poNumber)}', style: const pw.TextStyle(fontSize: 8)),
+                    if (show('showPaymentTerms', fallback: false) && invoice.paymentTerms.isNotEmpty)
+                      pw.Text('Terms: ${_cleanText(invoice.paymentTerms)}', style: const pw.TextStyle(fontSize: 8)),
+                    if (show('showStatus', fallback: false))
+                      pw.Text('Status: ${invoice.status}', style: const pw.TextStyle(fontSize: 8, color: PdfColors.grey700)),
                     for (final field in customFields('customFields_details'))
                       if (field['isVisible'] != false && field['label']?.toString().isNotEmpty == true)
                         pw.Text('${_cleanText(field['label'].toString())}: ${_cleanText(field['value']?.toString() ?? '')}', style: const pw.TextStyle(fontSize: 8)),
@@ -472,6 +477,27 @@ class InvoicePdfExport {
           if (show('showShippingSection', fallback: false) || (template?.showShipping ?? false))
             ..._shippingWidgets(invoice.shippingDetailsJson),
           pw.SizedBox(height: 10),
+
+          // RCM STATUTORY BADGE
+          if (invoice.isRcm || localSettings['isRcmApplicable'] == true) ...[
+            pw.Container(
+              padding: const pw.EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+              decoration: pw.BoxDecoration(
+                color: PdfColors.green50,
+                borderRadius: const pw.BorderRadius.all(pw.Radius.circular(4)),
+                border: pw.Border.all(color: PdfColors.green700, width: 0.8),
+              ),
+              child: pw.Text(
+                'Whether tax is payable on Reverse Charge basis: YES (Sec 9(3)/9(4) GST Act - Tax payable by recipient)',
+                style: pw.TextStyle(
+                  color: PdfColors.green900,
+                  fontSize: 8.5,
+                  fontWeight: pw.FontWeight.bold,
+                ),
+              ),
+            ),
+            pw.SizedBox(height: 8),
+          ],
 
           // -------------------------------------------------------------------
           // LINE ITEMS TABLE (Branch on template?.tableStyle)
@@ -625,12 +651,15 @@ class InvoicePdfExport {
                       '-${_money(invoice.totalDiscount, currencySymbol)}',
                     ),
                   if (template?.showTaxBreakdown != false && show('showTax', fallback: true))
-                    _line(
-                      _cleanText(localSettings['customTaxLabel']?.toString().isNotEmpty == true
-                          ? localSettings['customTaxLabel'].toString()
-                          : '${invoice.taxLabel} (${invoice.taxRate}%)'),
-                      _money(invoice.taxAmount, currencySymbol),
-                    ),
+                    if (invoice.isRcm || localSettings['isRcmApplicable'] == true)
+                      _line('Reverse Charge (RCM)', 'Tax payable by recipient (0.00)')
+                    else
+                      _line(
+                        _cleanText(localSettings['customTaxLabel']?.toString().isNotEmpty == true
+                            ? localSettings['customTaxLabel'].toString()
+                            : '${invoice.taxLabel} (${invoice.taxRate}%)'),
+                        _money(invoice.taxAmount, currencySymbol),
+                      ),
                   if (invoice.shippingFee != 0 || show('showShippingFee', fallback: false))
                     _line(
                       _cleanText(localSettings['customShippingLabel']?.toString().isNotEmpty == true
@@ -788,8 +817,8 @@ class InvoicePdfExport {
                             children: [
                               if (stamp != null)
                                 pw.Container(
-                                  width: 60,
-                                  height: 60,
+                                  width: 85,
+                                  height: 85,
                                   child: pw.Image(stamp, fit: pw.BoxFit.contain),
                                 ),
                               if (stamp != null) pw.SizedBox(width: 8),

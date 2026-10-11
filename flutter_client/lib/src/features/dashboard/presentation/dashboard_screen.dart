@@ -22,6 +22,8 @@ class DashboardScreen extends StatefulWidget {
     required this.onViewExpenses,
     required this.onOpenAiChat,
     required this.onOpenTemplates,
+    this.registeredCompanyName,
+    this.localSettings = const {},
     super.key,
   });
 
@@ -34,6 +36,8 @@ class DashboardScreen extends StatefulWidget {
   final VoidCallback onViewExpenses;
   final VoidCallback onOpenAiChat;
   final VoidCallback onOpenTemplates;
+  final String? registeredCompanyName;
+  final Map<String, Object?> localSettings;
 
   @override
   State<DashboardScreen> createState() => _DashboardScreenState();
@@ -49,6 +53,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
   bool _isLoading = true;
   bool _usingCachedData = false;
   String? _invoiceLoadError;
+  String? _backendBusinessName;
 
   bool get _isDeveloper =>
       widget.session.user.role.toUpperCase() == 'DEVELOPER';
@@ -86,6 +91,22 @@ class _DashboardScreenState extends State<DashboardScreen> {
           _invoiceLoadError = null;
         });
       }
+
+      // Fetch registered business name directly from backend profile
+      try {
+        final profile = await widget.repository.loadProfile();
+        final bName = profile['businessName']?.toString().trim().isNotEmpty == true
+            ? profile['businessName'].toString().trim()
+            : (profile['companyName']?.toString().trim().isNotEmpty == true
+                ? profile['companyName'].toString().trim()
+                : (profile['legalName']?.toString().trim().isNotEmpty == true
+                    ? profile['legalName'].toString().trim()
+                    : null));
+        if (bName != null && bName.isNotEmpty && mounted && generation == _loadGeneration) {
+          setState(() => _backendBusinessName = bName);
+        }
+      } catch (_) {}
+
       if (widget.session.user.hasPermission('INVOICES')) {
         try {
           final invoices = await widget.repository.loadInvoices();
@@ -121,9 +142,17 @@ class _DashboardScreenState extends State<DashboardScreen> {
 
   @override
   Widget build(BuildContext context) {
-    final name = widget.session.company?.name.isNotEmpty == true
-        ? widget.session.company!.name
-        : 'Your business';
+    final registeredName = _backendBusinessName?.trim().isNotEmpty == true
+        ? _backendBusinessName!.trim()
+        : (widget.registeredCompanyName?.trim().isNotEmpty == true
+            ? widget.registeredCompanyName!.trim()
+            : (widget.localSettings['businessName']?.toString().trim().isNotEmpty == true
+                ? widget.localSettings['businessName']!.toString().trim()
+                : (widget.localSettings['companyName']?.toString().trim().isNotEmpty == true
+                    ? widget.localSettings['companyName']!.toString().trim()
+                    : (widget.session.company?.name.trim().isNotEmpty == true
+                        ? widget.session.company!.name.trim()
+                        : 'Your business'))));
     final role = widget.session.user.role.toUpperCase();
     final subtitle = switch (role) {
       'DEVELOPER' => 'Platform health and company activity',
@@ -144,7 +173,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
                 padding: EdgeInsets.fromLTRB(sidePadding, 12, sidePadding, 28),
                 children: [
                   _DashboardHeader(
-                    name: _isDeveloper ? 'Platform overview' : name,
+                    name: _isDeveloper ? 'Platform overview' : registeredName,
                     subtitle: subtitle,
                     onRefresh: _isLoading ? null : _loadStatistics,
                     onCreateInvoice: widget.onCreateInvoice,

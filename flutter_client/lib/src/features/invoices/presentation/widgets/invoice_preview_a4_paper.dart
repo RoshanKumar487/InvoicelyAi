@@ -112,7 +112,7 @@ class InvoicePreviewA4Paper extends StatelessWidget {
   Widget build(BuildContext context) {
     final signatureImage =
         _show('showSignature') ? _brandImage('invoiceSignature') : null;
-    final stampImage = _show('showStamp') ? _brandImage('invoiceStamp') : null;
+    final stampImage = _show('showStamp') ? _brandImage('invoiceStamp', height: 85) : null;
     final logoImage =
         (_show('showLogo') && (template?.showLogo ?? true)) ? _brandImage('invoiceLogo') : null;
 
@@ -489,6 +489,33 @@ class InvoicePreviewA4Paper extends StatelessWidget {
             const SizedBox(height: 24),
           ],
 
+          // RCM STATUTORY BADGE
+          if (invoice.isRcm || localSettings['isRcmApplicable'] == true)
+            Container(
+              margin: const EdgeInsets.only(bottom: 12),
+              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+              decoration: BoxDecoration(
+                color: const Color(0xFF16A34A).withAlpha(18),
+                borderRadius: BorderRadius.circular(6),
+                border: Border.all(color: const Color(0xFF16A34A).withAlpha(90)),
+              ),
+              child: const Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Icon(Icons.shield_outlined, size: 14, color: Color(0xFF16A34A)),
+                  SizedBox(width: 6),
+                  Text(
+                    'Whether tax is payable on Reverse Charge basis: YES (Sec 9(3)/9(4) GST Act)',
+                    style: TextStyle(
+                      fontSize: 10.5,
+                      fontWeight: FontWeight.w700,
+                      color: Color(0xFF15803D),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+
           // LINE ITEMS TABLE
           LineItemsTable(
             invoice: invoice,
@@ -516,10 +543,18 @@ class InvoicePreviewA4Paper extends StatelessWidget {
                       value: '−${formatMoney(invoice.totalDiscount, _currencySymbol)}',
                     ),
                   if (template?.showTaxBreakdown != false && _show('showTax', fallback: true))
-                    PreviewTotalLine(
-                      label: _label('customTaxLabel', '${invoice.taxLabel} (${invoice.taxRate}%)'),
-                      value: formatMoney(invoice.taxAmount, _currencySymbol),
-                    ),
+                    if (invoice.isRcm || localSettings['isRcmApplicable'] == true)
+                      const PreviewTotalLine(
+                        label: 'Reverse Charge (RCM)',
+                        value: 'Tax payable by recipient (0.00)',
+                        bold: true,
+                        color: Color(0xFF16A34A),
+                      )
+                    else
+                      PreviewTotalLine(
+                        label: _label('customTaxLabel', '${invoice.taxLabel} (${invoice.taxRate}%)'),
+                        value: formatMoney(invoice.taxAmount, _currencySymbol),
+                      ),
                   if (invoice.shippingFee > 0 || _show('showShippingFee', fallback: false))
                     PreviewTotalLine(
                       label: _label('customShippingLabel', 'Shipping'),
