@@ -29,6 +29,7 @@ class AiAssistantServiceTest {
     private final ExpenseService expenseService = mock(ExpenseService.class);
     private final ClientService clientService = mock(ClientService.class);
     private final CompanyKnowledgeService knowledgeService = mock(CompanyKnowledgeService.class);
+    private final BusinessProfileService businessProfileService = mock(BusinessProfileService.class);
 
     @Test
     void rejectsGlobalDeveloperDataAccess() {
@@ -91,7 +92,7 @@ class AiAssistantServiceTest {
     private AiAssistantService service(String apiKey) {
         return new AiAssistantService(invoiceRepository, expenseRepository, clientRepository,
                 pendingRepository, invoiceService, expenseService, clientService,
-                knowledgeService, RestClient.builder(), new ObjectMapper(), apiKey, "gemini-2.0-flash");
+                knowledgeService, businessProfileService, RestClient.builder(), new ObjectMapper(), apiKey, "gemini-2.0-flash");
     }
 
     private UserPrincipal principal(Role role, Long companyId, String permissions) {

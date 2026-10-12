@@ -2,6 +2,7 @@ import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
+import '../../../../core/utils/amount_to_words.dart';
 import '../../../../shared/widgets/app_card.dart';
 import '../../data/invoice.dart';
 
@@ -57,12 +58,32 @@ class TotalsPreview extends StatelessWidget {
                 _symbol,
               ),
             ),
+            if (invoice.roundOff != 0)
+              TotalLine(
+                label: 'Round off',
+                value: '${invoice.roundOff > 0 ? '+' : ''}${_money(invoice.roundOff, _symbol)}',
+              ),
             const Divider(),
             TotalLine(
               label: 'Total',
               value: _money(invoice.total, _symbol),
               emphasized: true,
             ),
+            if (invoice.total > 0)
+              Padding(
+                padding: const EdgeInsets.only(top: 2, bottom: 4),
+                child: Align(
+                  alignment: Alignment.centerRight,
+                  child: Text(
+                    AmountToWords.convert(invoice.total, currency: _symbol),
+                    style: const TextStyle(
+                      fontSize: 11,
+                      fontStyle: FontStyle.italic,
+                      color: Color(0xFF64748B),
+                    ),
+                  ),
+                ),
+              ),
             TotalLine(
               label: 'Balance due',
               value: _money(invoice.balanceDue, _symbol),

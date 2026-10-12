@@ -6,6 +6,8 @@ import 'package:pdf/pdf.dart';
 import 'package:pdf/widgets.dart' as pw;
 
 import '../../templates/data/template_config.dart';
+import '../../../core/utils/amount_to_words.dart';
+import '../../../core/utils/gst_tax_calculator.dart';
 import 'invoice.dart';
 
 class InvoicePdfExport {
@@ -116,7 +118,7 @@ class InvoicePdfExport {
             ? localSettings['paymentLink'].toString()
             : '');
     final qrPayload = upiId.isNotEmpty
-        ? 'upi://pay?pa=$upiId&pn=${Uri.encodeComponent(bizName.isNotEmpty ? bizName : "Merchant")}&am=${(invoice.balanceDue > 0 ? invoice.balanceDue : invoice.total).toStringAsFixed(2)}&cu=INR&tn=${Uri.encodeComponent("Invoice ${invoice.invoiceNumber}")}'
+        ? 'upi://pay?pa=$upiId&pn=${Uri.encodeComponent(bizName.isNotEmpty ? bizName : "Merchant")}&am=${(invoice.balanceDue > 0 ? invoice.balanceDue : invoice.total).toStringAsFixed(2)}&cu=INR&tn=${Uri.encodeComponent("Invoice ${invoice.invoiceNumber}")}&tr=${Uri.encodeComponent(invoice.invoiceNumber)}'
         : paymentLink;
 
     // Currency Symbol Resolution (INR / Rs. Latin-1 safe)
@@ -128,6 +130,26 @@ class InvoicePdfExport {
                 ? invoice.currencySymbol.trim()
                 : 'INR'));
     final currencySymbol = (rawCurrency == '₹' || rawCurrency.toUpperCase() == 'INR') ? 'Rs. ' : rawCurrency;
+
+    final bizPlaceOfSupply = businessProfile['placeOfSupply']?.toString().trim().isNotEmpty == true
+        ? businessProfile['placeOfSupply'].toString()
+        : (localSettings['placeOfSupply']?.toString().trim().isNotEmpty == true
+            ? localSettings['placeOfSupply'].toString()
+            : '');
+    final isRcmActive = invoice.isRcm || localSettings['isRcmApplicable'] == true;
+    final gstResult = GstTaxCalculator.calculate(
+      taxableAmount: invoice.taxableAmount,
+      taxRate: invoice.taxRate,
+      taxLabel: invoice.taxLabel,
+      taxType: invoice.taxType,
+      isRcm: isRcmActive,
+      supplierPlaceOfSupply: bizPlaceOfSupply,
+      clientPlaceOfSupply: invoice.clientAddress,
+    );
+    final amountInWords = AmountToWords.convert(
+      invoice.balanceDue > 0 ? invoice.balanceDue : invoice.total,
+      currency: rawCurrency,
+    );
 
     List<Map<String, dynamic>> customFields(String key) {
       final raw = localSettings[key];
@@ -651,9 +673,15 @@ class InvoicePdfExport {
                       '-${_money(invoice.totalDiscount, currencySymbol)}',
                     ),
                   if (template?.showTaxBreakdown != false && show('showTax', fallback: true))
-                    if (invoice.isRcm || localSettings['isRcmApplicable'] == true)
+                    if (gstResult.isRcm)
                       _line('Reverse Charge (RCM)', 'Tax payable by recipient (0.00)')
-                    else
+                    else if (gstResult.taxLines.isNotEmpty)
+                      for (final tl in gstResult.taxLines)
+                        _line(
+                          _cleanText(tl.label),
+                          _money(tl.amount, currencySymbol),
+                        )
+                    else if (invoice.taxAmount > 0)
                       _line(
                         _cleanText(localSettings['customTaxLabel']?.toString().isNotEmpty == true
                             ? localSettings['customTaxLabel'].toString()
@@ -718,9 +746,47 @@ class InvoicePdfExport {
           ),
 
           // -------------------------------------------------------------------
+          // AMOUNT IN WORDS BANNER
+          // -------------------------------------------------------------------
+          if (amountInWords.isNotEmpty && show('showAmountInWords', fallback: true)) ...[
+            pw.SizedBox(height: 8),
+            pw.Container(
+              width: double.infinity,
+              padding: const pw.EdgeInsets.symmetric(horizontal: 8, vertical: 5),
+              decoration: pw.BoxDecoration(
+                color: PdfColors.grey100,
+                borderRadius: const pw.BorderRadius.all(pw.Radius.circular(4)),
+                border: pw.Border.all(color: PdfColors.grey300, width: 0.5),
+              ),
+              child: pw.RichText(
+                text: pw.TextSpan(
+                  children: [
+                    pw.TextSpan(
+                      text: 'Total in Words: ',
+                      style: pw.TextStyle(
+                        fontWeight: pw.FontWeight.bold,
+                        fontSize: 8.5,
+                        color: PdfColors.grey900,
+                      ),
+                    ),
+                    pw.TextSpan(
+                      text: _cleanText(amountInWords),
+                      style: pw.TextStyle(
+                        fontStyle: pw.FontStyle.italic,
+                        fontSize: 8.5,
+                        color: PdfColors.grey800,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+          ],
+
+          // -------------------------------------------------------------------
           // ROW: BANK & PAYMENT DETAILS + QR CODE (LEFT) & SIGNATURE / STAMP (RIGHT)
           // -------------------------------------------------------------------
-          pw.SizedBox(height: 16),
+          pw.SizedBox(height: 14),
           pw.Row(
             crossAxisAlignment: pw.CrossAxisAlignment.start,
             children: [

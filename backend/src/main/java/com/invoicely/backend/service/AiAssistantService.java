@@ -5,6 +5,7 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import com.invoicely.backend.dto.AiChatResponse;
 import com.invoicely.backend.dto.AiInvoiceDraftResponse;
 import com.invoicely.backend.dto.ReceiptScanResponse;
+import com.invoicely.backend.model.BusinessProfile;
 import com.invoicely.backend.model.Client;
 import com.invoicely.backend.model.Expense;
 import com.invoicely.backend.model.Invoice;
@@ -17,6 +18,7 @@ import com.invoicely.backend.repository.ClientRepository;
 import com.invoicely.backend.repository.CurrencyAmount;
 import com.invoicely.backend.repository.ExpenseRepository;
 import com.invoicely.backend.repository.InvoiceRepository;
+import com.invoicely.backend.service.BusinessProfileService;
 import com.invoicely.backend.service.ClientService;
 import com.invoicely.backend.service.ExpenseService;
 import com.invoicely.backend.service.InvoiceService;
@@ -55,6 +57,7 @@ public class AiAssistantService {
     private final ExpenseService expenseService;
     private final ClientService clientService;
     private final CompanyKnowledgeService knowledgeService;
+    private final BusinessProfileService businessProfileService;
     private final RestClient restClient;
     private final ObjectMapper objectMapper;
     private final String apiKey;
@@ -69,6 +72,7 @@ public class AiAssistantService {
             ExpenseService expenseService,
             ClientService clientService,
             CompanyKnowledgeService knowledgeService,
+            BusinessProfileService businessProfileService,
             RestClient.Builder restClientBuilder,
             ObjectMapper objectMapper,
             @Value("${app.ai.gemini.api-key:}") String apiKey,
@@ -81,6 +85,7 @@ public class AiAssistantService {
         this.expenseService = expenseService;
         this.clientService = clientService;
         this.knowledgeService = knowledgeService;
+        this.businessProfileService = businessProfileService;
         this.restClient = restClientBuilder.build();
         this.objectMapper = objectMapper;
         this.apiKey = apiKey;
@@ -157,11 +162,18 @@ public class AiAssistantService {
             LOGGER.warn("Knowledge retrieval fallback in answer: {}", ex.getMessage());
             knowledge = List.of();
         }
-        String context = buildContext(invoices, expenses, clients, knowledge, invoiceCount, overdueCount, collected,
+        BusinessProfile profile = null;
+        try {
+            profile = businessProfileService.getProfile(companyId);
+        } catch (Exception ex) {
+            LOGGER.warn("Business profile retrieval fallback in answer: {}", ex.getMessage());
+        }
+        String context = buildContext(profile, invoices, expenses, clients, knowledge, invoiceCount, overdueCount, collected,
                 expenseCount, expenseTotal, clientCount,
                 canReadInvoices, canReadExpenses, canReadClients);
         JsonNode modelResult = callModel(message.trim(), context);
         List<String> sources = new java.util.ArrayList<>();
+        if (profile != null) sources.add("Business Profile");
         if (canReadInvoices) sources.add("Invoices");
         if (canReadExpenses) sources.add("Expenses");
         if (canReadClients) sources.add("Clients");
@@ -197,7 +209,21 @@ public class AiAssistantService {
             LOGGER.warn("Knowledge retrieval fallback in invoice draft: {}", ex.getMessage());
             knowledge = List.of();
         }
-        StringBuilder context = new StringBuilder(clientContext);
+        BusinessProfile profile = null;
+        try {
+            profile = businessProfileService.getProfile(principal.getCompanyId());
+        } catch (Exception ex) {
+            LOGGER.warn("Business profile retrieval fallback in invoice draft: {}", ex.getMessage());
+        }
+        StringBuilder context = new StringBuilder();
+        if (profile != null) {
+            context.append("Company Defaults:\n")
+                    .append("- Currency: ").append(safe(profile.getDefaultCurrency()))
+                    .append(" (").append(safe(profile.getDefaultCurrencySymbol())).append(")")
+                    .append(" | Tax Rate: ").append(profile.getDefaultTaxRate()).append("% (").append(safe(profile.getDefaultTaxLabel())).append(")")
+                    .append(" | Payment Terms: ").append(safe(profile.getDefaultPaymentTerms())).append("\n\n");
+        }
+        context.append(clientContext);
         if (!knowledge.isEmpty()) {
             context.append("\nCompany reference material:\n");
             knowledge.forEach(chunk -> context.append("[")
@@ -678,32 +704,55 @@ public class AiAssistantService {
         }
     }
 
-    private String buildContext(List<Invoice> invoices, List<Expense> expenses, List<Client> clients,
+    private String buildContext(BusinessProfile profile,
+                                List<Invoice> invoices, List<Expense> expenses, List<Client> clients,
                                 List<KnowledgeChunk> knowledge,
                                 long invoiceCount, long overdueCount, List<CurrencyAmount> collected,
                                 long expenseCount, List<CurrencyAmount> expenseTotal, long clientCount,
                                 boolean canReadInvoices, boolean canReadExpenses, boolean canReadClients) {
-        String invoiceRows = invoices.stream().limit(MAX_CONTEXT_RECORDS)
-                .map(invoice -> String.format(Locale.ROOT,
-                        "- %s | client: %s | status: %s | due: %s | collected: %s %s",
-                        safe(invoice.getInvoiceNumber()), safe(invoice.getClientName()),
-                        safe(invoice.getStatus()), safe(invoice.getDueDate()),
-                        safe(invoice.getCurrencyCode()), invoice.getAmountPaid()))
-                .collect(Collectors.joining("\n"));
-        String expenseRows = expenses.stream().limit(MAX_CONTEXT_RECORDS)
-                .map(expense -> String.format(Locale.ROOT,
-                        "- %s | category: %s | amount: %s %s | date: %s | vendor: %s",
-                        safe(expense.getTitle()), safe(expense.getCategory()),
-                        safe(expense.getCurrency()), expense.getAmount(),
-                        safe(expense.getDate()), safe(expense.getVendor())))
-                .collect(Collectors.joining("\n"));
-        String clientRows = clients.stream().limit(MAX_CONTEXT_RECORDS)
-                .map(client -> "- " + safe(client.getName()) + " | business: " + safe(client.getCompanyName()))
-                .collect(Collectors.joining("\n"));
-
         StringBuilder context = new StringBuilder(
                 "Authenticated company data (structured records retrieved live from the database):\n");
+
+        if (profile != null) {
+            context.append("Company Identity & Registered Business Information:\n")
+                    .append("- Business Name: ").append(safe(profile.getBusinessName()))
+                    .append(" | Legal Entity Name: ").append(safe(profile.getLegalName())).append("\n")
+                    .append("- Address: ").append(safe(profile.getAddress()))
+                    .append(" | Phone: ").append(safe(profile.getPhone()))
+                    .append(" | Email: ").append(safe(profile.getEmail()))
+                    .append(" | Website: ").append(safe(profile.getWebsite())).append("\n")
+                    .append("- GSTIN / Tax ID: ").append(safe(profile.getGstin() != null && !profile.getGstin().isBlank() ? profile.getGstin() : profile.getTaxId()))
+                    .append(" | PAN Number: ").append(safe(profile.getPanNumber()))
+                    .append(" | Place of Supply: ").append(safe(profile.getPlaceOfSupply())).append("\n")
+                    .append("- Bank Details: Bank: ").append(safe(profile.getBankName()))
+                    .append(" | A/C Holder: ").append(safe(profile.getAccountHolder()))
+                    .append(" | A/C Number: ").append(safe(profile.getAccountNumber()))
+                    .append(" | IFSC Code: ").append(safe(profile.getIfscCode()))
+                    .append(" | Routing/Swift: ").append(safe(profile.getRoutingNumber() != null && !profile.getRoutingNumber().isBlank() ? profile.getRoutingNumber() : profile.getSwiftBic()))
+                    .append(" | UPI ID: ").append(safe(profile.getUpiId()))
+                    .append(" | Payment Link: ").append(safe(profile.getPaymentLink())).append("\n")
+                    .append("- Billing Defaults: Currency: ").append(safe(profile.getDefaultCurrency()))
+                    .append(" (").append(safe(profile.getDefaultCurrencySymbol())).append(")")
+                    .append(" | Default Tax Rate: ").append(profile.getDefaultTaxRate()).append("% (").append(safe(profile.getDefaultTaxLabel())).append(")")
+                    .append(" | Payment Terms: ").append(safe(profile.getDefaultPaymentTerms()))
+                    .append(" | Authorized Signee: ").append(safe(profile.getSigneeName()))
+                    .append(" (").append(safe(profile.getSigneeTitle())).append(")\n\n");
+        }
+
+        context.append("Business Domain & Calculation Guidelines:\n")
+                .append("- Security Agency & Manpower Supply Domain:\n")
+                .append("  * Monthly Staff Salary Formula: (Net Salary / Month Calendar Days) * Duty Days * Staff Count.\n")
+                .append("    Example: for Net Salary 30,000, in a 30-day month with 21 duties, Salary = (30,000 / 30) * 21 = 21,000.\n")
+                .append("  * Reverse Charge Mechanism (RCM): For security guard / manpower supply provided to registered entities by non-corporates, GST is payable by the recipient under RCM (invoice tax is 0.00, marked as RCM Applicable).\n\n");
+
         if (canReadInvoices) {
+            String invoiceRows = invoices.stream().limit(MAX_CONTEXT_RECORDS)
+                    .map(invoice -> String.format(Locale.ROOT,
+                            "- %s | client: %s | status: %s | due: %s | collected: %s %s",
+                            safe(invoice.getInvoiceNumber()), safe(invoice.getClientName()),
+                            safe(invoice.getStatus()), safe(invoice.getDueDate()),
+                            safe(invoice.getCurrencyCode()), invoice.getAmountPaid()))
+                    .collect(Collectors.joining("\n"));
             context.append("Invoice summary: ").append(invoiceCount).append(" records, ")
                     .append(overdueCount).append(" overdue, collected total ")
                     .append(formatCurrencyTotals(collected)).append(".\n")
@@ -711,12 +760,22 @@ public class AiAssistantService {
                     .append(emptyAsNone(invoiceRows)).append('\n');
         }
         if (canReadExpenses) {
+            String expenseRows = expenses.stream().limit(MAX_CONTEXT_RECORDS)
+                    .map(expense -> String.format(Locale.ROOT,
+                            "- %s | category: %s | amount: %s %s | date: %s | vendor: %s",
+                            safe(expense.getTitle()), safe(expense.getCategory()),
+                            safe(expense.getCurrency()), expense.getAmount(),
+                            safe(expense.getDate()), safe(expense.getVendor())))
+                    .collect(Collectors.joining("\n"));
             context.append("Expense summary: ").append(expenseCount).append(" records, total ")
                     .append(formatCurrencyTotals(expenseTotal)).append(".\n")
                     .append("Recent expenses (up to ").append(MAX_CONTEXT_RECORDS).append("):\n")
                     .append(emptyAsNone(expenseRows)).append('\n');
         }
         if (canReadClients) {
+            String clientRows = clients.stream().limit(MAX_CONTEXT_RECORDS)
+                    .map(client -> "- " + safe(client.getName()) + " | business: " + safe(client.getCompanyName()))
+                    .collect(Collectors.joining("\n"));
             context.append("Client summary: ").append(clientCount).append(" records.\n")
                     .append("Clients (up to ").append(MAX_CONTEXT_RECORDS).append("):\n")
                     .append(emptyAsNone(clientRows)).append('\n');
@@ -741,12 +800,24 @@ public class AiAssistantService {
 
     private JsonNode callModel(String message, String context) {
         String instructions = """
-                You are InvoicelyAi, a careful business assistant. Return exactly one JSON object with
-                keys "type", "answer", and "arguments". Use type "ANSWER" for questions, explanations,
-                missing details, or unsupported requests; put the user-facing response in "answer" and
-                use an empty object for "arguments". For a clear request to prepare a new record, use
-                exactly one supported type: "CREATE_CLIENT", "CREATE_EXPENSE", or "CREATE_INVOICE";
-                put the proposed fields in "arguments" and a short explanation in "answer".
+                You are InvoicelyAi, an intelligent and trusted business assistant for the organization.
+                You have direct access to authenticated company data including the registered business
+                profile (legal name, GSTIN, PAN, bank details, UPI, address, signee), live invoices,
+                expenses, clients, and domain billing rules.
+
+                Answer questions about the company's registration, banking details, financial summaries,
+                clients, security/manpower salary calculations, and operations accurately.
+
+                For conversational or voice requests: provide direct, concise, natural responses that sound
+                clear when spoken aloud. Avoid dense markdown tables or repetitive bullet noise unless
+                specifically asked.
+
+                Return exactly one JSON object with keys "type", "answer", and "arguments". Use type "ANSWER"
+                for questions, explanations, company details, missing details, or unsupported requests; put
+                the user-facing response in "answer" and use an empty object for "arguments". For a clear
+                request to prepare a new record, use exactly one supported type: "CREATE_CLIENT",
+                "CREATE_EXPENSE", or "CREATE_INVOICE"; put the proposed fields in "arguments" and a short
+                explanation in "answer".
 
                 CREATE_CLIENT arguments: name (required); companyName, email, phone, address, taxId,
                 currency, paymentTerms, notes (optional).

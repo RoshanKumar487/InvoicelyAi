@@ -2,6 +2,8 @@ import 'dart:convert';
 import 'package:flutter/material.dart';
 
 import '../../data/invoice.dart';
+import '../../../../core/utils/amount_to_words.dart';
+import '../../../../core/utils/gst_tax_calculator.dart';
 import '../../../templates/data/template_config.dart';
 import 'invoice_preview_widgets.dart';
 
@@ -210,6 +212,26 @@ class InvoicePreviewA4Paper extends StatelessWidget {
         : (localSettings['paymentLink']?.toString().trim().isNotEmpty == true
             ? localSettings['paymentLink'].toString()
             : '');
+
+    final bizPlaceOfSupply = profile['placeOfSupply']?.toString().trim().isNotEmpty == true
+        ? profile['placeOfSupply'].toString()
+        : (localSettings['placeOfSupply']?.toString().trim().isNotEmpty == true
+            ? localSettings['placeOfSupply'].toString()
+            : '');
+    final isRcmActive = invoice.isRcm || localSettings['isRcmApplicable'] == true;
+    final gstResult = GstTaxCalculator.calculate(
+      taxableAmount: invoice.taxableAmount,
+      taxRate: invoice.taxRate,
+      taxLabel: invoice.taxLabel,
+      taxType: invoice.taxType,
+      isRcm: isRcmActive,
+      supplierPlaceOfSupply: bizPlaceOfSupply,
+      clientPlaceOfSupply: invoice.clientAddress,
+    );
+    final amountInWords = AmountToWords.convert(
+      invoice.balanceDue > 0 ? invoice.balanceDue : invoice.total,
+      currency: _currencySymbol,
+    );
 
     return Container(
       width: a4PaperWidth,
@@ -543,14 +565,20 @@ class InvoicePreviewA4Paper extends StatelessWidget {
                       value: '−${formatMoney(invoice.totalDiscount, _currencySymbol)}',
                     ),
                   if (template?.showTaxBreakdown != false && _show('showTax', fallback: true))
-                    if (invoice.isRcm || localSettings['isRcmApplicable'] == true)
+                    if (gstResult.isRcm)
                       const PreviewTotalLine(
                         label: 'Reverse Charge (RCM)',
                         value: 'Tax payable by recipient (0.00)',
                         bold: true,
                         color: Color(0xFF16A34A),
                       )
-                    else
+                    else if (gstResult.taxLines.isNotEmpty)
+                      for (final tl in gstResult.taxLines)
+                        PreviewTotalLine(
+                          label: tl.label,
+                          value: formatMoney(tl.amount, _currencySymbol),
+                        )
+                    else if (invoice.taxAmount > 0)
                       PreviewTotalLine(
                         label: _label('customTaxLabel', '${invoice.taxLabel} (${invoice.taxRate}%)'),
                         value: formatMoney(invoice.taxAmount, _currencySymbol),
@@ -602,6 +630,42 @@ class InvoicePreviewA4Paper extends StatelessWidget {
               ),
             ),
           ),
+
+          // TOTAL IN WORDS BANNER
+          if (amountInWords.isNotEmpty && _show('showAmountInWords', fallback: true)) ...[
+            const SizedBox(height: 12),
+            Container(
+              width: double.infinity,
+              padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
+              decoration: BoxDecoration(
+                color: const Color(0xFFF1F5F9),
+                borderRadius: BorderRadius.circular(6),
+                border: Border.all(color: const Color(0xFFCBD5E1), width: 0.8),
+              ),
+              child: Row(
+                children: [
+                  const Text(
+                    'Total in Words: ',
+                    style: TextStyle(
+                      fontSize: 11.5,
+                      fontWeight: FontWeight.bold,
+                      color: Color(0xFF1E293B),
+                    ),
+                  ),
+                  Expanded(
+                    child: Text(
+                      amountInWords,
+                      style: const TextStyle(
+                        fontSize: 11.5,
+                        fontStyle: FontStyle.italic,
+                        color: Color(0xFF334155),
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ],
 
           // -------------------------------------------------------------------
           // ROW: BANK & PAYMENT DETAILS + QR CODE (LEFT) & SIGNATURE / STAMP (RIGHT)
@@ -767,7 +831,7 @@ class InvoicePreviewA4Paper extends StatelessWidget {
                                     else
                                       InvoiceQrCodeWidget(
                                         data: upiId.isNotEmpty
-                                            ? 'upi://pay?pa=$upiId&pn=${Uri.encodeComponent(bizName.isNotEmpty ? bizName : "Merchant")}&am=${(invoice.balanceDue > 0 ? invoice.balanceDue : invoice.total).toStringAsFixed(2)}&cu=INR&tn=${Uri.encodeComponent("Invoice ${invoice.invoiceNumber}")}'
+                                            ? 'upi://pay?pa=$upiId&pn=${Uri.encodeComponent(bizName.isNotEmpty ? bizName : "Merchant")}&am=${(invoice.balanceDue > 0 ? invoice.balanceDue : invoice.total).toStringAsFixed(2)}&cu=INR&tn=${Uri.encodeComponent("Invoice ${invoice.invoiceNumber}")}&tr=${Uri.encodeComponent(invoice.invoiceNumber)}'
                                             : paymentLink,
                                         size: 92,
                                       ),
