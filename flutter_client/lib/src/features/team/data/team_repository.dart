@@ -37,4 +37,18 @@ class TeamRepository {
       <String, Object?>{'permissions': permissions.join(',')},
     );
   }
+
+  Future<void> updateRole({
+    required int employeeId,
+    required String role,
+    Set<String>? permissions,
+  }) async {
+    await _apiClient.putJson(
+      'api/v1/companies/employees/$employeeId/role',
+      <String, Object?>{
+        'role': role,
+        if (permissions != null) 'permissions': permissions.join(','),
+      },
+    );
+  }
 }

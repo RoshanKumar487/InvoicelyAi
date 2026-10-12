@@ -470,6 +470,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
                         EmailTemplatesTab(
                           apiClient: widget.apiClient,
                           profile: _profile,
+                          localPreferences: widget.localPreferences,
                         ),
                       ],
                     ),

@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 
 import '../../../core/api/api_exception.dart';
 import '../../../shared/widgets/app_card.dart';
+import '../../../shared/widgets/enterprise_data_view.dart';
 import '../../../shared/widgets/offline_cache_banner.dart';
 import '../../../theme/app_theme.dart';
 import '../data/client.dart';
@@ -87,7 +88,7 @@ class _ClientsScreenState extends State<ClientsScreen> {
   Future<void> _createClient() async {
     final client = await showDialog<Client>(
       context: context,
-      builder: (context) => const _ClientEditorDialog(),
+      builder: (context) => const ClientEditorDialog(),
     );
     if (client == null || !mounted) return;
     try {
@@ -105,7 +106,7 @@ class _ClientsScreenState extends State<ClientsScreen> {
   Future<void> _editClient(Client client) async {
     final updated = await showDialog<Client>(
       context: context,
-      builder: (context) => _ClientEditorDialog(client: client),
+      builder: (context) => ClientEditorDialog(client: client),
     );
     if (updated == null || !mounted) return;
     try {
@@ -185,42 +186,15 @@ class _ClientsScreenState extends State<ClientsScreen> {
         icon: const Icon(Icons.person_add_alt_1),
         label: const Text('Add client'),
       ),
-      body: Center(
-        child: ConstrainedBox(
-          constraints: const BoxConstraints(maxWidth: 1050),
-          child: RefreshIndicator(
+      body: LayoutBuilder(
+        builder: (context, constraints) {
+          final horizontalPadding = constraints.maxWidth > 900 ? 24.0 : 20.0;
+          return RefreshIndicator(
             onRefresh: _loadClients,
             child: ListView(
-              padding: const EdgeInsets.fromLTRB(20, 8, 20, 100),
+              padding: EdgeInsets.fromLTRB(horizontalPadding, 8, horizontalPadding, 100),
               children: [
                 if (_usingCachedData) const OfflineCacheBanner(),
-                Text(
-                  'Keep your customer details and billing preferences in one place.',
-                  style: Theme.of(context).textTheme.bodyLarge?.copyWith(
-                        color: AppColors.muted,
-                      ),
-                ),
-                const SizedBox(height: 18),
-                TextField(
-                  controller: _searchController,
-                  onChanged: _onSearchChanged,
-                  textInputAction: TextInputAction.search,
-                  decoration: InputDecoration(
-                    hintText: 'Search name, company or email',
-                    prefixIcon: const Icon(Icons.search),
-                    suffixIcon: _searchController.text.isEmpty
-                        ? null
-                        : IconButton(
-                            tooltip: 'Clear search',
-                            onPressed: () {
-                              _searchController.clear();
-                              _onSearchChanged('');
-                            },
-                            icon: const Icon(Icons.close),
-                          ),
-                  ),
-                ),
-                const SizedBox(height: 18),
                 if (_error != null) ...[
                   _ErrorPanel(message: _error!, onRetry: _loadClients),
                   const SizedBox(height: 16),
@@ -230,50 +204,122 @@ class _ClientsScreenState extends State<ClientsScreen> {
                     padding: EdgeInsets.all(48),
                     child: Center(child: CircularProgressIndicator()),
                   )
-                else if (!_isLoading && _clients.isEmpty && _error == null)
-                  _EmptyPanel(
-                    hasSearch: _searchController.text.trim().isNotEmpty,
-                    onAdd: _createClient,
-                    onClear: () {
-                      _searchController.clear();
-                      _loadClients();
-                    },
-                  )
-                else ...[
-                  Row(
-                    children: [
-                      Text(
-                        '${_clients.length} ${_clients.length == 1 ? 'client' : 'clients'}',
-                        style: Theme.of(context)
-                            .textTheme
-                            .titleMedium
-                            ?.copyWith(fontWeight: FontWeight.w700),
-                      ),
-                      const Spacer(),
-                      if (_isLoading)
-                        const SizedBox(
-                          width: 18,
-                          height: 18,
-                          child: CircularProgressIndicator(strokeWidth: 2),
-                        ),
-                    ],
-                  ),
-                  const SizedBox(height: 12),
-                  for (final client in _clients) ...[
-                    _ClientCard(
+                else
+                  EnterpriseDataView<Client>(
+                    items: _clients,
+                    headerTitle: 'Client Directory',
+                    searchController: _searchController,
+                    onSearchChanged: _onSearchChanged,
+                    searchHint: 'Search name, company or email...',
+                    groupBy: (client) =>
+                        client.companyName.isNotEmpty ? client.companyName : 'Individual Clients',
+                    groupLabelBuilder: (comp, items) =>
+                        '$comp (${items.length} ${items.length == 1 ? "contact" : "contacts"})',
+                    emptyWidget: _EmptyPanel(
+                      hasSearch: _searchController.text.trim().isNotEmpty,
+                      onAdd: _createClient,
+                      onClear: () {
+                        _searchController.clear();
+                        _loadClients();
+                      },
+                    ),
+                    cardBuilder: (context, client) => _ClientCard(
                       client: client,
                       onEdit: () => _editClient(client),
                       onDelete: () => _deleteClient(client),
                     ),
-                    const SizedBox(height: 12),
-                  ],
-                ],
+                    columns: _clientTableColumns(),
+                  ),
               ],
             ),
-          ),
-        ),
+          );
+        },
       ),
     );
+  }
+
+  List<EnterpriseTableColumn<Client>> _clientTableColumns() {
+    return [
+      EnterpriseTableColumn<Client>(
+        title: 'Client / Company',
+        width: 200,
+        cellBuilder: (ctx, client) => Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            CircleAvatar(
+              radius: 14,
+              backgroundColor: const Color(0xFFEFF6FF),
+              foregroundColor: const Color(0xFF1D4ED8),
+              child: Text(
+                client.name.isNotEmpty ? client.name[0].toUpperCase() : 'C',
+                style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 11),
+              ),
+            ),
+            const SizedBox(width: 8),
+            Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                Text(client.name, style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 13)),
+                if (client.companyName.isNotEmpty)
+                  Text(client.companyName, style: const TextStyle(fontSize: 11, color: AppColors.muted)),
+              ],
+            ),
+          ],
+        ),
+      ),
+      EnterpriseTableColumn<Client>(
+        title: 'Email',
+        width: 180,
+        cellBuilder: (ctx, client) => Text(
+          client.email.isNotEmpty ? client.email : '—',
+          style: const TextStyle(fontSize: 12),
+        ),
+      ),
+      EnterpriseTableColumn<Client>(
+        title: 'Phone',
+        width: 140,
+        cellBuilder: (ctx, client) => Text(
+          client.phone.isNotEmpty ? client.phone : '—',
+          style: const TextStyle(fontSize: 12),
+        ),
+      ),
+      EnterpriseTableColumn<Client>(
+        title: 'Currency',
+        width: 100,
+        cellBuilder: (ctx, client) => Text(
+          client.preferredCurrency.isNotEmpty ? client.preferredCurrency : 'INR',
+          style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w600),
+        ),
+      ),
+      EnterpriseTableColumn<Client>(
+        title: 'Payment Terms',
+        width: 130,
+        cellBuilder: (ctx, client) => Text(
+          client.defaultPaymentTerms.isNotEmpty ? client.defaultPaymentTerms : 'Immediate',
+          style: const TextStyle(fontSize: 12),
+        ),
+      ),
+      EnterpriseTableColumn<Client>(
+        title: 'Actions',
+        width: 110,
+        cellBuilder: (ctx, client) => Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            IconButton(
+              tooltip: 'Edit Client',
+              icon: const Icon(Icons.edit_outlined, size: 18),
+              onPressed: () => _editClient(client),
+            ),
+            IconButton(
+              tooltip: 'Delete Client',
+              icon: const Icon(Icons.delete_outline, size: 18, color: Colors.red),
+              onPressed: () => _deleteClient(client),
+            ),
+          ],
+        ),
+      ),
+    ];
   }
 }
 
@@ -418,16 +464,16 @@ class _ClientDetail extends StatelessWidget {
       );
 }
 
-class _ClientEditorDialog extends StatefulWidget {
-  const _ClientEditorDialog({this.client});
+class ClientEditorDialog extends StatefulWidget {
+  const ClientEditorDialog({this.client, super.key});
 
   final Client? client;
 
   @override
-  State<_ClientEditorDialog> createState() => _ClientEditorDialogState();
+  State<ClientEditorDialog> createState() => _ClientEditorDialogState();
 }
 
-class _ClientEditorDialogState extends State<_ClientEditorDialog> {
+class _ClientEditorDialogState extends State<ClientEditorDialog> {
   final _formKey = GlobalKey<FormState>();
   late final TextEditingController _name;
   late final TextEditingController _company;

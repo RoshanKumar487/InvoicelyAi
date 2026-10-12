@@ -24,6 +24,7 @@ class AuthSession {
 
 class UserSummary {
   const UserSummary({
+    this.id,
     required this.fullName,
     required this.email,
     required this.role,
@@ -33,6 +34,7 @@ class UserSummary {
     this.permissions = 'INVOICES,EXPENSES,CLIENTS,REPORTS',
   });
 
+  final int? id;
   final String fullName;
   final String email;
   final String role;
@@ -42,6 +44,7 @@ class UserSummary {
   final String permissions;
 
   factory UserSummary.fromJson(Map<String, dynamic> json) => UserSummary(
+        id: (json['id'] as num?)?.toInt(),
         fullName: json['fullName'] as String? ?? '',
         email: json['email'] as String? ?? '',
         role: json['role'] as String? ?? 'EMPLOYEE',

@@ -134,6 +134,12 @@ public class ExpenseService {
         existing.setTaxAmount(updated.getTaxAmount());
         existing.setReceiptImageUri(updated.getReceiptImageUri());
         existing.setNotes(updated.getNotes());
+        if (updated.getStatus() != null && !updated.getStatus().isBlank()) {
+            existing.setStatus(updated.getStatus());
+        }
+        if (updated.getDueDate() != null) {
+            existing.setDueDate(updated.getDueDate());
+        }
         return expenseRepository.save(existing);
     }
 

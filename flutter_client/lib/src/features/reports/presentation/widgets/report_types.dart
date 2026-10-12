@@ -77,6 +77,7 @@ String creatorNameFromRow(Map<String, dynamic> row) {
 double calculateInvoiceTotal(Map<String, dynamic> invoice) {
   final explicit = invoice['total'] ?? invoice['grandTotal'];
   if (explicit != null) return reportNumber(explicit);
+  if (invoice.containsKey('amount')) return reportNumber(invoice['amount']);
   final items = invoice['itemsJson'];
   Object? decodedItems = items;
   if (items is String && items.isNotEmpty) {
@@ -114,6 +115,17 @@ double calculateInvoiceTotal(Map<String, dynamic> invoice) {
           reportNumber(invoice['roundOff']))
       .clamp(0, double.infinity)
       .toDouble();
+}
+
+double rowEffectiveAmount(Map<String, dynamic> row) {
+  final type = rowRecordType(row);
+  if (type == 'EXPENSE') {
+    return reportNumber(row['amount'] ?? row['totalAmount']);
+  }
+  if (type == 'INVOICE') {
+    return calculateInvoiceTotal(row);
+  }
+  return 0.0;
 }
 
 String statusLabelFromRow(Map<String, dynamic> row) {

@@ -149,6 +149,8 @@ class Invoice {
     this.templateId = 'modern',
     this.createdAt,
     this.paidDate,
+    this.createdByUserId,
+    this.createdByUserName = '',
   });
 
   final int? id;
@@ -186,6 +188,8 @@ class Invoice {
   final String templateId;
   final int? createdAt;
   final int? paidDate;
+  final int? createdByUserId;
+  final String createdByUserName;
 
   double get subtotal =>
       items.fold<double>(0, (sum, item) => sum + item.grossLineAmount);
@@ -271,6 +275,8 @@ class Invoice {
       templateId: _string(json['templateId'], fallback: 'modern'),
       createdAt: _integer(json['createdAt']),
       paidDate: _integer(json['paidDate']),
+      createdByUserId: _integer(json['createdByUserId']),
+      createdByUserName: _string(json['createdByUserName']),
     );
   }
 
@@ -310,6 +316,8 @@ class Invoice {
         'templateId': templateId,
         if (createdAt != null) 'createdAt': createdAt,
         if (paidDate != null) 'paidDate': paidDate,
+        if (createdByUserId != null) 'createdByUserId': createdByUserId,
+        if (createdByUserName.isNotEmpty) 'createdByUserName': createdByUserName,
       };
 
   Invoice copyWith({

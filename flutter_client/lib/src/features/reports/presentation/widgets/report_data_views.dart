@@ -227,8 +227,8 @@ class ReportEnterpriseDataGrid extends StatefulWidget {
     required this.onChangeStatus,
     required this.onViewDetails,
     required this.formatCurrency,
-    this.initialIsGrouped = true, // "fist show it as row grouped!"
-    this.pageSize = 20, // "keep 20 items in one pages!"
+    this.initialIsGrouped = false, // Classical flat table view by default
+    this.pageSize = 20,
   });
 
   final ReportType reportType;
@@ -252,16 +252,18 @@ class ReportEnterpriseDataGrid extends StatefulWidget {
 }
 
 class _ReportEnterpriseDataGridState extends State<ReportEnterpriseDataGrid> {
-  late bool _isGrouped;
-  bool _isGridView = false;
+  bool? _userSelectedGrouped;
+  bool? _userSelectedGridView;
   late int _pageSize;
   int _currentPage = 0;
   final Map<String, bool> _expandedCompanies = {};
 
+  bool get _isGridView => _userSelectedGridView ?? (MediaQuery.sizeOf(context).width < 700);
+  bool get _isGrouped => _userSelectedGrouped ?? widget.initialIsGrouped;
+
   @override
   void initState() {
     super.initState();
-    _isGrouped = widget.initialIsGrouped;
     _pageSize = widget.pageSize;
   }
 
@@ -428,38 +430,57 @@ class _ReportEnterpriseDataGridState extends State<ReportEnterpriseDataGrid> {
         spacing: 12,
         runSpacing: 8,
         children: [
-          Row(
-            mainAxisSize: MainAxisSize.min,
+          Wrap(
+            spacing: 8,
+            runSpacing: 6,
+            crossAxisAlignment: WrapCrossAlignment.center,
             children: [
-              OutlinedButton.icon(
-                onPressed: () {
-                  setState(() => _isGrouped = !_isGrouped);
-                },
-                style: OutlinedButton.styleFrom(
-                  backgroundColor:
-                      _isGrouped ? const Color(0xFFF1F5F9) : Colors.white,
-                  foregroundColor:
-                      _isGrouped ? const Color(0xFF0F172A) : const Color(0xFF475569),
-                  side: BorderSide(
-                    color: _isGrouped
-                        ? const Color(0xFF94A3B8)
-                        : const Color(0xFFCBD5E1),
-                  ),
-                  padding:
-                      const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
-                  minimumSize: const Size(0, 34),
+              // 3-way Segmented View Mode Switcher
+              Container(
+                decoration: BoxDecoration(
+                  color: const Color(0xFFE2E8F0),
+                  borderRadius: BorderRadius.circular(8),
                 ),
-                icon: Icon(
-                  _isGrouped ? Icons.folder_copy_rounded : Icons.view_headline_rounded,
-                  size: 16,
-                ),
-                label: Text(
-                  _isGrouped ? 'Grouped by Company' : 'Flat List View',
-                  style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w600),
+                padding: const EdgeInsets.all(2),
+                child: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    _buildModeChip(
+                      icon: Icons.table_chart_rounded,
+                      label: 'Table',
+                      selected: !_isGridView && !_isGrouped,
+                      onTap: () {
+                        setState(() {
+                          _userSelectedGridView = false;
+                          _userSelectedGrouped = false;
+                        });
+                      },
+                    ),
+                    _buildModeChip(
+                      icon: Icons.folder_copy_rounded,
+                      label: 'Grouped',
+                      selected: !_isGridView && _isGrouped,
+                      onTap: () {
+                        setState(() {
+                          _userSelectedGridView = false;
+                          _userSelectedGrouped = true;
+                        });
+                      },
+                    ),
+                    _buildModeChip(
+                      icon: Icons.grid_view_rounded,
+                      label: 'Cards',
+                      selected: _isGridView,
+                      onTap: () {
+                        setState(() {
+                          _userSelectedGridView = true;
+                        });
+                      },
+                    ),
+                  ],
                 ),
               ),
-              if (_isGrouped) ...[
-                const SizedBox(width: 8),
+              if (_isGrouped && !_isGridView) ...[
                 TextButton.icon(
                   onPressed: () => _expandAll(allCompanies),
                   style: TextButton.styleFrom(
@@ -481,80 +502,69 @@ class _ReportEnterpriseDataGridState extends State<ReportEnterpriseDataGrid> {
               ],
             ],
           ),
-          Row(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              // Table vs Grid View switch
-              Container(
-                decoration: BoxDecoration(
-                  color: const Color(0xFFE2E8F0),
-                  borderRadius: BorderRadius.circular(8),
-                ),
-                padding: const EdgeInsets.all(2),
-                child: Row(
-                  children: [
-                    _buildViewModeButton(
-                      icon: Icons.table_chart_rounded,
-                      tooltip: 'Table view',
-                      selected: !_isGridView,
-                      onTap: () => setState(() => _isGridView = false),
-                    ),
-                    _buildViewModeButton(
-                      icon: Icons.grid_view_rounded,
-                      tooltip: 'Grid cards view',
-                      selected: _isGridView,
-                      onTap: () => setState(() => _isGridView = true),
-                    ),
-                  ],
-                ),
+          Container(
+            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
+            decoration: BoxDecoration(
+              color: Colors.white,
+              borderRadius: BorderRadius.circular(8),
+              border: Border.all(color: const Color(0xFFCBD5E1)),
+            ),
+            child: Text(
+              'Showing $currentCount of $totalCount',
+              style: const TextStyle(
+                fontSize: 11,
+                color: Color(0xFF475569),
+                fontWeight: FontWeight.w600,
               ),
-              const SizedBox(width: 12),
-              Text(
-                'Showing $currentCount of $totalCount',
-                style: const TextStyle(
-                  fontSize: 12,
-                  color: Color(0xFF64748B),
-                  fontWeight: FontWeight.w600,
-                ),
-              ),
-            ],
+            ),
           ),
         ],
       ),
     );
   }
 
-  Widget _buildViewModeButton({
+  Widget _buildModeChip({
     required IconData icon,
-    required String tooltip,
+    required String label,
     required bool selected,
     required VoidCallback onTap,
   }) {
-    return Tooltip(
-      message: tooltip,
-      child: InkWell(
-        onTap: onTap,
-        borderRadius: BorderRadius.circular(6),
-        child: Container(
-          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-          decoration: BoxDecoration(
-            color: selected ? Colors.white : Colors.transparent,
-            borderRadius: BorderRadius.circular(6),
-            boxShadow: selected
-                ? const [
-                    BoxShadow(
-                      color: Color(0x10000000),
-                      blurRadius: 4,
-                      offset: Offset(0, 1),
-                    )
-                  ]
-                : null,
-          ),
-          child: Icon(
-            icon,
-            size: 16,
-            color: selected ? const Color(0xFF0F172A) : const Color(0xFF64748B),
-          ),
+    return InkWell(
+      onTap: onTap,
+      borderRadius: BorderRadius.circular(6),
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 5),
+        decoration: BoxDecoration(
+          color: selected ? Colors.white : Colors.transparent,
+          borderRadius: BorderRadius.circular(6),
+          boxShadow: selected
+              ? const [
+                  BoxShadow(
+                    color: Color(0x10000000),
+                    blurRadius: 3,
+                    offset: Offset(0, 1),
+                  )
+                ]
+              : null,
+        ),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Icon(
+              icon,
+              size: 14,
+              color: selected ? const Color(0xFF0F172A) : const Color(0xFF64748B),
+            ),
+            const SizedBox(width: 5),
+            Text(
+              label,
+              style: TextStyle(
+                fontSize: 11,
+                fontWeight: selected ? FontWeight.w700 : FontWeight.w500,
+                color: selected ? const Color(0xFF0F172A) : const Color(0xFF64748B),
+              ),
+            ),
+          ],
         ),
       ),
     );
@@ -671,13 +681,15 @@ class _ReportEnterpriseDataGridState extends State<ReportEnterpriseDataGrid> {
   ];
 
   static const List<ReportColumn> _allColumns = [
-    ReportColumn(id: 'type', title: 'Type', width: 110),
-    ReportColumn(id: 'ref', title: 'Reference / Title', width: 160),
-    ReportColumn(id: 'party', title: 'Party / Company', width: 210),
-    ReportColumn(id: 'date', title: 'Record Date', width: 120),
-    ReportColumn(id: 'amount', title: 'Total Value', width: 140, alignRight: true),
-    ReportColumn(id: 'status', title: 'Status', width: 130),
-    ReportColumn(id: 'action', title: 'Action', width: 70, alignRight: true),
+    ReportColumn(id: 'date', title: 'Record Date', width: 110),
+    ReportColumn(id: 'ref', title: 'Reference / Voucher', width: 150),
+    ReportColumn(id: 'party', title: 'Particulars / Account', width: 200),
+    ReportColumn(id: 'type', title: 'Type', width: 95),
+    ReportColumn(id: 'debit', title: 'Debit (Dr)', width: 120, alignRight: true),
+    ReportColumn(id: 'credit', title: 'Credit (Cr)', width: 120, alignRight: true),
+    ReportColumn(id: 'amount', title: 'Net Value', width: 125, alignRight: true),
+    ReportColumn(id: 'status', title: 'Status', width: 120),
+    ReportColumn(id: 'action', title: 'Action', width: 65, alignRight: true),
   ];
 
   List<ReportColumn> get _columns => switch (widget.reportType) {
@@ -704,6 +716,7 @@ class _ReportEnterpriseDataGridState extends State<ReportEnterpriseDataGrid> {
 
     return SingleChildScrollView(
       scrollDirection: Axis.horizontal,
+      physics: const BouncingScrollPhysics(),
       child: SizedBox(
         width: totalWidth,
         child: Column(
@@ -712,14 +725,17 @@ class _ReportEnterpriseDataGridState extends State<ReportEnterpriseDataGrid> {
             // Table Header Row dynamically built from record columns
             _buildHeaderRow(columns, allPageSelected, somePageSelected, allPageIds),
 
-            // Rows (Grouped or Flat)
+            // Rows (Grouped or Flat with classical zebra striping!)
             if (_isGrouped) ...[
               for (final entry in pageGrouped.entries)
                 _buildCompanyGroupSection(entry.key, entry.value, columns),
             ] else ...[
-              for (final row in pageRows)
-                _buildDataTableRow(row, columns, isNested: false),
+              for (var i = 0; i < pageRows.length; i++)
+                _buildDataTableRow(pageRows[i], columns, isNested: false, rowIndex: i),
             ],
+
+            // Classical Ledger Totals Summary Row at the bottom
+            _buildTableTotalsRow(columns, pageRows),
           ],
         ),
       ),
@@ -733,12 +749,12 @@ class _ReportEnterpriseDataGridState extends State<ReportEnterpriseDataGrid> {
     List<String> allPageIds,
   ) {
     return Container(
-      height: 46,
+      height: 44,
       padding: const EdgeInsets.symmetric(horizontal: 14),
       decoration: const BoxDecoration(
-        color: Color(0xFFFAFAFA),
+        color: Color(0xFFF1F5F9),
         border: Border(
-          bottom: BorderSide(color: Color(0xFFE2E8F0), width: 1.5),
+          bottom: BorderSide(color: Color(0xFFCBD5E1), width: 1.5),
         ),
       ),
       child: Row(
@@ -770,16 +786,133 @@ class _ReportEnterpriseDataGridState extends State<ReportEnterpriseDataGrid> {
     return SizedBox(
       width: width,
       child: Text(
-        title,
+        title.toUpperCase(),
         textAlign: alignRight ? TextAlign.end : TextAlign.start,
         style: const TextStyle(
-          fontSize: 12,
+          fontSize: 11,
           fontWeight: FontWeight.w700,
-          color: Color(0xFF475569),
-          letterSpacing: 0.1,
+          color: Color(0xFF334155),
+          letterSpacing: 0.4,
         ),
       ),
     );
+  }
+
+  Widget _buildTableTotalsRow(
+    List<ReportColumn> columns,
+    List<Map<String, dynamic>> rows,
+  ) {
+    var totalDr = 0.0;
+    var totalCr = 0.0;
+    var totalNet = 0.0;
+    var totalTax = 0.0;
+
+    for (final r in rows) {
+      final type = rowRecordType(r);
+      final eff = rowEffectiveAmount(r);
+      totalTax += reportNumber(r['taxAmount']);
+      if (type == 'EXPENSE') {
+        totalDr += eff;
+        totalNet -= eff;
+      } else if (type == 'INVOICE') {
+        totalCr += eff;
+        totalNet += eff;
+      }
+    }
+
+    return Container(
+      height: 46,
+      padding: const EdgeInsets.symmetric(horizontal: 14),
+      decoration: const BoxDecoration(
+        color: Color(0xFFF8FAFC),
+        border: Border(
+          top: BorderSide(color: Color(0xFFCBD5E1), width: 1.5),
+          bottom: BorderSide(color: Color(0xFFCBD5E1), width: 1.0),
+        ),
+      ),
+      child: Row(
+        children: [
+          const SizedBox(
+            width: _colCheckboxWidth,
+            child: Icon(Icons.calculate_outlined, size: 16, color: Color(0xFF64748B)),
+          ),
+          for (final col in columns)
+            SizedBox(
+              width: col.width,
+              child: _buildTotalsCell(col, totalDr, totalCr, totalNet, totalTax, rows.length),
+            ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildTotalsCell(
+    ReportColumn col,
+    double totalDr,
+    double totalCr,
+    double totalNet,
+    double totalTax,
+    int count,
+  ) {
+    switch (col.id) {
+      case 'date':
+      case 'invoiceNum':
+      case 'title':
+      case 'name':
+      case 'ref':
+        return Text(
+          'TOTALS ($count items)',
+          style: const TextStyle(
+            fontSize: 11,
+            fontWeight: FontWeight.w800,
+            color: Color(0xFF1E293B),
+            letterSpacing: 0.2,
+          ),
+        );
+      case 'debit':
+        return totalDr > 0
+            ? Text(
+                widget.formatCurrency(totalDr),
+                textAlign: TextAlign.end,
+                style: const TextStyle(
+                  fontSize: 12,
+                  fontWeight: FontWeight.w800,
+                  color: Color(0xFFDC2626),
+                ),
+              )
+            : const Text('—', textAlign: TextAlign.end, style: TextStyle(color: Color(0xFF94A3B8)));
+      case 'credit':
+        return totalCr > 0
+            ? Text(
+                widget.formatCurrency(totalCr),
+                textAlign: TextAlign.end,
+                style: const TextStyle(
+                  fontSize: 12,
+                  fontWeight: FontWeight.w800,
+                  color: Color(0xFF16A34A),
+                ),
+              )
+            : const Text('—', textAlign: TextAlign.end, style: TextStyle(color: Color(0xFF94A3B8)));
+      case 'amount':
+        return Text(
+          widget.formatCurrency(totalNet),
+          textAlign: TextAlign.end,
+          style: TextStyle(
+            fontSize: 13,
+            fontWeight: FontWeight.w900,
+            color: totalNet >= 0 ? const Color(0xFF0F172A) : const Color(0xFFDC2626),
+          ),
+        );
+      case 'tax':
+        return totalTax > 0
+            ? Text(
+                widget.formatCurrency(totalTax),
+                style: const TextStyle(fontSize: 11, fontWeight: FontWeight.w700, color: Color(0xFF475569)),
+              )
+            : const Text('—', style: TextStyle(color: Color(0xFF94A3B8)));
+      default:
+        return const SizedBox.shrink();
+    }
   }
 
   Widget _buildCompanyGroupSection(
@@ -914,8 +1047,8 @@ class _ReportEnterpriseDataGridState extends State<ReportEnterpriseDataGrid> {
 
         // Child Rows
         if (isExpanded)
-          for (final row in items)
-            _buildDataTableRow(row, columns, isNested: true),
+          for (var i = 0; i < items.length; i++)
+            _buildDataTableRow(items[i], columns, isNested: true, rowIndex: i),
       ],
     );
   }
@@ -924,22 +1057,32 @@ class _ReportEnterpriseDataGridState extends State<ReportEnterpriseDataGrid> {
     Map<String, dynamic> row,
     List<ReportColumn> columns, {
     required bool isNested,
+    int rowIndex = 0,
   }) {
     final id = rowRecordId(row);
     final isSelected = widget.selectedIds.contains(id);
+    final isEven = (rowIndex % 2 == 0);
+
+    final rowColor = isSelected
+        ? const Color(0xFFEFF6FF)
+        : (isNested
+            ? (isEven ? const Color(0xFFFAFAFA) : const Color(0xFFF1F5F9))
+            : (isEven ? Colors.white : const Color(0xFFF8FAFC)));
 
     return Material(
-      color: isSelected
-          ? const Color(0xFFF8FAFC)
-          : (isNested ? const Color(0xFFFAFAFA) : Colors.white),
+      color: rowColor,
       child: InkWell(
         onTap: () => widget.onToggleSelect(id),
+        hoverColor: const Color(0xFFF1F5F9),
         child: Container(
-          height: 56,
+          height: 52,
           padding: const EdgeInsets.symmetric(horizontal: 14),
-          decoration: const BoxDecoration(
+          decoration: BoxDecoration(
             border: Border(
-              bottom: BorderSide(color: Color(0xFFF1F5F9), width: 1),
+              bottom: const BorderSide(color: Color(0xFFE2E8F0), width: 0.8),
+              left: isSelected
+                  ? const BorderSide(color: Color(0xFF0284C7), width: 3.5)
+                  : BorderSide.none,
             ),
           ),
           child: Row(
@@ -1063,14 +1206,16 @@ class _ReportEnterpriseDataGridState extends State<ReportEnterpriseDataGrid> {
         );
 
       case 'amount':
+        final effAmount = rowEffectiveAmount(row);
+        final isExp = rowRecordType(row) == 'EXPENSE';
         return Text(
-          widget.formatCurrency(total),
+          '${isExp ? '-' : ''}${widget.formatCurrency(effAmount)}',
           textAlign: TextAlign.end,
           overflow: TextOverflow.ellipsis,
-          style: const TextStyle(
+          style: TextStyle(
             fontSize: 13,
             fontWeight: FontWeight.w700,
-            color: Color(0xFF0F172A),
+            color: isExp ? const Color(0xFFDC2626) : const Color(0xFF0F172A),
           ),
         );
 
@@ -1256,6 +1401,38 @@ class _ReportEnterpriseDataGridState extends State<ReportEnterpriseDataGrid> {
           formatReportDate(rowCreatedDateTime(row)),
           overflow: TextOverflow.ellipsis,
           style: const TextStyle(fontSize: 12, color: Color(0xFF334155)),
+        );
+
+      case 'debit':
+        final isExp = rowRecordType(row) == 'EXPENSE';
+        final effAmount = rowEffectiveAmount(row);
+        return Align(
+          alignment: Alignment.centerRight,
+          child: Text(
+            isExp ? widget.formatCurrency(effAmount) : '—',
+            overflow: TextOverflow.ellipsis,
+            style: TextStyle(
+              fontSize: 12,
+              fontWeight: isExp ? FontWeight.w700 : FontWeight.normal,
+              color: isExp ? const Color(0xFFDC2626) : const Color(0xFF94A3B8),
+            ),
+          ),
+        );
+
+      case 'credit':
+        final isInv = rowRecordType(row) == 'INVOICE';
+        final effAmount = rowEffectiveAmount(row);
+        return Align(
+          alignment: Alignment.centerRight,
+          child: Text(
+            isInv ? widget.formatCurrency(effAmount) : '—',
+            overflow: TextOverflow.ellipsis,
+            style: TextStyle(
+              fontSize: 12,
+              fontWeight: isInv ? FontWeight.w700 : FontWeight.normal,
+              color: isInv ? const Color(0xFF16A34A) : const Color(0xFF94A3B8),
+            ),
+          ),
         );
 
       case 'type':
@@ -1884,34 +2061,40 @@ class _ReportEnterpriseDataGridState extends State<ReportEnterpriseDataGrid> {
         spacing: 16,
         runSpacing: 10,
         children: [
-          Row(
-            mainAxisSize: MainAxisSize.min,
+          Wrap(
+            crossAxisAlignment: WrapCrossAlignment.center,
+            spacing: 12,
+            runSpacing: 6,
             children: [
-              const Text(
-                'Rows per page:',
-                style: TextStyle(fontSize: 12, color: Color(0xFF64748B)),
-              ),
-              const SizedBox(width: 8),
-              DropdownButton<int>(
-                value: _pageSize,
-                isDense: true,
-                underline: const SizedBox.shrink(),
-                items: const [
-                  DropdownMenuItem(value: 10, child: Text('10', style: TextStyle(fontSize: 12))),
-                  DropdownMenuItem(value: 20, child: Text('20', style: TextStyle(fontSize: 12))),
-                  DropdownMenuItem(value: 50, child: Text('50', style: TextStyle(fontSize: 12))),
-                  DropdownMenuItem(value: 100, child: Text('100', style: TextStyle(fontSize: 12))),
+              Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  const Text(
+                    'Rows per page:',
+                    style: TextStyle(fontSize: 12, color: Color(0xFF64748B)),
+                  ),
+                  const SizedBox(width: 8),
+                  DropdownButton<int>(
+                    value: _pageSize,
+                    isDense: true,
+                    underline: const SizedBox.shrink(),
+                    items: const [
+                      DropdownMenuItem(value: 10, child: Text('10', style: TextStyle(fontSize: 12))),
+                      DropdownMenuItem(value: 20, child: Text('20', style: TextStyle(fontSize: 12))),
+                      DropdownMenuItem(value: 50, child: Text('50', style: TextStyle(fontSize: 12))),
+                      DropdownMenuItem(value: 100, child: Text('100', style: TextStyle(fontSize: 12))),
+                    ],
+                    onChanged: (val) {
+                      if (val != null) {
+                        setState(() {
+                          _pageSize = val;
+                          _currentPage = 0;
+                        });
+                      }
+                    },
+                  ),
                 ],
-                onChanged: (val) {
-                  if (val != null) {
-                    setState(() {
-                      _pageSize = val;
-                      _currentPage = 0;
-                    });
-                  }
-                },
               ),
-              const SizedBox(width: 16),
               Text(
                 'Showing ${startIndex + 1} to $endIndex of $totalRowsCount records',
                 style: const TextStyle(
@@ -1923,62 +2106,65 @@ class _ReportEnterpriseDataGridState extends State<ReportEnterpriseDataGrid> {
             ],
           ),
 
-          // Page Buttons
-          Row(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              IconButton(
-                icon: const Icon(Icons.first_page_rounded, size: 18),
-                tooltip: 'First page',
-                onPressed: _currentPage > 0 ? () => setState(() => _currentPage = 0) : null,
-              ),
-              IconButton(
-                icon: const Icon(Icons.chevron_left_rounded, size: 20),
-                tooltip: 'Previous page',
-                onPressed:
-                    _currentPage > 0 ? () => setState(() => _currentPage--) : null,
-              ),
-              for (var i = max(0, _currentPage - 2);
-                  i <= min(totalPages - 1, _currentPage + 2);
-                  i++)
-                Padding(
-                  padding: const EdgeInsets.symmetric(horizontal: 2),
-                  child: OutlinedButton(
-                    onPressed: () => setState(() => _currentPage = i),
-                    style: OutlinedButton.styleFrom(
-                      backgroundColor:
-                          _currentPage == i ? const Color(0xFF0284C7) : Colors.white,
-                      foregroundColor:
-                          _currentPage == i ? Colors.white : const Color(0xFF475569),
-                      side: BorderSide(
-                        color: _currentPage == i
-                            ? const Color(0xFF0284C7)
-                            : const Color(0xFFCBD5E1),
+          // Page Buttons (Horizontally scrollable for small screens / tablets)
+          SingleChildScrollView(
+            scrollDirection: Axis.horizontal,
+            child: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                IconButton(
+                  icon: const Icon(Icons.first_page_rounded, size: 18),
+                  tooltip: 'First page',
+                  onPressed: _currentPage > 0 ? () => setState(() => _currentPage = 0) : null,
+                ),
+                IconButton(
+                  icon: const Icon(Icons.chevron_left_rounded, size: 20),
+                  tooltip: 'Previous page',
+                  onPressed:
+                      _currentPage > 0 ? () => setState(() => _currentPage--) : null,
+                ),
+                for (var i = max(0, _currentPage - 2);
+                    i <= min(totalPages - 1, _currentPage + 2);
+                    i++)
+                  Padding(
+                    padding: const EdgeInsets.symmetric(horizontal: 2),
+                    child: OutlinedButton(
+                      onPressed: () => setState(() => _currentPage = i),
+                      style: OutlinedButton.styleFrom(
+                        backgroundColor:
+                            _currentPage == i ? const Color(0xFF0284C7) : Colors.white,
+                        foregroundColor:
+                            _currentPage == i ? Colors.white : const Color(0xFF475569),
+                        side: BorderSide(
+                          color: _currentPage == i
+                              ? const Color(0xFF0284C7)
+                              : const Color(0xFFCBD5E1),
+                        ),
+                        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                        minimumSize: const Size(32, 32),
                       ),
-                      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
-                      minimumSize: const Size(32, 32),
-                    ),
-                    child: Text(
-                      '${i + 1}',
-                      style: const TextStyle(fontSize: 11, fontWeight: FontWeight.bold),
+                      child: Text(
+                        '${i + 1}',
+                        style: const TextStyle(fontSize: 11, fontWeight: FontWeight.bold),
+                      ),
                     ),
                   ),
+                IconButton(
+                  icon: const Icon(Icons.chevron_right_rounded, size: 20),
+                  tooltip: 'Next page',
+                  onPressed: _currentPage < totalPages - 1
+                      ? () => setState(() => _currentPage++)
+                      : null,
                 ),
-              IconButton(
-                icon: const Icon(Icons.chevron_right_rounded, size: 20),
-                tooltip: 'Next page',
-                onPressed: _currentPage < totalPages - 1
-                    ? () => setState(() => _currentPage++)
-                    : null,
-              ),
-              IconButton(
-                icon: const Icon(Icons.last_page_rounded, size: 18),
-                tooltip: 'Last page',
-                onPressed: _currentPage < totalPages - 1
-                    ? () => setState(() => _currentPage = totalPages - 1)
-                    : null,
-              ),
-            ],
+                IconButton(
+                  icon: const Icon(Icons.last_page_rounded, size: 18),
+                  tooltip: 'Last page',
+                  onPressed: _currentPage < totalPages - 1
+                      ? () => setState(() => _currentPage = totalPages - 1)
+                      : null,
+                ),
+              ],
+            ),
           ),
         ],
       ),

@@ -509,6 +509,18 @@ class _InvoiceEditorScreenState extends State<InvoiceEditorScreen> {
     }
   }
 
+  void _autoRoundOff(Invoice currentDraft) {
+    final subtotalBeforeRound = currentDraft.taxableAmount +
+        (currentDraft.isTaxInclusive ? 0 : currentDraft.taxAmount) +
+        currentDraft.shippingFee +
+        currentDraft.additionalCharges;
+    final rounded = subtotalBeforeRound.roundToDouble();
+    final diff = rounded - subtotalBeforeRound;
+    setState(() {
+      _roundOff.text = diff == 0 ? '0' : diff.toStringAsFixed(2);
+    });
+  }
+
   void _openItemCustomizerDialog() {
     showModalBottomSheet<void>(
       context: context,
@@ -894,12 +906,28 @@ class _InvoiceEditorScreenState extends State<InvoiceEditorScreen> {
                         onChanged: () => setState(() {}),
                       ),
                     if (_show('showRoundOff', fallback: false) || _value(_roundOff) != 0)
-                      _decimalField(
-                        controller: _roundOff,
-                        label: '${_label('customRoundOffLabel', 'Round off')} (+/−)',
-                        min: -1000,
-                        allowNegative: true,
-                        onChanged: () => setState(() {}),
+                      Row(
+                        crossAxisAlignment: CrossAxisAlignment.end,
+                        children: [
+                          Expanded(
+                            child: _decimalField(
+                              controller: _roundOff,
+                              label: '${_label('customRoundOffLabel', 'Round off')} (+/−)',
+                              min: -1000,
+                              allowNegative: true,
+                              onChanged: () => setState(() {}),
+                            ),
+                          ),
+                          const SizedBox(width: 8),
+                          Padding(
+                            padding: const EdgeInsets.only(bottom: 2),
+                            child: OutlinedButton.icon(
+                              onPressed: () => _autoRoundOff(draft),
+                              icon: const Icon(Icons.auto_fix_high, size: 16),
+                              label: const Text('Auto Round'),
+                            ),
+                          ),
+                        ],
                       ),
                     if (_show('showAmountPaid', fallback: true))
                       _decimalField(
