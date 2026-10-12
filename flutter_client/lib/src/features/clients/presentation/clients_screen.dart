@@ -188,7 +188,7 @@ class _ClientsScreenState extends State<ClientsScreen> {
       ),
       body: LayoutBuilder(
         builder: (context, constraints) {
-          final horizontalPadding = constraints.maxWidth > 900 ? 24.0 : 20.0;
+          final horizontalPadding = constraints.maxWidth > 900 ? 24.0 : 16.0;
           return RefreshIndicator(
             onRefresh: _loadClients,
             child: ListView(

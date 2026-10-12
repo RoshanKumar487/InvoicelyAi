@@ -1223,15 +1223,18 @@ class _ReportsScreenState extends State<ReportsScreen> {
           ? const Center(child: CircularProgressIndicator())
           : _error != null
               ? ReportErrorState(message: _error!, onRetry: _load)
-              : RefreshIndicator(
-                  onRefresh: _load,
-                  child: ListView(
-                    padding: const EdgeInsets.fromLTRB(20, 16, 20, 36),
-                    children: [
-                      if (_usingCachedData) ...[
-                        const OfflineCacheBanner(),
-                        const SizedBox(height: 12),
-                      ],
+              : LayoutBuilder(
+                  builder: (context, constraints) {
+                    final horizontalPadding = constraints.maxWidth > 900 ? 24.0 : 16.0;
+                    return RefreshIndicator(
+                      onRefresh: _load,
+                      child: ListView(
+                        padding: EdgeInsets.fromLTRB(horizontalPadding, 16, horizontalPadding, 36),
+                        children: [
+                          if (_usingCachedData) ...[
+                            const OfflineCacheBanner(),
+                            const SizedBox(height: 12),
+                          ],
 
                       // Top Scope Tabs (All Records, Invoices, Expenses, Clients)
                       ReportTabs(
@@ -1544,7 +1547,9 @@ class _ReportsScreenState extends State<ReportsScreen> {
                       ),
                     ],
                   ),
-                ),
+                );
+              },
+            ),
     );
   }
 }
