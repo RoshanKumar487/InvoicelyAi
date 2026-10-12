@@ -205,6 +205,7 @@ class _ReportFilterBottomSheetState extends State<ReportFilterBottomSheet> {
 
   DateTime? _recordDate(Map<String, dynamic> row) {
     final value = switch (widget.reportType) {
+      ReportType.all => row['issueDate'] ?? row['date'] ?? row['createdAt'],
       ReportType.invoices => row['issueDate'] ?? row['createdAt'],
       ReportType.expenses => row['date'] ?? row['createdAt'],
       ReportType.clients => row['createdAt'],
