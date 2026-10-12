@@ -433,11 +433,14 @@ class _TeamManagementScreenState extends State<TeamManagementScreen> {
           ? const Center(child: CircularProgressIndicator())
           : _error != null
               ? _TeamError(message: _error!, onRetry: _load)
-              : RefreshIndicator(
-                  onRefresh: _load,
-                  child: ListView(
-                    padding: const EdgeInsets.all(16),
-                    children: [
+              : LayoutBuilder(
+                  builder: (context, constraints) {
+                    final sidePadding = constraints.maxWidth > 900 ? 24.0 : 16.0;
+                    return RefreshIndicator(
+                      onRefresh: _load,
+                      child: ListView(
+                        padding: EdgeInsets.fromLTRB(sidePadding, 16, sidePadding, 100),
+                        children: [
                       // Workspace onboarding card
                       AppCard(
                         child: Column(
@@ -582,7 +585,9 @@ class _TeamManagementScreenState extends State<TeamManagementScreen> {
                         ..._employees.map(_buildEmployee),
                     ],
                   ),
-                ),
+                );
+              },
+            ),
     );
   }
 

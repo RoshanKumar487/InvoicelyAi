@@ -142,9 +142,9 @@ public class EmailService {
         try {
             MimeMessage message = defaultMailSender.createMimeMessage();
             MimeMessageHelper helper = new MimeMessageHelper(message, true, "UTF-8");
-            helper.setFrom(defaultFromEmail, profile.getBusinessName().isEmpty() ? defaultFromName : profile.getBusinessName());
+            helper.setFrom(defaultFromEmail, profile.getBusinessName() != null && !profile.getBusinessName().isEmpty() ? profile.getBusinessName() : defaultFromName);
             helper.setTo(target);
-            helper.setSubject("Payment Reminder: Invoice #" + invoice.getInvoiceNumber() + " (Due: " + invoice.getDueDate() + ")");
+            helper.setSubject("Payment Reminder: Invoice #" + (invoice.getInvoiceNumber() != null ? invoice.getInvoiceNumber() : "") + " (Due: " + (invoice.getDueDate() != null && !invoice.getDueDate().isEmpty() ? invoice.getDueDate() : "Upon receipt") + ")");
 
             String noteBlock = (customNote != null && !customNote.isBlank())
                     ? "<div style='background:#f8fafc; border-left:4px solid #0284c7; padding:12px; margin:16px 0; font-size:13px; color:#334155;'>" + customNote + "</div>"
@@ -183,13 +183,13 @@ public class EmailService {
                     </div>
                 </div>
             """.formatted(
-                    profile.getBusinessName().isEmpty() ? "Invoicely AI" : profile.getBusinessName(),
-                    invoice.getClientName().isEmpty() ? "Customer" : invoice.getClientName(),
-                    invoice.getInvoiceNumber(),
-                    invoice.getDueDate().isEmpty() ? "Upon receipt" : invoice.getDueDate(),
-                    invoice.getCurrencySymbol().isEmpty() ? "₹" : invoice.getCurrencySymbol(),
-                    invoice.getTotal(),
-                    invoice.getStatus().toUpperCase(),
+                    profile.getBusinessName() != null && !profile.getBusinessName().isEmpty() ? profile.getBusinessName() : "Invoicely AI",
+                    invoice.getClientName() != null && !invoice.getClientName().isEmpty() ? invoice.getClientName() : "Customer",
+                    invoice.getInvoiceNumber() != null ? invoice.getInvoiceNumber() : "",
+                    invoice.getDueDate() != null && !invoice.getDueDate().isEmpty() ? invoice.getDueDate() : "Upon receipt",
+                    invoice.getCurrencySymbol() != null && !invoice.getCurrencySymbol().isEmpty() ? invoice.getCurrencySymbol() : "₹",
+                    invoice.getTotal() != null ? invoice.getTotal().toPlainString() : "0.00",
+                    invoice.getStatus() != null ? invoice.getStatus().toUpperCase() : "PENDING",
                     noteBlock,
                     upiBlock
             );
@@ -227,9 +227,9 @@ public class EmailService {
         try {
             MimeMessage message = defaultMailSender.createMimeMessage();
             MimeMessageHelper helper = new MimeMessageHelper(message, true, "UTF-8");
-            helper.setFrom(defaultFromEmail, profile.getBusinessName().isEmpty() ? defaultFromName : profile.getBusinessName());
+            helper.setFrom(defaultFromEmail, profile.getBusinessName() != null && !profile.getBusinessName().isEmpty() ? profile.getBusinessName() : defaultFromName);
             helper.setTo(target);
-            helper.setSubject("Expense Due Alert: " + expense.getTitle() + " (" + (expense.getDueDate().isEmpty() ? "Action Required" : "Due: " + expense.getDueDate()) + ")");
+            helper.setSubject("Expense Due Alert: " + (expense.getTitle() != null ? expense.getTitle() : "Expense") + " (" + (expense.getDueDate() != null && !expense.getDueDate().isEmpty() ? "Due: " + expense.getDueDate() : "Action Required") + ")");
 
             String html = """
                 <div style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; max-width: 580px; margin: 0 auto; border: 1px solid #e2e8f0; border-radius: 12px; overflow: hidden; background: #ffffff;">
@@ -251,12 +251,12 @@ public class EmailService {
                     </div>
                 </div>
             """.formatted(
-                    expense.getTitle(),
-                    expense.getVendor().isEmpty() ? "General Merchant" : expense.getVendor(),
-                    expense.getCategory(),
-                    expense.getCurrencySymbol().isEmpty() ? "₹" : expense.getCurrencySymbol(),
-                    expense.getAmount(),
-                    expense.getDueDate().isEmpty() ? "Immediate" : expense.getDueDate()
+                    expense.getTitle() != null ? expense.getTitle() : "Expense",
+                    expense.getVendor() != null && !expense.getVendor().isEmpty() ? expense.getVendor() : "General Merchant",
+                    expense.getCategory() != null ? expense.getCategory() : "General",
+                    expense.getCurrencySymbol() != null && !expense.getCurrencySymbol().isEmpty() ? expense.getCurrencySymbol() : "₹",
+                    expense.getAmount() != null ? expense.getAmount().toPlainString() : "0.00",
+                    expense.getDueDate() != null && !expense.getDueDate().isEmpty() ? expense.getDueDate() : "Immediate"
             );
 
             helper.setText(html, true);
