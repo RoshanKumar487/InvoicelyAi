@@ -664,7 +664,7 @@ class _ReportEnterpriseDataGridState extends State<ReportEnterpriseDataGrid> {
     ReportColumn(id: 'category', title: 'Category', width: 140),
     ReportColumn(id: 'date', title: 'Date', width: 120),
     ReportColumn(id: 'amount', title: 'Amount', width: 130, alignRight: true),
-    ReportColumn(id: 'tax', title: 'Tax Amount', width: 110),
+    ReportColumn(id: 'tax', title: 'Tax Amount', width: 120, alignRight: true),
     ReportColumn(id: 'status', title: 'Status', width: 130),
     ReportColumn(id: 'action', title: 'Action', width: 70, alignRight: true),
   ];
@@ -711,39 +711,58 @@ class _ReportEnterpriseDataGridState extends State<ReportEnterpriseDataGrid> {
     bool somePageSelected,
     List<String> allPageIds,
   ) {
-    final columns = _columns;
-    final totalWidth = _tableTotalWidth;
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        final availableWidth = constraints.maxWidth;
+        final baseWidth = _tableTotalWidth;
+        final totalWidth = max(availableWidth, baseWidth);
+        final extraWidth = totalWidth - baseWidth;
 
-    return SingleChildScrollView(
-      scrollDirection: Axis.horizontal,
-      physics: const BouncingScrollPhysics(),
-      child: SizedBox(
-        width: totalWidth,
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          children: [
-            // Table Header Row dynamically built from record columns
-            _buildHeaderRow(columns, allPageSelected, somePageSelected, allPageIds),
+        final columns = _columns;
+        final sumBaseCols = columns.fold<double>(0.0, (sum, col) => sum + col.width);
 
-            // Rows (Grouped or Flat with classical zebra striping!)
-            if (_isGrouped) ...[
-              for (final entry in pageGrouped.entries)
-                _buildCompanyGroupSection(entry.key, entry.value, columns),
-            ] else ...[
-              for (var i = 0; i < pageRows.length; i++)
-                _buildDataTableRow(pageRows[i], columns, isNested: false, rowIndex: i),
-            ],
+        final colWidths = <String, double>{};
+        for (final col in columns) {
+          if (extraWidth > 0 && sumBaseCols > 0) {
+            colWidths[col.id] = col.width + (extraWidth * (col.width / sumBaseCols));
+          } else {
+            colWidths[col.id] = col.width;
+          }
+        }
 
-            // Classical Ledger Totals Summary Row at the bottom
-            _buildTableTotalsRow(columns, pageRows),
-          ],
-        ),
-      ),
+        return SingleChildScrollView(
+          scrollDirection: Axis.horizontal,
+          physics: const BouncingScrollPhysics(),
+          child: SizedBox(
+            width: totalWidth,
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                // Table Header Row dynamically built from record columns
+                _buildHeaderRow(columns, colWidths, allPageSelected, somePageSelected, allPageIds),
+
+                // Rows (Grouped or Flat with classical zebra striping!)
+                if (_isGrouped) ...[
+                  for (final entry in pageGrouped.entries)
+                    _buildCompanyGroupSection(entry.key, entry.value, columns, colWidths),
+                ] else ...[
+                  for (var i = 0; i < pageRows.length; i++)
+                    _buildDataTableRow(pageRows[i], columns, colWidths, isNested: false, rowIndex: i),
+                ],
+
+                // Classical Ledger Totals Summary Row at the bottom
+                _buildTableTotalsRow(columns, colWidths, pageRows),
+              ],
+            ),
+          ),
+        );
+      },
     );
   }
 
   Widget _buildHeaderRow(
     List<ReportColumn> columns,
+    Map<String, double> colWidths,
     bool allPageSelected,
     bool somePageSelected,
     List<String> allPageIds,
@@ -776,18 +795,26 @@ class _ReportEnterpriseDataGridState extends State<ReportEnterpriseDataGrid> {
             ),
           ),
           for (final col in columns)
-            _buildHeaderCell(col.title, width: col.width, alignRight: col.alignRight),
+            _buildHeaderCell(
+              col.title,
+              width: colWidths[col.id] ?? col.width,
+              alignRight: col.alignRight,
+            ),
         ],
       ),
     );
   }
 
   Widget _buildHeaderCell(String title, {required double width, bool alignRight = false}) {
-    return SizedBox(
+    return Container(
       width: width,
+      padding: const EdgeInsets.symmetric(horizontal: 8),
+      alignment: alignRight ? Alignment.centerRight : Alignment.centerLeft,
       child: Text(
         title.toUpperCase(),
         textAlign: alignRight ? TextAlign.end : TextAlign.start,
+        maxLines: 1,
+        overflow: TextOverflow.ellipsis,
         style: const TextStyle(
           fontSize: 11,
           fontWeight: FontWeight.w700,
@@ -800,6 +827,7 @@ class _ReportEnterpriseDataGridState extends State<ReportEnterpriseDataGrid> {
 
   Widget _buildTableTotalsRow(
     List<ReportColumn> columns,
+    Map<String, double> colWidths,
     List<Map<String, dynamic>> rows,
   ) {
     var totalDr = 0.0;
@@ -837,8 +865,9 @@ class _ReportEnterpriseDataGridState extends State<ReportEnterpriseDataGrid> {
             child: Icon(Icons.calculate_outlined, size: 16, color: Color(0xFF64748B)),
           ),
           for (final col in columns)
-            SizedBox(
-              width: col.width,
+            Container(
+              width: colWidths[col.id] ?? col.width,
+              padding: const EdgeInsets.symmetric(horizontal: 8),
               child: _buildTotalsCell(col, totalDr, totalCr, totalNet, totalTax, rows.length),
             ),
         ],
@@ -907,9 +936,10 @@ class _ReportEnterpriseDataGridState extends State<ReportEnterpriseDataGrid> {
         return totalTax > 0
             ? Text(
                 widget.formatCurrency(totalTax),
+                textAlign: TextAlign.end,
                 style: const TextStyle(fontSize: 11, fontWeight: FontWeight.w700, color: Color(0xFF475569)),
               )
-            : const Text('—', style: TextStyle(color: Color(0xFF94A3B8)));
+            : const Text('—', textAlign: TextAlign.end, style: TextStyle(color: Color(0xFF94A3B8)));
       default:
         return const SizedBox.shrink();
     }
@@ -919,6 +949,7 @@ class _ReportEnterpriseDataGridState extends State<ReportEnterpriseDataGrid> {
     String company,
     List<Map<String, dynamic>> items,
     List<ReportColumn> columns,
+    Map<String, double> colWidths,
   ) {
     final isExpanded = _expandedCompanies[company] ?? true;
     final itemIds = _extractRowIds(items);
@@ -1048,14 +1079,15 @@ class _ReportEnterpriseDataGridState extends State<ReportEnterpriseDataGrid> {
         // Child Rows
         if (isExpanded)
           for (var i = 0; i < items.length; i++)
-            _buildDataTableRow(items[i], columns, isNested: true, rowIndex: i),
+            _buildDataTableRow(items[i], columns, colWidths, isNested: true, rowIndex: i),
       ],
     );
   }
 
   Widget _buildDataTableRow(
     Map<String, dynamic> row,
-    List<ReportColumn> columns, {
+    List<ReportColumn> columns,
+    Map<String, double> colWidths, {
     required bool isNested,
     int rowIndex = 0,
   }) {
@@ -1095,8 +1127,9 @@ class _ReportEnterpriseDataGridState extends State<ReportEnterpriseDataGrid> {
                 ),
               ),
               for (final col in columns)
-                SizedBox(
-                  width: col.width,
+                Container(
+                  width: colWidths[col.id] ?? col.width,
+                  padding: const EdgeInsets.symmetric(horizontal: 8),
                   child: _buildCellContent(row, col),
                 ),
             ],
@@ -1208,14 +1241,17 @@ class _ReportEnterpriseDataGridState extends State<ReportEnterpriseDataGrid> {
       case 'amount':
         final effAmount = rowEffectiveAmount(row);
         final isExp = rowRecordType(row) == 'EXPENSE';
-        return Text(
-          '${isExp ? '-' : ''}${widget.formatCurrency(effAmount)}',
-          textAlign: TextAlign.end,
-          overflow: TextOverflow.ellipsis,
-          style: TextStyle(
-            fontSize: 13,
-            fontWeight: FontWeight.w700,
-            color: isExp ? const Color(0xFFDC2626) : const Color(0xFF0F172A),
+        return Align(
+          alignment: Alignment.centerRight,
+          child: Text(
+            '${isExp ? '-' : ''}${widget.formatCurrency(effAmount)}',
+            textAlign: TextAlign.end,
+            overflow: TextOverflow.ellipsis,
+            style: TextStyle(
+              fontSize: 13,
+              fontWeight: FontWeight.w700,
+              color: isExp ? const Color(0xFFDC2626) : const Color(0xFF0F172A),
+            ),
           ),
         );
 
@@ -1331,10 +1367,14 @@ class _ReportEnterpriseDataGridState extends State<ReportEnterpriseDataGrid> {
       case 'tax':
         final taxAmount = reportNumber(row['taxAmount']);
         final taxStr = taxAmount > 0 ? widget.formatCurrency(taxAmount) : '—';
-        return Text(
-          taxStr,
-          overflow: TextOverflow.ellipsis,
-          style: const TextStyle(fontSize: 11, color: Color(0xFF64748B)),
+        return Align(
+          alignment: Alignment.centerRight,
+          child: Text(
+            taxStr,
+            textAlign: TextAlign.end,
+            overflow: TextOverflow.ellipsis,
+            style: const TextStyle(fontSize: 12, color: Color(0xFF64748B), fontWeight: FontWeight.w600),
+          ),
         );
 
       case 'name':
