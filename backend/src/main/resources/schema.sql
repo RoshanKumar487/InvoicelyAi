@@ -236,3 +236,72 @@ CREATE INDEX IF NOT EXISTS idx_pending_ai_commands_owner ON pending_ai_commands(
 CREATE INDEX IF NOT EXISTS idx_company_knowledge_company ON company_knowledge_chunks(company_id);
 CREATE INDEX IF NOT EXISTS idx_company_knowledge_embedding
     ON company_knowledge_chunks USING hnsw (embedding vector_cosine_ops);
+
+-- ===================================================================
+-- 8. Email & Messaging Notification System Tables
+-- ===================================================================
+
+-- Notification Templates Table (Company-scoped with system default fallback)
+CREATE TABLE IF NOT EXISTS notification_templates (
+    id BIGSERIAL PRIMARY KEY,
+    company_id BIGINT REFERENCES companies(id) ON DELETE CASCADE,
+    template_name VARCHAR(100) NOT NULL,
+    channel VARCHAR(20) NOT NULL DEFAULT 'EMAIL',
+    subject VARCHAR(255),
+    title VARCHAR(255),
+    body TEXT NOT NULL,
+    metadata_json TEXT DEFAULT '{}',
+    created_by_user_id BIGINT REFERENCES users(id) ON DELETE SET NULL,
+    created_by_user_name VARCHAR(255) DEFAULT '',
+    created_at TIMESTAMPTZ DEFAULT NOW(),
+    updated_at TIMESTAMPTZ DEFAULT NOW(),
+    is_active BOOLEAN DEFAULT TRUE
+);
+
+-- User Notification Outbox / Ready-to-process Queue Table
+CREATE TABLE IF NOT EXISTS user_notifications (
+    id BIGSERIAL PRIMARY KEY,
+    company_id BIGINT REFERENCES companies(id) ON DELETE CASCADE,
+    user_id BIGINT REFERENCES users(id) ON DELETE SET NULL,
+    recipient_to VARCHAR(255) NOT NULL,
+    recipient_name VARCHAR(255),
+    recipient_type VARCHAR(30) DEFAULT 'CLIENT',
+    channel VARCHAR(20) NOT NULL DEFAULT 'EMAIL',
+    template_name VARCHAR(100) NOT NULL,
+    title VARCHAR(255) NOT NULL,
+    body TEXT NOT NULL,
+    metadata_json TEXT DEFAULT '{}',
+    status VARCHAR(30) NOT NULL DEFAULT 'PENDING',
+    retry_count INT NOT NULL DEFAULT 0,
+    max_retries INT NOT NULL DEFAULT 3,
+    error_message TEXT,
+    scheduled_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    sent_at TIMESTAMPTZ,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+-- Notification Audit Logs Table (Audit trail for sent or stuck/failed delivery)
+CREATE TABLE IF NOT EXISTS notification_audit_logs (
+    id BIGSERIAL PRIMARY KEY,
+    notification_id BIGINT NOT NULL REFERENCES user_notifications(id) ON DELETE CASCADE,
+    company_id BIGINT REFERENCES companies(id) ON DELETE CASCADE,
+    channel VARCHAR(20) NOT NULL DEFAULT 'EMAIL',
+    recipient_to VARCHAR(255),
+    attempt_number INT NOT NULL DEFAULT 1,
+    status VARCHAR(30) NOT NULL DEFAULT 'SUCCESS',
+    provider_response_code VARCHAR(100),
+    error_details TEXT,
+    duration_ms BIGINT DEFAULT 0,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+-- Performance Indexes for Notification Dispatcher & Queue
+CREATE INDEX IF NOT EXISTS idx_notif_templates_company ON notification_templates(company_id, template_name);
+CREATE INDEX IF NOT EXISTS idx_notif_templates_channel ON notification_templates(channel);
+CREATE INDEX IF NOT EXISTS idx_user_notif_status_scheduled ON user_notifications(status, scheduled_at, created_at);
+CREATE INDEX IF NOT EXISTS idx_user_notif_company ON user_notifications(company_id, created_at);
+CREATE INDEX IF NOT EXISTS idx_user_notif_recipient ON user_notifications(recipient_to);
+CREATE INDEX IF NOT EXISTS idx_notif_audit_notif_id ON notification_audit_logs(notification_id, created_at);
+CREATE INDEX IF NOT EXISTS idx_notif_audit_company ON notification_audit_logs(company_id, created_at);
+CREATE INDEX IF NOT EXISTS idx_notif_audit_status ON notification_audit_logs(status);

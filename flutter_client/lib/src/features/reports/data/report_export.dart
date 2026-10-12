@@ -106,6 +106,29 @@ class ReportExport {
     return Uint8List.fromList(ZipEncoder().encode(archive));
   }
 
+  static Uint8List buildCsv(List<ExportReportTable> reports) {
+    if (reports.isEmpty) {
+      throw ArgumentError.value(reports, 'reports', 'At least one report is required.');
+    }
+    final buffer = StringBuffer();
+    for (final report in reports) {
+      buffer.writeln('# ${report.name}');
+      buffer.writeln(report.headers.map(_escapeCsv).join(','));
+      for (final row in report.rows) {
+        buffer.writeln(row.map(_escapeCsv).join(','));
+      }
+      buffer.writeln();
+    }
+    return Uint8List.fromList(utf8.encode(buffer.toString()));
+  }
+
+  static String _escapeCsv(String val) {
+    if (val.contains(',') || val.contains('"') || val.contains('\n') || val.contains('\r')) {
+      return '"${val.replaceAll('"', '""')}"';
+    }
+    return val;
+  }
+
   static Future<Uint8List> buildPdf(
     List<ExportReportTable> reports,
   ) async {
