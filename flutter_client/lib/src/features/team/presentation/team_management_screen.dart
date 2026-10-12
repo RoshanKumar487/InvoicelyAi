@@ -6,6 +6,7 @@ import '../../../core/api/api_exception.dart';
 import '../../../shared/widgets/app_card.dart';
 import '../../../theme/app_theme.dart';
 import '../data/team_repository.dart';
+import '../../notifications/data/notification_repository.dart';
 
 class TeamManagementScreen extends StatefulWidget {
   const TeamManagementScreen({
@@ -91,18 +92,195 @@ class _TeamManagementScreenState extends State<TeamManagementScreen> {
   }
 
   Future<void> _process(int id, String action) async {
+    final noteController = TextEditingController();
+    final shouldSend = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: Text('${action == 'APPROVE' ? 'Approve' : 'Reject'} Join Request'),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text('Process request and notify applicant via email / WhatsApp.'),
+            const SizedBox(height: 12),
+            TextField(
+              controller: noteController,
+              decoration: const InputDecoration(
+                labelText: 'Note / Feedback (Optional)',
+                hintText: 'e.g. Welcome to the accounting team!',
+                border: OutlineInputBorder(),
+              ),
+              maxLines: 2,
+            ),
+          ],
+        ),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('Cancel')),
+          FilledButton(
+            onPressed: () => Navigator.pop(ctx, true),
+            child: Text(action == 'APPROVE' ? 'Approve & Notify' : 'Reject & Notify'),
+          ),
+        ],
+      ),
+    );
+
+    if (shouldSend != true) return;
+
     setState(() => _saving = true);
     try {
       await _repository.processJoinRequest(id: id, action: action);
+
+      // Also trigger push notification with template to the applicant
+      try {
+        final notifRepo = NotificationRepository(apiClient: widget.apiClient);
+        await notifRepo.sendJoinRequestResponse(
+          joinRequestId: id,
+          action: action,
+          customMessage: noteController.text.trim().isNotEmpty ? noteController.text.trim() : null,
+        );
+      } catch (_) {
+        // Log or handle non-fatal push notification error
+      }
+
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Request ${action.toLowerCase()}d.')),
+        SnackBar(content: Text('Request ${action.toLowerCase()}d and applicant notified!')),
       );
       await _load();
     } on ApiException catch (error) {
       if (mounted) _showError(error.message);
     } catch (error) {
       if (mounted) _showError('Could not update request: $error');
+    } finally {
+      if (mounted) setState(() => _saving = false);
+    }
+  }
+
+  Future<void> _showInviteDialog() async {
+    final emailController = TextEditingController();
+    final nameController = TextEditingController();
+    final phoneController = TextEditingController();
+    String channel = 'EMAIL';
+    String role = 'EMPLOYEE';
+
+    final sent = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => StatefulBuilder(
+        builder: (context, setModalState) => AlertDialog(
+          title: const Row(
+            children: [
+              Icon(Icons.person_add_rounded, color: Color(0xFF0284C7)),
+              SizedBox(width: 8),
+              Text('Invite Team Member'),
+            ],
+          ),
+          content: SingleChildScrollView(
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                const Text(
+                  'Send an invitation to join your workspace via Email or WhatsApp using the template engine.',
+                  style: TextStyle(fontSize: 12, color: Colors.grey),
+                ),
+                const SizedBox(height: 14),
+                TextField(
+                  controller: emailController,
+                  decoration: const InputDecoration(
+                    labelText: 'Invitee Email *',
+                    hintText: 'colleague@example.com',
+                    border: OutlineInputBorder(),
+                  ),
+                ),
+                const SizedBox(height: 10),
+                TextField(
+                  controller: nameController,
+                  decoration: const InputDecoration(
+                    labelText: 'Full Name (Optional)',
+                    border: OutlineInputBorder(),
+                  ),
+                ),
+                const SizedBox(height: 10),
+                TextField(
+                  controller: phoneController,
+                  decoration: const InputDecoration(
+                    labelText: 'WhatsApp Phone (Optional)',
+                    hintText: '+15551234567',
+                    border: OutlineInputBorder(),
+                  ),
+                ),
+                const SizedBox(height: 10),
+                Row(
+                  children: [
+                    Expanded(
+                      child: DropdownButtonFormField<String>(
+                        value: channel,
+                        decoration: const InputDecoration(labelText: 'Channel', border: OutlineInputBorder()),
+                        items: const [
+                          DropdownMenuItem(value: 'EMAIL', child: Text('Email')),
+                          DropdownMenuItem(value: 'WHATSAPP', child: Text('WhatsApp')),
+                        ],
+                        onChanged: (val) {
+                          if (val != null) setModalState(() => channel = val);
+                        },
+                      ),
+                    ),
+                    const SizedBox(width: 8),
+                    Expanded(
+                      child: DropdownButtonFormField<String>(
+                        value: role,
+                        decoration: const InputDecoration(labelText: 'Role', border: OutlineInputBorder()),
+                        items: const [
+                          DropdownMenuItem(value: 'EMPLOYEE', child: Text('Employee')),
+                          DropdownMenuItem(value: 'ADMIN', child: Text('Admin')),
+                        ],
+                        onChanged: (val) {
+                          if (val != null) setModalState(() => role = val);
+                        },
+                      ),
+                    ),
+                  ],
+                ),
+              ],
+            ),
+          ),
+          actions: [
+            TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('Cancel')),
+            FilledButton.icon(
+              onPressed: () {
+                if (emailController.text.trim().isEmpty) return;
+                Navigator.pop(ctx, true);
+              },
+              icon: const Icon(Icons.send_rounded, size: 16),
+              label: const Text('Send Invitation'),
+            ),
+          ],
+        ),
+      ),
+    );
+
+    if (sent != true) return;
+
+    setState(() => _saving = true);
+    try {
+      final notifRepo = NotificationRepository(apiClient: widget.apiClient);
+      await notifRepo.sendInvite(
+        inviteeEmail: emailController.text.trim(),
+        inviteeName: nameController.text.trim().isNotEmpty ? nameController.text.trim() : null,
+        inviteePhone: phoneController.text.trim().isNotEmpty ? phoneController.text.trim() : null,
+        channel: channel,
+        role: role,
+      );
+
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          backgroundColor: const Color(0xFF047857),
+          content: Text('✓ Invitation queued to ${emailController.text.trim()} via $channel!'),
+        ),
+      );
+    } catch (e) {
+      if (mounted) _showError('Could not send invite: $e');
     } finally {
       if (mounted) setState(() => _saving = false);
     }
@@ -206,6 +384,12 @@ class _TeamManagementScreenState extends State<TeamManagementScreen> {
                                           : _copyCompanyCode,
                                   icon: const Icon(Icons.copy),
                                   tooltip: 'Copy organization code',
+                                ),
+                                const SizedBox(width: 4),
+                                FilledButton.icon(
+                                  onPressed: _showInviteDialog,
+                                  icon: const Icon(Icons.mail_outline_rounded, size: 16),
+                                  label: const Text('Invite Member'),
                                 ),
                               ],
                             ),
