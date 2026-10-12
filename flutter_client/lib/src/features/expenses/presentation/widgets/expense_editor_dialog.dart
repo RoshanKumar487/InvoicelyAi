@@ -68,8 +68,10 @@ class _ExpenseEditorDialogState extends State<ExpenseEditorDialog> {
   late final TextEditingController _date;
   late final TextEditingController _notes;
   late final TextEditingController _currency;
+  late final TextEditingController _dueDate;
   late String _category;
   late String _paymentMethod;
+  late String _status;
   late bool _taxDeductible;
 
   @override
@@ -89,6 +91,9 @@ class _ExpenseEditorDialogState extends State<ExpenseEditorDialog> {
           ? expense!.date
           : _dateFor(DateTime.now()),
     );
+    _dueDate = TextEditingController(
+      text: expense?.dueDate ?? '',
+    );
     _notes = TextEditingController(text: expense?.notes ?? '');
     final initialCur = (expense != null && expense.currency.isNotEmpty && expense.currency != 'USD')
         ? expense.currency
@@ -101,6 +106,7 @@ class _ExpenseEditorDialogState extends State<ExpenseEditorDialog> {
     _paymentMethod = expense?.paymentMethod.isNotEmpty == true
         ? expense!.paymentMethod
         : 'Credit Card';
+    _status = expense?.status.isNotEmpty == true ? expense!.status : 'Paid';
     _taxDeductible = expense?.taxDeductible ?? true;
   }
 
@@ -111,6 +117,7 @@ class _ExpenseEditorDialogState extends State<ExpenseEditorDialog> {
     _amount.dispose();
     _taxAmount.dispose();
     _date.dispose();
+    _dueDate.dispose();
     _notes.dispose();
     _currency.dispose();
     super.dispose();
@@ -125,6 +132,17 @@ class _ExpenseEditorDialogState extends State<ExpenseEditorDialog> {
       lastDate: DateTime(2100),
     );
     if (date != null && mounted) _date.text = _dateFor(date);
+  }
+
+  Future<void> _chooseDueDate() async {
+    final selected = DateTime.tryParse(_dueDate.text) ?? DateTime.now().add(const Duration(days: 7));
+    final date = await showDatePicker(
+      context: context,
+      initialDate: selected,
+      firstDate: DateTime(2000),
+      lastDate: DateTime(2100),
+    );
+    if (date != null && mounted) _dueDate.text = _dateFor(date);
   }
 
   void _save() {
@@ -150,6 +168,8 @@ class _ExpenseEditorDialogState extends State<ExpenseEditorDialog> {
         taxAmount: double.tryParse(_taxAmount.text.trim()) ?? 0,
         receiptImageUri: previous?.receiptImageUri,
         notes: _notes.text.trim(),
+        status: _status,
+        dueDate: _dueDate.text.trim(),
       ),
     );
   }
@@ -378,20 +398,62 @@ class _ExpenseEditorDialogState extends State<ExpenseEditorDialog> {
                 ),
                 const SizedBox(height: 12),
 
-                // 4. DATE & NOTES
-                TextFormField(
-                  controller: _date,
-                  readOnly: true,
-                  onTap: _chooseDate,
-                  decoration: InputDecoration(
-                    labelText: 'Expense Date',
-                    prefixIcon: const Icon(Icons.calendar_today_rounded, size: 18),
-                    suffixIcon: IconButton(
-                      onPressed: _chooseDate,
-                      icon: const Icon(Icons.calendar_month_outlined, size: 20),
+                // 4. DATE & STATUS ROW
+                Row(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Expanded(
+                      child: TextFormField(
+                        controller: _date,
+                        readOnly: true,
+                        onTap: _chooseDate,
+                        decoration: InputDecoration(
+                          labelText: 'Expense Date',
+                          prefixIcon: const Icon(Icons.calendar_today_rounded, size: 18),
+                          suffixIcon: IconButton(
+                            onPressed: _chooseDate,
+                            icon: const Icon(Icons.calendar_month_outlined, size: 20),
+                          ),
+                        ),
+                      ),
+                    ),
+                    const SizedBox(width: 10),
+                    Expanded(
+                      child: DropdownButtonFormField<String>(
+                        value: _status,
+                        decoration: const InputDecoration(
+                          labelText: 'Status',
+                          prefixIcon: Icon(Icons.verified_outlined, size: 18),
+                        ),
+                        items: const [
+                          DropdownMenuItem(value: 'Paid', child: Text('Paid (Settled)')),
+                          DropdownMenuItem(value: 'Due', child: Text('Due (Unpaid)')),
+                          DropdownMenuItem(value: 'Pending', child: Text('Pending Approval')),
+                        ],
+                        onChanged: (val) {
+                          if (val != null) setState(() => _status = val);
+                        },
+                      ),
+                    ),
+                  ],
+                ),
+                if (_status == 'Due' || _status == 'Pending') ...[
+                  const SizedBox(height: 12),
+                  TextFormField(
+                    controller: _dueDate,
+                    readOnly: true,
+                    onTap: _chooseDueDate,
+                    decoration: InputDecoration(
+                      labelText: 'Payment Due Date *',
+                      hintText: 'Select when payment is due',
+                      prefixIcon: const Icon(Icons.event_busy_rounded, size: 18, color: Color(0xFFDC2626)),
+                      suffixIcon: IconButton(
+                        onPressed: _chooseDueDate,
+                        icon: const Icon(Icons.calendar_month_outlined, size: 20, color: Color(0xFFDC2626)),
+                      ),
                     ),
                   ),
-                ),
+                ],
                 const SizedBox(height: 12),
                 TextFormField(
                   controller: _notes,

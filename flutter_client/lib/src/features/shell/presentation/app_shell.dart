@@ -21,6 +21,9 @@ import '../../tax/presentation/tax_calculator_screen.dart';
 import '../../team/presentation/team_management_screen.dart';
 import '../../templates/data/template_config.dart';
 import '../../templates/presentation/templates_screen.dart';
+import '../../employees/presentation/employee_management_screen.dart';
+import '../../settings/presentation/email_scheduler_settings_screen.dart';
+import '../../audit/presentation/audit_logs_screen.dart';
 import 'placeholder_screen.dart';
 
 enum _Destination {
@@ -263,6 +266,7 @@ class _AppShellState extends State<AppShell> {
             () => _destination = _Destination.aiAgent,
           ),
           onOpenTemplates: () => _openMoreSection('Templates'),
+          onOpenAuditLogs: () => _openMoreSection('Audit Logs'),
         ),
       _Destination.invoices => InvoiceFeatureScreen(
           key: ValueKey('invoices-$_invoiceStatusFilter'),
@@ -296,11 +300,30 @@ class _AppShellState extends State<AppShell> {
     }
     void onBack() => setState(() => _moreSection = null);
     return switch (section) {
+      'Employee management' => EmployeeManagementScreen(
+          apiClient: widget.apiClient,
+          companyName: _invoiceLocalSettings['businessName']?.toString() ??
+              _invoiceLocalSettings['companyName']?.toString() ??
+              widget.session.company?.name ??
+              '',
+          companyAddress: _invoiceLocalSettings['businessAddress']?.toString() ?? '',
+          onBack: onBack,
+        ),
+      'Email & Reminders' || 'Email Settings & Reminders' => EmailSchedulerSettingsScreen(
+          apiClient: widget.apiClient,
+          localPreferences: _localPreferences,
+          onBack: onBack,
+        ),
       'Clients' => ClientsScreen(
           repository: ClientsRepository(apiClient: widget.apiClient),
           onBack: onBack,
         ),
       'Reports' => ReportsScreen(apiClient: widget.apiClient, onBack: onBack),
+      'Audit Logs' || 'Audit logs' => AuditLogsScreen(
+          apiClient: widget.apiClient,
+          session: widget.session,
+          onBack: onBack,
+        ),
       'Team management' =>
         TeamManagementScreen(apiClient: widget.apiClient, onBack: onBack),
       'Templates' => TemplatesScreen(
@@ -377,14 +400,19 @@ class _MoreMenu extends StatelessWidget {
   Widget build(BuildContext context) {
     final isAdmin = session.user.role.toUpperCase() == 'ADMIN';
     final canSeeInvoices = session.user.hasPermission('INVOICES');
+    final canSeeAuditLogs = isAdmin || session.user.hasPermission('AUDIT_LOGS');
     final sections = <(String, IconData)>[
       if (session.user.hasPermission('CLIENTS'))
         ('Clients', Icons.people_outline),
       if (session.user.hasPermission('REPORTS'))
         ('Reports', Icons.bar_chart_outlined),
+      if (canSeeAuditLogs)
+        ('Audit Logs', Icons.history_edu_rounded),
+      if (isAdmin) ('Employee management', Icons.badge_outlined),
       if (isAdmin) ('Team management', Icons.groups_outlined),
       if (canSeeInvoices) ('Templates', Icons.dashboard_customize_outlined),
       if (isAdmin) ('Business Settings', Icons.settings_outlined),
+      if (isAdmin) ('Email & Reminders', Icons.alarm_on_rounded),
       if (isAdmin) ('Invoice settings', Icons.tune_outlined),
       ('Tax calculator', Icons.calculate_outlined),
     ];

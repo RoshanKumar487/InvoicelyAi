@@ -16,6 +16,8 @@ class Expense {
     this.taxAmount = 0,
     this.receiptImageUri,
     this.notes = '',
+    this.status = 'Paid',
+    this.dueDate = '',
   });
 
   final int? id;
@@ -34,6 +36,10 @@ class Expense {
   final double taxAmount;
   final String? receiptImageUri;
   final String notes;
+  final String status;
+  final String dueDate;
+
+  bool get isDue => status.trim().toUpperCase() == 'DUE' || status.trim().toUpperCase() == 'PENDING';
 
   factory Expense.fromJson(Map<String, dynamic> json) {
     return Expense(
@@ -56,6 +62,8 @@ class Expense {
       taxAmount: _asDouble(json['taxAmount']),
       receiptImageUri: json['receiptImageUri'] as String?,
       notes: _asString(json['notes']),
+      status: _asString(json['status'], fallback: 'Paid'),
+      dueDate: _asString(json['dueDate'] ?? json['due_date']),
     );
   }
 
@@ -76,6 +84,8 @@ class Expense {
         'taxAmount': taxAmount,
         'receiptImageUri': receiptImageUri,
         'notes': notes,
+        'status': status,
+        'dueDate': dueDate,
       };
 }
 

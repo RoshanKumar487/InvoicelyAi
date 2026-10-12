@@ -4,6 +4,9 @@ import 'package:share_plus/share_plus.dart';
 import '../../../core/api/api_client.dart';
 import '../../../core/api/api_exception.dart';
 import '../../../shared/widgets/offline_cache_banner.dart';
+import '../../clients/data/client.dart';
+import '../../clients/data/clients_repository.dart';
+import '../../clients/presentation/clients_screen.dart';
 import '../../invoices/data/invoice.dart';
 import '../../invoices/data/invoice_pdf_export.dart';
 import '../../invoices/data/invoice_repository.dart';
@@ -35,6 +38,7 @@ class ReportsScreen extends StatefulWidget {
 class _ReportsScreenState extends State<ReportsScreen> {
   late final ReportRepository _repository;
   late final InvoiceRepository _invoiceRepository;
+  late final ClientsRepository _clientsRepository;
   final _searchController = TextEditingController();
 
   bool _loading = true;
@@ -60,6 +64,7 @@ class _ReportsScreenState extends State<ReportsScreen> {
     super.initState();
     _repository = ReportRepository(apiClient: widget.apiClient);
     _invoiceRepository = InvoiceRepository(apiClient: widget.apiClient);
+    _clientsRepository = ClientsRepository(apiClient: widget.apiClient);
     _load();
   }
 
@@ -615,23 +620,32 @@ class _ReportsScreenState extends State<ReportsScreen> {
           rows: rows.map(_clientCells).toList(growable: false),
         ),
       ReportType.all => ExportReportTable(
-          name: 'Ledger Records',
+          name: 'General Ledger Records',
           headers: const [
-            'Record Type',
-            'Company',
-            'Title / Number',
             'Date',
+            'Reference / Voucher',
+            'Particulars / Account',
+            'Record Type',
+            'Debit (Dr)',
+            'Credit (Cr)',
+            'Net Value',
             'Status',
-            'Amount',
           ],
-          rows: rows.map((r) => [
-                rowRecordType(r),
-                companyNameFromRow(r),
-                reportText(r['invoiceNumber'] ?? r['title'] ?? r['name']),
-                formatReportDate(_recordDate(r)),
-                statusLabelFromRow(r),
-                reportMoney(calculateInvoiceTotal(r), r),
-              ]).toList(growable: false),
+          rows: rows.map((r) {
+            final isExp = rowRecordType(r) == 'EXPENSE';
+            final isInv = rowRecordType(r) == 'INVOICE';
+            final eff = rowEffectiveAmount(r);
+            return [
+              formatReportDate(_recordDate(r)),
+              reportText(r['invoiceNumber'] ?? r['title'] ?? r['name']),
+              companyNameFromRow(r),
+              rowRecordType(r),
+              isExp ? reportMoney(eff, r) : '—',
+              isInv ? reportMoney(eff, r) : '—',
+              '${isExp ? '-' : ''}${reportMoney(eff, r)}',
+              statusLabelFromRow(r),
+            ];
+          }).toList(growable: false),
         ),
     };
   }
@@ -737,7 +751,14 @@ class _ReportsScreenState extends State<ReportsScreen> {
             'Partially paid',
             'Cancelled',
           ],
-        ReportType.expenses => const ['All statuses'],
+        ReportType.expenses => const [
+            'All statuses',
+            'Paid',
+            'Approved',
+            'Pending',
+            'Draft',
+            'Rejected',
+          ],
         ReportType.clients => const ['All statuses', 'Active', 'Inactive'],
       };
 
@@ -826,10 +847,67 @@ class _ReportsScreenState extends State<ReportsScreen> {
           SnackBar(content: Text('Could not open invoice editor: $e')),
         );
       }
+    } else if (type == 'CLIENT') {
+      try {
+        final client = Client.fromJson(row);
+        showDialog<Client>(
+          context: context,
+          builder: (ctx) => ClientEditorDialog(client: client),
+        ).then((updated) async {
+          if (updated != null && mounted) {
+            try {
+              await _clientsRepository.update(updated);
+              if (!mounted) return;
+              ScaffoldMessenger.of(context).showSnackBar(
+                const SnackBar(
+                  backgroundColor: Color(0xFF10B981),
+                  content: Text('✓ Client updated successfully'),
+                ),
+              );
+              _load();
+            } catch (err) {
+              if (mounted) {
+                ScaffoldMessenger.of(context).showSnackBar(
+                  SnackBar(content: Text('Could not update client: $err')),
+                );
+              }
+            }
+          }
+        });
+      } catch (e) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Could not open client editor: $e')),
+        );
+      }
     } else {
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Editing ${companyNameFromRow(row)} ($type)')),
+        SnackBar(content: Text('Viewing ${companyNameFromRow(row)} ($type)')),
       );
+    }
+  }
+
+  Future<void> _createNewClient() async {
+    final client = await showDialog<Client>(
+      context: context,
+      builder: (ctx) => const ClientEditorDialog(),
+    );
+    if (client == null || !mounted) return;
+    try {
+      await _clientsRepository.create(client);
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          backgroundColor: Color(0xFF10B981),
+          content: Text('✓ Client created successfully'),
+        ),
+      );
+      _load();
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Could not create client: $e')),
+        );
+      }
     }
   }
 
@@ -862,6 +940,8 @@ class _ReportsScreenState extends State<ReportsScreen> {
       if (id != null && id is num) {
         if (type == 'INVOICE') {
           await _invoiceRepository.deleteInvoice(id.toInt());
+        } else if (type == 'CLIENT') {
+          await _clientsRepository.delete(id.toInt());
         }
       }
       if (mounted) {
@@ -1308,6 +1388,21 @@ class _ReportsScreenState extends State<ReportsScreen> {
                                   icon: const Icon(Icons.download_rounded, size: 18, color: Color(0xFF64748B)),
                                   visualDensity: VisualDensity.compact,
                                 ),
+                                if (_reportType == ReportType.clients) ...[
+                                  const SizedBox(width: 8),
+                                  FilledButton.icon(
+                                    onPressed: _createNewClient,
+                                    icon: const Icon(Icons.person_add_alt_1_rounded, size: 14),
+                                    label: const Text('Add Client', style: TextStyle(fontSize: 12, fontWeight: FontWeight.w700)),
+                                    style: FilledButton.styleFrom(
+                                      backgroundColor: const Color(0xFF0284C7),
+                                      foregroundColor: Colors.white,
+                                      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                                      minimumSize: const Size(0, 32),
+                                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+                                    ),
+                                  ),
+                                ],
                               ],
                             ),
 
@@ -1358,8 +1453,11 @@ class _ReportsScreenState extends State<ReportsScreen> {
                       // Tool section row (Customize View | Add/Change Filter | View Applied Filters)
                       Padding(
                         padding: const EdgeInsets.symmetric(horizontal: 4),
-                        child: Row(
-                          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                        child: Wrap(
+                          alignment: WrapAlignment.spaceBetween,
+                          crossAxisAlignment: WrapCrossAlignment.center,
+                          spacing: 8,
+                          runSpacing: 4,
                           children: [
                             TextButton.icon(
                               onPressed: _showCustomizeViewSheet,
@@ -1369,7 +1467,10 @@ class _ReportsScreenState extends State<ReportsScreen> {
                                 style: TextStyle(fontSize: 12, color: Color(0xFF475569), fontWeight: FontWeight.w600),
                               ),
                             ),
-                            Row(
+                            Wrap(
+                              spacing: 8,
+                              runSpacing: 4,
+                              crossAxisAlignment: WrapCrossAlignment.center,
                               children: [
                                 TextButton.icon(
                                   onPressed: _openFilterBottomSheet,
@@ -1379,7 +1480,6 @@ class _ReportsScreenState extends State<ReportsScreen> {
                                     style: TextStyle(fontSize: 12, color: Color(0xFF475569), fontWeight: FontWeight.w600),
                                   ),
                                 ),
-                                const SizedBox(width: 8),
                                 TextButton.icon(
                                   onPressed: _openFilterBottomSheet,
                                   icon: const Icon(Icons.tune_rounded, size: 15, color: Color(0xFF475569)),
@@ -1413,8 +1513,8 @@ class _ReportsScreenState extends State<ReportsScreen> {
                         reportType: _reportType,
                         rows: filtered,
                         selectedIds: _selectedIds,
-                        initialIsGrouped: true, // "fist show it as row grouped!"
-                        pageSize: 20, // "keep 20 items in one pages!"
+                        initialIsGrouped: false, // Classical flat table view by default
+                        pageSize: 20, // 20 items per page
                         formatCurrency: _formatCurrency,
                         onToggleSelect: (id) {
                           setState(() {

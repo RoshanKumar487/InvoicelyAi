@@ -158,6 +158,36 @@ public class CompanyService {
         return new UserSummaryDto(saved);
     }
 
+    @Transactional
+    public UserSummaryDto updateEmployeeRole(Long userId, String roleStr, String permissions, UserPrincipal principal) {
+        ensureAdminOrDeveloper(principal);
+
+        User user = userRepository.findById(userId)
+                .orElseThrow(() -> new ResourceNotFoundException("User", "id", userId));
+
+        if (principal.getRole() != Role.DEVELOPER) {
+            if (principal.getCompanyId() == null || !principal.getCompanyId().equals(user.getCompanyId())) {
+                throw new AccessDeniedException("You do not have permission to manage employees outside your organization.");
+            }
+        }
+
+        if (roleStr != null && !roleStr.isBlank()) {
+            try {
+                Role newRole = Role.valueOf(roleStr.trim().toUpperCase());
+                user.setRole(newRole);
+            } catch (IllegalArgumentException ignored) {}
+        }
+
+        if (permissions != null && !permissions.isBlank()) {
+            user.setPermissions(permissions);
+        } else if (user.getRole() == Role.ADMIN) {
+            user.setPermissions("INVOICES,EXPENSES,CLIENTS,REPORTS,EMPLOYEES,AUDIT_LOGS,SETTINGS");
+        }
+
+        User saved = userRepository.save(user);
+        return new UserSummaryDto(saved);
+    }
+
     private void ensureAdminOrDeveloper(UserPrincipal principal) {
         if (principal.getRole() != Role.ADMIN && principal.getRole() != Role.DEVELOPER) {
             throw new AccessDeniedException("Only ADMIN or DEVELOPER roles can perform this action.");

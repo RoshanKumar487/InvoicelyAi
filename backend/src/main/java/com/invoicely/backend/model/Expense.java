@@ -49,6 +49,12 @@ public class Expense {
     @Column(name = "receipt_image_uri", columnDefinition = "TEXT")
     private String receiptImageUri;
 
+    @Column(name = "status")
+    private String status = "Paid";
+
+    @Column(name = "due_date")
+    private String dueDate = "";
+
     @Column(columnDefinition = "TEXT")
     private String notes = "";
 
@@ -108,4 +114,10 @@ public class Expense {
 
     public String getCreatedByUserName() { return createdByUserName; }
     public void setCreatedByUserName(String createdByUserName) { this.createdByUserName = createdByUserName; }
+
+    public String getStatus() { return status; }
+    public void setStatus(String status) { this.status = status; }
+
+    public String getDueDate() { return dueDate; }
+    public void setDueDate(String dueDate) { this.dueDate = dueDate; }
 }
