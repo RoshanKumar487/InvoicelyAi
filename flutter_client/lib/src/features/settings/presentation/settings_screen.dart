@@ -9,6 +9,7 @@ import '../../../core/storage/local_preferences.dart';
 import '../../../shared/widgets/signature_pad_dialog.dart';
 import '../data/settings_repository.dart';
 import 'widgets/business_settings_tabs.dart';
+import 'widgets/email_templates_tab.dart';
 
 class SettingsScreen extends StatefulWidget {
   const SettingsScreen({
@@ -388,7 +389,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
   @override
   Widget build(BuildContext context) {
     return DefaultTabController(
-      length: 3,
+      length: 4,
       child: Scaffold(
         appBar: AppBar(
           leading: widget.onBack == null
@@ -418,10 +419,13 @@ class _SettingsScreenState extends State<SettingsScreen> {
             ),
           ],
           bottom: const TabBar(
+            isScrollable: true,
+            tabAlignment: TabAlignment.start,
             tabs: [
               Tab(icon: Icon(Icons.business_rounded), text: 'Business Profile'),
               Tab(icon: Icon(Icons.account_balance_rounded), text: 'Bank & UPI'),
               Tab(icon: Icon(Icons.draw_rounded), text: 'Brand & Terms'),
+              Tab(icon: Icon(Icons.mark_email_read_rounded), text: 'Email & WhatsApp'),
             ],
           ),
         ),
@@ -462,6 +466,10 @@ class _SettingsScreenState extends State<SettingsScreen> {
                           onRemoveSignature: () => _removeBrandingAsset('invoiceSignature'),
                           onSave: _save,
                           saving: _saving,
+                        ),
+                        EmailTemplatesTab(
+                          apiClient: widget.apiClient,
+                          profile: _profile,
                         ),
                       ],
                     ),

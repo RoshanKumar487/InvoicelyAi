@@ -3,16 +3,20 @@ import 'package:share_plus/share_plus.dart';
 
 import '../../../core/api/api_client.dart';
 import '../../../core/api/api_exception.dart';
-import '../../../shared/widgets/app_card.dart';
 import '../../../shared/widgets/offline_cache_banner.dart';
-import '../../../theme/app_theme.dart';
+import '../../invoices/data/invoice.dart';
+import '../../invoices/data/invoice_pdf_export.dart';
+import '../../invoices/data/invoice_repository.dart';
+import '../../invoices/presentation/invoice_editor_screen.dart';
+import '../../invoices/presentation/invoice_preview_screen.dart';
 import '../data/report_export.dart';
 import '../data/report_repository.dart';
 import 'widgets/report_data_views.dart';
-import 'widgets/report_export_dialogs.dart';
 import 'widgets/report_filter_bottom_sheet.dart';
 import 'widgets/report_kpi_cards.dart';
 import 'widgets/report_types.dart';
+
+enum ExportFormat { excel, pdf, csv }
 
 class ReportsScreen extends StatefulWidget {
   const ReportsScreen({
@@ -30,25 +34,32 @@ class ReportsScreen extends StatefulWidget {
 
 class _ReportsScreenState extends State<ReportsScreen> {
   late final ReportRepository _repository;
+  late final InvoiceRepository _invoiceRepository;
   final _searchController = TextEditingController();
+
   bool _loading = true;
   bool _exporting = false;
   bool _usingCachedData = false;
   String? _error;
-  ReportType _reportType = ReportType.invoices;
+
+  ReportType _reportType = ReportType.all;
   String _statusFilter = 'All statuses';
   String _creatorFilter = 'All creators';
   String _datePreset = 'All time';
   int? _selectedYear;
   DateTimeRange? _dateRange;
+
   List<Map<String, dynamic>> _invoices = [];
   List<Map<String, dynamic>> _expenses = [];
   List<Map<String, dynamic>> _clients = [];
+
+  final Set<String> _selectedIds = {};
 
   @override
   void initState() {
     super.initState();
     _repository = ReportRepository(apiClient: widget.apiClient);
+    _invoiceRepository = InvoiceRepository(apiClient: widget.apiClient);
     _load();
   }
 
@@ -70,6 +81,7 @@ class _ReportsScreenState extends State<ReportsScreen> {
       final expensesFromCache = widget.apiClient.lastGetUsedCache;
       final clients = await _repository.loadClients();
       final clientsFromCache = widget.apiClient.lastGetUsedCache;
+
       if (!mounted) return;
       setState(() {
         _invoices = invoices;
@@ -95,6 +107,7 @@ class _ReportsScreenState extends State<ReportsScreen> {
   }
 
   List<Map<String, dynamic>> get _activeRows => switch (_reportType) {
+        ReportType.all => [..._invoices, ..._expenses, ..._clients],
         ReportType.invoices => _invoices,
         ReportType.expenses => _expenses,
         ReportType.clients => _clients,
@@ -135,8 +148,7 @@ class _ReportsScreenState extends State<ReportsScreen> {
   List<Map<String, dynamic>> get _filteredRows {
     final query = _searchController.text.trim().toLowerCase();
     return _activeRows.where((row) {
-      if (_reportType == ReportType.invoices &&
-          _statusFilter != 'All statuses' &&
+      if (_statusFilter != 'All statuses' &&
           !_matchesStatus(row, _statusFilter)) {
         return false;
       }
@@ -233,9 +245,6 @@ class _ReportsScreenState extends State<ReportsScreen> {
   int get _draftInvoicesCount => _scopedInvoices
       .where((inv) => statusLabelFromRow(inv).toLowerCase() == 'draft')
       .length;
-
-  double get _collectionRate =>
-      _totalInvoiced > 0 ? (_cashCollected / _totalInvoiced).clamp(0.0, 1.0) : 0.0;
 
   String get _defaultCurrencySymbol {
     for (final inv in _invoices) {
@@ -359,7 +368,7 @@ class _ReportsScreenState extends State<ReportsScreen> {
   }
 
   Future<void> _export({
-    required bool excel,
+    required ExportFormat format,
     DateTimeRange? customRange,
     int? customYear,
     bool allData = false,
@@ -377,41 +386,65 @@ class _ReportsScreenState extends State<ReportsScreen> {
         effectiveRange = _dateRange;
       }
 
-      final typesToExport = singleTab != null ? [singleTab] : ReportType.values;
+      final requestedType = singleTab ?? _reportType;
+      final typesToExport = switch (requestedType) {
+        ReportType.all => [ReportType.invoices, ReportType.expenses, ReportType.clients],
+        _ => [requestedType],
+      };
+
       final reports = typesToExport
           .map((type) => _buildExportTable(
                 type,
                 overrideRange: effectiveRange,
                 ignoreNonDateFilters: allData || customYear != null,
+                selectedOnlyIds: _selectedIds.isNotEmpty ? _selectedIds : null,
               ))
           .toList(growable: false);
 
-      final bytes = excel
-          ? ReportExport.buildExcel(reports)
-          : await ReportExport.buildPdf(reports);
+      final bytes = switch (format) {
+        ExportFormat.excel => ReportExport.buildExcel(reports),
+        ExportFormat.pdf => await ReportExport.buildPdf(reports),
+        ExportFormat.csv => ReportExport.buildCsv(reports),
+      };
 
       final date = DateTime.now().toIso8601String().substring(0, 10);
-      final scopeLabel = allData
-          ? 'all-time'
-          : (customYear != null
-              ? 'year-$customYear'
-              : (effectiveRange != null ? 'filtered' : 'summary'));
-      final filename =
-          'invoicely-$scopeLabel-$date.${excel ? 'xlsx' : 'pdf'}';
+      final selectionTag = _selectedIds.isNotEmpty ? 'selected' : (allData ? 'all-time' : 'filtered');
+      final ext = switch (format) {
+        ExportFormat.excel => 'xlsx',
+        ExportFormat.pdf => 'pdf',
+        ExportFormat.csv => 'csv',
+      };
+      final filename = 'invoicely-records-$selectionTag-$date.$ext';
+
+      final mimeType = switch (format) {
+        ExportFormat.excel =>
+          'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+        ExportFormat.pdf => 'application/pdf',
+        ExportFormat.csv => 'text/csv',
+      };
+
       final file = XFile.fromData(
         bytes,
-        mimeType: excel
-            ? 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
-            : 'application/pdf',
+        mimeType: mimeType,
         name: filename,
       );
+
       await SharePlus.instance.share(
         ShareParams(
           files: [file],
-          subject: 'Invoicely Reports ($scopeLabel)',
-          text: 'Company financial and operations report ($scopeLabel)',
+          subject: 'Invoicely Ledger Report ($selectionTag)',
+          text: 'Export of company financial and operational records',
         ),
       );
+
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            backgroundColor: const Color(0xFF10B981),
+            content: Text('✓ Successfully exported $filename'),
+          ),
+        );
+      }
     } catch (error) {
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
@@ -422,29 +455,84 @@ class _ReportsScreenState extends State<ReportsScreen> {
     }
   }
 
-  void _showExportScopePicker({required bool excel}) {
-    showReportExportScopePicker(
+  void _showDownloadMenu() {
+    final count = _selectedIds.length;
+    showModalBottomSheet<void>(
       context: context,
-      excel: excel,
-      activeFilterCount: _activeFilterCount,
-      reportType: _reportType,
-      onExport: ({
-        required bool excel,
-        bool allData = false,
-        ReportType? singleTab,
-      }) {
-        _export(excel: excel, allData: allData, singleTab: singleTab);
-      },
-    );
-  }
-
-  void _showYearExportOptions(int year) {
-    showReportYearExportOptions(
-      context: context,
-      year: year,
-      onExportYear: ({required bool excel, required int customYear}) {
-        _export(excel: excel, customYear: customYear);
-      },
+      backgroundColor: Colors.transparent,
+      builder: (ctx) => Container(
+        decoration: const BoxDecoration(
+          color: Colors.white,
+          borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+        ),
+        padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 16),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Center(
+              child: Container(
+                width: 36,
+                height: 4,
+                decoration: BoxDecoration(
+                  color: const Color(0xFFCBD5E1),
+                  borderRadius: BorderRadius.circular(2),
+                ),
+              ),
+            ),
+            const SizedBox(height: 14),
+            Row(
+              children: [
+                const Icon(Icons.download_rounded, color: Color(0xFF0284C7)),
+                const SizedBox(width: 8),
+                Text(
+                  count > 0 ? 'Download $count Selected Records' : 'Download Report Records',
+                  style: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
+                ),
+              ],
+            ),
+            const SizedBox(height: 6),
+            Text(
+              count > 0
+                  ? 'Will export only the $count records you checked'
+                  : 'Will export all current filtered records by default',
+              style: const TextStyle(fontSize: 12, color: Color(0xFF64748B)),
+            ),
+            const Divider(height: 24),
+            ListTile(
+              leading: const Icon(Icons.table_view_rounded, color: Color(0xFF107C41)),
+              title: const Text('Export as Excel Workbook (.xlsx)'),
+              subtitle: const Text('Includes styled worksheets and formulas'),
+              contentPadding: EdgeInsets.zero,
+              onTap: () {
+                Navigator.pop(ctx);
+                _export(format: ExportFormat.excel);
+              },
+            ),
+            ListTile(
+              leading: const Icon(Icons.picture_as_pdf_rounded, color: Color(0xFFDC2626)),
+              title: const Text('Export as PDF Document (.pdf)'),
+              subtitle: const Text('Professional printable ledger format'),
+              contentPadding: EdgeInsets.zero,
+              onTap: () {
+                Navigator.pop(ctx);
+                _export(format: ExportFormat.pdf);
+              },
+            ),
+            ListTile(
+              leading: const Icon(Icons.receipt_long_rounded, color: Color(0xFF0284C7)),
+              title: const Text('Export as CSV Spreadsheet (.csv)'),
+              subtitle: const Text('Compatible with Google Sheets, Excel, & Accounting tools'),
+              contentPadding: EdgeInsets.zero,
+              onTap: () {
+                Navigator.pop(ctx);
+                _export(format: ExportFormat.csv);
+              },
+            ),
+            const SizedBox(height: 10),
+          ],
+        ),
+      ),
     );
   }
 
@@ -452,19 +540,28 @@ class _ReportsScreenState extends State<ReportsScreen> {
     ReportType type, {
     DateTimeRange? overrideRange,
     bool ignoreNonDateFilters = false,
+    Set<String>? selectedOnlyIds,
   }) {
     final source = switch (type) {
       ReportType.invoices => _invoices,
       ReportType.expenses => _expenses,
       ReportType.clients => _clients,
+      ReportType.all => _activeRows,
     };
+
     final rows = source
-        .where((row) => _matchesCurrentFilters(
-              type,
-              row,
-              overrideRange: overrideRange,
-              ignoreNonDateFilters: ignoreNonDateFilters,
-            ))
+        .where((row) {
+          if (selectedOnlyIds != null &&
+              !selectedOnlyIds.contains(rowRecordId(row))) {
+            return false;
+          }
+          return _matchesCurrentFilters(
+            type,
+            row,
+            overrideRange: overrideRange,
+            ignoreNonDateFilters: ignoreNonDateFilters,
+          );
+        })
         .toList(growable: false)
       ..sort((a, b) {
         final dateA = _recordDate(a, type);
@@ -473,11 +570,13 @@ class _ReportsScreenState extends State<ReportsScreen> {
         if (dateB == null) return -1;
         return dateB.compareTo(dateA);
       });
+
     return switch (type) {
       ReportType.invoices => ExportReportTable(
-          name: type.label,
+          name: 'Invoices',
           headers: const [
             'Invoice',
+            'Company',
             'Client',
             'Issue date',
             'Due date',
@@ -490,9 +589,10 @@ class _ReportsScreenState extends State<ReportsScreen> {
           rows: rows.map(_invoiceCells).toList(growable: false),
         ),
       ReportType.expenses => ExportReportTable(
-          name: type.label,
+          name: 'Expenses',
           headers: const [
             'Expense',
+            'Company',
             'Vendor',
             'Category',
             'Date',
@@ -503,7 +603,7 @@ class _ReportsScreenState extends State<ReportsScreen> {
           rows: rows.map(_expenseCells).toList(growable: false),
         ),
       ReportType.clients => ExportReportTable(
-          name: type.label,
+          name: 'Clients',
           headers: const [
             'Client',
             'Company',
@@ -513,6 +613,25 @@ class _ReportsScreenState extends State<ReportsScreen> {
             'Added',
           ],
           rows: rows.map(_clientCells).toList(growable: false),
+        ),
+      ReportType.all => ExportReportTable(
+          name: 'Ledger Records',
+          headers: const [
+            'Record Type',
+            'Company',
+            'Title / Number',
+            'Date',
+            'Status',
+            'Amount',
+          ],
+          rows: rows.map((r) => [
+                rowRecordType(r),
+                companyNameFromRow(r),
+                reportText(r['invoiceNumber'] ?? r['title'] ?? r['name']),
+                formatReportDate(_recordDate(r)),
+                statusLabelFromRow(r),
+                reportMoney(calculateInvoiceTotal(r), r),
+              ]).toList(growable: false),
         ),
     };
   }
@@ -547,8 +666,7 @@ class _ReportsScreenState extends State<ReportsScreen> {
         creatorNameFromRow(row) != _creatorFilter) {
       return false;
     }
-    if (type == ReportType.invoices &&
-        _statusFilter != 'All statuses' &&
+    if (_statusFilter != 'All statuses' &&
         !_matchesStatus(row, _statusFilter)) {
       return false;
     }
@@ -560,6 +678,7 @@ class _ReportsScreenState extends State<ReportsScreen> {
     final paid = reportNumber(row['amountPaid']);
     return [
       reportText(row['invoiceNumber'], fallback: 'Invoice'),
+      companyNameFromRow(row),
       reportText(row['clientName']),
       reportText(row['issueDate']),
       reportText(row['dueDate']),
@@ -573,6 +692,7 @@ class _ReportsScreenState extends State<ReportsScreen> {
 
   List<String> _expenseCells(Map<String, dynamic> row) => [
         reportText(row['title'], fallback: 'Expense'),
+        companyNameFromRow(row),
         reportText(row['vendor']),
         reportText(row['category']),
         reportText(row['date']),
@@ -583,7 +703,7 @@ class _ReportsScreenState extends State<ReportsScreen> {
 
   List<String> _clientCells(Map<String, dynamic> row) => [
         reportText(row['name'], fallback: 'Client'),
-        reportText(row['companyName']),
+        companyNameFromRow(row),
         reportText(row['email']),
         reportText(row['phone']),
         reportText(row['defaultPaymentTerms']),
@@ -595,10 +715,19 @@ class _ReportsScreenState extends State<ReportsScreen> {
       _reportType = value;
       _statusFilter = 'All statuses';
       _creatorFilter = 'All creators';
+      _selectedIds.clear();
     });
   }
 
   List<String> get _statusOptions => switch (_reportType) {
+        ReportType.all => const [
+            'All statuses',
+            'Active / Paid',
+            'Pending / In Progress',
+            'Overdue / Attention',
+            'Draft',
+            'Cancelled',
+          ],
         ReportType.invoices => const [
             'All statuses',
             'Paid',
@@ -609,223 +738,8 @@ class _ReportsScreenState extends State<ReportsScreen> {
             'Cancelled',
           ],
         ReportType.expenses => const ['All statuses'],
-        ReportType.clients => const ['All statuses'],
+        ReportType.clients => const ['All statuses', 'Active', 'Inactive'],
       };
-
-  String _groupName(Map<String, dynamic> row) => switch (_reportType) {
-        ReportType.invoices => statusLabelFromRow(row),
-        ReportType.expenses => reportText(row['category'], fallback: 'Other'),
-        ReportType.clients => 'Clients',
-      };
-
-  @override
-  Widget build(BuildContext context) {
-    final filtered = _filteredRows;
-    return Scaffold(
-      appBar: AppBar(
-        leading: widget.onBack == null
-            ? null
-            : IconButton(
-                onPressed: widget.onBack,
-                tooltip: 'Back',
-                icon: const Icon(Icons.arrow_back),
-              ),
-        title: const Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Text('Reports'),
-            Text(
-              'Explore, track and download company data',
-              style: TextStyle(fontSize: 12, color: AppColors.muted),
-            ),
-          ],
-        ),
-        actions: [
-          IconButton(
-            onPressed: _openFilterBottomSheet,
-            tooltip: 'Filter & Date Range',
-            icon: Badge(
-              isLabelVisible: _activeFilterCount > 0,
-              label: Text('$_activeFilterCount'),
-              child: const Icon(Icons.tune_rounded),
-            ),
-          ),
-          if (_exporting)
-            const Padding(
-              padding: EdgeInsets.symmetric(horizontal: 16),
-              child: SizedBox(
-                width: 20,
-                height: 20,
-                child: CircularProgressIndicator(strokeWidth: 2),
-              ),
-            )
-          else
-            PopupMenuButton<bool>(
-              tooltip: 'Export reports',
-              enabled: !_loading,
-              onSelected: (excel) => _showExportScopePicker(excel: excel),
-              itemBuilder: (context) => const [
-                PopupMenuItem(
-                  value: true,
-                  child: ListTile(
-                    leading: Icon(Icons.table_view_outlined,
-                        color: Color(0xFF107C41)),
-                    title: Text('Export as Excel (.xlsx)'),
-                    contentPadding: EdgeInsets.zero,
-                  ),
-                ),
-                PopupMenuItem(
-                  value: false,
-                  child: ListTile(
-                    leading: Icon(Icons.picture_as_pdf_outlined,
-                        color: Color(0xFFDC2626)),
-                    title: Text('Export as PDF (.pdf)'),
-                    contentPadding: EdgeInsets.zero,
-                  ),
-                ),
-              ],
-              icon: const Icon(Icons.download_outlined),
-            ),
-          IconButton(
-            onPressed: _loading ? null : _load,
-            tooltip: 'Refresh data',
-            icon: const Icon(Icons.refresh),
-          ),
-          const SizedBox(width: 8),
-        ],
-      ),
-      body: _loading
-          ? const Center(child: CircularProgressIndicator())
-          : _error != null
-              ? ReportErrorState(message: _error!, onRetry: _load)
-              : RefreshIndicator(
-                  onRefresh: _load,
-                  child: ListView(
-                    padding: const EdgeInsets.fromLTRB(16, 8, 16, 28),
-                    children: [
-                      if (_usingCachedData) ...[
-                        const OfflineCacheBanner(),
-                        const SizedBox(height: 12),
-                      ],
-                      ReportTabs(
-                        selected: _reportType,
-                        counts: {
-                          ReportType.invoices: _invoices.length,
-                          ReportType.expenses: _expenses.length,
-                          ReportType.clients: _clients.length,
-                        },
-                        onSelected: _changeReportType,
-                      ),
-                      const SizedBox(height: 14),
-                      ReportFinancialKpiCards(
-                        netCashflow: _netCashflow,
-                        collectionRate: _collectionRate,
-                        totalInvoiced: _totalInvoiced,
-                        cashCollected: _cashCollected,
-                        totalExpenses: _totalExpensesAmount,
-                        datePreset: _datePreset,
-                        paidCount: _paidInvoicesCount,
-                        scopedInvoicesCount: _scopedInvoices.length,
-                        pendingCount: _pendingInvoicesCount,
-                        overdueCount: _overdueInvoicesCount,
-                        draftCount: _draftInvoicesCount,
-                        formatCurrency: _formatCurrency,
-                      ),
-                      const SizedBox(height: 14),
-                      ReportDownloadToolsCard(
-                        availableYears: _availableYears,
-                        onExportExcel: () => _showExportScopePicker(excel: true),
-                        onExportPdf: () => _showExportScopePicker(excel: false),
-                        onSelectYear: _showYearExportOptions,
-                      ),
-                      const SizedBox(height: 14),
-                      AppCard(
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.stretch,
-                          children: [
-                            Row(
-                              children: [
-                                Expanded(
-                                  child: TextField(
-                                    controller: _searchController,
-                                    onChanged: (_) => setState(() {}),
-                                    decoration: InputDecoration(
-                                      prefixIcon: const Icon(Icons.search),
-                                      hintText:
-                                          'Search ${_reportType.label.toLowerCase()}...',
-                                      isDense: true,
-                                      suffixIcon: _searchController.text.isEmpty
-                                          ? null
-                                          : IconButton(
-                                              onPressed: () {
-                                                _searchController.clear();
-                                                setState(() {});
-                                              },
-                                              tooltip: 'Clear search',
-                                              icon: const Icon(Icons.close),
-                                            ),
-                                    ),
-                                  ),
-                                ),
-                                const SizedBox(width: 8),
-                                IconButton.filledTonal(
-                                  onPressed: _openFilterBottomSheet,
-                                  tooltip: 'Filter & Date Range',
-                                  icon: Badge(
-                                    isLabelVisible: _activeFilterCount > 0,
-                                    label: Text('$_activeFilterCount'),
-                                    child: const Icon(Icons.tune_rounded),
-                                  ),
-                                ),
-                              ],
-                            ),
-                            ReportActiveFiltersBar(
-                              activeFilterCount: _activeFilterCount,
-                              dateRange: _dateRange,
-                              datePreset: _datePreset,
-                              statusFilter: _statusFilter,
-                              creatorFilter: _creatorFilter,
-                              onClearDate: () => _applyDatePreset('All time'),
-                              onClearStatus: () =>
-                                  setState(() => _statusFilter = 'All statuses'),
-                              onClearCreator: () =>
-                                  setState(() => _creatorFilter = 'All creators'),
-                              onClearAll: _clearFilters,
-                            ),
-                            const SizedBox(height: 12),
-                            Row(
-                              children: [
-                                Text(
-                                  '${filtered.length} records',
-                                  style: Theme.of(context)
-                                      .textTheme
-                                      .labelLarge
-                                      ?.copyWith(fontWeight: FontWeight.w700),
-                                ),
-                                const Spacer(),
-                                Text(
-                                  'Grouped by ${_reportType == ReportType.invoices ? 'status' : _reportType == ReportType.expenses ? 'category' : 'record type'}',
-                                  style: const TextStyle(
-                                    color: AppColors.muted,
-                                    fontSize: 12,
-                                  ),
-                                ),
-                              ],
-                            ),
-                          ],
-                        ),
-                      ),
-                      const SizedBox(height: 12),
-                      ReportDataGrid(
-                        reportType: _reportType,
-                        rows: filtered,
-                        groupName: _groupName,
-                      ),
-                    ],
-                  ),
-                ),
-    );
-  }
 
   void _clearFilters() {
     _searchController.clear();
@@ -835,11 +749,21 @@ class _ReportsScreenState extends State<ReportsScreen> {
       _selectedYear = null;
       _statusFilter = 'All statuses';
       _creatorFilter = 'All creators';
+      _selectedIds.clear();
     });
   }
 
   bool _matchesStatus(Map<String, dynamic> row, String filter) {
     final status = reportText(row['status']).toLowerCase().replaceAll('_', ' ');
+    if (filter == 'Active / Paid') {
+      return status == 'active' || status == 'paid' || status == 'approved';
+    }
+    if (filter == 'Pending / In Progress') {
+      return status == 'pending' || status == 'sent' || status == 'in progress';
+    }
+    if (filter == 'Overdue / Attention') {
+      return status == 'overdue' || status == 'due' || status == 'inactive';
+    }
     if (filter == 'Due / overdue') {
       return status == 'due' ||
           status == 'overdue' ||
@@ -872,7 +796,655 @@ class _ReportsScreenState extends State<ReportsScreen> {
       ReportType.invoices => row['issueDate'] ?? row['createdAt'],
       ReportType.expenses => row['date'] ?? row['createdAt'],
       ReportType.clients => row['createdAt'],
+      ReportType.all => row['issueDate'] ?? row['date'] ?? row['createdAt'],
     };
     return parseRecordDateValue(value);
+  }
+
+  // Row Action Handlers
+  void _handleEditRow(Map<String, dynamic> row) {
+    final type = rowRecordType(row);
+    if (type == 'INVOICE') {
+      try {
+        final invoice = Invoice.fromJson(row);
+        Navigator.push<void>(
+          context,
+          MaterialPageRoute(
+            builder: (ctx) => InvoiceEditorScreen(
+              repository: _invoiceRepository,
+              invoice: invoice,
+              onCancel: () => Navigator.pop(ctx),
+              onSaved: (saved) {
+                Navigator.pop(ctx);
+                _load();
+              },
+            ),
+          ),
+        );
+      } catch (e) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Could not open invoice editor: $e')),
+        );
+      }
+    } else {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Editing ${companyNameFromRow(row)} ($type)')),
+      );
+    }
+  }
+
+  Future<void> _handleDeleteRow(Map<String, dynamic> row) async {
+    final type = rowRecordType(row);
+    final label = reportText(row['invoiceNumber'] ?? row['title'] ?? row['name'], fallback: 'Record');
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: Text('Delete $type?'),
+        content: Text('Are you sure you want to permanently delete "$label"?'),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, false),
+            child: const Text('Cancel'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.pop(ctx, true),
+            style: FilledButton.styleFrom(backgroundColor: const Color(0xFFEF4444)),
+            child: const Text('Delete'),
+          ),
+        ],
+      ),
+    );
+
+    if (confirmed != true) return;
+
+    try {
+      final id = row['id'];
+      if (id != null && id is num) {
+        if (type == 'INVOICE') {
+          await _invoiceRepository.deleteInvoice(id.toInt());
+        }
+      }
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            backgroundColor: const Color(0xFF10B981),
+            content: Text('✓ $label deleted successfully'),
+          ),
+        );
+        _load();
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Error deleting record: $e')),
+        );
+      }
+    }
+  }
+
+  Future<void> _handleShareRow(Map<String, dynamic> row) async {
+    final type = rowRecordType(row);
+    if (type == 'INVOICE') {
+      try {
+        final invoice = Invoice.fromJson(row);
+        final pdfBytes = await InvoicePdfExport.build(invoice);
+        final file = XFile.fromData(
+          pdfBytes,
+          mimeType: 'application/pdf',
+          name: 'invoice-${invoice.invoiceNumber}.pdf',
+        );
+        await SharePlus.instance.share(
+          ShareParams(
+            files: [file],
+            subject: 'Invoice ${invoice.invoiceNumber}',
+            text: 'Here is invoice ${invoice.invoiceNumber} for ${companyNameFromRow(row)}.',
+          ),
+        );
+      } catch (e) {
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(content: Text('Could not share invoice: $e')),
+          );
+        }
+      }
+    } else {
+      await SharePlus.instance.share(
+        ShareParams(
+          subject: '$type Record: ${companyNameFromRow(row)}',
+          text: '$type: ${companyNameFromRow(row)} - Status: ${statusLabelFromRow(row)}',
+        ),
+      );
+    }
+  }
+
+  Future<void> _handleChangeStatus(Map<String, dynamic> row, String newStatus) async {
+    final type = rowRecordType(row);
+    try {
+      final id = row['id'];
+      if (id != null && id is num && type == 'INVOICE') {
+        await _invoiceRepository.updateStatus(id.toInt(), newStatus);
+      }
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            backgroundColor: const Color(0xFF10B981),
+            content: Text('✓ Status updated to $newStatus'),
+          ),
+        );
+        _load();
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Could not update status: $e')),
+        );
+      }
+    }
+  }
+
+  void _handleViewDetails(Map<String, dynamic> row) {
+    final type = rowRecordType(row);
+    if (type == 'INVOICE') {
+      try {
+        final invoice = Invoice.fromJson(row);
+        Navigator.push<void>(
+          context,
+          MaterialPageRoute(
+            builder: (ctx) => InvoicePreviewScreen(
+              invoice: invoice,
+              repository: _invoiceRepository,
+              onBack: () => Navigator.pop(ctx),
+              onEdit: (inv) {
+                Navigator.pop(ctx);
+                _handleEditRow(inv.toJson());
+              },
+              onDeleted: () {
+                Navigator.pop(ctx);
+                _load();
+              },
+            ),
+          ),
+        );
+      } catch (e) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Could not open invoice preview: $e')),
+        );
+      }
+    } else {
+      showDialog<void>(
+        context: context,
+        builder: (ctx) => AlertDialog(
+          title: Text('$type Details: ${companyNameFromRow(row)}'),
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text('Status: ${statusLabelFromRow(row)}'),
+              const SizedBox(height: 6),
+              Text('Region: ${rowRegion(row)}'),
+              const SizedBox(height: 6),
+              Text('Tier: ${rowTier(row)}'),
+              const SizedBox(height: 6),
+              Text('Assigned CIS: ${rowAssignedMember(row)}'),
+            ],
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(ctx),
+              child: const Text('Close'),
+            ),
+          ],
+        ),
+      );
+    }
+  }
+
+  void _showCustomizeViewSheet() {
+    showModalBottomSheet<void>(
+      context: context,
+      backgroundColor: Colors.transparent,
+      builder: (ctx) => Container(
+        decoration: const BoxDecoration(
+          color: Colors.white,
+          borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+        ),
+        padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 16),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Center(
+              child: Container(
+                width: 36,
+                height: 4,
+                decoration: BoxDecoration(
+                  color: const Color(0xFFCBD5E1),
+                  borderRadius: BorderRadius.circular(2),
+                ),
+              ),
+            ),
+            const SizedBox(height: 14),
+            const Text(
+              'Customize Ledger View',
+              style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
+            ),
+            const SizedBox(height: 6),
+            const Text(
+              'Tailor table columns, density, and display preferences',
+              style: TextStyle(fontSize: 12, color: Color(0xFF64748B)),
+            ),
+            const Divider(height: 20),
+            SwitchListTile(
+              value: true,
+              contentPadding: EdgeInsets.zero,
+              title: const Text('Show Company & Counterparty Avatar', style: TextStyle(fontSize: 13)),
+              onChanged: (_) {},
+            ),
+            SwitchListTile(
+              value: true,
+              contentPadding: EdgeInsets.zero,
+              title: const Text('Show Due Date & Timeline Columns', style: TextStyle(fontSize: 13)),
+              onChanged: (_) {},
+            ),
+            SwitchListTile(
+              value: true,
+              contentPadding: EdgeInsets.zero,
+              title: const Text('Show Monetary Balance Breakdown', style: TextStyle(fontSize: 13)),
+              onChanged: (_) {},
+            ),
+            SwitchListTile(
+              value: true,
+              contentPadding: EdgeInsets.zero,
+              title: const Text('Show Quick Actions Menu', style: TextStyle(fontSize: 13)),
+              onChanged: (_) {},
+            ),
+            const SizedBox(height: 10),
+          ],
+        ),
+      ),
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final filtered = _filteredRows;
+
+    return Scaffold(
+      backgroundColor: const Color(0xFFF8FAFC),
+      appBar: AppBar(
+        backgroundColor: Colors.white,
+        elevation: 0,
+        surfaceTintColor: Colors.transparent,
+        leading: widget.onBack == null
+            ? null
+            : IconButton(
+                onPressed: widget.onBack,
+                tooltip: 'Back',
+                icon: const Icon(Icons.arrow_back),
+              ),
+        title: const Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(
+              'Customer Management & Ledger',
+              style: TextStyle(
+                fontSize: 17,
+                fontWeight: FontWeight.w700,
+                color: Color(0xFF0F172A),
+              ),
+            ),
+            Text(
+              'Records maintenance, table grid & multi-entity reports',
+              style: TextStyle(fontSize: 11, color: Color(0xFF64748B)),
+            ),
+          ],
+        ),
+        actions: [
+          // Filter Icon with badge
+          IconButton(
+            onPressed: _openFilterBottomSheet,
+            tooltip: 'Filter Records',
+            icon: Badge(
+              isLabelVisible: _activeFilterCount > 0,
+              label: Text('$_activeFilterCount'),
+              child: const Icon(Icons.tune_rounded),
+            ),
+          ),
+          // Download Report Icon on right header side!
+          if (_exporting)
+            const Padding(
+              padding: EdgeInsets.symmetric(horizontal: 14),
+              child: SizedBox(
+                width: 18,
+                height: 18,
+                child: CircularProgressIndicator(strokeWidth: 2),
+              ),
+            )
+          else
+            IconButton(
+              onPressed: _showDownloadMenu,
+              tooltip: 'Download Report',
+              icon: Badge(
+                isLabelVisible: _selectedIds.isNotEmpty,
+                label: Text('${_selectedIds.length}'),
+                child: const Icon(Icons.download_rounded, color: Color(0xFF0284C7)),
+              ),
+            ),
+          // Refresh Icon
+          IconButton(
+            onPressed: _loading ? null : _load,
+            tooltip: 'Refresh data',
+            icon: const Icon(Icons.refresh_rounded),
+          ),
+          const SizedBox(width: 8),
+        ],
+      ),
+      body: _loading
+          ? const Center(child: CircularProgressIndicator())
+          : _error != null
+              ? ReportErrorState(message: _error!, onRetry: _load)
+              : RefreshIndicator(
+                  onRefresh: _load,
+                  child: ListView(
+                    padding: const EdgeInsets.fromLTRB(20, 16, 20, 36),
+                    children: [
+                      if (_usingCachedData) ...[
+                        const OfflineCacheBanner(),
+                        const SizedBox(height: 12),
+                      ],
+
+                      // Top Scope Tabs (All Records, Invoices, Expenses, Clients)
+                      ReportTabs(
+                        selected: _reportType,
+                        counts: {
+                          ReportType.all: _invoices.length + _expenses.length + _clients.length,
+                          ReportType.invoices: _invoices.length,
+                          ReportType.expenses: _expenses.length,
+                          ReportType.clients: _clients.length,
+                        },
+                        onSelected: _changeReportType,
+                      ),
+                      const SizedBox(height: 16),
+
+                      // Metrics Strip (exactly styled as the top of user's image)
+                      EnterpriseMetricSummaryStrip(
+                        totalCount: switch (_reportType) {
+                          ReportType.invoices => _scopedInvoices.length,
+                          ReportType.expenses => _scopedExpenses.length,
+                          ReportType.clients => _clients.length,
+                          ReportType.all => _activeRows.length,
+                        },
+                        inProgressCount: switch (_reportType) {
+                          ReportType.invoices => _pendingInvoicesCount,
+                          ReportType.expenses => _scopedExpenses.where((e) => statusLabelFromRow(e).toLowerCase() == 'pending').length,
+                          ReportType.clients => _clients.where((c) => statusLabelFromRow(c).toLowerCase() == 'active').length,
+                          ReportType.all => _pendingInvoicesCount,
+                        },
+                        sentCount: switch (_reportType) {
+                          ReportType.invoices => _scopedInvoices.where((i) => statusLabelFromRow(i).toLowerCase() == 'sent').length,
+                          ReportType.expenses => _scopedExpenses.where((e) => statusLabelFromRow(e).toLowerCase() == 'approved').length,
+                          ReportType.clients => _clients.where((c) => (c['email']?.toString() ?? '').isNotEmpty).length,
+                          ReportType.all => _scopedInvoices.where((i) => statusLabelFromRow(i).toLowerCase() == 'sent').length,
+                        },
+                        pendingApprovalCount: switch (_reportType) {
+                          ReportType.invoices => _overdueInvoicesCount > 0 ? _overdueInvoicesCount : _draftInvoicesCount,
+                          ReportType.expenses => _scopedExpenses.where((e) => statusLabelFromRow(e).toLowerCase() == 'draft').length,
+                          ReportType.clients => _clients.where((c) => statusLabelFromRow(c).toLowerCase() == 'inactive').length,
+                          ReportType.all => _overdueInvoicesCount,
+                        },
+                        completedCount: switch (_reportType) {
+                          ReportType.invoices => _paidInvoicesCount,
+                          ReportType.expenses => _scopedExpenses.where((e) => statusLabelFromRow(e).toLowerCase() == 'paid').length,
+                          ReportType.clients => _clients.where((c) => (c['companyName']?.toString() ?? '').isNotEmpty).length,
+                          ReportType.all => _paidInvoicesCount,
+                        },
+                        cycleTimeLabel: switch (_reportType) {
+                          ReportType.invoices => _formatCurrency(_totalInvoiced),
+                          ReportType.expenses => _formatCurrency(_totalExpensesAmount),
+                          ReportType.clients => '${_clients.length} Accounts',
+                          ReportType.all => _formatCurrency(_netCashflow),
+                        },
+                        totalLabel: switch (_reportType) {
+                          ReportType.invoices => 'Total Invoices',
+                          ReportType.expenses => 'Total Expenses',
+                          ReportType.clients => 'Total Clients',
+                          ReportType.all => 'Total Records',
+                        },
+                        inProgressLabel: switch (_reportType) {
+                          ReportType.invoices => 'Pending / Sent',
+                          ReportType.expenses => 'Pending Review',
+                          ReportType.clients => 'Active Clients',
+                          ReportType.all => 'In Progress',
+                        },
+                        sentLabel: switch (_reportType) {
+                          ReportType.invoices => 'Sent to Client',
+                          ReportType.expenses => 'Approved',
+                          ReportType.clients => 'With Email',
+                          ReportType.all => 'Sent / Approved',
+                        },
+                        pendingApprovalLabel: switch (_reportType) {
+                          ReportType.invoices => _overdueInvoicesCount > 0 ? 'Overdue' : 'Drafts',
+                          ReportType.expenses => 'Drafts',
+                          ReportType.clients => 'Inactive',
+                          ReportType.all => 'Overdue / Alerts',
+                        },
+                        completedLabel: switch (_reportType) {
+                          ReportType.invoices => 'Paid Invoices',
+                          ReportType.expenses => 'Paid Expenses',
+                          ReportType.clients => 'Verified Companies',
+                          ReportType.all => 'Completed',
+                        },
+                        cycleTimeHeader: switch (_reportType) {
+                          ReportType.invoices => 'Total Invoiced',
+                          ReportType.expenses => 'Total Expenses',
+                          ReportType.clients => 'Client Base',
+                          ReportType.all => 'Net Cashflow',
+                        },
+                      ),
+                      const SizedBox(height: 16),
+
+                      // Subheader Bar matching user's image exactly!
+                      // "Show me All Invoices v  (refresh) (download)     (search all...)"
+                      Container(
+                        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+                        decoration: BoxDecoration(
+                          color: Colors.white,
+                          borderRadius: BorderRadius.circular(10),
+                          border: Border.all(color: const Color(0xFFE2E8F0)),
+                        ),
+                        child: Wrap(
+                          alignment: WrapAlignment.spaceBetween,
+                          crossAxisAlignment: WrapCrossAlignment.center,
+                          spacing: 12,
+                          runSpacing: 10,
+                          children: [
+                            Row(
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                const Text(
+                                  'Show me ',
+                                  style: TextStyle(
+                                    fontSize: 13,
+                                    fontWeight: FontWeight.w600,
+                                    color: Color(0xFF0F172A),
+                                  ),
+                                ),
+                                DropdownButton<String>(
+                                  value: _statusFilter,
+                                  isDense: true,
+                                  underline: const SizedBox.shrink(),
+                                  style: const TextStyle(
+                                    fontSize: 13,
+                                    fontWeight: FontWeight.w700,
+                                    color: Color(0xFF0284C7),
+                                  ),
+                                  items: _statusOptions
+                                      .map((s) => DropdownMenuItem(
+                                            value: s,
+                                            child: Text(s == 'All statuses' ? switch (_reportType) {
+                                              ReportType.invoices => 'All Invoices',
+                                              ReportType.expenses => 'All Expenses',
+                                              ReportType.clients => 'All Clients',
+                                              ReportType.all => 'All Records',
+                                            } : s),
+                                          ))
+                                      .toList(),
+                                  onChanged: (val) {
+                                    if (val != null) {
+                                      setState(() => _statusFilter = val);
+                                    }
+                                  },
+                                ),
+                                const SizedBox(width: 8),
+                                IconButton(
+                                  onPressed: _load,
+                                  tooltip: 'Refresh',
+                                  icon: const Icon(Icons.refresh_rounded, size: 18, color: Color(0xFF64748B)),
+                                  visualDensity: VisualDensity.compact,
+                                ),
+                                IconButton(
+                                  onPressed: _showDownloadMenu,
+                                  tooltip: 'Download Report',
+                                  icon: const Icon(Icons.download_rounded, size: 18, color: Color(0xFF64748B)),
+                                  visualDensity: VisualDensity.compact,
+                                ),
+                              ],
+                            ),
+
+                            // Search bar on the right
+                            SizedBox(
+                              width: 260,
+                              height: 38,
+                              child: TextField(
+                                controller: _searchController,
+                                onChanged: (_) => setState(() {}),
+                                style: const TextStyle(fontSize: 12),
+                                decoration: InputDecoration(
+                                  hintText: 'Search all...',
+                                  hintStyle: const TextStyle(fontSize: 12, color: Color(0xFF94A3B8)),
+                                  prefixIcon: const Icon(Icons.search_rounded, size: 16, color: Color(0xFF94A3B8)),
+                                  suffixIcon: _searchController.text.isEmpty
+                                      ? null
+                                      : IconButton(
+                                          icon: const Icon(Icons.close_rounded, size: 14),
+                                          onPressed: () {
+                                            _searchController.clear();
+                                            setState(() {});
+                                          },
+                                        ),
+                                  contentPadding: const EdgeInsets.symmetric(vertical: 0, horizontal: 10),
+                                  filled: true,
+                                  fillColor: const Color(0xFFF8FAFC),
+                                  border: OutlineInputBorder(
+                                    borderRadius: BorderRadius.circular(8),
+                                    borderSide: const BorderSide(color: Color(0xFFE2E8F0)),
+                                  ),
+                                  enabledBorder: OutlineInputBorder(
+                                    borderRadius: BorderRadius.circular(8),
+                                    borderSide: const BorderSide(color: Color(0xFFE2E8F0)),
+                                  ),
+                                  focusedBorder: OutlineInputBorder(
+                                    borderRadius: BorderRadius.circular(8),
+                                    borderSide: const BorderSide(color: Color(0xFF0284C7)),
+                                  ),
+                                ),
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                      const SizedBox(height: 10),
+
+                      // Tool section row (Customize View | Add/Change Filter | View Applied Filters)
+                      Padding(
+                        padding: const EdgeInsets.symmetric(horizontal: 4),
+                        child: Row(
+                          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                          children: [
+                            TextButton.icon(
+                              onPressed: _showCustomizeViewSheet,
+                              icon: const Icon(Icons.settings_outlined, size: 15, color: Color(0xFF475569)),
+                              label: const Text(
+                                'Customize View',
+                                style: TextStyle(fontSize: 12, color: Color(0xFF475569), fontWeight: FontWeight.w600),
+                              ),
+                            ),
+                            Row(
+                              children: [
+                                TextButton.icon(
+                                  onPressed: _openFilterBottomSheet,
+                                  icon: const Icon(Icons.filter_list_rounded, size: 15, color: Color(0xFF475569)),
+                                  label: const Text(
+                                    'Add/Change Filter',
+                                    style: TextStyle(fontSize: 12, color: Color(0xFF475569), fontWeight: FontWeight.w600),
+                                  ),
+                                ),
+                                const SizedBox(width: 8),
+                                TextButton.icon(
+                                  onPressed: _openFilterBottomSheet,
+                                  icon: const Icon(Icons.tune_rounded, size: 15, color: Color(0xFF475569)),
+                                  label: Text(
+                                    'View Applied Filters ($_activeFilterCount)',
+                                    style: const TextStyle(fontSize: 12, color: Color(0xFF475569), fontWeight: FontWeight.w600),
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ],
+                        ),
+                      ),
+
+                      // Active Filter chips bar
+                      ReportActiveFiltersBar(
+                        activeFilterCount: _activeFilterCount,
+                        dateRange: _dateRange,
+                        datePreset: _datePreset,
+                        statusFilter: _statusFilter,
+                        creatorFilter: _creatorFilter,
+                        onClearDate: () => _applyDatePreset('All time'),
+                        onClearStatus: () => setState(() => _statusFilter = 'All statuses'),
+                        onClearCreator: () => setState(() => _creatorFilter = 'All creators'),
+                        onClearAll: _clearFilters,
+                      ),
+                      const SizedBox(height: 12),
+
+                      // Enterprise Data Grid & Table with Row Grouping by Company Name & Actions!
+                      ReportEnterpriseDataGrid(
+                        reportType: _reportType,
+                        rows: filtered,
+                        selectedIds: _selectedIds,
+                        initialIsGrouped: true, // "fist show it as row grouped!"
+                        pageSize: 20, // "keep 20 items in one pages!"
+                        formatCurrency: _formatCurrency,
+                        onToggleSelect: (id) {
+                          setState(() {
+                            if (_selectedIds.contains(id)) {
+                              _selectedIds.remove(id);
+                            } else {
+                              _selectedIds.add(id);
+                            }
+                          });
+                        },
+                        onSelectAll: (ids) {
+                          setState(() {
+                            _selectedIds.addAll(ids);
+                          });
+                        },
+                        onDeselectAll: () {
+                          setState(() {
+                            _selectedIds.clear();
+                          });
+                        },
+                        onExportSelected: _showDownloadMenu,
+                        onEditRow: _handleEditRow,
+                        onDeleteRow: _handleDeleteRow,
+                        onShareRow: _handleShareRow,
+                        onChangeStatus: _handleChangeStatus,
+                        onViewDetails: _handleViewDetails,
+                      ),
+                    ],
+                  ),
+                ),
+    );
   }
 }

@@ -16,6 +16,7 @@ import 'widgets/invoice_preview_a4_paper.dart';
 import 'widgets/invoice_preview_widgets.dart';
 import 'widgets/invoice_share_dialog.dart';
 import 'widgets/invoice_template_picker_modal.dart';
+import '../../notifications/data/notification_repository.dart';
 
 class InvoicePreviewScreen extends StatefulWidget {
   const InvoicePreviewScreen({
@@ -448,22 +449,112 @@ class _InvoicePreviewScreenState extends State<InvoicePreviewScreen>
 
   Future<void> _sendPaymentReminder() async {
     final invoice = _invoice;
-    final text = 'Payment reminder for invoice ${invoice.invoiceNumber}\n'
-        'Amount due: ${_money(invoice.balanceDue, _activeCurrencySymbol)}\n'
-        'Due date: ${invoice.dueDate}\n'
-        'Please let us know if you have any questions. Thank you.';
+    final invoiceId = invoice.id;
+
+    final selectedChannel = await showModalBottomSheet<String>(
+      context: context,
+      shape: const RoundedRectangleBorder(borderRadius: BorderRadius.vertical(top: Radius.circular(20))),
+      builder: (ctx) => SafeArea(
+        child: Padding(
+          padding: const EdgeInsets.symmetric(vertical: 20, horizontal: 16),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Row(
+                children: [
+                  const Icon(Icons.notifications_active_rounded, color: Color(0xFF0284C7)),
+                  const SizedBox(width: 10),
+                  Text(
+                    'Send Payment Reminder (${invoice.invoiceNumber})',
+                    style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 16),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 6),
+              Text(
+                'Client: ${invoice.clientName} | Balance Due: ${_money(invoice.balanceDue, _activeCurrencySymbol)}',
+                style: const TextStyle(fontSize: 12, color: Color(0xFF64748B)),
+              ),
+              const SizedBox(height: 16),
+              ListTile(
+                leading: Container(
+                  padding: const EdgeInsets.all(8),
+                  decoration: BoxDecoration(color: Colors.blue.withValues(alpha: 0.12), shape: BoxShape.circle),
+                  child: const Icon(Icons.email_rounded, color: Colors.blue),
+                ),
+                title: const Text('Email Reminder (Background Engine)', style: TextStyle(fontWeight: FontWeight.w600)),
+                subtitle: Text('Queue email to ${invoice.clientEmail.isNotEmpty ? invoice.clientEmail : "client email"} using template'),
+                trailing: const Icon(Icons.chevron_right),
+                onTap: () => Navigator.pop(ctx, 'EMAIL'),
+              ),
+              ListTile(
+                leading: Container(
+                  padding: const EdgeInsets.all(8),
+                  decoration: BoxDecoration(color: Colors.green.withValues(alpha: 0.12), shape: BoxShape.circle),
+                  child: const Icon(Icons.chat_rounded, color: Colors.green),
+                ),
+                title: const Text('WhatsApp Reminder (Background Engine)', style: TextStyle(fontWeight: FontWeight.w600)),
+                subtitle: Text('Queue WhatsApp to ${invoice.clientPhone.isNotEmpty ? invoice.clientPhone : "client phone"} using template'),
+                trailing: const Icon(Icons.chevron_right),
+                onTap: () => Navigator.pop(ctx, 'WHATSAPP'),
+              ),
+              ListTile(
+                leading: Container(
+                  padding: const EdgeInsets.all(8),
+                  decoration: BoxDecoration(color: Colors.purple.withValues(alpha: 0.12), shape: BoxShape.circle),
+                  child: const Icon(Icons.share_rounded, color: Colors.purple),
+                ),
+                title: const Text('Share via Device Apps', style: TextStyle(fontWeight: FontWeight.w600)),
+                subtitle: const Text('Open device share sheet or copy text message'),
+                trailing: const Icon(Icons.chevron_right),
+                onTap: () => Navigator.pop(ctx, 'LOCAL_SHARE'),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+
+    if (selectedChannel == null) return;
+
+    if (selectedChannel == 'LOCAL_SHARE' || invoiceId == null) {
+      final text = 'Payment reminder for invoice ${invoice.invoiceNumber}\n'
+          'Amount due: ${_money(invoice.balanceDue, _activeCurrencySymbol)}\n'
+          'Due date: ${invoice.dueDate}\n'
+          'Please let us know if you have any questions. Thank you.';
+      try {
+        final result = await SharePlus.instance.share(
+          ShareParams(
+            text: text,
+            subject: 'Payment reminder - ${invoice.invoiceNumber}',
+          ),
+        );
+        if (mounted && result.status == ShareResultStatus.unavailable) {
+          _showMessage('Sharing is unavailable on this platform.');
+        }
+      } catch (error) {
+        if (mounted) _showMessage('Could not share payment reminder: $error');
+      }
+      return;
+    }
+
     try {
-      final result = await SharePlus.instance.share(
-        ShareParams(
-          text: text,
-          subject: 'Payment reminder - ${invoice.invoiceNumber}',
+      final notifRepo = NotificationRepository(apiClient: widget.repository.apiClient);
+      await notifRepo.sendInvoiceReminder(
+        invoiceId: invoiceId,
+        channel: selectedChannel,
+      );
+
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          backgroundColor: const Color(0xFF047857),
+          content: Text('✓ Payment reminder queued for async dispatch via $selectedChannel!'),
         ),
       );
-      if (mounted && result.status == ShareResultStatus.unavailable) {
-        _showMessage('Sharing is unavailable on this platform.');
-      }
     } catch (error) {
-      if (mounted) _showMessage('Could not share payment reminder: $error');
+      if (mounted) _showMessage('Could not queue reminder: $error');
     }
   }
 

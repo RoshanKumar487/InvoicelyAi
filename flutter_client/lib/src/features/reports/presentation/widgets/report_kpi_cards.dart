@@ -262,3 +262,146 @@ class ReportFinancialKpiCards extends StatelessWidget {
     );
   }
 }
+
+class EnterpriseMetricSummaryStrip extends StatelessWidget {
+  const EnterpriseMetricSummaryStrip({
+    super.key,
+    required this.totalCount,
+    required this.inProgressCount,
+    required this.sentCount,
+    required this.pendingApprovalCount,
+    required this.completedCount,
+    required this.cycleTimeLabel,
+    this.totalLabel = 'New Request',
+    this.inProgressLabel = 'Onboarding inprogress',
+    this.sentLabel = 'Invite Sent to Customer',
+    this.pendingApprovalLabel = 'Pending Approval',
+    this.completedLabel = 'Onboarding Completed',
+    this.cycleTimeHeader = 'Onboarding Cycle-time',
+  });
+
+  final int totalCount;
+  final int inProgressCount;
+  final int sentCount;
+  final int pendingApprovalCount;
+  final int completedCount;
+  final String cycleTimeLabel;
+  final String totalLabel;
+  final String inProgressLabel;
+  final String sentLabel;
+  final String pendingApprovalLabel;
+  final String completedLabel;
+  final String cycleTimeHeader;
+
+  Widget _buildItem(String label, String value, {bool isLast = false}) {
+    return Expanded(
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+        decoration: BoxDecoration(
+          border: isLast
+              ? null
+              : const Border(
+                  right: BorderSide(color: Color(0xFFE2E8F0), width: 1),
+                ),
+        ),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            Text(
+              label,
+              style: const TextStyle(
+                fontSize: 11,
+                fontWeight: FontWeight.w500,
+                color: Color(0xFF64748B),
+                letterSpacing: 0.1,
+              ),
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+            ),
+            const SizedBox(height: 6),
+            Text(
+              value,
+              style: const TextStyle(
+                fontSize: 22,
+                fontWeight: FontWeight.w700,
+                color: Color(0xFF0F172A),
+                height: 1.1,
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: const Color(0xFFE2E8F0)),
+        boxShadow: const [
+          BoxShadow(
+            color: Color(0x06000000),
+            blurRadius: 6,
+            offset: Offset(0, 2),
+          ),
+        ],
+      ),
+      child: LayoutBuilder(
+        builder: (context, constraints) {
+          if (constraints.maxWidth < 640) {
+            return SingleChildScrollView(
+              scrollDirection: Axis.horizontal,
+              child: IntrinsicHeight(
+                child: Row(
+                  children: [
+                    SizedBox(
+                      width: 130,
+                      child: _buildItem(totalLabel, '$totalCount'),
+                    ),
+                    SizedBox(
+                      width: 150,
+                      child: _buildItem(inProgressLabel, '$inProgressCount'),
+                    ),
+                    SizedBox(
+                      width: 160,
+                      child: _buildItem(sentLabel, '$sentCount'),
+                    ),
+                    SizedBox(
+                      width: 140,
+                      child: _buildItem(pendingApprovalLabel, '$pendingApprovalCount'),
+                    ),
+                    SizedBox(
+                      width: 150,
+                      child: _buildItem(completedLabel, '$completedCount'),
+                    ),
+                    SizedBox(
+                      width: 150,
+                      child: _buildItem(cycleTimeHeader, cycleTimeLabel, isLast: true),
+                    ),
+                  ],
+                ),
+              ),
+            );
+          }
+          return IntrinsicHeight(
+            child: Row(
+              children: [
+                _buildItem(totalLabel, '$totalCount'),
+                _buildItem(inProgressLabel, '$inProgressCount'),
+                _buildItem(sentLabel, '$sentCount'),
+                _buildItem(pendingApprovalLabel, '$pendingApprovalCount'),
+                _buildItem(completedLabel, '$completedCount'),
+                _buildItem(cycleTimeHeader, cycleTimeLabel, isLast: true),
+              ],
+            ),
+          );
+        },
+      ),
+    );
+  }
+}
+
