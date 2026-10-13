@@ -5,6 +5,7 @@ import 'package:image_picker/image_picker.dart';
 import 'package:url_launcher/url_launcher.dart';
 
 import '../../../core/api/api_exception.dart';
+import '../../../shared/utils/table_export_helper.dart';
 import '../../../shared/widgets/app_card.dart';
 import '../../../shared/widgets/enterprise_data_view.dart';
 import '../../../shared/widgets/offline_cache_banner.dart';
@@ -61,6 +62,8 @@ class _ExpensesScreenState extends State<ExpensesScreen> {
   bool _isScanningReceipt = false;
   String? _error;
   int _loadRequest = 0;
+  DateTimeRange? _dateRange;
+  final Set<String> _selectedIds = {};
 
   @override
   void initState() {
@@ -110,6 +113,18 @@ class _ExpensesScreenState extends State<ExpensesScreen> {
     return _expenses.where((expense) {
       if (_statusFilter == 'Paid' && expense.isDue) return false;
       if (_statusFilter == 'Due' && !expense.isDue) return false;
+      if (_statusFilter == 'TaxDeductible' && !expense.taxDeductible) return false;
+
+      if (_dateRange != null) {
+        final d = DateTime.tryParse(expense.date);
+        if (d != null) {
+          if (d.isBefore(_dateRange!.start) ||
+              d.isAfter(_dateRange!.end.add(const Duration(days: 1)))) {
+            return false;
+          }
+        }
+      }
+
       if (query.isNotEmpty) {
         return expense.title.toLowerCase().contains(query) ||
             expense.vendor.toLowerCase().contains(query) ||
@@ -144,7 +159,7 @@ class _ExpensesScreenState extends State<ExpensesScreen> {
     }
   }
 
-  Future<void> _markExpensePaid(Expense expense) async {
+  Future<void> _updateExpenseStatus(Expense expense, String newStatus) async {
     try {
       final updated = Expense(
         id: expense.id,
@@ -163,18 +178,20 @@ class _ExpensesScreenState extends State<ExpensesScreen> {
         taxAmount: expense.taxAmount,
         receiptImageUri: expense.receiptImageUri,
         notes: expense.notes,
-        status: 'Paid',
+        status: newStatus,
         dueDate: expense.dueDate,
       );
       await widget.repository.update(updated);
       if (mounted) {
-        _showMessage('Expense marked as Paid!');
+        _showMessage('Expense status updated to $newStatus!');
         await _loadExpenses(showProgress: false);
       }
     } catch (e) {
       if (mounted) _showMessage('Could not update status: $e');
     }
   }
+
+  Future<void> _markExpensePaid(Expense expense) => _updateExpenseStatus(expense, 'Paid');
 
   Future<void> _createExpense() async {
     final expense = await showDialog<Expense>(
@@ -458,48 +475,57 @@ class _ExpensesScreenState extends State<ExpensesScreen> {
                   EnterpriseDataView<Expense>(
                     items: visibleExpenses,
                     headerTitle: 'Expense Ledger',
+                    metrics: _buildMetrics(_expenses),
+                    dateRange: _dateRange,
+                    onDateRangeChanged: (range) => setState(() => _dateRange = range),
+                    onDownloadReport: () => _downloadExpensesReport(visibleExpenses),
                     searchController: _searchController,
                     searchHint: 'Search title, vendor or category...',
-                    filterWidget: SingleChildScrollView(
-                      scrollDirection: Axis.horizontal,
-                      child: Row(
-                        children: [
-                          Padding(
-                            padding: const EdgeInsets.only(right: 8),
-                            child: FilterChip(
-                              avatar: const Icon(Icons.all_inbox_rounded, size: 14),
-                              label: Text('All (${_expenses.length})'),
-                              selected: _statusFilter == 'All',
-                              onSelected: (_) => setState(() => _statusFilter = 'All'),
-                            ),
-                          ),
-                          Padding(
-                            padding: const EdgeInsets.only(right: 8),
-                            child: FilterChip(
-                              avatar: const Icon(Icons.check_circle_rounded, size: 14, color: Color(0xFF16A34A)),
-                              label: Text('Paid (${_expenses.where((e) => !e.isDue).length})'),
-                              selected: _statusFilter == 'Paid',
-                              onSelected: (_) => setState(() => _statusFilter = 'Paid'),
-                            ),
-                          ),
-                          Padding(
-                            padding: const EdgeInsets.only(right: 8),
-                            child: FilterChip(
-                              avatar: const Icon(Icons.warning_amber_rounded, size: 14, color: Color(0xFFDC2626)),
-                              label: Text('Due / Unpaid (${_expenses.where((e) => e.isDue).length})'),
-                              selected: _statusFilter == 'Due',
-                              onSelected: (_) => setState(() => _statusFilter = 'Due'),
-                            ),
-                          ),
-                        ],
-                      ),
-                    ),
                     filterChips: _categories,
                     selectedFilterChip: _selectedCategory,
                     onFilterChipSelected: (cat) {
                       setState(() => _selectedCategory = cat);
                       _loadExpenses();
                     },
+                    idGetter: (exp) => exp.id?.toString() ?? exp.title,
+                    selectedIds: _selectedIds,
+                    onToggleSelect: (id) => setState(() {
+                      if (_selectedIds.contains(id)) {
+                        _selectedIds.remove(id);
+                      } else {
+                        _selectedIds.add(id);
+                      }
+                    }),
+                    onSelectAll: (ids) => setState(() => _selectedIds.addAll(ids)),
+                    onDeselectAll: () => setState(() => _selectedIds.clear()),
+                    onRowTap: (exp) => _editExpense(exp),
+                    batchActions: [
+                      FilledButton.icon(
+                        style: FilledButton.styleFrom(
+                          backgroundColor: Colors.white,
+                          foregroundColor: const Color(0xFF16A34A),
+                          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                        ),
+                        icon: const Icon(Icons.check_circle, size: 15),
+                        label: const Text('Mark Paid', style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold)),
+                        onPressed: _batchMarkPaid,
+                      ),
+                      const SizedBox(width: 8),
+                      IconButton(
+                        icon: const Icon(Icons.file_download_outlined, color: Colors.white, size: 18),
+                        tooltip: 'Export Selected',
+                        onPressed: () {
+                          final selected = _expenses.where((e) => _selectedIds.contains(e.id?.toString()) || _selectedIds.contains(e.title)).toList();
+                          _downloadExpensesReport(selected);
+                        },
+                      ),
+                      const SizedBox(width: 8),
+                      IconButton(
+                        icon: const Icon(Icons.delete_outline, color: Colors.white, size: 18),
+                        tooltip: 'Delete Selected',
+                        onPressed: _batchDeleteExpenses,
+                      ),
+                    ],
                     groupBy: (exp) => exp.category.isNotEmpty ? exp.category : 'General',
                     groupLabelBuilder: (cat, items) {
                       final total = items.fold<double>(0.0, (acc, e) => acc + e.amount);
@@ -538,16 +564,130 @@ class _ExpensesScreenState extends State<ExpensesScreen> {
     );
   }
 
+  List<EnterpriseMetricCardItem> _buildMetrics(List<Expense> allExpenses) {
+    final totalAmount = allExpenses.fold<double>(0.0, (acc, e) => acc + e.amount);
+    final paidExpenses = allExpenses.where((e) => !e.isDue).toList();
+    final paidAmount = paidExpenses.fold<double>(0.0, (acc, e) => acc + e.amount);
+    final dueExpenses = allExpenses.where((e) => e.isDue).toList();
+    final dueAmount = dueExpenses.fold<double>(0.0, (acc, e) => acc + e.amount);
+    final taxDeductibleExpenses = allExpenses.where((e) => e.taxDeductible).toList();
+    final taxAmount = taxDeductibleExpenses.fold<double>(0.0, (acc, e) => acc + e.amount);
+
+    return [
+      EnterpriseMetricCardItem(
+        label: 'Total Expenses',
+        value: '$_companyCurrencySymbol${totalAmount.toStringAsFixed(0)}',
+        count: '${allExpenses.length} entries',
+        icon: Icons.account_balance_wallet_rounded,
+        color: const Color(0xFF1E3A8A),
+        filterKey: 'All',
+        isSelected: _statusFilter == 'All',
+        onTap: () => setState(() => _statusFilter = 'All'),
+      ),
+      EnterpriseMetricCardItem(
+        label: 'Paid / Settled',
+        value: '$_companyCurrencySymbol${paidAmount.toStringAsFixed(0)}',
+        count: '${paidExpenses.length} paid',
+        icon: Icons.check_circle_outline,
+        color: const Color(0xFF047857),
+        filterKey: 'Paid',
+        isSelected: _statusFilter == 'Paid',
+        onTap: () => setState(() => _statusFilter = _statusFilter == 'Paid' ? 'All' : 'Paid'),
+      ),
+      EnterpriseMetricCardItem(
+        label: 'Pending / Due',
+        value: '$_companyCurrencySymbol${dueAmount.toStringAsFixed(0)}',
+        count: '${dueExpenses.length} unpaid',
+        icon: Icons.pending_actions_rounded,
+        color: const Color(0xFFD97706),
+        filterKey: 'Due',
+        isSelected: _statusFilter == 'Due',
+        onTap: () => setState(() => _statusFilter = _statusFilter == 'Due' ? 'All' : 'Due'),
+      ),
+      EnterpriseMetricCardItem(
+        label: 'Tax Deductible',
+        value: '$_companyCurrencySymbol${taxAmount.toStringAsFixed(0)}',
+        count: '${taxDeductibleExpenses.length} eligible',
+        icon: Icons.receipt_long_rounded,
+        color: const Color(0xFF7C3AED),
+        filterKey: 'TaxDeductible',
+        isSelected: _statusFilter == 'TaxDeductible',
+        onTap: () => setState(() => _statusFilter = _statusFilter == 'TaxDeductible' ? 'All' : 'TaxDeductible'),
+      ),
+    ];
+  }
+
+  void _downloadExpensesReport(List<Expense> list) {
+    TableExportHelper.showExportMenu(
+      context: context,
+      title: 'Expenses Ledger',
+      headers: ['Title', 'Vendor', 'Category', 'Date', 'Amount', 'Payment Method', 'Tax Deductible', 'Status'],
+      rows: list.map((e) => [
+        e.title,
+        e.vendor,
+        e.category,
+        e.date,
+        '${e.currencySymbol}${e.amount.toStringAsFixed(2)}',
+        e.paymentMethod,
+        e.taxDeductible ? 'Yes' : 'No',
+        e.isDue ? 'Due' : 'Paid',
+      ]).toList(),
+    );
+  }
+
+  Future<void> _batchMarkPaid() async {
+    final count = _selectedIds.length;
+    for (final exp in _expenses) {
+      final idStr = exp.id?.toString() ?? exp.title;
+      if (_selectedIds.contains(idStr) && exp.isDue) {
+        await _markExpensePaid(exp);
+      }
+    }
+    setState(() => _selectedIds.clear());
+    _showMessage('Marked $count expenses as Paid');
+  }
+
+  Future<void> _batchDeleteExpenses() async {
+    final count = _selectedIds.length;
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Delete selected expenses?'),
+        content: Text('Delete $count selected expenses permanently?'),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('Cancel')),
+          FilledButton(
+            onPressed: () => Navigator.pop(ctx, true),
+            style: FilledButton.styleFrom(backgroundColor: Colors.red),
+            child: const Text('Delete'),
+          ),
+        ],
+      ),
+    );
+    if (confirmed != true) return;
+    for (final exp in _expenses) {
+      final idStr = exp.id?.toString() ?? exp.title;
+      if (_selectedIds.contains(idStr) && exp.id != null) {
+        await widget.repository.delete(exp.id!);
+      }
+    }
+    setState(() => _selectedIds.clear());
+    _showMessage('Deleted $count expenses');
+    await _loadExpenses();
+  }
+
   List<EnterpriseTableColumn<Expense>> _expenseTableColumns() {
     return [
       EnterpriseTableColumn<Expense>(
         title: 'Date',
         width: 110,
+        sortKey: (exp) => exp.date,
         cellBuilder: (ctx, exp) => Text(exp.date, style: const TextStyle(fontSize: 12)),
       ),
       EnterpriseTableColumn<Expense>(
         title: 'Title / Vendor',
         width: 190,
+        sortKey: (exp) => exp.title.toLowerCase(),
         cellBuilder: (ctx, exp) => Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           mainAxisAlignment: MainAxisAlignment.center,
@@ -561,6 +701,7 @@ class _ExpensesScreenState extends State<ExpensesScreen> {
       EnterpriseTableColumn<Expense>(
         title: 'Category',
         width: 140,
+        sortKey: (exp) => exp.category.toLowerCase(),
         cellBuilder: (ctx, exp) => Container(
           padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
           decoration: BoxDecoration(
@@ -574,6 +715,7 @@ class _ExpensesScreenState extends State<ExpensesScreen> {
         title: 'Amount',
         width: 120,
         alignRight: true,
+        sortKey: (exp) => exp.amount,
         cellBuilder: (ctx, exp) => Text(
           '${exp.currencySymbol}${exp.amount.toStringAsFixed(2)}',
           style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 13),
@@ -582,6 +724,7 @@ class _ExpensesScreenState extends State<ExpensesScreen> {
       EnterpriseTableColumn<Expense>(
         title: 'Payment Method',
         width: 130,
+        sortKey: (exp) => exp.paymentMethod.toLowerCase(),
         cellBuilder: (ctx, exp) => Text(
           exp.paymentMethod.isNotEmpty ? exp.paymentMethod : '—',
           style: const TextStyle(fontSize: 12),
@@ -589,21 +732,12 @@ class _ExpensesScreenState extends State<ExpensesScreen> {
       ),
       EnterpriseTableColumn<Expense>(
         title: 'Status',
-        width: 110,
-        cellBuilder: (ctx, exp) => Container(
-          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
-          decoration: BoxDecoration(
-            color: exp.isDue ? const Color(0xFFFEE2E2) : const Color(0xFFDCFCE7),
-            borderRadius: BorderRadius.circular(6),
-          ),
-          child: Text(
-            exp.isDue ? 'Due' : 'Paid',
-            style: TextStyle(
-              fontSize: 11,
-              fontWeight: FontWeight.bold,
-              color: exp.isDue ? const Color(0xFFB91C1C) : const Color(0xFF15803D),
-            ),
-          ),
+        width: 120,
+        sortKey: (exp) => exp.status,
+        cellBuilder: (ctx, exp) => EnterpriseStatusDropdown(
+          currentStatus: exp.status.isNotEmpty ? exp.status : (exp.isDue ? 'Due' : 'Paid'),
+          options: const ['Paid', 'Due', 'Pending'],
+          onChanged: (newStatus) => _updateExpenseStatus(exp, newStatus),
         ),
       ),
       EnterpriseTableColumn<Expense>(

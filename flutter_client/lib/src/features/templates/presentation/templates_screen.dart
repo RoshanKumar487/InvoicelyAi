@@ -10,6 +10,7 @@ import '../data/template_config.dart';
 import 'widgets/template_live_preview.dart';
 import 'widgets/template_logo_studio.dart';
 import 'widgets/template_presets_gallery.dart';
+import 'wysiwyg_template_editor_screen.dart';
 
 class TemplatesScreen extends StatefulWidget {
   const TemplatesScreen({
@@ -282,6 +283,20 @@ class _TemplatesScreenState extends State<TemplatesScreen> {
                 ),
           title: const Text('Template Customization Studio'),
           actions: [
+            OutlinedButton.icon(
+              icon: const Icon(Icons.auto_awesome, size: 16),
+              label: const Text('WYSIWYG Studio'),
+              onPressed: () {
+                Navigator.of(context).push(
+                  MaterialPageRoute<void>(
+                    builder: (ctx) => WysiwygTemplateEditorScreen(
+                      onBack: () => Navigator.of(ctx).pop(),
+                    ),
+                  ),
+                );
+              },
+            ),
+            const SizedBox(width: 8),
             Padding(
               padding: const EdgeInsets.only(right: 12),
               child: FilledButton.icon(
@@ -639,7 +654,7 @@ class _TemplatesScreenState extends State<TemplatesScreen> {
 
           DropdownButtonFormField<String>(
             key: ValueKey<String>('font-${_config.font}'),
-            value: _config.font,
+            initialValue: _config.font,
             decoration: const InputDecoration(labelText: 'Font Family'),
             items: const [
               DropdownMenuItem(value: 'Calibri', child: Text('Calibri (Modern Clean)')),

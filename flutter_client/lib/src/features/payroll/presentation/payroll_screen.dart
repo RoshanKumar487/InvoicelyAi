@@ -2,6 +2,7 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 
 import '../../../core/api/api_exception.dart';
+import '../../../shared/utils/table_export_helper.dart';
 import '../../../shared/widgets/app_card.dart';
 import '../../../shared/widgets/dynamic_form_engine.dart';
 import '../../../shared/widgets/enterprise_data_view.dart';
@@ -41,6 +42,7 @@ class _PayrollScreenState extends State<PayrollScreen> {
   // Filters
   String _selectedStatus = 'All';
   String _selectedDepartment = 'All Departments';
+  DateTimeRange? _dateRange;
 
   // Multi-checkbox selection
   final Set<String> _selectedIds = {};
@@ -122,10 +124,27 @@ class _PayrollScreenState extends State<PayrollScreen> {
   }
 
   List<PayrollEntry> get _filteredEntries {
-    if (_selectedDepartment == 'All Departments') {
-      return _entries;
-    }
-    return _entries.where((e) => e.department == _selectedDepartment).toList();
+    return _entries.where((e) {
+      if (_selectedDepartment != 'All Departments' && e.department != _selectedDepartment) {
+        return false;
+      }
+      if (_dateRange != null) {
+        DateTime? dt;
+        if (e.disbursedAt != null && e.disbursedAt!.isNotEmpty) {
+          dt = DateTime.tryParse(e.disbursedAt!);
+        }
+        if (dt == null && e.scheduledPayDate != null && e.scheduledPayDate!.isNotEmpty) {
+          dt = DateTime.tryParse(e.scheduledPayDate!);
+        }
+        if (dt != null) {
+          if (dt.isBefore(_dateRange!.start) ||
+              dt.isAfter(_dateRange!.end.add(const Duration(days: 1)))) {
+            return false;
+          }
+        }
+      }
+      return true;
+    }).toList();
   }
 
   Set<String> get _departments {
@@ -148,6 +167,16 @@ class _PayrollScreenState extends State<PayrollScreen> {
       await _loadData(showProgress: false);
     } catch (e) {
       _showMessage('Error updating payroll records: $e');
+    }
+  }
+
+  Future<void> _updatePayrollStatus(PayrollEntry entry, String newStatus) async {
+    try {
+      await widget.repository.batchUpdateStatus(ids: [entry.id], status: newStatus);
+      _showMessage('Updated status for ${entry.employeeName} to $newStatus.');
+      await _loadData(showProgress: false);
+    } catch (e) {
+      _showMessage('Error updating status: $e');
     }
   }
 
@@ -464,15 +493,15 @@ class _PayrollScreenState extends State<PayrollScreen> {
                 EnterpriseDataView<PayrollEntry>(
                   items: filtered,
                   headerTitle: _selectedRun != null ? _selectedRun!.runTitle : 'Monthly Payroll Registry',
-                  // 4 Invoice-like Summary Cards on top
-                  metricsStrip: _buildFourInvoiceCards(),
-                  // Search Controller
+                  metrics: _buildMetrics(),
+                  dateRange: _dateRange,
+                  onDateRangeChanged: (range) => setState(() => _dateRange = range),
+                  onDownloadReport: () => _downloadPayrollReport(filtered),
+                  onRowTap: (entry) => _openDynamicSalaryAdjustment(entry),
                   searchController: _searchController,
                   onSearchChanged: _onSearchChanged,
                   searchHint: 'Search employee name, code, designation, or bank...',
-                  // Advanced Filter Bar (Period selector + Department dropdown)
                   filterWidget: _buildFilterBar(),
-                  // Filter Chips
                   filterChips: [
                     'All (${_entries.length})',
                     'Pending (${_kpi.pendingCount})',
@@ -481,7 +510,6 @@ class _PayrollScreenState extends State<PayrollScreen> {
                   ],
                   selectedFilterChip: '$_selectedStatus (${_getStatusCount(_selectedStatus)})',
                   onFilterChipSelected: _onStatusFilterSelected,
-                  // Checkboxes & Multi-selection
                   idGetter: (item) => item.id.toString(),
                   selectedIds: _selectedIds,
                   onToggleSelect: (id) {
@@ -499,7 +527,6 @@ class _PayrollScreenState extends State<PayrollScreen> {
                   onDeselectAll: () {
                     setState(() => _selectedIds.clear());
                   },
-                  // Action buttons right in the selection bar!
                   batchActions: [
                     FilledButton.icon(
                       style: FilledButton.styleFrom(
@@ -523,18 +550,16 @@ class _PayrollScreenState extends State<PayrollScreen> {
                       onPressed: () => _batchMarkStatus('ON_HOLD'),
                     ),
                   ],
-                  // Grouping by department
                   groupBy: (item) => item.department.isNotEmpty ? item.department : 'General Staff',
                   groupLabelBuilder: (dept, items) =>
                       '$dept (${items.length} ${items.length == 1 ? "employee" : "employees"})',
-                  // Top Trailing quick buttons
                   topTrailing: Row(
                     mainAxisSize: MainAxisSize.min,
                     children: [
                       OutlinedButton.icon(
                         icon: const Icon(Icons.file_download_outlined, size: 16),
                         label: const Text('Export NEFT/Bank', style: TextStyle(fontSize: 12)),
-                        onPressed: () => _showMessage('Bank payout file (NEFT/ACH) generated and ready for download.'),
+                        onPressed: () => _downloadPayrollReport(filtered),
                       ),
                       const SizedBox(width: 8),
                       FilledButton.icon(
@@ -544,9 +569,7 @@ class _PayrollScreenState extends State<PayrollScreen> {
                       ),
                     ],
                   ),
-                  // Table Columns definition
                   columns: _buildTableColumns(),
-                  // Cards Builder for mobile
                   cardBuilder: (context, item) => _buildPayrollCard(item),
                 ),
               ],
@@ -571,210 +594,85 @@ class _PayrollScreenState extends State<PayrollScreen> {
     }
   }
 
-  /// 4 INVOICE-LIKE CARDS ON TOP
-  /// 1. Total Gross Wage Liability
-  /// 2. Total Paid / Disbursed
-  /// 3. Pending Payout
-  /// 4. Overdue from Pay Date
-  Widget _buildFourInvoiceCards() {
-    return LayoutBuilder(
-      builder: (context, constraints) {
-        final isWide = constraints.maxWidth >= 900;
-        final isMedium = constraints.maxWidth >= 600 && constraints.maxWidth < 900;
-
-        final card1 = _buildInvoiceCard(
-          title: 'Total Gross Wage',
-          value: '₹${_formatCurrency(_kpi.totalGross)}',
-          subtitle: 'Gross Payroll Liability',
-          badgeText: '${_kpi.totalEmployees} Employees',
-          badgeColor: const Color(0xFFE0E7FF),
-          badgeTextColor: const Color(0xFF4338CA),
-          icon: Icons.account_balance_wallet_outlined,
-          accentColor: const Color(0xFF6366F1),
-          gradient: const [Color(0xFFEEF2FF), Color(0xFFFFFFFF)],
-        );
-
-        final card2 = _buildInvoiceCard(
-          title: 'Paid / Disbursed',
-          value: '₹${_formatCurrency(_kpi.totalPaid)}',
-          subtitle: 'Disbursed to Bank Accounts',
-          badgeText: '${_kpi.paidCount} Paid',
-          badgeColor: const Color(0xFFDCFCE7),
-          badgeTextColor: const Color(0xFF15803D),
-          icon: Icons.verified_outlined,
-          accentColor: const Color(0xFF16A34A),
-          gradient: const [Color(0xFFF0FDF4), Color(0xFFFFFFFF)],
-        );
-
-        final card3 = _buildInvoiceCard(
-          title: 'Pending Payout',
-          value: '₹${_formatCurrency(_kpi.totalPending)}',
-          subtitle: 'Scheduled for Disbursal',
-          badgeText: '${_kpi.pendingCount} Pending',
-          badgeColor: const Color(0xFFFEF3C7),
-          badgeTextColor: const Color(0xFFB45309),
-          icon: Icons.hourglass_top_outlined,
-          accentColor: const Color(0xFFD97706),
-          gradient: const [Color(0xFFFFFBEB), Color(0xFFFFFFFF)],
-        );
-
-        final card4 = _buildInvoiceCard(
-          title: 'Overdue from Pay Date',
-          value: '₹${_formatCurrency(_kpi.totalOverdue)}',
-          subtitle: 'Past Scheduled Pay Date',
-          badgeText: _kpi.overdueCount > 0 ? '${_kpi.overdueCount} OVERDUE!' : '0 Overdue',
-          badgeColor: _kpi.overdueCount > 0 ? const Color(0xFFFEE2E2) : const Color(0xFFF1F5F9),
-          badgeTextColor: _kpi.overdueCount > 0 ? const Color(0xFFB91C1C) : const Color(0xFF64748B),
-          icon: Icons.warning_amber_rounded,
-          accentColor: const Color(0xFFDC2626),
-          gradient: const [Color(0xFFFEF2F2), Color(0xFFFFFFFF)],
-          isAlert: _kpi.overdueCount > 0,
-        );
-
-        if (isWide) {
-          return Row(
-            children: [
-              Expanded(child: card1),
-              const SizedBox(width: 12),
-              Expanded(child: card2),
-              const SizedBox(width: 12),
-              Expanded(child: card3),
-              const SizedBox(width: 12),
-              Expanded(child: card4),
-            ],
-          );
-        } else if (isMedium) {
-          return Column(
-            children: [
-              Row(
-                children: [
-                  Expanded(child: card1),
-                  const SizedBox(width: 12),
-                  Expanded(child: card2),
-                ],
-              ),
-              const SizedBox(height: 12),
-              Row(
-                children: [
-                  Expanded(child: card3),
-                  const SizedBox(width: 12),
-                  Expanded(child: card4),
-                ],
-              ),
-            ],
-          );
-        } else {
-          return Column(
-            children: [
-              card1,
-              const SizedBox(height: 10),
-              card2,
-              const SizedBox(height: 10),
-              card3,
-              const SizedBox(height: 10),
-              card4,
-            ],
-          );
-        }
-      },
-    );
+  List<EnterpriseMetricCardItem> _buildMetrics() {
+    return [
+      EnterpriseMetricCardItem(
+        label: 'Total Gross Wage',
+        value: '₹${_formatCurrency(_kpi.totalGross)}',
+        icon: Icons.account_balance_wallet_outlined,
+        color: const Color(0xFF2563EB),
+        filterKey: 'All',
+        isSelected: _selectedStatus == 'All',
+        onTap: () => _onStatusFilterSelected('All'),
+      ),
+      EnterpriseMetricCardItem(
+        label: 'Paid / Disbursed',
+        value: '₹${_formatCurrency(_kpi.totalPaid)}',
+        icon: Icons.verified_outlined,
+        color: const Color(0xFF047857),
+        filterKey: 'PAID',
+        isSelected: _selectedStatus == 'PAID',
+        onTap: () => _onStatusFilterSelected(_selectedStatus == 'PAID' ? 'All' : 'PAID'),
+      ),
+      EnterpriseMetricCardItem(
+        label: 'Pending Payout',
+        value: '₹${_formatCurrency(_kpi.totalPending)}',
+        icon: Icons.hourglass_top_outlined,
+        color: const Color(0xFFD97706),
+        filterKey: 'PENDING',
+        isSelected: _selectedStatus == 'PENDING',
+        onTap: () => _onStatusFilterSelected(_selectedStatus == 'PENDING' ? 'All' : 'PENDING'),
+      ),
+      EnterpriseMetricCardItem(
+        label: 'Overdue from Pay Date',
+        value: '₹${_formatCurrency(_kpi.totalOverdue)}',
+        icon: Icons.warning_amber_rounded,
+        color: const Color(0xFFDC2626),
+        filterKey: 'OVERDUE',
+        isSelected: _selectedStatus == 'OVERDUE',
+        onTap: () => _onStatusFilterSelected(_selectedStatus == 'OVERDUE' ? 'All' : 'OVERDUE'),
+      ),
+    ];
   }
 
-  Widget _buildInvoiceCard({
-    required String title,
-    required String value,
-    required String subtitle,
-    required String badgeText,
-    required Color badgeColor,
-    required Color badgeTextColor,
-    required IconData icon,
-    required Color accentColor,
-    required List<Color> gradient,
-    bool isAlert = false,
-  }) {
-    return Container(
-      padding: const EdgeInsets.all(16),
-      decoration: BoxDecoration(
-        gradient: LinearGradient(
-          colors: gradient,
-          begin: Alignment.topLeft,
-          end: Alignment.bottomRight,
-        ),
-        borderRadius: BorderRadius.circular(12),
-        border: Border.all(
-          color: isAlert ? const Color(0xFFFCA5A5) : const Color(0xFFE2E8F0),
-          width: isAlert ? 1.5 : 1,
-        ),
-        boxShadow: const [
-          BoxShadow(
-            color: Color(0x08000000),
-            blurRadius: 4,
-            offset: Offset(0, 2),
-          ),
-        ],
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Row(
-            mainAxisAlignment: MainAxisAlignment.spaceBetween,
-            children: [
-              Container(
-                padding: const EdgeInsets.all(7),
-                decoration: BoxDecoration(
-                  color: accentColor.withValues(alpha: 0.12),
-                  borderRadius: BorderRadius.circular(8),
-                ),
-                child: Icon(icon, color: accentColor, size: 18),
-              ),
-              Container(
-                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
-                decoration: BoxDecoration(
-                  color: badgeColor,
-                  borderRadius: BorderRadius.circular(12),
-                ),
-                child: Text(
-                  badgeText,
-                  style: TextStyle(
-                    color: badgeTextColor,
-                    fontSize: 11,
-                    fontWeight: FontWeight.w700,
-                  ),
-                ),
-              ),
-            ],
-          ),
-          const SizedBox(height: 12),
-          Text(
-            title,
-            style: const TextStyle(
-              fontSize: 12,
-              fontWeight: FontWeight.w600,
-              color: Color(0xFF64748B),
-            ),
-          ),
-          const SizedBox(height: 4),
-          Text(
-            value,
-            style: const TextStyle(
-              fontSize: 20,
-              fontWeight: FontWeight.w800,
-              color: Color(0xFF0F172A),
-              letterSpacing: -0.5,
-            ),
-          ),
-          const SizedBox(height: 4),
-          Text(
-            subtitle,
-            style: const TextStyle(
-              fontSize: 11,
-              color: Color(0xFF94A3B8),
-            ),
-            maxLines: 1,
-            overflow: TextOverflow.ellipsis,
-          ),
-        ],
-      ),
+  void _downloadPayrollReport(List<PayrollEntry> list) {
+    TableExportHelper.showExportMenu(
+      context: context,
+      title: 'Payroll Disbursal Register',
+      headers: [
+        'Employee Name',
+        'Code',
+        'Department',
+        'Designation',
+        'Basic Pay (₹)',
+        'HRA (₹)',
+        'Allowances (₹)',
+        'Gross Pay (₹)',
+        'EPF (₹)',
+        'PT (₹)',
+        'TDS (₹)',
+        'Deductions (₹)',
+        'Net Salary (₹)',
+        'Status',
+        'Bank Routing',
+      ],
+      rows: list.map((e) => [
+        e.employeeName,
+        e.employeeCode,
+        e.department,
+        e.designation,
+        e.basicPay.toStringAsFixed(2),
+        e.hra.toStringAsFixed(2),
+        e.allowances.toStringAsFixed(2),
+        e.grossEarnings.toStringAsFixed(2),
+        e.pfEmployee.toStringAsFixed(2),
+        e.professionalTax.toStringAsFixed(2),
+        e.tdsTax.toStringAsFixed(2),
+        e.totalDeductions.toStringAsFixed(2),
+        e.netSalary.toStringAsFixed(2),
+        e.paymentStatus,
+        e.bankAccountMask.isNotEmpty ? e.bankAccountMask : 'Bank NEFT',
+      ]).toList(),
     );
   }
 
@@ -910,6 +808,7 @@ class _PayrollScreenState extends State<PayrollScreen> {
       EnterpriseTableColumn<PayrollEntry>(
         title: 'Employee Name & Code',
         width: 220,
+        sortKey: (entry) => entry.employeeName.toLowerCase(),
         cellBuilder: (ctx, entry) => Row(
           mainAxisSize: MainAxisSize.min,
           children: [
@@ -937,6 +836,7 @@ class _PayrollScreenState extends State<PayrollScreen> {
       EnterpriseTableColumn<PayrollEntry>(
         title: 'Department',
         width: 130,
+        sortKey: (entry) => entry.department.toLowerCase(),
         cellBuilder: (ctx, entry) => Container(
           padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
           decoration: BoxDecoration(
@@ -953,6 +853,7 @@ class _PayrollScreenState extends State<PayrollScreen> {
         title: 'Gross Pay',
         width: 120,
         alignRight: true,
+        sortKey: (entry) => entry.grossEarnings,
         cellBuilder: (ctx, entry) => Text(
           '₹${_formatCurrency(entry.grossEarnings)}',
           style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w600),
@@ -962,6 +863,7 @@ class _PayrollScreenState extends State<PayrollScreen> {
         title: 'Deductions',
         width: 110,
         alignRight: true,
+        sortKey: (entry) => entry.totalDeductions,
         cellBuilder: (ctx, entry) => Text(
           '-₹${_formatCurrency(entry.totalDeductions)}',
           style: const TextStyle(fontSize: 12, color: Color(0xFFDC2626)),
@@ -971,6 +873,7 @@ class _PayrollScreenState extends State<PayrollScreen> {
         title: 'Net Salary',
         width: 130,
         alignRight: true,
+        sortKey: (entry) => entry.netSalary,
         cellBuilder: (ctx, entry) => Text(
           '₹${_formatCurrency(entry.netSalary)}',
           style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w800, color: Color(0xFF0F172A)),
@@ -978,26 +881,18 @@ class _PayrollScreenState extends State<PayrollScreen> {
       ),
       EnterpriseTableColumn<PayrollEntry>(
         title: 'Status',
-        width: 120,
-        cellBuilder: (ctx, entry) => Container(
-          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
-          decoration: BoxDecoration(
-            color: entry.statusBackgroundColor,
-            borderRadius: BorderRadius.circular(12),
-          ),
-          child: Text(
-            entry.paymentStatus,
-            style: TextStyle(
-              color: entry.statusColor,
-              fontWeight: FontWeight.w700,
-              fontSize: 11,
-            ),
-          ),
+        width: 125,
+        sortKey: (entry) => entry.paymentStatus,
+        cellBuilder: (ctx, entry) => EnterpriseStatusDropdown(
+          currentStatus: entry.paymentStatus,
+          options: const ['PAID', 'PENDING', 'ON_HOLD', 'OVERDUE'],
+          onChanged: (newStatus) => _updatePayrollStatus(entry, newStatus),
         ),
       ),
       EnterpriseTableColumn<PayrollEntry>(
         title: 'Bank Mask',
         width: 140,
+        sortKey: (entry) => entry.bankAccountMask,
         cellBuilder: (ctx, entry) => Text(
           entry.bankAccountMask.isNotEmpty ? entry.bankAccountMask : 'Direct Bank NEFT',
           style: const TextStyle(fontSize: 12, color: AppColors.muted),

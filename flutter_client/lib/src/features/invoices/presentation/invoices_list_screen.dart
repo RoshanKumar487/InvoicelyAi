@@ -2,6 +2,7 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 
 import '../../../core/api/api_exception.dart';
+import '../../../shared/utils/table_export_helper.dart';
 import '../../../shared/widgets/app_card.dart';
 import '../../../shared/widgets/enterprise_data_view.dart';
 import '../../../shared/widgets/offline_cache_banner.dart';
@@ -47,6 +48,8 @@ class _InvoicesListScreenState extends State<InvoicesListScreen> {
   String? _error;
   bool _loading = true;
   bool _usingCachedData = false;
+  DateTimeRange? _dateRange;
+  final Set<String> _selectedIds = {};
 
   @override
   void initState() {
@@ -154,11 +157,46 @@ class _InvoicesListScreenState extends State<InvoicesListScreen> {
       ..showSnackBar(SnackBar(content: Text(message)));
   }
 
+  void _downloadInvoicesReport(List<Invoice> currentInvoices) {
+    TableExportHelper.showExportMenu(
+      context: context,
+      title: 'Invoices Ledger',
+      headers: ['Invoice #', 'Client', 'Company', 'Issue Date', 'Due Date', 'Total', 'Balance Due', 'Status'],
+      rows: currentInvoices.map((inv) => [
+        inv.invoiceNumber.isEmpty ? 'INV-${inv.id ?? ""}' : inv.invoiceNumber,
+        inv.clientName,
+        inv.clientCompany,
+        inv.issueDate,
+        inv.dueDate,
+        inv.total.toStringAsFixed(2),
+        inv.balanceDue.toStringAsFixed(2),
+        inv.status,
+      ]).toList(),
+    );
+  }
+
+  Future<void> _batchMarkStatus(String status) async {
+    final count = _selectedIds.length;
+    for (final idStr in _selectedIds.toList()) {
+      final inv = _invoices.firstWhere(
+        (i) => (i.id?.toString() == idStr) || (i.invoiceNumber == idStr),
+        orElse: () => _invoices.first,
+      );
+      if (inv.id != null) {
+        await widget.repository.updateStatus(inv.id!, status);
+      }
+    }
+    setState(() => _selectedIds.clear());
+    _showMessage('Updated $count invoices to $status');
+    await _load();
+  }
+
   List<EnterpriseTableColumn<Invoice>> _invoiceTableColumns() {
     return [
       EnterpriseTableColumn<Invoice>(
         title: 'Invoice #',
         width: 140,
+        sortKey: (inv) => inv.invoiceNumber,
         cellBuilder: (ctx, inv) => InkWell(
           onTap: () => widget.onOpen(inv),
           child: Row(
@@ -177,6 +215,7 @@ class _InvoicesListScreenState extends State<InvoicesListScreen> {
       EnterpriseTableColumn<Invoice>(
         title: 'Client / Company',
         width: 200,
+        sortKey: (inv) => inv.clientName.toLowerCase(),
         cellBuilder: (ctx, inv) => Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           mainAxisAlignment: MainAxisAlignment.center,
@@ -198,17 +237,20 @@ class _InvoicesListScreenState extends State<InvoicesListScreen> {
       EnterpriseTableColumn<Invoice>(
         title: 'Issue Date',
         width: 110,
+        sortKey: (inv) => inv.issueDate,
         cellBuilder: (ctx, inv) => Text(inv.issueDate, style: const TextStyle(fontSize: 12)),
       ),
       EnterpriseTableColumn<Invoice>(
         title: 'Due Date',
         width: 110,
+        sortKey: (inv) => inv.dueDate,
         cellBuilder: (ctx, inv) => Text(inv.dueDate, style: const TextStyle(fontSize: 12)),
       ),
       EnterpriseTableColumn<Invoice>(
         title: 'Total Amount',
         width: 130,
         alignRight: true,
+        sortKey: (inv) => inv.total,
         cellBuilder: (ctx, inv) => Text(
           _money(inv.total, inv.currencySymbol),
           style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 13),
@@ -218,6 +260,7 @@ class _InvoicesListScreenState extends State<InvoicesListScreen> {
         title: 'Balance Due',
         width: 130,
         alignRight: true,
+        sortKey: (inv) => inv.balanceDue,
         cellBuilder: (ctx, inv) => Text(
           inv.balanceDue > 0 ? _money(inv.balanceDue, inv.currencySymbol) : '₹0.00',
           style: TextStyle(
@@ -229,8 +272,13 @@ class _InvoicesListScreenState extends State<InvoicesListScreen> {
       ),
       EnterpriseTableColumn<Invoice>(
         title: 'Status',
-        width: 110,
-        cellBuilder: (ctx, inv) => _StatusChip(status: inv.status),
+        width: 130,
+        sortKey: (inv) => inv.status,
+        cellBuilder: (ctx, inv) => EnterpriseStatusDropdown(
+          currentStatus: inv.status,
+          options: const ['Draft', 'Sent', 'Paid', 'Overdue', 'Cancelled'],
+          onChanged: (newStatus) => _setStatus(inv, newStatus),
+        ),
       ),
       EnterpriseTableColumn<Invoice>(
         title: 'Actions',
@@ -271,7 +319,7 @@ class _InvoicesListScreenState extends State<InvoicesListScreen> {
     ];
   }
 
-  Widget _buildMetricsStrip(List<Invoice> allInvoices) {
+  List<EnterpriseMetricCardItem> _buildMetrics(List<Invoice> allInvoices) {
     final totalInvoiced = allInvoices.fold<double>(0.0, (acc, i) => acc + i.total);
     final paidInvoices = allInvoices.where((i) => i.status.toLowerCase() == 'paid').toList();
     final totalPaid = paidInvoices.fold<double>(0.0, (acc, i) => acc + i.total);
@@ -279,59 +327,48 @@ class _InvoicesListScreenState extends State<InvoicesListScreen> {
     final totalOutstanding = outstandingInvoices.fold<double>(0.0, (acc, i) => acc + i.balanceDue);
     final overdueCount = allInvoices.where((i) => i.status.toLowerCase() == 'overdue').length;
 
-    return LayoutBuilder(
-      builder: (context, constraints) {
-        final isWide = constraints.maxWidth > 700;
-        final cardWidth = isWide ? (constraints.maxWidth - 36) / 4 : (constraints.maxWidth - 12) / 2;
-
-        final metrics = [
-          _InvoiceKpi(label: 'Total Invoiced', value: '₹${totalInvoiced.toStringAsFixed(0)}', count: '${allInvoices.length} bills', icon: Icons.receipt_long_rounded, color: const Color(0xFF1E3A8A)),
-          _InvoiceKpi(label: 'Total Collected', value: '₹${totalPaid.toStringAsFixed(0)}', count: '${paidInvoices.length} paid', icon: Icons.check_circle_outline, color: const Color(0xFF047857)),
-          _InvoiceKpi(label: 'Outstanding', value: '₹${totalOutstanding.toStringAsFixed(0)}', count: '${outstandingInvoices.length} pending', icon: Icons.pending_actions_rounded, color: const Color(0xFFD97706)),
-          _InvoiceKpi(label: 'Overdue Bills', value: '$overdueCount overdue', count: 'Action required', icon: Icons.warning_amber_rounded, color: const Color(0xFFDC2626)),
-        ];
-
-        return Wrap(
-          spacing: 12,
-          runSpacing: 10,
-          children: metrics.map((m) {
-            return SizedBox(
-              width: cardWidth,
-              child: Container(
-                padding: const EdgeInsets.all(12),
-                decoration: BoxDecoration(
-                  color: Colors.white,
-                  borderRadius: BorderRadius.circular(10),
-                  border: Border.all(color: const Color(0xFFE2E8F0)),
-                ),
-                child: Row(
-                  children: [
-                    Container(
-                      padding: const EdgeInsets.all(8),
-                      decoration: BoxDecoration(
-                        color: m.color.withValues(alpha: 0.1),
-                        borderRadius: BorderRadius.circular(8),
-                      ),
-                      child: Icon(m.icon, color: m.color, size: 20),
-                    ),
-                    const SizedBox(width: 10),
-                    Expanded(
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Text(m.value, style: const TextStyle(fontSize: 15, fontWeight: FontWeight.bold, color: Color(0xFF0F172A)), overflow: TextOverflow.ellipsis),
-                          Text(m.label, style: const TextStyle(fontSize: 11, color: Color(0xFF64748B)), overflow: TextOverflow.ellipsis),
-                        ],
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-            );
-          }).toList(),
-        );
-      },
-    );
+    return [
+      EnterpriseMetricCardItem(
+        label: 'Total Invoiced',
+        value: '₹${totalInvoiced.toStringAsFixed(0)}',
+        count: '${allInvoices.length} bills',
+        icon: Icons.receipt_long_rounded,
+        color: const Color(0xFF1E3A8A),
+        filterKey: 'All',
+        isSelected: _filter == 'All',
+        onTap: () => setState(() => _filter = 'All'),
+      ),
+      EnterpriseMetricCardItem(
+        label: 'Total Collected',
+        value: '₹${totalPaid.toStringAsFixed(0)}',
+        count: '${paidInvoices.length} paid',
+        icon: Icons.check_circle_outline,
+        color: const Color(0xFF047857),
+        filterKey: 'Paid',
+        isSelected: _filter.toLowerCase() == 'paid',
+        onTap: () => setState(() => _filter = _filter.toLowerCase() == 'paid' ? 'All' : 'Paid'),
+      ),
+      EnterpriseMetricCardItem(
+        label: 'Outstanding',
+        value: '₹${totalOutstanding.toStringAsFixed(0)}',
+        count: '${outstandingInvoices.length} pending',
+        icon: Icons.pending_actions_rounded,
+        color: const Color(0xFFD97706),
+        filterKey: 'Outstanding',
+        isSelected: _filter == 'Outstanding',
+        onTap: () => setState(() => _filter = _filter == 'Outstanding' ? 'All' : 'Outstanding'),
+      ),
+      EnterpriseMetricCardItem(
+        label: 'Overdue Bills',
+        value: '$overdueCount overdue',
+        count: 'Action required',
+        icon: Icons.warning_amber_rounded,
+        color: const Color(0xFFDC2626),
+        filterKey: 'Overdue',
+        isSelected: _filter.toLowerCase() == 'overdue',
+        onTap: () => setState(() => _filter = _filter.toLowerCase() == 'overdue' ? 'All' : 'Overdue'),
+      ),
+    ];
   }
 
   @override
@@ -339,8 +376,23 @@ class _InvoicesListScreenState extends State<InvoicesListScreen> {
     final query = _searchController.text.trim().toLowerCase();
 
     final filtered = _invoices.where((invoice) {
-      final matchesStatus = _filter == 'All' ||
-          invoice.status.toLowerCase() == _filter.toLowerCase();
+      bool matchesStatus = true;
+      if (_filter == 'Outstanding') {
+        matchesStatus = invoice.balanceDue > 0 && invoice.status.toLowerCase() != 'paid';
+      } else if (_filter != 'All') {
+        matchesStatus = invoice.status.toLowerCase() == _filter.toLowerCase();
+      }
+
+      if (_dateRange != null) {
+        final issue = DateTime.tryParse(invoice.issueDate);
+        if (issue != null) {
+          if (issue.isBefore(_dateRange!.start) ||
+              issue.isAfter(_dateRange!.end.add(const Duration(days: 1)))) {
+            return false;
+          }
+        }
+      }
+
       final matchesSearch = query.isEmpty ||
           invoice.invoiceNumber.toLowerCase().contains(query) ||
           invoice.clientName.toLowerCase().contains(query) ||
@@ -352,8 +404,7 @@ class _InvoicesListScreenState extends State<InvoicesListScreen> {
           invoice.createdByUserName.toLowerCase().contains('me');
 
       return matchesStatus && matchesSearch && matchesCreator;
-    }).toList()
-      ..sort((first, second) => second.issueDate.compareTo(first.issueDate));
+    }).toList();
 
     return Scaffold(
       appBar: AppBar(
@@ -469,12 +520,59 @@ class _InvoicesListScreenState extends State<InvoicesListScreen> {
                   EnterpriseDataView<Invoice>(
                     items: filtered,
                     headerTitle: 'Invoice Directory',
-                    metricsStrip: _buildMetricsStrip(_invoices),
+                    metrics: _buildMetrics(_invoices),
+                    dateRange: _dateRange,
+                    onDateRangeChanged: (range) => setState(() => _dateRange = range),
+                    onDownloadReport: () => _downloadInvoicesReport(filtered),
                     searchController: _searchController,
                     searchHint: 'Search invoice #, client or email...',
                     filterChips: _filters,
-                    selectedFilterChip: _filter,
+                    selectedFilterChip: _filter == 'Outstanding' ? null : _filter,
                     onFilterChipSelected: (f) => setState(() => _filter = f),
+                    idGetter: (inv) => inv.id?.toString() ?? inv.invoiceNumber,
+                    selectedIds: _selectedIds,
+                    onToggleSelect: (id) => setState(() {
+                      if (_selectedIds.contains(id)) {
+                        _selectedIds.remove(id);
+                      } else {
+                        _selectedIds.add(id);
+                      }
+                    }),
+                    onSelectAll: (ids) => setState(() => _selectedIds.addAll(ids)),
+                    onDeselectAll: () => setState(() => _selectedIds.clear()),
+                    batchActions: [
+                      FilledButton.icon(
+                        style: FilledButton.styleFrom(
+                          backgroundColor: Colors.white,
+                          foregroundColor: const Color(0xFF16A34A),
+                          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                        ),
+                        icon: const Icon(Icons.check_circle, size: 15),
+                        label: const Text('Mark Paid', style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold)),
+                        onPressed: () => _batchMarkStatus('Paid'),
+                      ),
+                      const SizedBox(width: 8),
+                      OutlinedButton.icon(
+                        style: OutlinedButton.styleFrom(
+                          foregroundColor: Colors.white,
+                          side: const BorderSide(color: Colors.white70),
+                          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                        ),
+                        icon: const Icon(Icons.send_rounded, size: 15),
+                        label: const Text('Mark Sent', style: TextStyle(fontSize: 12)),
+                        onPressed: () => _batchMarkStatus('Sent'),
+                      ),
+                      const SizedBox(width: 8),
+                      IconButton(
+                        icon: const Icon(Icons.file_download_outlined, color: Colors.white, size: 18),
+                        tooltip: 'Export Selected',
+                        onPressed: () {
+                          final selected = _invoices.where((i) => _selectedIds.contains(i.id?.toString()) || _selectedIds.contains(i.invoiceNumber)).toList();
+                          _downloadInvoicesReport(selected);
+                        },
+                      ),
+                    ],
+                    onRowTap: (inv) => widget.onOpen(inv),
                     topTrailing: SegmentedButton<String>(
                       segments: const [
                         ButtonSegment(value: 'All', label: Text('All')),
