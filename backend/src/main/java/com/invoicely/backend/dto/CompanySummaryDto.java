@@ -13,6 +13,8 @@ public class CompanySummaryDto {
     private String email;
     private String phone;
     private String website;
+    private String role = "ADMIN";
+    private Boolean activeWorkspace = false;
 
     public CompanySummaryDto() {}
 
@@ -29,6 +31,12 @@ public class CompanySummaryDto {
             this.phone = company.getPhone();
             this.website = company.getWebsite();
         }
+    }
+
+    public CompanySummaryDto(Company company, String role, Boolean activeWorkspace) {
+        this(company);
+        if (role != null) this.role = role;
+        if (activeWorkspace != null) this.activeWorkspace = activeWorkspace;
     }
 
     public Long getId() { return id; }
@@ -60,4 +68,10 @@ public class CompanySummaryDto {
 
     public String getWebsite() { return website; }
     public void setWebsite(String website) { this.website = website; }
+
+    public String getRole() { return role; }
+    public void setRole(String role) { this.role = role; }
+
+    public Boolean getActiveWorkspace() { return activeWorkspace; }
+    public void setActiveWorkspace(Boolean activeWorkspace) { this.activeWorkspace = activeWorkspace; }
 }

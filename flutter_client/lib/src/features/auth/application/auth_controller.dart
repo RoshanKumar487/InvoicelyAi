@@ -102,6 +102,28 @@ class AuthController extends ChangeNotifier {
     );
   }
 
+  Future<void> switchCompany(int companyId) async {
+    session = await _repository.switchCompany(companyId);
+    startupError = null;
+    notifyListeners();
+  }
+
+  Future<void> createCompanyWorkspace(Map<String, dynamic> payload) async {
+    session = await _repository.createCompanyWorkspace(payload);
+    startupError = null;
+    notifyListeners();
+  }
+
+  Future<List<CompanySummary>> getMyCompanies() {
+    return _repository.getMyCompanies();
+  }
+
+  void updateSession(AuthSession newSession) {
+    session = newSession;
+    startupError = null;
+    notifyListeners();
+  }
+
   Future<void> logout() async {
     await _repository.logout();
     session = null;

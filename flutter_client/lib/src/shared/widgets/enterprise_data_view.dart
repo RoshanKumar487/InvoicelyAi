@@ -35,6 +35,7 @@ class EnterpriseDataView<T> extends StatefulWidget {
     this.onToggleSelect,
     this.onSelectAll,
     this.onDeselectAll,
+    this.batchActions,
     this.searchHint = 'Search records...',
     this.searchController,
     this.onSearchChanged,
@@ -64,6 +65,7 @@ class EnterpriseDataView<T> extends StatefulWidget {
   final ValueChanged<String>? onToggleSelect;
   final ValueChanged<List<String>>? onSelectAll;
   final VoidCallback? onDeselectAll;
+  final List<Widget>? batchActions;
 
   final String searchHint;
   final TextEditingController? searchController;
@@ -546,6 +548,10 @@ class _EnterpriseDataViewState<T> extends State<EnterpriseDataView<T>> {
             '${widget.selectedIds!.length} of $totalCount selected',
             style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 13),
           ),
+          if (widget.batchActions != null && widget.batchActions!.isNotEmpty) ...[
+            const SizedBox(width: 16),
+            ...widget.batchActions!,
+          ],
           const Spacer(),
           TextButton(
             onPressed: widget.onDeselectAll,

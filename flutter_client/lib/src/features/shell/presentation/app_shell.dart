@@ -24,6 +24,9 @@ import '../../templates/presentation/templates_screen.dart';
 import '../../employees/presentation/employee_management_screen.dart';
 import '../../settings/presentation/email_scheduler_settings_screen.dart';
 import '../../audit/presentation/audit_logs_screen.dart';
+import '../../payroll/data/payroll_repository.dart';
+import '../../payroll/presentation/payroll_screen.dart';
+import '../../../shared/widgets/company_workspace_modal.dart';
 import 'placeholder_screen.dart';
 
 enum _Destination {
@@ -45,6 +48,7 @@ class AppShell extends StatefulWidget {
     required this.onLogout,
     required this.apiClient,
     required this.dashboardRepository,
+    this.onWorkspaceSwitched,
     super.key,
   });
 
@@ -52,6 +56,7 @@ class AppShell extends StatefulWidget {
   final Future<void> Function() onLogout;
   final ApiClient apiClient;
   final DashboardRepository dashboardRepository;
+  final ValueChanged<AuthSession>? onWorkspaceSwitched;
 
   @override
   State<AppShell> createState() => _AppShellState();
@@ -212,12 +217,58 @@ class _AppShellState extends State<AppShell> {
               }
             }),
             labelType: NavigationRailLabelType.all,
-            leading: const Padding(
-              padding: EdgeInsets.symmetric(vertical: 20),
-              child: Icon(
-                Icons.receipt_long_rounded,
-                size: 32,
-                color: Color(0xFF1E3A8A),
+            leading: Padding(
+              padding: const EdgeInsets.symmetric(vertical: 16),
+              child: Column(
+                children: [
+                  const Icon(
+                    Icons.receipt_long_rounded,
+                    size: 32,
+                    color: Color(0xFF1E3A8A),
+                  ),
+                  const SizedBox(height: 8),
+                  Tooltip(
+                    message: 'Switch Company / Workspace',
+                    child: InkWell(
+                      onTap: () => CompanyWorkspaceModal.show(
+                        context: context,
+                        currentSession: widget.session,
+                        apiClient: widget.apiClient,
+                        onWorkspaceSwitched: (newSession) {
+                          widget.onWorkspaceSwitched?.call(newSession);
+                        },
+                      ),
+                      borderRadius: BorderRadius.circular(10),
+                      child: Container(
+                        padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 4),
+                        decoration: BoxDecoration(
+                          color: const Color(0x1F00F2FE),
+                          borderRadius: BorderRadius.circular(10),
+                          border: Border.all(color: const Color(0xFF00F2FE), width: 1),
+                        ),
+                        child: Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            const Icon(Icons.business_rounded, size: 14, color: Color(0xFF00F2FE)),
+                            const SizedBox(width: 4),
+                            ConstrainedBox(
+                              constraints: const BoxConstraints(maxWidth: 58),
+                              child: Text(
+                                widget.session.company?.code ?? 'Workspace',
+                                overflow: TextOverflow.ellipsis,
+                                style: const TextStyle(
+                                  fontSize: 10,
+                                  fontWeight: FontWeight.bold,
+                                  color: Color(0xFF00F2FE),
+                                ),
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ),
+                  ),
+                ],
               ),
             ),
             destinations: [
@@ -241,6 +292,7 @@ class _AppShellState extends State<AppShell> {
           session: widget.session,
           repository: widget.dashboardRepository,
           localSettings: _invoiceLocalSettings,
+          onWorkspaceSwitched: widget.onWorkspaceSwitched,
           registeredCompanyName: _invoiceLocalSettings['businessName']?.toString().trim().isNotEmpty == true
               ? _invoiceLocalSettings['businessName']!.toString().trim()
               : (_invoiceLocalSettings['companyName']?.toString().trim().isNotEmpty == true
@@ -266,6 +318,7 @@ class _AppShellState extends State<AppShell> {
             () => _destination = _Destination.aiAgent,
           ),
           onOpenTemplates: () => _openMoreSection('Templates'),
+          onOpenPayroll: () => _openMoreSection('Payroll & Disbursals'),
           onOpenAuditLogs: () => _openMoreSection('Audit Logs'),
         ),
       _Destination.invoices => InvoiceFeatureScreen(
@@ -300,6 +353,10 @@ class _AppShellState extends State<AppShell> {
     }
     void onBack() => setState(() => _moreSection = null);
     return switch (section) {
+      'Payroll & Disbursals' || 'Payroll' || 'Employee Payroll' => PayrollScreen(
+          repository: PayrollRepository(client: widget.apiClient),
+          onBack: onBack,
+        ),
       'Employee management' => EmployeeManagementScreen(
           apiClient: widget.apiClient,
           companyName: _invoiceLocalSettings['businessName']?.toString() ??
@@ -408,6 +465,8 @@ class _MoreMenu extends StatelessWidget {
         ('Reports', Icons.bar_chart_outlined),
       if (canSeeAuditLogs)
         ('Audit Logs', Icons.history_edu_rounded),
+      if (isAdmin)
+        ('Payroll & Disbursals', Icons.account_balance_wallet_outlined),
       if (isAdmin) ('Employee management', Icons.badge_outlined),
       if (isAdmin) ('Team management', Icons.groups_outlined),
       if (canSeeInvoices) ('Templates', Icons.dashboard_customize_outlined),

@@ -23,5 +23,3 @@ dependencyResolutionManagement {
 }
 
 rootProject.name = "Invoicely"
-
-include(":app")

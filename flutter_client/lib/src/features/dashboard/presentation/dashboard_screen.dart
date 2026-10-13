@@ -12,6 +12,7 @@ import '../../invoices/data/invoice.dart';
 import '../data/dashboard_repository.dart';
 import '../data/dashboard_statistics.dart';
 import '../data/developer_overview.dart';
+import '../../../shared/widgets/company_workspace_modal.dart';
 import 'widgets/dashboard_analytics_cards.dart';
 
 class DashboardScreen extends StatefulWidget {
@@ -25,7 +26,9 @@ class DashboardScreen extends StatefulWidget {
     required this.onViewExpenses,
     required this.onOpenAiChat,
     required this.onOpenTemplates,
+    this.onOpenPayroll,
     this.onOpenAuditLogs,
+    this.onWorkspaceSwitched,
     this.registeredCompanyName,
     this.localSettings = const {},
     super.key,
@@ -40,7 +43,9 @@ class DashboardScreen extends StatefulWidget {
   final VoidCallback onViewExpenses;
   final VoidCallback onOpenAiChat;
   final VoidCallback onOpenTemplates;
+  final VoidCallback? onOpenPayroll;
   final VoidCallback? onOpenAuditLogs;
+  final ValueChanged<AuthSession>? onWorkspaceSwitched;
   final String? registeredCompanyName;
   final Map<String, Object?> localSettings;
 
@@ -201,6 +206,17 @@ class _DashboardScreenState extends State<DashboardScreen> {
                     subtitle: subtitle,
                     onRefresh: _isLoading ? null : _loadStatistics,
                     onCreateInvoice: widget.onCreateInvoice,
+                    onSwitchWorkspace: _isDeveloper
+                        ? null
+                        : () => CompanyWorkspaceModal.show(
+                              context: context,
+                              currentSession: widget.session,
+                              apiClient: widget.repository.apiClient,
+                              onWorkspaceSwitched: (newSession) {
+                                widget.onWorkspaceSwitched?.call(newSession);
+                                _loadStatistics();
+                              },
+                            ),
                     canOpenInvoices:
                         widget.session.user.hasPermission('INVOICES'),
                   ),
@@ -218,6 +234,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
                     onViewExpenses: widget.onViewExpenses,
                     onViewClients: widget.onViewClients,
                     onOpenTemplates: widget.onOpenTemplates,
+                    onOpenPayroll: widget.onOpenPayroll,
                   ),
                   const SizedBox(height: 16),
                   if (_developerOverview != null) ...[
@@ -280,6 +297,7 @@ class _DashboardHeader extends StatelessWidget {
     required this.onRefresh,
     required this.onCreateInvoice,
     required this.canOpenInvoices,
+    this.onSwitchWorkspace,
   });
 
   final String name;
@@ -287,45 +305,79 @@ class _DashboardHeader extends StatelessWidget {
   final VoidCallback? onRefresh;
   final VoidCallback onCreateInvoice;
   final bool canOpenInvoices;
+  final VoidCallback? onSwitchWorkspace;
 
   @override
   Widget build(BuildContext context) => Row(
         children: [
-          Container(
-            width: 42,
-            height: 42,
-            decoration: BoxDecoration(
-              color: AppColors.primary,
-              borderRadius: BorderRadius.circular(13),
-            ),
-            child: const Icon(
-              Icons.receipt_long_rounded,
-              color: Colors.white,
-              size: 23,
+          InkWell(
+            onTap: onSwitchWorkspace,
+            borderRadius: BorderRadius.circular(13),
+            child: Container(
+              width: 42,
+              height: 42,
+              decoration: BoxDecoration(
+                gradient: const LinearGradient(
+                  colors: [Color(0xFF00F2FE), Color(0xFF1E3A8A)],
+                  begin: Alignment.topLeft,
+                  end: Alignment.bottomRight,
+                ),
+                borderRadius: BorderRadius.circular(13),
+                boxShadow: const [
+                  BoxShadow(
+                    color: Color(0x3300F2FE),
+                    blurRadius: 8,
+                    spreadRadius: 1,
+                  ),
+                ],
+              ),
+              child: const Icon(
+                Icons.business_rounded,
+                color: Colors.white,
+                size: 23,
+              ),
             ),
           ),
           const SizedBox(width: 10),
           Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  name,
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                  style: Theme.of(context).textTheme.titleMedium?.copyWith(
-                        fontWeight: FontWeight.w800,
-                      ),
+            child: InkWell(
+              onTap: onSwitchWorkspace,
+              borderRadius: BorderRadius.circular(8),
+              child: Padding(
+                padding: const EdgeInsets.symmetric(vertical: 2, horizontal: 2),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Flexible(
+                          child: Text(
+                            name,
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            style: Theme.of(context).textTheme.titleMedium?.copyWith(
+                                  fontWeight: FontWeight.w800,
+                                ),
+                          ),
+                        ),
+                        if (onSwitchWorkspace != null) ...[
+                          const SizedBox(width: 4),
+                          const Icon(Icons.keyboard_arrow_down_rounded, size: 20, color: Color(0xFF00F2FE)),
+                        ],
+                      ],
+                    ),
+                    Text(
+                      subtitle,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                            color: AppColors.muted,
+                          ),
+                    ),
+                  ],
                 ),
-                Text(
-                  subtitle,
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                  style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                        color: AppColors.muted,
-                      ),
-                ),
-              ],
+              ),
             ),
           ),
           IconButton(
@@ -450,6 +502,7 @@ class _DashboardShortcuts extends StatelessWidget {
     required this.onViewExpenses,
     required this.onViewClients,
     required this.onOpenTemplates,
+    this.onOpenPayroll,
   });
 
   final UserSummary user;
@@ -457,6 +510,7 @@ class _DashboardShortcuts extends StatelessWidget {
   final VoidCallback onViewExpenses;
   final VoidCallback onViewClients;
   final VoidCallback onOpenTemplates;
+  final VoidCallback? onOpenPayroll;
 
   @override
   Widget build(BuildContext context) => SizedBox(
@@ -473,8 +527,14 @@ class _DashboardShortcuts extends StatelessWidget {
             if (user.hasPermission('EXPENSES'))
               _ShortcutChip(
                 label: 'Expenses',
-                icon: Icons.account_balance_wallet_outlined,
+                icon: Icons.payments_outlined,
                 onTap: onViewExpenses,
+              ),
+            if (onOpenPayroll != null)
+              _ShortcutChip(
+                label: 'Payroll',
+                icon: Icons.account_balance_wallet_outlined,
+                onTap: onOpenPayroll!,
               ),
             if (user.hasPermission('CLIENTS'))
               _ShortcutChip(

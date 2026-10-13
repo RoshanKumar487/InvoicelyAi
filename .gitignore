@@ -5,9 +5,7 @@
 .idea/
 .DS_Store
 build/
-**/build/
 target/
-*.apk
 /captures
 .externalNativeBuild
 .cxx

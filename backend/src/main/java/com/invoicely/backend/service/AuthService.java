@@ -22,6 +22,7 @@ public class AuthService {
     private final UserRepository userRepository;
     private final CompanyRepository companyRepository;
     private final CompanyJoinRequestRepository joinRequestRepository;
+    private final com.invoicely.backend.repository.CompanyMembershipRepository companyMembershipRepository;
     private final PasswordEncoder passwordEncoder;
     private final JwtTokenProvider tokenProvider;
     private final String developerSecretKey;
@@ -30,6 +31,7 @@ public class AuthService {
             UserRepository userRepository,
             CompanyRepository companyRepository,
             CompanyJoinRequestRepository joinRequestRepository,
+            com.invoicely.backend.repository.CompanyMembershipRepository companyMembershipRepository,
             PasswordEncoder passwordEncoder,
             JwtTokenProvider tokenProvider,
             @Value("${app.developer.secret-key:invoicely_dev_secret_2026}") String developerSecretKey
@@ -37,6 +39,7 @@ public class AuthService {
         this.userRepository = userRepository;
         this.companyRepository = companyRepository;
         this.joinRequestRepository = joinRequestRepository;
+        this.companyMembershipRepository = companyMembershipRepository;
         this.passwordEncoder = passwordEncoder;
         this.tokenProvider = tokenProvider;
         this.developerSecretKey = developerSecretKey;
@@ -75,11 +78,19 @@ public class AuthService {
         );
         adminUser = userRepository.save(adminUser);
 
+        // Record initial company membership
+        companyMembershipRepository.save(new com.invoicely.backend.model.CompanyMembership(
+                adminUser.getId(),
+                company.getId(),
+                Role.ADMIN,
+                true
+        ));
+
         String token = tokenProvider.generateToken(adminUser);
         return new AuthResponse(
                 token,
                 new UserSummaryDto(adminUser),
-                new CompanySummaryDto(company),
+                new CompanySummaryDto(company, "ADMIN", true),
                 "Company and Admin registered successfully. Share Company Code '" + companyCode + "' with your employees."
         );
     }
