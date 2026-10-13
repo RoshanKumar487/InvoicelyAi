@@ -1,3 +1,5 @@
+import 'dart:convert';
+import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:printing/printing.dart';
@@ -8,6 +10,11 @@ import '../../../shared/widgets/signature_pad_dialog.dart';
 import '../../../shared/widgets/whatsapp_icon.dart';
 import '../../settings/data/settings_repository.dart';
 import '../../templates/data/template_config.dart';
+import '../../templates/data/document_template_schema.dart';
+import '../../templates/data/template_layout_engine.dart';
+import '../../templates/data/wysiwyg_pdf_exporter.dart';
+import '../../templates/presentation/wysiwyg_template_editor_screen.dart';
+import '../../templates/presentation/widgets/wysiwyg_canvas_preview.dart';
 import '../data/invoice.dart';
 import '../data/invoice_docx_export.dart';
 import '../data/invoice_pdf_export.dart';
@@ -163,6 +170,90 @@ class _InvoicePreviewScreenState extends State<InvoicePreviewScreen>
     }
   }
 
+  void _zoomAtPoint(Offset focalPoint, double scaleDelta) {
+    final current = _zoomController.value;
+    final currentScale = current.getMaxScaleOnAxis();
+    final targetScale = (currentScale * scaleDelta).clamp(0.25, 3.5);
+    final factor = targetScale / currentScale;
+
+    final matrix = Matrix4.identity()
+      ..translate(focalPoint.dx, focalPoint.dy)
+      ..scale(factor)
+      ..translate(-focalPoint.dx, -focalPoint.dy)
+      ..multiply(current);
+
+    _zoomController.value = matrix;
+    setState(() => _zoomScale = targetScale);
+  }
+
+  bool get _isWysiwyg => _localSettings['useLegacyTemplates'] != true;
+
+  DocumentTemplateSchema _getWysiwygSchema() {
+    final customJson = _localSettings['wysiwyg_custom_template_json']?.toString();
+    if (customJson != null && customJson.trim().isNotEmpty) {
+      try {
+        final map = jsonDecode(customJson) as Map<String, dynamic>;
+        return DocumentTemplateSchema.fromJson(map);
+      } catch (_) {}
+    }
+    return DocumentTemplateSchema.fromSettings(
+      localSettings: _localSettings,
+      templateId: _template?.id,
+      templateName: _template?.name,
+      businessCategory: _activeBusinessCategory,
+      defaultColor: _template?.color,
+      defaultSecondaryColor: _template?.secondaryColor,
+    );
+  }
+
+  TemplateLayoutResult _getWysiwygLayout(DocumentTemplateSchema schema) {
+    final layoutItems = _effectiveInvoice.items.map((it) {
+      return LayoutLineItem(
+        name: it.description,
+        description: it.itemDetails,
+        hsn: '998525',
+        qty: it.quantity,
+        duty: it.dutyCount,
+        unitPrice: it.unitPrice,
+        amount: it.total,
+        unit: it.unit.isNotEmpty ? it.unit : 'Days',
+      );
+    }).toList();
+
+    return TemplateLayoutEngine.computeLayout(
+      schema: schema,
+      items: layoutItems,
+      pageWidth: schema.metadata.pageSize.previewWidth,
+      pageHeight: schema.metadata.pageSize.previewHeight,
+      hasBank: _localSettings['showBankDetails'] != false,
+      hasNotes: _localSettings['showNotes'] != false && _effectiveInvoice.notes.isNotEmpty,
+    );
+  }
+
+  void _openWysiwygStudio() {
+    final currentSchema = _getWysiwygSchema();
+    Navigator.of(context).push(
+      MaterialPageRoute<void>(
+        builder: (ctx) => WysiwygTemplateEditorScreen(
+          initialSchema: currentSchema,
+          onSaveSchema: (newSchema) async {
+            final updated = Map<String, Object?>.from(_localSettings)
+              ..['wysiwyg_custom_template_json'] = jsonEncode(newSchema.toJson())
+              ..['preferredTemplateId'] = 'wysiwyg_dynamic';
+            setState(() {
+              _localSettings = updated;
+              _selectedTemplateId = 'wysiwyg_dynamic';
+            });
+            await widget.onSaveLocalSettings?.call(updated);
+            if (mounted) {
+              _showMessage('✓ WYSIWYG Template JSON saved & applied!');
+            }
+          },
+          onBack: () => Navigator.of(ctx).pop(),
+        ),
+      ),
+    );
+  }
 
   Future<void> _loadProfile() async {
     try {
@@ -174,30 +265,67 @@ class _InvoicePreviewScreenState extends State<InvoicePreviewScreen>
     } catch (_) {}
   }
 
+  static String _mapPresetAlias(String id) {
+    return switch (id) {
+      'security_gst' => 'security_modern',
+      'security-service' => 'security_modern',
+      'wasm_wysiwyg' => 'wysiwyg_dynamic',
+      'consulting' => 'consulting_standard',
+      'retail' => 'retail_standard',
+      'modern' => 'modern_minimal',
+      _ => id,
+    };
+  }
+
   TemplateConfig? get _template {
-    // If user explicitly switched via popup menu, find that preset
+    // 1. If user explicitly selected in the current preview session
     if (_selectedTemplateId != null) {
-      for (final preset in templatePresets) {
-        if (preset.id == _selectedTemplateId) return preset;
-      }
       if (widget.preferredTemplate?.id == _selectedTemplateId) {
         return widget.preferredTemplate;
       }
-    }
-
-    // Otherwise, prefer the user's customized preferredTemplate
-    if (widget.preferredTemplate != null) {
-      if (_invoice.templateId.isEmpty ||
-          _invoice.templateId == widget.preferredTemplate!.id) {
-        return widget.preferredTemplate;
+      for (final preset in templatePresets) {
+        if (preset.id == _selectedTemplateId) return preset;
+      }
+      final aliasId = _mapPresetAlias(_selectedTemplateId!);
+      for (final preset in templatePresets) {
+        if (preset.id == aliasId) return preset;
       }
     }
 
-    final selectedId = _invoice.templateId;
-    for (final preset in templatePresets) {
-      if (preset.id == selectedId) return preset;
+    // 2. Company Default / Preferred Template from localSettings
+    final prefId = _localSettings['preferredTemplateId']?.toString() ??
+        _localSettings['company_default_template_id']?.toString();
+    if (prefId != null && prefId.isNotEmpty) {
+      if (widget.preferredTemplate?.id == prefId) {
+        return widget.preferredTemplate;
+      }
+      for (final preset in templatePresets) {
+        if (preset.id == prefId) return preset;
+      }
+      final aliasId = _mapPresetAlias(prefId);
+      for (final preset in templatePresets) {
+        if (preset.id == aliasId) return preset;
+      }
     }
-    return widget.preferredTemplate ?? templatePresets.first;
+
+    // 3. User's customized preferredTemplate passed from AppShell
+    if (widget.preferredTemplate != null) {
+      return widget.preferredTemplate;
+    }
+
+    // 4. Fallback to invoice-level templateId if set
+    final selectedId = _invoice.templateId;
+    if (selectedId.isNotEmpty) {
+      for (final preset in templatePresets) {
+        if (preset.id == selectedId) return preset;
+      }
+      final aliasId = _mapPresetAlias(selectedId);
+      for (final preset in templatePresets) {
+        if (preset.id == aliasId) return preset;
+      }
+    }
+
+    return templatePresets.first;
   }
 
   String get _activeCurrencySymbol {
@@ -347,15 +475,74 @@ class _InvoicePreviewScreenState extends State<InvoicePreviewScreen>
   String get _safeFileName =>
       _invoice.invoiceNumber.replaceAll(RegExp(r'[^A-Za-z0-9_-]'), '_');
 
-  Future<void> _printPdf() async {
-    setState(() => _busy = true);
-    try {
-      final bytes = await InvoicePdfExport.build(
+  Future<Uint8List> _generatePdfBytes() async {
+    if (_isWysiwyg) {
+      final schema = _getWysiwygSchema();
+      final layoutResult = _getWysiwygLayout(schema);
+      return WysiwygPdfExporter.build(
+        schema: schema,
+        layoutResult: layoutResult,
+        companyName: _profile['companyName']?.toString() ??
+            _localSettings['companyName']?.toString() ??
+            'My Company',
+        companyAddress: _profile['address']?.toString() ??
+            _localSettings['companyAddress']?.toString() ??
+            '',
+        companyGstin: _profile['gstin']?.toString() ??
+            _localSettings['companyGst']?.toString() ??
+            '',
+        companyPan: _profile['pan']?.toString() ?? '',
+        clientName: _effectiveInvoice.clientName,
+        clientCompany: _effectiveInvoice.clientCompany,
+        clientAddress: _effectiveInvoice.clientAddress,
+        clientGstin: _effectiveInvoice.clientTaxId,
+        currencySymbol: _activeCurrencySymbol,
+        invoiceNumber: _effectiveInvoice.invoiceNumber,
+        issueDate: _effectiveInvoice.issueDate,
+        dueDate: _effectiveInvoice.dueDate,
+        total: _effectiveInvoice.total,
+        subtotal: _effectiveInvoice.subtotal,
+        tax: _effectiveInvoice.taxAmount,
+        notes: _effectiveInvoice.notes,
+        terms: _effectiveInvoice.terms,
+        bankName: _localSettings['bankName']?.toString() ?? '',
+        accountNumber: _localSettings['bankAccount']?.toString() ?? '',
+        ifsc: _localSettings['bankIfsc']?.toString() ?? '',
+        upiId: _localSettings['bankUpi']?.toString() ?? '',
+        signatureBase64: _localSettings['invoiceSignature']?.toString(),
+        logoBase64: _localSettings['invoiceLogo']?.toString(),
+        showLogo: _localSettings['showLogo'] != false,
+        showBankDetails: _localSettings['showBankDetails'] != false,
+        showNotes: _localSettings['showNotes'] != false,
+        showTerms: _localSettings['showTerms'] != false,
+        showSignature: _localSettings['showSignature'] != false,
+        showDueDate: _localSettings['showDueDate'] == true,
+        showPoNumber: _localSettings['showPoNumber'] == true,
+        showPaymentTerms: _localSettings['showPaymentTerms'] == true,
+        showStatus: _localSettings['showStatus'] == true,
+        showShipping: _localSettings['showShippingSection'] == true,
+        customTitle: _localSettings['customTitle']?.toString() ?? _template?.title,
+        customBillToLabel: _localSettings['customBillToLabel']?.toString() ?? 'BILLED TO',
+        customShipToLabel: _localSettings['customShipToLabel']?.toString() ?? 'DISPATCH & SUPPLY DETAILS',
+        customInvoiceNoLabel: _localSettings['customInvoiceNoLabel']?.toString() ?? 'Invoice #',
+        customDateLabel: _localSettings['customDateLabel']?.toString() ?? 'Issue Date',
+        customDueDateLabel: _localSettings['customDueDateLabel']?.toString() ?? 'Due Date',
+        customPoLabel: _localSettings['customPoLabel']?.toString() ?? 'PO Number',
+      );
+    } else {
+      return InvoicePdfExport.build(
         _effectiveInvoice,
         template: _template,
         localSettings: _localSettings,
         businessProfile: _profile,
       );
+    }
+  }
+
+  Future<void> _printPdf() async {
+    setState(() => _busy = true);
+    try {
+      final bytes = await _generatePdfBytes();
       await Printing.layoutPdf(
         name: 'Invoice_$_safeFileName.pdf',
         onLayout: (_) async => bytes,
@@ -370,12 +557,7 @@ class _InvoicePreviewScreenState extends State<InvoicePreviewScreen>
   Future<void> _downloadOrSharePdf() async {
     setState(() => _busy = true);
     try {
-      final bytes = await InvoicePdfExport.build(
-        _effectiveInvoice,
-        template: _template,
-        localSettings: _localSettings,
-        businessProfile: _profile,
-      );
+      final bytes = await _generatePdfBytes();
       final pdfName = 'Invoice_$_safeFileName.pdf';
       await Printing.sharePdf(
         bytes: bytes,
@@ -602,6 +784,7 @@ class _InvoicePreviewScreenState extends State<InvoicePreviewScreen>
       builder: (ctx) => TemplatePickerModal(
         selectedId: _template?.id,
         activeBusinessCategory: _activeBusinessCategory,
+        onOpenWysiwygStudio: _openWysiwygStudio,
         onSelectTemplate: (preset) {
           setState(() {
             _selectedTemplateId = preset.id;
@@ -611,6 +794,7 @@ class _InvoicePreviewScreenState extends State<InvoicePreviewScreen>
         onSetDefault: (preset) async {
           final updated = Map<String, Object?>.from(_localSettings)
             ..['preferredTemplateId'] = preset.id
+            ..['company_default_template_id'] = preset.id
             ..['customTitle'] = preset.title
             ..['customItemHeader'] = preset.itemHeader
             ..['customQtyHeader'] = preset.quantityHeader
@@ -623,8 +807,9 @@ class _InvoicePreviewScreenState extends State<InvoicePreviewScreen>
             setState(() {
               _localSettings = updated;
               _selectedTemplateId = preset.id;
+              _invoice = _invoice.copyWith(templateId: preset.id);
             });
-            _showMessage('✓ Template "${preset.name}" set as default!');
+            _showMessage('✓ Template "${preset.name}" set as company default!');
           }
         },
       ),
@@ -706,6 +891,22 @@ class _InvoicePreviewScreenState extends State<InvoicePreviewScreen>
           ),
         ),
         actions: [
+          // 0. WYSIWYG STUDIO SHORTCUT (If active, open JSON Studio)
+          if (_isWysiwyg)
+            _buildPillButton(
+              tooltip: 'Edit WYSIWYG Template JSON',
+              backgroundColor:
+                  isDark ? const Color(0xFF1E3A8A) : const Color(0xFFDBEAFE),
+              child: IconButton(
+                icon: const Icon(
+                  Icons.data_object_rounded,
+                  size: 18,
+                  color: Color(0xFF2563EB),
+                ),
+                onPressed: _openWysiwygStudio,
+              ),
+            ),
+
           // 1. SWITCH TEMPLATE (Palette button opening category-wise template studio sheet)
           _buildPillButton(
             tooltip: 'Switch Template Style & Category',
@@ -789,6 +990,8 @@ class _InvoicePreviewScreenState extends State<InvoicePreviewScreen>
                   _delete();
                 case 'branding':
                   widget.onOpenBusinessSettings?.call();
+                case 'wysiwyg_json':
+                  _openWysiwygStudio();
                 default:
                   if (action.startsWith('status:')) {
                     _changeStatus(action.substring(7));
@@ -796,6 +999,17 @@ class _InvoicePreviewScreenState extends State<InvoicePreviewScreen>
               }
             },
             itemBuilder: (context) => [
+              if (_isWysiwyg) ...[
+                const PopupMenuItem(
+                  value: 'wysiwyg_json',
+                  child: ListTile(
+                    leading: Icon(Icons.data_object_rounded, color: Color(0xFF2563EB)),
+                    title: Text('Edit Template JSON'),
+                    contentPadding: EdgeInsets.zero,
+                  ),
+                ),
+                const PopupMenuDivider(),
+              ],
               const PopupMenuItem(
                 value: 'sign',
                 child: ListTile(
@@ -907,136 +1121,167 @@ class _InvoicePreviewScreenState extends State<InvoicePreviewScreen>
 
           return Stack(
             children: [
-              // FULL PAGE ZOOMABLE CANVAS (EXACT A4 PROPORTIONS)
-              GestureDetector(
-                onDoubleTap: () => _handleDoubleTap(viewportWidth),
-                child: InteractiveViewer(
-                  transformationController: _zoomController,
-                  minScale: 0.25,
-                  maxScale: 3.5,
-                  boundaryMargin: const EdgeInsets.symmetric(horizontal: 160, vertical: 200),
-                  constrained: false,
-                  clipBehavior: Clip.none,
-                  onInteractionUpdate: (_) {
-                    final currentScale = _zoomController.value.getMaxScaleOnAxis();
-                    if ((currentScale - _zoomScale).abs() > 0.02) {
-                      setState(() => _zoomScale = currentScale);
+              // FULL PAGE ZOOMABLE CANVAS (EXACT A4 PROPORTIONS) WITH ROLLER MOUSE SCROLL & SLIDING
+              Listener(
+                onPointerSignal: (pointerSignal) {
+                  if (pointerSignal is PointerScrollEvent) {
+                    if (HardwareKeyboard.instance.isControlPressed ||
+                        HardwareKeyboard.instance.isMetaPressed) {
+                      // Ctrl + Mouse Wheel = Smooth Zoom In / Out
+                      final zoomDelta = pointerSignal.scrollDelta.dy < 0 ? 1.08 : 0.92;
+                      _zoomAtPoint(pointerSignal.localPosition, zoomDelta);
+                    } else {
+                      // Mouse Wheel Roller = Smooth Vertical & Horizontal Scrolling
+                      final currentMatrix = _zoomController.value.clone();
+                      final dy = -pointerSignal.scrollDelta.dy;
+                      final dx = -pointerSignal.scrollDelta.dx;
+                      currentMatrix.translate(dx, dy);
+                      _zoomController.value = currentMatrix;
+                      setState(() {});
                     }
-                  },
-                  child: SizedBox(
-                    width: a4PaperWidth,
-                    child: Column(
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        // Quotation / Estimate conversion banner (Kotlin style)
-                        if (isEstimate) ...[
-                          Container(
-                            margin: const EdgeInsets.only(bottom: 16),
-                            padding: const EdgeInsets.symmetric(
-                              horizontal: 16,
-                              vertical: 12,
-                            ),
-                            decoration: BoxDecoration(
-                              color: const Color(0xFF064E3B),
-                              borderRadius: BorderRadius.circular(12),
-                              border: Border.all(
-                                color: const Color(0xFF059669),
-                                width: 1.2,
+                  }
+                },
+                child: GestureDetector(
+                  onDoubleTap: () => _handleDoubleTap(viewportWidth),
+                  child: InteractiveViewer(
+                    transformationController: _zoomController,
+                    minScale: 0.25,
+                    maxScale: 3.5,
+                    panEnabled: true,
+                    scaleEnabled: true,
+                    boundaryMargin: const EdgeInsets.symmetric(horizontal: 240, vertical: 400),
+                    constrained: false,
+                    clipBehavior: Clip.none,
+                    onInteractionUpdate: (_) {
+                      final currentScale = _zoomController.value.getMaxScaleOnAxis();
+                      if ((currentScale - _zoomScale).abs() > 0.02) {
+                        setState(() => _zoomScale = currentScale);
+                      }
+                    },
+                    child: SizedBox(
+                      width: a4PaperWidth,
+                      child: Column(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          // Quotation / Estimate conversion banner (Kotlin style)
+                          if (isEstimate) ...[
+                            Container(
+                              margin: const EdgeInsets.only(bottom: 16),
+                              padding: const EdgeInsets.symmetric(
+                                horizontal: 16,
+                                vertical: 12,
                               ),
-                            ),
-                            child: Row(
-                              children: [
-                                Expanded(
-                                  child: Column(
-                                    crossAxisAlignment: CrossAxisAlignment.start,
-                                    children: [
-                                      Row(
-                                        children: [
-                                          const Text(
-                                            '📑 Quotation / Estimate',
-                                            style: TextStyle(
-                                              fontWeight: FontWeight.bold,
-                                              fontSize: 14,
-                                              color: Colors.white,
-                                            ),
-                                          ),
-                                          const SizedBox(width: 8),
-                                          Container(
-                                            padding: const EdgeInsets.symmetric(
-                                              horizontal: 6,
-                                              vertical: 2,
-                                            ),
-                                            decoration: BoxDecoration(
-                                              color: const Color(0xFF10B981),
-                                              borderRadius: BorderRadius.circular(4),
-                                            ),
-                                            child: const Text(
-                                              'ESTIMATE',
+                              decoration: BoxDecoration(
+                                color: const Color(0xFF064E3B),
+                                borderRadius: BorderRadius.circular(12),
+                                border: Border.all(
+                                  color: const Color(0xFF059669),
+                                  width: 1.2,
+                                ),
+                              ),
+                              child: Row(
+                                children: [
+                                  Expanded(
+                                    child: Column(
+                                      crossAxisAlignment: CrossAxisAlignment.start,
+                                      children: [
+                                        Row(
+                                          children: [
+                                            const Text(
+                                              '📑 Quotation / Estimate',
                                               style: TextStyle(
-                                                fontSize: 9,
                                                 fontWeight: FontWeight.bold,
+                                                fontSize: 14,
                                                 color: Colors.white,
                                               ),
                                             ),
-                                          ),
-                                        ],
-                                      ),
-                                      const SizedBox(height: 2),
-                                      const Text(
-                                        'Ready to finalize this estimate into a bill?',
-                                        style: TextStyle(
-                                          fontSize: 12,
-                                          color: Color(0xFFA7F3D0),
+                                            const SizedBox(width: 8),
+                                            Container(
+                                              padding: const EdgeInsets.symmetric(
+                                                horizontal: 6,
+                                                vertical: 2,
+                                              ),
+                                              decoration: BoxDecoration(
+                                                color: const Color(0xFF10B981),
+                                                borderRadius: BorderRadius.circular(4),
+                                              ),
+                                              child: const Text(
+                                                'ESTIMATE',
+                                                style: TextStyle(
+                                                  fontSize: 9,
+                                                  fontWeight: FontWeight.bold,
+                                                  color: Colors.white,
+                                                ),
+                                              ),
+                                            ),
+                                          ],
                                         ),
+                                        const SizedBox(height: 2),
+                                        const Text(
+                                          'Ready to finalize this estimate into a bill?',
+                                          style: TextStyle(
+                                            fontSize: 12,
+                                            color: Color(0xFFA7F3D0),
+                                          ),
+                                        ),
+                                      ],
+                                    ),
+                                  ),
+                                  FilledButton(
+                                    onPressed: _busy ? null : _convertEstimateToInvoice,
+                                    style: FilledButton.styleFrom(
+                                      backgroundColor: const Color(0xFF10B981),
+                                      shape: RoundedRectangleBorder(
+                                        borderRadius: BorderRadius.circular(8),
                                       ),
-                                    ],
-                                  ),
-                                ),
-                                FilledButton(
-                                  onPressed: _busy ? null : _convertEstimateToInvoice,
-                                  style: FilledButton.styleFrom(
-                                    backgroundColor: const Color(0xFF10B981),
-                                    shape: RoundedRectangleBorder(
-                                      borderRadius: BorderRadius.circular(8),
+                                      padding: const EdgeInsets.symmetric(
+                                        horizontal: 14,
+                                        vertical: 8,
+                                      ),
                                     ),
-                                    padding: const EdgeInsets.symmetric(
-                                      horizontal: 14,
-                                      vertical: 8,
+                                    child: const Text(
+                                      'Convert to Tax Invoice',
+                                      style: TextStyle(
+                                        fontSize: 12,
+                                        fontWeight: FontWeight.bold,
+                                      ),
                                     ),
                                   ),
-                                  child: const Text(
-                                    'Convert to Tax Invoice',
-                                    style: TextStyle(
-                                      fontSize: 12,
-                                      fontWeight: FontWeight.bold,
-                                    ),
-                                  ),
-                                ),
-                              ],
+                                ],
+                              ),
                             ),
-                          ),
+                          ],
+
+                          // A4 PAPER DOCUMENT CARD (WYSIWYG DYNAMIC OR STANDARD ENGINE)
+                          if (_isWysiwyg)
+                            _buildWysiwygCanvas(
+                              invoice: invoice,
+                              isMobile: isMobile,
+                            )
+                          else
+                            _buildA4Paper(
+                              invoice: invoice,
+                              template: template,
+                              templateColor: templateColor,
+                              isMobile: isMobile,
+                            ),
+
+                          const SizedBox(height: 140), // generous bottom clearance
                         ],
-
-                        // A4 PAPER DOCUMENT CARD (EXACT PDF PRINT SIZE)
-                        _buildA4Paper(
-                          invoice: invoice,
-                          template: template,
-                          templateColor: templateColor,
-                          isMobile: isMobile,
-                        ),
-
-                        const SizedBox(height: 140), // generous bottom clearance
-                      ],
+                      ),
                     ),
                   ),
                 ),
               ),
 
-              // FLOATING QUICK ZOOM THUMB CONTROLLER
+              // FLOATING QUICK ZOOM THUMB CONTROLLER (RESPONSIVE ON MOBILE & DESKTOP)
               Positioned(
+                left: isMobile ? 16 : null,
                 right: 16,
                 bottom: 16,
-                child: Material(
+                child: Align(
+                  alignment: isMobile ? Alignment.bottomCenter : Alignment.bottomRight,
+                  child: Material(
                   color: isDark
                       ? const Color(0xEE1E293B)
                       : Colors.white.withAlpha(245),
@@ -1103,8 +1348,9 @@ class _InvoicePreviewScreenState extends State<InvoicePreviewScreen>
                   ),
                 ),
               ),
-            ],
-          );
+            ),
+          ],
+        );
         },
       ),
     );
@@ -1147,6 +1393,81 @@ class _InvoicePreviewScreenState extends State<InvoicePreviewScreen>
       profile: _profile,
       onSignTap: _openDocuHubSigner,
     );
+  }
+
+  Widget _buildWysiwygCanvas({
+    required Invoice invoice,
+    required bool isMobile,
+  }) {
+    final schema = _getWysiwygSchema();
+    final layoutResult = _getWysiwygLayout(schema);
+
+    return WysiwygCanvasPreview(
+      schema: schema,
+      layoutResult: layoutResult,
+      renderAllPagesStacked: true,
+      companyName: _profile['companyName']?.toString() ??
+          _localSettings['companyName']?.toString() ??
+          'My Company',
+      companyAddress: _profile['address']?.toString() ??
+          _localSettings['companyAddress']?.toString() ??
+          '',
+      companyGstin: _profile['gstin']?.toString() ??
+          _localSettings['companyGst']?.toString() ??
+          '',
+      companyPan: _profile['pan']?.toString() ?? '',
+      clientName: invoice.clientName,
+      clientCompany: invoice.clientCompany,
+      clientAddress: invoice.clientAddress,
+      clientGstin: invoice.clientTaxId,
+      currencySymbol: _activeCurrencySymbol,
+      invoiceNumber: invoice.invoiceNumber,
+      issueDate: invoice.issueDate,
+      dueDate: invoice.dueDate,
+      total: invoice.total,
+      subtotal: invoice.subtotal,
+      tax: invoice.taxAmount,
+      notes: invoice.notes,
+      terms: invoice.terms,
+      bankName: _localSettings['bankName']?.toString() ?? '',
+      accountNumber: _localSettings['bankAccount']?.toString() ?? '',
+      ifsc: _localSettings['bankIfsc']?.toString() ?? '',
+      upiId: _localSettings['bankUpi']?.toString() ?? '',
+      signatureBase64: _localSettings['invoiceSignature']?.toString(),
+      logoWidget: _getLogoWidget(height: 45),
+      showLogo: _localSettings['showLogo'] != false,
+      showBankDetails: _localSettings['showBankDetails'] != false,
+      showNotes: _localSettings['showNotes'] != false,
+      showTerms: _localSettings['showTerms'] != false,
+      showSignature: _localSettings['showSignature'] != false,
+      showDueDate: _localSettings['showDueDate'] == true,
+      showPoNumber: _localSettings['showPoNumber'] == true,
+      showPaymentTerms: _localSettings['showPaymentTerms'] == true,
+      showStatus: _localSettings['showStatus'] == true,
+      showShipping: _localSettings['showShippingSection'] == true,
+      customTitle: _localSettings['customTitle']?.toString() ?? _template?.title,
+      customBillToLabel: _localSettings['customBillToLabel']?.toString() ?? 'BILLED TO',
+      customShipToLabel: _localSettings['customShipToLabel']?.toString() ?? 'DISPATCH & SUPPLY DETAILS',
+      customInvoiceNoLabel: _localSettings['customInvoiceNoLabel']?.toString() ?? 'Invoice #',
+      customDateLabel: _localSettings['customDateLabel']?.toString() ?? 'Issue Date',
+      customDueDateLabel: _localSettings['customDueDateLabel']?.toString() ?? 'Due Date',
+      customPoLabel: _localSettings['customPoLabel']?.toString() ?? 'PO Number',
+    );
+  }
+
+  Widget? _getLogoWidget({double height = 45}) {
+    final encoded = _localSettings['invoiceLogo']?.toString() ?? '';
+    if (encoded.isEmpty) return null;
+    try {
+      return Image.memory(
+        base64Decode(encoded),
+        height: height,
+        fit: BoxFit.contain,
+        errorBuilder: (_, __, ___) => const SizedBox.shrink(),
+      );
+    } catch (_) {
+      return null;
+    }
   }
 }
 

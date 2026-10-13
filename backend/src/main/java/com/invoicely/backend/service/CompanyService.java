@@ -171,35 +171,6 @@ public class CompanyService {
         );
     }
 
-    @Transactional
-    public AuthResponse switchCompany(Long targetCompanyId, UserPrincipal principal) {
-        User user = userRepository.findById(principal.getId())
-                .orElseThrow(() -> new ResourceNotFoundException("User", "id", principal.getId()));
-
-        Company targetCompany = companyRepository.findById(targetCompanyId)
-                .orElseThrow(() -> new ResourceNotFoundException("Company", "id", targetCompanyId));
-
-        Role resolvedRole = user.getRole();
-        if (principal.getRole() != Role.DEVELOPER) {
-            CompanyMembership membership = companyMembershipRepository
-                    .findByUserIdAndCompanyId(user.getId(), targetCompanyId)
-                    .orElseThrow(() -> new AccessDeniedException("You do not belong to company workspace #" + targetCompanyId));
-            resolvedRole = membership.getRole();
-        }
-
-        user.setCompanyId(targetCompany.getId());
-        user.setRole(resolvedRole);
-        user = userRepository.save(user);
-
-        String token = tokenProvider.generateToken(user);
-        return new AuthResponse(
-                token,
-                new UserSummaryDto(user),
-                new CompanySummaryDto(targetCompany, resolvedRole.name(), true),
-                "Switched workspace to " + targetCompany.getCompanyName()
-        );
-    }
-
     @Transactional(readOnly = true)
     public List<CompanyJoinRequestDto> getJoinRequests(UserPrincipal principal, String statusStr) {
         ensureAdminOrDeveloper(principal);

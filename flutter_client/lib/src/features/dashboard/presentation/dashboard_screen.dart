@@ -12,7 +12,13 @@ import '../../invoices/data/invoice.dart';
 import '../data/dashboard_repository.dart';
 import '../data/dashboard_statistics.dart';
 import '../data/developer_overview.dart';
-import '../../../shared/widgets/company_workspace_modal.dart';
+import '../../clients/data/client.dart';
+
+import '../../clients/data/clients_repository.dart';
+import '../../employees/data/employee.dart';
+import '../../employees/data/employee_repository.dart';
+import '../../expenses/data/expense.dart';
+import '../../expenses/data/expenses_repository.dart';
 import 'widgets/dashboard_analytics_cards.dart';
 
 class DashboardScreen extends StatefulWidget {
@@ -28,7 +34,6 @@ class DashboardScreen extends StatefulWidget {
     required this.onOpenTemplates,
     this.onOpenPayroll,
     this.onOpenAuditLogs,
-    this.onWorkspaceSwitched,
     this.registeredCompanyName,
     this.localSettings = const {},
     super.key,
@@ -45,7 +50,6 @@ class DashboardScreen extends StatefulWidget {
   final VoidCallback onOpenTemplates;
   final VoidCallback? onOpenPayroll;
   final VoidCallback? onOpenAuditLogs;
-  final ValueChanged<AuthSession>? onWorkspaceSwitched;
   final String? registeredCompanyName;
   final Map<String, Object?> localSettings;
 
@@ -53,9 +57,32 @@ class DashboardScreen extends StatefulWidget {
   State<DashboardScreen> createState() => _DashboardScreenState();
 }
 
+class DashboardNotificationItem {
+  DashboardNotificationItem({
+    required this.id,
+    required this.title,
+    required this.message,
+    required this.timeAgo,
+    required this.icon,
+    required this.color,
+    this.isRead = false,
+  });
+
+  final String id;
+  final String title;
+  final String message;
+  final String timeAgo;
+  final IconData icon;
+  final Color color;
+  bool isRead;
+}
+
 class _DashboardScreenState extends State<DashboardScreen> {
   DashboardStatistics? _statistics;
   List<Invoice>? _invoices;
+  List<Expense>? _expenses;
+  List<Client>? _clients;
+  List<Employee>? _employees;
   DeveloperOverview? _developerOverview;
   int? _selectedCompanyId;
   int _loadGeneration = 0;
@@ -66,6 +93,380 @@ class _DashboardScreenState extends State<DashboardScreen> {
   String? _backendBusinessName;
   List<AuditLog> _recentAuditLogs = [];
   StreamSubscription<AuditLog>? _auditSubscription;
+
+  final TextEditingController _searchController = TextEditingController();
+  String _searchQuery = '';
+  String _selectedDateFilter = 'FY 2025-26';
+  bool _hasUserSelectedDateFilter = false;
+  DateTimeRange? _customDateRange;
+
+  final List<DashboardNotificationItem> _notifications = [
+    DashboardNotificationItem(
+      id: '1',
+      title: 'Payment Received',
+      message: 'Payment of ₹45,200 received for Invoice #INV-2025-001 from Acme Security',
+      timeAgo: '12m ago',
+      icon: Icons.check_circle_outline_rounded,
+      color: const Color(0xFF10B981),
+      isRead: false,
+    ),
+    DashboardNotificationItem(
+      id: '2',
+      title: 'Invoice Overdue Notice',
+      message: 'Invoice #INV-2025-004 is overdue by 3 days (₹18,500)',
+      timeAgo: '2h ago',
+      icon: Icons.warning_amber_rounded,
+      color: const Color(0xFFEF4444),
+      isRead: false,
+    ),
+    DashboardNotificationItem(
+      id: '3',
+      title: 'New Client Onboarded',
+      message: 'Metro Guard Logistics profile has been verified and activated',
+      timeAgo: 'Yesterday',
+      icon: Icons.person_add_alt_1_rounded,
+      color: const Color(0xFF0284C7),
+      isRead: false,
+    ),
+    DashboardNotificationItem(
+      id: '4',
+      title: 'Tax & GST Summary Ready',
+      message: 'Monthly GST summary for March 2025 is ready for review',
+      timeAgo: '2d ago',
+      icon: Icons.receipt_long_rounded,
+      color: const Color(0xFF8B5CF6),
+      isRead: true,
+    ),
+  ];
+
+  int get _unreadNotificationCount =>
+      _notifications.where((n) => !n.isRead).length;
+
+  void _markAllNotificationsAsRead() {
+    setState(() {
+      for (final n in _notifications) {
+        n.isRead = true;
+      }
+    });
+  }
+
+  void _showNotificationsDialog() {
+    showDialog<void>(
+      context: context,
+      builder: (ctx) => StatefulBuilder(
+        builder: (ctx, setDialogState) {
+          final unreadCount = _notifications.where((n) => !n.isRead).length;
+          return AlertDialog(
+            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+            titlePadding: const EdgeInsets.fromLTRB(20, 18, 16, 12),
+            contentPadding: const EdgeInsets.fromLTRB(16, 0, 16, 12),
+            title: Row(
+              children: [
+                Container(
+                  padding: const EdgeInsets.all(7),
+                  decoration: BoxDecoration(
+                    color: const Color(0xFF0284C7).withValues(alpha: 0.12),
+                    shape: BoxShape.circle,
+                  ),
+                  child: const Icon(Icons.notifications_active_rounded, color: Color(0xFF0284C7), size: 18),
+                ),
+                const SizedBox(width: 10),
+                const Text(
+                  'Notifications',
+                  style: TextStyle(fontSize: 17, fontWeight: FontWeight.w800, color: Color(0xFF0F172A)),
+                ),
+                if (unreadCount > 0) ...[
+                  const SizedBox(width: 8),
+                  Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 2),
+                    decoration: BoxDecoration(
+                      color: const Color(0xFFEF4444).withValues(alpha: 0.12),
+                      borderRadius: BorderRadius.circular(10),
+                    ),
+                    child: Text(
+                      '$unreadCount new',
+                      style: const TextStyle(color: Color(0xFFEF4444), fontSize: 11, fontWeight: FontWeight.w700),
+                    ),
+                  ),
+                ],
+                const Spacer(),
+                if (unreadCount > 0)
+                  TextButton(
+                    onPressed: () {
+                      _markAllNotificationsAsRead();
+                      setDialogState(() {});
+                    },
+                    child: const Text('Mark all as read', style: TextStyle(fontSize: 12, fontWeight: FontWeight.w600)),
+                  ),
+              ],
+            ),
+            content: SizedBox(
+              width: 440,
+              child: _notifications.isEmpty
+                  ? const Padding(
+                      padding: EdgeInsets.all(32),
+                      child: Center(
+                        child: Text('No notifications yet', style: TextStyle(color: Color(0xFF94A3B8))),
+                      ),
+                    )
+                  : ListView.separated(
+                      shrinkWrap: true,
+                      itemCount: _notifications.length,
+                      separatorBuilder: (_, __) => const Divider(height: 12, color: Color(0xFFF1F5F9)),
+                      itemBuilder: (ctx, index) {
+                        final notif = _notifications[index];
+                        return ListTile(
+                          dense: true,
+                          contentPadding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+                          tileColor: notif.isRead ? Colors.transparent : const Color(0xFFF8FAFC),
+                          leading: Container(
+                            padding: const EdgeInsets.all(8),
+                            decoration: BoxDecoration(
+                              color: notif.color.withValues(alpha: 0.12),
+                              shape: BoxShape.circle,
+                            ),
+                            child: Icon(notif.icon, size: 18, color: notif.color),
+                          ),
+                          title: Row(
+                            children: [
+                              Expanded(
+                                child: Text(
+                                  notif.title,
+                                  style: TextStyle(
+                                    fontSize: 13,
+                                    fontWeight: notif.isRead ? FontWeight.w600 : FontWeight.w800,
+                                    color: const Color(0xFF0F172A),
+                                  ),
+                                ),
+                              ),
+                              Text(
+                                notif.timeAgo,
+                                style: const TextStyle(fontSize: 10, color: Color(0xFF94A3B8)),
+                              ),
+                            ],
+                          ),
+                          subtitle: Padding(
+                            padding: const EdgeInsets.only(top: 3),
+                            child: Text(
+                              notif.message,
+                              style: const TextStyle(fontSize: 12, color: Color(0xFF64748B), height: 1.3),
+                            ),
+                          ),
+                          trailing: notif.isRead
+                              ? null
+                              : Container(
+                                  width: 8,
+                                  height: 8,
+                                  decoration: const BoxDecoration(
+                                    color: Color(0xFF0284C7),
+                                    shape: BoxShape.circle,
+                                  ),
+                                ),
+                          onTap: () {
+                            setState(() {
+                              notif.isRead = true;
+                            });
+                            setDialogState(() {});
+                          },
+                        );
+                      },
+                    ),
+            ),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.of(ctx).pop(),
+                child: const Text('Close'),
+              ),
+            ],
+          );
+        },
+      ),
+    );
+  }
+
+  DateTime? _parseInvoiceDate(Invoice inv) {
+    if (inv.issueDate.isNotEmpty) {
+      try {
+        final parsed = DateTime.tryParse(inv.issueDate);
+        if (parsed != null) return parsed;
+      } catch (_) {}
+    }
+    if (inv.createdAt != null && inv.createdAt! > 0) {
+      return DateTime.fromMillisecondsSinceEpoch(
+        inv.createdAt! > 100000000000 ? inv.createdAt! : inv.createdAt! * 1000,
+      );
+    }
+    return null;
+  }
+
+  DateTime? _parseExpenseDate(Expense exp) {
+    if (exp.date.isNotEmpty) {
+      try {
+        final parsed = DateTime.tryParse(exp.date);
+        if (parsed != null) return parsed;
+      } catch (_) {}
+    }
+    return null;
+  }
+
+  (DateTime?, DateTime?) _getDateRangeForFilter(String filter) {
+    final now = DateTime.now();
+    switch (filter) {
+      case 'FY 2025-26':
+        return (DateTime(2025, 4, 1), DateTime(2026, 3, 31, 23, 59, 59));
+      case 'FY 2024-25':
+        return (DateTime(2024, 4, 1), DateTime(2025, 3, 31, 23, 59, 59));
+      case 'FY 2023-24':
+        return (DateTime(2023, 4, 1), DateTime(2024, 3, 31, 23, 59, 59));
+      case 'Apr 15, 2025 - May 15, 2025':
+        return (DateTime(2025, 4, 15), DateTime(2025, 5, 15, 23, 59, 59));
+      case 'This Month':
+        return (
+          DateTime(now.year, now.month, 1),
+          DateTime(now.year, now.month + 1, 0, 23, 59, 59),
+        );
+      case 'Last 30 Days':
+        return (
+          now.subtract(const Duration(days: 30)),
+          now,
+        );
+      case 'All Dates':
+        return (null, null);
+      default:
+        if (_customDateRange != null) {
+          return (
+            _customDateRange!.start,
+            DateTime(
+              _customDateRange!.end.year,
+              _customDateRange!.end.month,
+              _customDateRange!.end.day,
+              23,
+              59,
+              59,
+            ),
+          );
+        }
+        return (null, null);
+    }
+  }
+
+  List<Invoice>? get _filteredInvoices {
+    if (_invoices == null) return null;
+    var list = _invoices!;
+    final (start, end) = _getDateRangeForFilter(_selectedDateFilter);
+    if (start != null && end != null) {
+      final dateFiltered = list.where((inv) {
+        final d = _parseInvoiceDate(inv);
+        if (d == null) return false;
+        return !d.isBefore(start) && !d.isAfter(end);
+      }).toList();
+      if (dateFiltered.isNotEmpty || _hasUserSelectedDateFilter) {
+        list = dateFiltered;
+      }
+    }
+    if (_searchQuery.trim().isNotEmpty) {
+      final q = _searchQuery.toLowerCase().trim();
+      list = list.where((inv) {
+        return inv.invoiceNumber.toLowerCase().contains(q) ||
+            inv.clientName.toLowerCase().contains(q) ||
+            inv.status.toLowerCase().contains(q);
+      }).toList();
+    }
+    return list;
+  }
+
+  List<Expense>? get _filteredExpenses {
+    if (_expenses == null) return null;
+    final (start, end) = _getDateRangeForFilter(_selectedDateFilter);
+    if (start == null || end == null) return _expenses;
+    final filtered = _expenses!.where((exp) {
+      final d = _parseExpenseDate(exp);
+      if (d == null) return false;
+      return !d.isBefore(start) && !d.isAfter(end);
+    }).toList();
+    if (filtered.isNotEmpty || _hasUserSelectedDateFilter) {
+      return filtered;
+    }
+    return _expenses;
+  }
+
+  DashboardStatistics get _effectiveStatistics {
+    if (_statistics == null) {
+      return const DashboardStatistics(
+        totalInvoices: 0,
+        paidInvoices: 0,
+        overdueInvoices: 0,
+        draftInvoices: 0,
+        totalRevenue: 0,
+        totalExpenses: 0,
+        totalClients: 0,
+      );
+    }
+    final invs = _filteredInvoices;
+    final exps = _filteredExpenses;
+    if (invs == null) return _statistics!;
+
+    if (_hasUserSelectedDateFilter || _searchQuery.isNotEmpty) {
+      final totalInv = invs.length;
+      final paidInv = invs.where((i) => i.status.toUpperCase() == 'PAID').length;
+      final overdueInv = invs.where((i) => i.status.toUpperCase() == 'OVERDUE').length;
+      final draftInv = invs.where((i) => i.status.toUpperCase() == 'DRAFT').length;
+      final totalRev = invs.where((i) => i.status.toUpperCase() == 'PAID').fold<double>(0.0, (s, i) => s + i.total);
+      final totalExp = (exps ?? _expenses ?? []).fold<double>(0.0, (s, e) => s + e.amount);
+      final totalCli = invs
+          .map((i) => i.clientName.trim().isNotEmpty
+              ? i.clientName.trim()
+              : (i.clientId?.toString() ?? ''))
+          .where((c) => c.isNotEmpty)
+          .toSet()
+          .length;
+
+      return DashboardStatistics(
+        totalInvoices: totalInv,
+        paidInvoices: paidInv,
+        overdueInvoices: overdueInv,
+        draftInvoices: draftInv,
+        totalRevenue: totalRev,
+        totalExpenses: totalExp,
+        totalClients: totalCli,
+      );
+    }
+
+    return _statistics!;
+  }
+
+  Future<void> _onDateFilterChanged(String filter) async {
+    if (filter == 'Custom Date Range...') {
+      final picked = await showDateRangePicker(
+        context: context,
+        firstDate: DateTime(2020),
+        lastDate: DateTime(2030),
+        initialDateRange: _customDateRange ??
+            DateTimeRange(
+              start: DateTime.now().subtract(const Duration(days: 30)),
+              end: DateTime.now(),
+            ),
+      );
+      if (picked != null) {
+        setState(() {
+          _hasUserSelectedDateFilter = true;
+          _customDateRange = picked;
+          _selectedDateFilter = '${_formatDate(picked.start)} - ${_formatDate(picked.end)}';
+        });
+      }
+      return;
+    }
+    setState(() {
+      _hasUserSelectedDateFilter = true;
+      _selectedDateFilter = filter;
+    });
+  }
+
+  String _formatDate(DateTime dt) {
+    const months = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+    return '${months[dt.month - 1]} ${dt.day}, ${dt.year}';
+  }
 
   bool get _isDeveloper =>
       widget.session.user.role.toUpperCase() == 'DEVELOPER';
@@ -83,6 +484,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
   @override
   void dispose() {
     _auditSubscription?.cancel();
+    _searchController.dispose();
     super.dispose();
   }
 
@@ -138,6 +540,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
         }
       } catch (_) {}
 
+      // Fetch Invoices
       if (widget.session.user.hasPermission('INVOICES')) {
         try {
           final invoices = await widget.repository.loadInvoices();
@@ -159,6 +562,32 @@ class _DashboardScreenState extends State<DashboardScreen> {
           _invoices = null;
           _invoiceLoadError = null;
         });
+      }
+
+      // Fetch Expenses
+      try {
+        final expenses = await ExpensesRepository(apiClient: widget.repository.apiClient).list();
+        if (mounted && generation == _loadGeneration) {
+          setState(() => _expenses = expenses);
+        }
+      } catch (_) {}
+
+      // Fetch Clients
+      try {
+        final clients = await ClientsRepository(apiClient: widget.repository.apiClient).list();
+        if (mounted && generation == _loadGeneration) {
+          setState(() => _clients = clients);
+        }
+      } catch (_) {}
+
+      // Fetch Employees (for Admin only)
+      if (widget.session.user.role.toUpperCase() != 'EMPLOYEE') {
+        try {
+          final employees = await EmployeeRepository(apiClient: widget.repository.apiClient).list();
+          if (mounted && generation == _loadGeneration) {
+            setState(() => _employees = employees);
+          }
+        } catch (_) {}
       }
     } on ApiException catch (error) {
       if (mounted && generation == _loadGeneration) {
@@ -202,32 +631,37 @@ class _DashboardScreenState extends State<DashboardScreen> {
                 padding: EdgeInsets.fromLTRB(sidePadding, 12, sidePadding, 28),
                 children: [
                   _DashboardHeader(
-                    name: _isDeveloper ? 'Platform overview' : registeredName,
-                    subtitle: subtitle,
+                    userInitial: widget.session.user.fullName.trim().isNotEmpty
+                        ? widget.session.user.fullName.trim()[0].toUpperCase()
+                        : 'R',
+                    onMenuTap: null,
+                    unreadNotificationCount: _unreadNotificationCount,
+                    onOpenNotifications: _showNotificationsDialog,
+                    searchController: _searchController,
+                    onSearchChanged: (val) => setState(() => _searchQuery = val),
                     onRefresh: _isLoading ? null : _loadStatistics,
-                    onCreateInvoice: widget.onCreateInvoice,
-                    onSwitchWorkspace: _isDeveloper
-                        ? null
-                        : () => CompanyWorkspaceModal.show(
-                              context: context,
-                              currentSession: widget.session,
-                              apiClient: widget.repository.apiClient,
-                              onWorkspaceSwitched: (newSession) {
-                                widget.onWorkspaceSwitched?.call(newSession);
-                                _loadStatistics();
-                              },
-                            ),
-                    canOpenInvoices:
-                        widget.session.user.hasPermission('INVOICES'),
+                  ),
+                  const SizedBox(height: 12),
+                  _DashboardSubHeaderRow(
+                    companyName: _isDeveloper ? 'Platform overview' : registeredName,
+                    selectedFilter: _selectedDateFilter,
+                    onFilterChanged: _onDateFilterChanged,
                   ),
                   const SizedBox(height: 16),
+                  _DashboardWelcomeRow(
+                    userName: widget.session.user.fullName.trim().isNotEmpty
+                        ? widget.session.user.fullName.trim()
+                        : 'Roshan Kumar',
+                    subtitle: subtitle,
+                  ),
+                  const SizedBox(height: 14),
                   if (!_isDeveloper)
                     _AssistantBanner(onTap: widget.onOpenAiChat),
                   if (_usingCachedData) ...[
                     const SizedBox(height: 12),
                     const OfflineCacheBanner(),
                   ],
-                  const SizedBox(height: 12),
+                  const SizedBox(height: 14),
                   _DashboardShortcuts(
                     user: widget.session.user,
                     onViewInvoices: () => widget.onViewInvoices('All'),
@@ -269,11 +703,21 @@ class _DashboardScreenState extends State<DashboardScreen> {
                     )
                   else if (_statistics != null)
                     DashboardAnalytics(
-                      statistics: _statistics!,
+                      statistics: _effectiveStatistics,
                       role: role,
-                      invoices: _invoices,
+                      invoices: _filteredInvoices,
+                      expenses: _filteredExpenses,
+                      clients: _clients,
+                      employees: _employees,
                       onViewInvoices: widget.onViewInvoices,
                       onViewExpenses: widget.onViewExpenses,
+                      onViewClients: widget.onViewClients,
+                      onOpenPayroll: widget.onOpenPayroll,
+                      onCreateInvoice: widget.onCreateInvoice,
+                      onAddExpense: widget.onViewExpenses,
+                      onAddClient: widget.onViewClients,
+                      onAddEmployee: widget.onOpenPayroll,
+                      selectedDateFilter: _selectedDateFilter,
                     ),
                   if (_recentAuditLogs.isNotEmpty)
                     _RecentAuditLogsSection(
@@ -292,113 +736,356 @@ class _DashboardScreenState extends State<DashboardScreen> {
 
 class _DashboardHeader extends StatelessWidget {
   const _DashboardHeader({
-    required this.name,
-    required this.subtitle,
-    required this.onRefresh,
-    required this.onCreateInvoice,
-    required this.canOpenInvoices,
-    this.onSwitchWorkspace,
+    required this.userInitial,
+    required this.onMenuTap,
+    required this.unreadNotificationCount,
+    required this.onOpenNotifications,
+    required this.searchController,
+    required this.onSearchChanged,
+    this.onRefresh,
   });
 
-  final String name;
-  final String subtitle;
+  final String userInitial;
+  final VoidCallback? onMenuTap;
+  final int unreadNotificationCount;
+  final VoidCallback onOpenNotifications;
+  final TextEditingController searchController;
+  final ValueChanged<String> onSearchChanged;
   final VoidCallback? onRefresh;
-  final VoidCallback onCreateInvoice;
-  final bool canOpenInvoices;
-  final VoidCallback? onSwitchWorkspace;
 
   @override
-  Widget build(BuildContext context) => Row(
-        children: [
-          InkWell(
-            onTap: onSwitchWorkspace,
-            borderRadius: BorderRadius.circular(13),
-            child: Container(
-              width: 42,
-              height: 42,
-              decoration: BoxDecoration(
-                gradient: const LinearGradient(
-                  colors: [Color(0xFF00F2FE), Color(0xFF1E3A8A)],
-                  begin: Alignment.topLeft,
-                  end: Alignment.bottomRight,
-                ),
-                borderRadius: BorderRadius.circular(13),
-                boxShadow: const [
-                  BoxShadow(
-                    color: Color(0x3300F2FE),
-                    blurRadius: 8,
-                    spreadRadius: 1,
-                  ),
-                ],
+  Widget build(BuildContext context) {
+    final isDesktop = MediaQuery.of(context).size.width > 850;
+
+    return Row(
+      children: [
+        // 1. Hamburger Menu Button
+        InkWell(
+          onTap: onMenuTap,
+          borderRadius: BorderRadius.circular(10),
+          child: Container(
+            width: 38,
+            height: 38,
+            decoration: BoxDecoration(
+              color: const Color(0xFFF8FAFC),
+              borderRadius: BorderRadius.circular(10),
+              border: Border.all(color: const Color(0xFFE2E8F0)),
+            ),
+            child: const Icon(
+              Icons.menu_rounded,
+              color: Color(0xFF0F172A),
+              size: 22,
+            ),
+          ),
+        ),
+        const SizedBox(width: 12),
+
+        // 2. App Logo (Purple gradient box + Invoicely AI text)
+        Container(
+          width: 34,
+          height: 34,
+          decoration: BoxDecoration(
+            gradient: const LinearGradient(
+              colors: [Color(0xFF6366F1), Color(0xFF8B5CF6)],
+              begin: Alignment.topLeft,
+              end: Alignment.bottomRight,
+            ),
+            borderRadius: BorderRadius.circular(10),
+            boxShadow: [
+              BoxShadow(
+                color: const Color(0xFF8B5CF6).withValues(alpha: 0.3),
+                blurRadius: 6,
+                offset: const Offset(0, 2),
               ),
-              child: const Icon(
-                Icons.business_rounded,
-                color: Colors.white,
-                size: 23,
+            ],
+          ),
+          child: const Center(
+            child: Icon(
+              Icons.auto_awesome_rounded,
+              color: Colors.white,
+              size: 18,
+            ),
+          ),
+        ),
+        const SizedBox(width: 10),
+        const Text(
+          'Invoicely AI',
+          style: TextStyle(
+            fontSize: 18,
+            fontWeight: FontWeight.w800,
+            color: Color(0xFF0F172A),
+            letterSpacing: -0.4,
+          ),
+        ),
+
+        const Spacer(),
+
+        // Desktop Search Bar
+        if (isDesktop) ...[
+          Container(
+            height: 38,
+            width: 240,
+            decoration: BoxDecoration(
+              color: const Color(0xFFF8FAFC),
+              borderRadius: BorderRadius.circular(10),
+              border: Border.all(color: const Color(0xFFE2E8F0)),
+            ),
+            child: TextField(
+              controller: searchController,
+              onChanged: onSearchChanged,
+              style: const TextStyle(fontSize: 13),
+              decoration: const InputDecoration(
+                hintText: 'Search anything...',
+                hintStyle: TextStyle(fontSize: 12, color: Color(0xFF94A3B8)),
+                prefixIcon: Icon(Icons.search_rounded, size: 18, color: Color(0xFF94A3B8)),
+                border: InputBorder.none,
+                isDense: true,
+                contentPadding: EdgeInsets.symmetric(vertical: 9),
               ),
             ),
           ),
-          const SizedBox(width: 10),
-          Expanded(
-            child: InkWell(
-              onTap: onSwitchWorkspace,
-              borderRadius: BorderRadius.circular(8),
-              child: Padding(
-                padding: const EdgeInsets.symmetric(vertical: 2, horizontal: 2),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Row(
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        Flexible(
-                          child: Text(
-                            name,
-                            maxLines: 1,
-                            overflow: TextOverflow.ellipsis,
-                            style: Theme.of(context).textTheme.titleMedium?.copyWith(
-                                  fontWeight: FontWeight.w800,
-                                ),
-                          ),
-                        ),
-                        if (onSwitchWorkspace != null) ...[
-                          const SizedBox(width: 4),
-                          const Icon(Icons.keyboard_arrow_down_rounded, size: 20, color: Color(0xFF00F2FE)),
-                        ],
-                      ],
-                    ),
-                    Text(
-                      subtitle,
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                      style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                            color: AppColors.muted,
-                          ),
-                    ),
-                  ],
-                ),
-              ),
-            ),
-          ),
+          const SizedBox(width: 8),
           IconButton(
             tooltip: 'Sync dashboard',
             onPressed: onRefresh,
             visualDensity: VisualDensity.compact,
-            constraints: const BoxConstraints.tightFor(width: 38, height: 38),
-            padding: EdgeInsets.zero,
-            icon: const Icon(Icons.cloud_sync_outlined),
+            icon: const Icon(Icons.refresh_rounded, size: 20, color: Color(0xFF64748B)),
           ),
-          if (canOpenInvoices)
-            IconButton.filled(
-              tooltip: 'Create invoice',
-              onPressed: onCreateInvoice,
-              visualDensity: VisualDensity.compact,
-              constraints: const BoxConstraints.tightFor(width: 38, height: 38),
-              padding: EdgeInsets.zero,
-              icon: const Icon(Icons.add),
-            ),
+          const SizedBox(width: 4),
         ],
-      );
+
+        // 3. Notification Bell with unread dot
+        Stack(
+          clipBehavior: Clip.none,
+          children: [
+            IconButton(
+              tooltip: 'Notifications',
+              onPressed: onOpenNotifications,
+              visualDensity: VisualDensity.compact,
+              icon: const Icon(
+                Icons.notifications_none_rounded,
+                size: 24,
+                color: Color(0xFF334155),
+              ),
+            ),
+            if (unreadNotificationCount > 0)
+              Positioned(
+                top: 8,
+                right: 8,
+                child: Container(
+                  width: 8,
+                  height: 8,
+                  decoration: const BoxDecoration(
+                    color: Color(0xFFEF4444),
+                    shape: BoxShape.circle,
+                  ),
+                ),
+              ),
+          ],
+        ),
+        const SizedBox(width: 6),
+
+        // 4. User Profile Circle Avatar
+        Container(
+          width: 36,
+          height: 36,
+          decoration: const BoxDecoration(
+            color: Color(0xFF2563EB),
+            shape: BoxShape.circle,
+          ),
+          child: Center(
+            child: Text(
+              userInitial,
+              style: const TextStyle(
+                color: Colors.white,
+                fontSize: 15,
+                fontWeight: FontWeight.w800,
+              ),
+            ),
+          ),
+        ),
+      ],
+    );
+  }
+}
+
+class _DashboardSubHeaderRow extends StatelessWidget {
+  const _DashboardSubHeaderRow({
+    required this.companyName,
+    required this.selectedFilter,
+    required this.onFilterChanged,
+  });
+
+  final String companyName;
+  final String selectedFilter;
+  final ValueChanged<String> onFilterChanged;
+
+  @override
+  Widget build(BuildContext context) {
+    return Row(
+      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+      children: [
+        // Left side: Dashboard 📍 NY / Central Security Force
+        Padding(
+          padding: const EdgeInsets.symmetric(vertical: 4, horizontal: 2),
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              const Text(
+                'Dashboard',
+                style: TextStyle(
+                  fontSize: 13,
+                  fontWeight: FontWeight.w500,
+                  color: Color(0xFF64748B),
+                ),
+              ),
+              const SizedBox(width: 6),
+              const Icon(
+                Icons.location_on_outlined,
+                size: 14,
+                color: Color(0xFF64748B),
+              ),
+              const SizedBox(width: 3),
+              ConstrainedBox(
+                constraints: const BoxConstraints(maxWidth: 160),
+                child: Text(
+                  'NY / $companyName',
+                  overflow: TextOverflow.ellipsis,
+                  style: const TextStyle(
+                    fontSize: 13,
+                    fontWeight: FontWeight.w600,
+                    color: Color(0xFF334155),
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ),
+
+        // Right side: 📅 FY 2025-26 ⌵
+        _buildFilterDropdown(context),
+      ],
+    );
+  }
+
+  Widget _buildFilterDropdown(BuildContext context) {
+    final options = [
+      'FY 2025-26',
+      'FY 2024-25',
+      'FY 2023-24',
+      'Apr 15, 2025 - May 15, 2025',
+      'This Month',
+      'Last 30 Days',
+      'All Dates',
+      'Custom Date Range...',
+    ];
+
+    return PopupMenuButton<String>(
+      onSelected: onFilterChanged,
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.circular(12),
+        side: const BorderSide(color: Color(0xFFE2E8F0)),
+      ),
+      color: Colors.white,
+      elevation: 4,
+      position: PopupMenuPosition.under,
+      itemBuilder: (context) => options.map((opt) {
+        final isSelected = opt == selectedFilter;
+        return PopupMenuItem<String>(
+          value: opt,
+          child: Row(
+            children: [
+              Icon(
+                isSelected ? Icons.check_circle_rounded : Icons.calendar_today_outlined,
+                size: 15,
+                color: isSelected ? const Color(0xFF2563EB) : const Color(0xFF94A3B8),
+              ),
+              const SizedBox(width: 8),
+              Expanded(
+                child: Text(
+                  opt,
+                  style: TextStyle(
+                    fontSize: 12.5,
+                    fontWeight: isSelected ? FontWeight.w700 : FontWeight.w500,
+                    color: isSelected ? const Color(0xFF2563EB) : const Color(0xFF1E293B),
+                  ),
+                ),
+              ),
+            ],
+          ),
+        );
+      }).toList(),
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+        decoration: BoxDecoration(
+          color: Colors.white,
+          borderRadius: BorderRadius.circular(10),
+          border: Border.all(color: const Color(0xFFCBD5E1)),
+          boxShadow: const [
+            BoxShadow(
+              color: Color(0x06000000),
+              blurRadius: 4,
+              offset: Offset(0, 1),
+            ),
+          ],
+        ),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            const Icon(Icons.calendar_today_outlined, size: 13, color: Color(0xFF475569)),
+            const SizedBox(width: 6),
+            Text(
+              selectedFilter,
+              style: const TextStyle(
+                fontSize: 12,
+                fontWeight: FontWeight.w600,
+                color: Color(0xFF1E293B),
+              ),
+            ),
+            const SizedBox(width: 4),
+            const Icon(Icons.keyboard_arrow_down_rounded, size: 16, color: Color(0xFF64748B)),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _DashboardWelcomeRow extends StatelessWidget {
+  const _DashboardWelcomeRow({
+    required this.userName,
+    required this.subtitle,
+  });
+
+  final String userName;
+  final String subtitle;
+
+  @override
+  Widget build(BuildContext context) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text(
+          'Welcome back, $userName!',
+          style: const TextStyle(
+            fontSize: 22,
+            fontWeight: FontWeight.w800,
+            color: Color(0xFF0F172A),
+            letterSpacing: -0.5,
+          ),
+        ),
+        const SizedBox(height: 2),
+        Text(
+          subtitle,
+          style: const TextStyle(
+            fontSize: 13,
+            fontWeight: FontWeight.w500,
+            color: Color(0xFF64748B),
+          ),
+        ),
+      ],
+    );
+  }
 }
 
 class _AssistantBanner extends StatelessWidget {
@@ -407,92 +1094,122 @@ class _AssistantBanner extends StatelessWidget {
   final VoidCallback onTap;
 
   @override
-  Widget build(BuildContext context) => Material(
-        color: Colors.transparent,
-        child: InkWell(
-          borderRadius: BorderRadius.circular(22),
-          onTap: onTap,
-          child: Ink(
-            decoration: BoxDecoration(
-              gradient: LinearGradient(
-                colors: [AppColors.primary, AppColors.blue],
-              ),
-              borderRadius: BorderRadius.circular(22),
+  Widget build(BuildContext context) {
+    return Container(
+      decoration: BoxDecoration(
+        color: const Color(0xFFF0F7FF),
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(color: const Color(0xFFDBEAFE)),
+        boxShadow: const [
+          BoxShadow(
+            color: Color(0x06000000),
+            blurRadius: 10,
+            offset: Offset(0, 2),
+          ),
+        ],
+      ),
+      padding: const EdgeInsets.all(16),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.center,
+        children: [
+          // Robot Icon Badge
+          Container(
+            width: 44,
+            height: 44,
+            decoration: const BoxDecoration(
+              color: Color(0xFFDBEAFE),
+              shape: BoxShape.circle,
             ),
-            padding: const EdgeInsets.all(17),
-            child: Row(
+            child: const Icon(
+              Icons.smart_toy_outlined,
+              color: Color(0xFF2563EB),
+              size: 22,
+            ),
+          ),
+          const SizedBox(width: 14),
+
+          // Text Content
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Row(
-                        children: [
-                          Container(
-                            padding: const EdgeInsets.symmetric(
-                              horizontal: 8,
-                              vertical: 4,
-                            ),
-                            decoration: BoxDecoration(
-                              color: Colors.white.withValues(alpha: 0.2),
-                              borderRadius: BorderRadius.circular(8),
-                            ),
-                            child: const Text(
-                              'AI VOICE & CHAT',
-                              style: TextStyle(
-                                color: Colors.white,
-                                fontSize: 9,
-                                fontWeight: FontWeight.w800,
-                              ),
-                            ),
-                          ),
-                          const SizedBox(width: 8),
-                          const Flexible(
-                            child: Text(
-                              'Invoice assistant',
-                              maxLines: 1,
-                              overflow: TextOverflow.ellipsis,
-                              style: TextStyle(
-                                color: Colors.white,
-                                fontSize: 11,
-                                fontWeight: FontWeight.w600,
-                              ),
-                            ),
-                          ),
-                        ],
-                      ),
-                      const SizedBox(height: 9),
-                      const Text(
-                        'Generate invoices via chat',
-                        style: TextStyle(
-                          color: Colors.white,
-                          fontSize: 17,
-                          fontWeight: FontWeight.w800,
-                        ),
-                      ),
-                      const SizedBox(height: 4),
-                      const Text(
-                        'Create invoices, save clients, or ask questions by voice or text.',
-                        style: TextStyle(
-                          color: Color(0xFFE0E7FF),
-                          fontSize: 12,
-                          height: 1.35,
-                        ),
-                      ),
-                    ],
+                const Text(
+                  'AI INVOICE ASSISTANT',
+                  style: TextStyle(
+                    color: Color(0xFF2563EB),
+                    fontSize: 10,
+                    fontWeight: FontWeight.w800,
+                    letterSpacing: 0.5,
                   ),
                 ),
-                const SizedBox(width: 12),
-                const CircleAvatar(
-                  radius: 23,
-                  backgroundColor: Colors.white,
-                  child: Icon(Icons.auto_awesome, color: AppColors.blue),
+                const SizedBox(height: 3),
+                const Text(
+                  'Generate Invoices & insights in seconds',
+                  style: TextStyle(
+                    fontSize: 14.5,
+                    fontWeight: FontWeight.w800,
+                    color: Color(0xFF0F172A),
+                    letterSpacing: -0.3,
+                  ),
+                ),
+                const SizedBox(height: 2),
+                const Text(
+                  'Talk to our intelligent assistant to auto-fill line items, calculate taxes, and query financial metrics.',
+                  style: TextStyle(
+                    fontSize: 11,
+                    color: Color(0xFF64748B),
+                    height: 1.3,
+                  ),
+                  maxLines: 2,
+                  overflow: TextOverflow.ellipsis,
                 ),
               ],
             ),
           ),
-        ),
-      );
+          const SizedBox(width: 12),
+
+          // Try Assistant button
+          InkWell(
+            onTap: onTap,
+            borderRadius: BorderRadius.circular(20),
+            child: Container(
+              padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
+              decoration: BoxDecoration(
+                color: const Color(0xFF2563EB),
+                borderRadius: BorderRadius.circular(20),
+                boxShadow: const [
+                  BoxShadow(
+                    color: Color(0x262563EB),
+                    blurRadius: 6,
+                    offset: Offset(0, 2),
+                  ),
+                ],
+              ),
+              child: const Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Text(
+                    'Try Assistant',
+                    style: TextStyle(
+                      color: Colors.white,
+                      fontSize: 12,
+                      fontWeight: FontWeight.w700,
+                    ),
+                  ),
+                  SizedBox(width: 4),
+                  Icon(
+                    Icons.arrow_forward_rounded,
+                    color: Colors.white,
+                    size: 13,
+                  ),
+                ],
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
 }
 
 class _DashboardShortcuts extends StatelessWidget {
@@ -513,99 +1230,122 @@ class _DashboardShortcuts extends StatelessWidget {
   final VoidCallback? onOpenPayroll;
 
   @override
-  Widget build(BuildContext context) => SizedBox(
-        height: 48,
-        child: ListView(
-          scrollDirection: Axis.horizontal,
-          children: [
-            if (user.hasPermission('INVOICES'))
-              _ShortcutChip(
-                label: 'Invoices',
-                icon: Icons.receipt_long,
-                onTap: onViewInvoices,
-              ),
-            if (user.hasPermission('EXPENSES'))
-              _ShortcutChip(
-                label: 'Expenses',
-                icon: Icons.payments_outlined,
-                onTap: onViewExpenses,
-              ),
-            if (onOpenPayroll != null)
-              _ShortcutChip(
-                label: 'Payroll',
-                icon: Icons.account_balance_wallet_outlined,
-                onTap: onOpenPayroll!,
-              ),
-            if (user.hasPermission('CLIENTS'))
-              _ShortcutChip(
-                label: 'Clients',
-                icon: Icons.people_outline,
-                onTap: onViewClients,
-              ),
-            if (user.hasPermission('INVOICES'))
-              _ShortcutChip(
-                label: 'Templates',
-                icon: Icons.description_outlined,
-                onTap: onOpenTemplates,
-              ),
-          ],
+  Widget build(BuildContext context) {
+    final items = [
+      if (user.hasPermission('INVOICES'))
+        _ModuleCardData(
+          label: 'Invoices',
+          icon: Icons.description_outlined,
+          iconBg: const Color(0xFFEDE9FE),
+          iconColor: const Color(0xFF8B5CF6),
+          onTap: onViewInvoices,
         ),
-      );
+      if (user.hasPermission('EXPENSES'))
+        _ModuleCardData(
+          label: 'Expenses',
+          icon: Icons.receipt_outlined,
+          iconBg: const Color(0xFFDCFCE7),
+          iconColor: const Color(0xFF16A34A),
+          onTap: onViewExpenses,
+        ),
+      if (onOpenPayroll != null)
+        _ModuleCardData(
+          label: 'Payroll',
+          icon: Icons.groups_outlined,
+          iconBg: const Color(0xFFE0F2FE),
+          iconColor: const Color(0xFF0284C7),
+          onTap: onOpenPayroll!,
+        ),
+      if (user.hasPermission('CLIENTS'))
+        _ModuleCardData(
+          label: 'Clients',
+          icon: Icons.people_alt_outlined,
+          iconBg: const Color(0xFFFCE7F3),
+          iconColor: const Color(0xFFE11D48),
+          onTap: onViewClients,
+        ),
+      if (user.hasPermission('INVOICES'))
+        _ModuleCardData(
+          label: 'Templates',
+          icon: Icons.article_outlined,
+          iconBg: const Color(0xFFEDE9FE),
+          iconColor: const Color(0xFF8B5CF6),
+          onTap: onOpenTemplates,
+        ),
+    ];
+
+    return Row(
+      children: items.map((item) {
+        return Expanded(
+          child: Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 4),
+            child: InkWell(
+              onTap: item.onTap,
+              borderRadius: BorderRadius.circular(12),
+              child: Container(
+                padding: const EdgeInsets.symmetric(vertical: 12),
+                decoration: BoxDecoration(
+                  color: Colors.white,
+                  borderRadius: BorderRadius.circular(12),
+                  border: Border.all(color: const Color(0xFFE2E8F0)),
+                  boxShadow: const [
+                    BoxShadow(
+                      color: Color(0x06000000),
+                      blurRadius: 6,
+                      offset: Offset(0, 2),
+                    ),
+                  ],
+                ),
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Container(
+                      width: 38,
+                      height: 38,
+                      decoration: BoxDecoration(
+                        color: item.iconBg,
+                        borderRadius: BorderRadius.circular(10),
+                      ),
+                      child: Icon(
+                        item.icon,
+                        color: item.iconColor,
+                        size: 20,
+                      ),
+                    ),
+                    const SizedBox(height: 8),
+                    Text(
+                      item.label,
+                      style: const TextStyle(
+                        fontSize: 12,
+                        fontWeight: FontWeight.w700,
+                        color: Color(0xFF0F172A),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+          ),
+        );
+      }).toList(),
+    );
+  }
 }
 
-class _ShortcutChip extends StatelessWidget {
-  const _ShortcutChip({
+class _ModuleCardData {
+  const _ModuleCardData({
     required this.label,
     required this.icon,
+    required this.iconBg,
+    required this.iconColor,
     required this.onTap,
   });
 
   final String label;
   final IconData icon;
+  final Color iconBg;
+  final Color iconColor;
   final VoidCallback onTap;
-
-  @override
-  Widget build(BuildContext context) => Padding(
-        padding: const EdgeInsets.only(right: 8),
-        child: Material(
-          color: Theme.of(context).colorScheme.surface,
-          shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(15),
-            side: BorderSide(
-              color: Theme.of(context).colorScheme.outlineVariant,
-            ),
-          ),
-          child: InkWell(
-            borderRadius: BorderRadius.circular(15),
-            onTap: onTap,
-            child: Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 8),
-              child: Row(
-                children: [
-                  CircleAvatar(
-                    radius: 12,
-                    backgroundColor:
-                        Theme.of(context).colorScheme.primaryContainer,
-                    child: Icon(
-                      icon,
-                      size: 13,
-                      color: Theme.of(context).colorScheme.primary,
-                    ),
-                  ),
-                  const SizedBox(width: 5),
-                  Text(
-                    label,
-                    style: const TextStyle(
-                      fontSize: 10,
-                      fontWeight: FontWeight.w700,
-                    ),
-                  ),
-                ],
-              ),
-            ),
-          ),
-        ),
-      );
 }
 
 class _DeveloperOverviewPanel extends StatelessWidget {

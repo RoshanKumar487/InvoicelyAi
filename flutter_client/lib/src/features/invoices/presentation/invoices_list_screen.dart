@@ -608,21 +608,6 @@ class _InvoicesListScreenState extends State<InvoicesListScreen> {
   }
 }
 
-class _InvoiceKpi {
-  const _InvoiceKpi({
-    required this.label,
-    required this.value,
-    required this.count,
-    required this.icon,
-    required this.color,
-  });
-
-  final String label;
-  final String value;
-  final String count;
-  final IconData icon;
-  final Color color;
-}
 
 class _InvoiceCard extends StatelessWidget {
   const _InvoiceCard({

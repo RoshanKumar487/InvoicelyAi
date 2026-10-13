@@ -66,7 +66,6 @@ class _InvoicelyAppState extends State<InvoicelyApp> {
                       onLogout: _authController.logout,
                       apiClient: _apiClient,
                       dashboardRepository: _dashboardRepository,
-                      onWorkspaceSwitched: _authController.updateSession,
                     ),
         );
       },

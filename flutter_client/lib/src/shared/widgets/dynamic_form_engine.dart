@@ -538,7 +538,7 @@ class _DynamicFormEngineState extends State<DynamicFormEngine> {
         _buildFieldLabel(field),
         const SizedBox(height: 6),
         DropdownButtonFormField<dynamic>(
-          initialValue: field.options.any((o) => o.value == currentVal) ? currentVal : null,
+          value: field.options.any((o) => o.value == currentVal) ? currentVal : null,
           items: field.options.map((opt) {
             return DropdownMenuItem<dynamic>(
               value: opt.value,

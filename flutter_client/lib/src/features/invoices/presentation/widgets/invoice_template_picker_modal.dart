@@ -9,6 +9,7 @@ class TemplatePickerModal extends StatefulWidget {
     required this.onSelectTemplate,
     required this.onSetDefault,
     this.activeBusinessCategory,
+    this.onOpenWysiwygStudio,
     super.key,
   });
 
@@ -16,6 +17,7 @@ class TemplatePickerModal extends StatefulWidget {
   final ValueChanged<TemplateConfig> onSelectTemplate;
   final ValueChanged<TemplateConfig> onSetDefault;
   final String? activeBusinessCategory;
+  final VoidCallback? onOpenWysiwygStudio;
 
   @override
   State<TemplatePickerModal> createState() => _TemplatePickerModalState();
@@ -61,13 +63,7 @@ class _TemplatePickerModalState extends State<TemplatePickerModal> {
     final theme = Theme.of(context);
     final isDark = theme.brightness == Brightness.dark;
 
-    final domainCat = widget.activeBusinessCategory;
-    final isCategoryLocked = domainCat != null &&
-        domainCat.isNotEmpty &&
-        domainCat != 'All' &&
-        domainCat != 'General';
-
-    final effectiveCategory = isCategoryLocked ? domainCat : _selectedCategory;
+    final effectiveCategory = _selectedCategory;
 
     final filtered = templatePresets.where((TemplateConfig p) {
       final matchCat =
@@ -145,10 +141,12 @@ class _TemplatePickerModalState extends State<TemplatePickerModal> {
             ),
           ),
 
+          // Featured: WYSIWYG Dynamic (JSON Engine) Card
+          _buildWysiwygHeroCard(context, isDark),
+
           // Category Filter Tabs
-          if (!isCategoryLocked)
-            SingleChildScrollView(
-              scrollDirection: Axis.horizontal,
+          SingleChildScrollView(
+            scrollDirection: Axis.horizontal,
               padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 6),
               child: Row(
                 children: _categories.map((cat) {
@@ -173,34 +171,6 @@ class _TemplatePickerModalState extends State<TemplatePickerModal> {
                     ),
                   );
                 }).toList(),
-              ),
-            )
-          else
-            Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
-              child: Container(
-                padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
-                decoration: BoxDecoration(
-                  color: const Color(0xFF2563EB).withAlpha(18),
-                  borderRadius: BorderRadius.circular(8),
-                  border: Border.all(color: const Color(0xFF2563EB).withAlpha(60)),
-                ),
-                child: Row(
-                  children: [
-                    const Icon(Icons.shield_outlined, size: 16, color: Color(0xFF2563EB)),
-                    const SizedBox(width: 6),
-                    Expanded(
-                      child: Text(
-                        'Showing $domainCat templates (Active Domain in Business Settings)',
-                        style: const TextStyle(
-                          fontSize: 11,
-                          fontWeight: FontWeight.w600,
-                          color: Color(0xFF1D4ED8),
-                        ),
-                      ),
-                    ),
-                  ],
-                ),
               ),
             ),
 
@@ -435,6 +405,139 @@ class _TemplatePickerModalState extends State<TemplatePickerModal> {
                 );
               },
             ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildWysiwygHeroCard(BuildContext context, bool isDark) {
+    final wysiwygPreset = templatePresets.firstWhere(
+      (p) => p.id == 'wysiwyg_dynamic',
+      orElse: () => templatePresets.first,
+    );
+    final isSelected = _currentId == 'wysiwyg_dynamic';
+
+    return Container(
+      margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(
+        gradient: LinearGradient(
+          colors: isDark
+              ? [const Color(0xFF1E3A8A).withAlpha(120), const Color(0xFF0F172A)]
+              : [const Color(0xFFEFF6FF), const Color(0xFFF8FAFC)],
+          begin: Alignment.topLeft,
+          end: Alignment.bottomRight,
+        ),
+        borderRadius: BorderRadius.circular(14),
+        border: Border.all(
+          color: isSelected
+              ? const Color(0xFF2563EB)
+              : (isDark ? const Color(0xFF3B82F6).withAlpha(80) : const Color(0xFFBFDBFE)),
+          width: isSelected ? 2 : 1.2,
+        ),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Container(
+                padding: const EdgeInsets.all(8),
+                decoration: BoxDecoration(
+                  color: const Color(0xFF2563EB),
+                  borderRadius: BorderRadius.circular(10),
+                ),
+                child: const Icon(Icons.auto_awesome, color: Colors.white, size: 18),
+              ),
+              const SizedBox(width: 10),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Row(
+                      children: [
+                        Flexible(
+                          child: Text(
+                            'WYSIWYG Dynamic (JSON-Engine)',
+                            style: TextStyle(
+                              fontSize: 13.5,
+                              fontWeight: FontWeight.w800,
+                              color: isDark ? Colors.white : const Color(0xFF0F172A),
+                            ),
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                          ),
+                        ),
+                        const SizedBox(width: 6),
+                        if (isSelected)
+                          Container(
+                            padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                            decoration: BoxDecoration(
+                              color: const Color(0xFF10B981),
+                              borderRadius: BorderRadius.circular(10),
+                            ),
+                            child: const Text(
+                              'ACTIVE',
+                              style: TextStyle(fontSize: 8.5, fontWeight: FontWeight.w900, color: Colors.white),
+                            ),
+                          ),
+                      ],
+                    ),
+                    const SizedBox(height: 2),
+                    Text(
+                      'WASM Auto-Fit (1-page \u226410 items, dynamic pagination >10 items)',
+                      style: TextStyle(fontSize: 10.5, color: isDark ? const Color(0xFF94A3B8) : const Color(0xFF475569)),
+                    ),
+                  ],
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 8),
+          Row(
+            mainAxisAlignment: MainAxisAlignment.end,
+            children: [
+              if (widget.onOpenWysiwygStudio != null)
+                TextButton.icon(
+                  style: TextButton.styleFrom(
+                    padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                    visualDensity: VisualDensity.compact,
+                  ),
+                  icon: const Icon(Icons.code_rounded, size: 15),
+                  label: const Text('Open JSON Studio', style: TextStyle(fontSize: 11)),
+                  onPressed: () {
+                    Navigator.pop(context);
+                    widget.onOpenWysiwygStudio?.call();
+                  },
+                ),
+              const SizedBox(width: 6),
+              OutlinedButton(
+                style: OutlinedButton.styleFrom(
+                  padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                  visualDensity: VisualDensity.compact,
+                ),
+                onPressed: () {
+                  widget.onSetDefault(wysiwygPreset);
+                  Navigator.pop(context);
+                },
+                child: const Text('Set Default', style: TextStyle(fontSize: 11)),
+              ),
+              const SizedBox(width: 6),
+              FilledButton.icon(
+                style: FilledButton.styleFrom(
+                  padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
+                  visualDensity: VisualDensity.compact,
+                ),
+                icon: Icon(isSelected ? Icons.check : Icons.arrow_forward_rounded, size: 14),
+                label: Text(isSelected ? 'Selected' : 'Use in Preview', style: const TextStyle(fontSize: 11, fontWeight: FontWeight.bold)),
+                onPressed: () {
+                  setState(() => _currentId = 'wysiwyg_dynamic');
+                  widget.onSelectTemplate(wysiwygPreset);
+                  Navigator.pop(context);
+                },
+              ),
+            ],
           ),
         ],
       ),

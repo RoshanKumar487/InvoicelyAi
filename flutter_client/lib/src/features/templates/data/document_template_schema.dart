@@ -533,6 +533,244 @@ class DocumentTemplateSchema {
     return DocumentTemplateSchema.fromJson(jsonDecode(jsonStr) as Map<String, dynamic>);
   }
 
+  factory DocumentTemplateSchema.fromSettings({
+    required Map<String, Object?> localSettings,
+    String? templateId,
+    String? templateName,
+    String? businessCategory,
+    String? defaultColor,
+    String? defaultSecondaryColor,
+  }) {
+    final primaryHex = localSettings['brandColorHex']?.toString().trim().isNotEmpty == true
+        ? localSettings['brandColorHex']!.toString().trim()
+        : (defaultColor ?? '#1E3A8A');
+    final secondaryHex = localSettings['secondaryColorHex']?.toString().trim().isNotEmpty == true
+        ? localSettings['secondaryColorHex']!.toString().trim()
+        : (defaultSecondaryColor ?? '#0D9488');
+
+    final tableStyle = localSettings['tableStyle']?.toString() ?? 'boxed';
+    final baseFont = (localSettings['baseFontSize'] as num?)?.toDouble() ?? 10.5;
+    final fontFamily = localSettings['fontFamily']?.toString() ?? 'Inter';
+    final density = localSettings['tableDensity']?.toString() ?? 'normal';
+    final rowHeight = density == 'compact' ? 18.0 : (density == 'spacious' ? 28.0 : 22.0);
+
+    final isSecurity = businessCategory == 'Security Agency' ||
+        localSettings['industryPresetId'] == 'security_agency' ||
+        localSettings['industryPresetId'] == 'security';
+
+    final cols = <TemplateColumnConfig>[];
+
+    if (localSettings['showItemNumber'] == true) {
+      cols.add(const TemplateColumnConfig(
+        key: '#',
+        label: '#',
+        width: '32',
+        priority: 1,
+        align: 'center',
+      ));
+    }
+
+    final itemLabel = localSettings['customItemHeader']?.toString().trim().isNotEmpty == true
+        ? localSettings['customItemHeader']!.toString().trim()
+        : (isSecurity ? 'Particulars' : 'Item & Description');
+    cols.add(TemplateColumnConfig(
+      key: 'item',
+      label: itemLabel,
+      width: 'flex',
+      priority: 1,
+      align: 'left',
+    ));
+
+    if (localSettings['showItemQty'] != false) {
+      final qtyLabel = localSettings['customQtyHeader']?.toString().trim().isNotEmpty == true
+          ? localSettings['customQtyHeader']!.toString().trim()
+          : 'Qty.';
+      cols.add(TemplateColumnConfig(
+        key: 'qty',
+        label: qtyLabel,
+        width: '45',
+        priority: 2,
+        align: 'center',
+      ));
+    }
+
+    final showDuty = localSettings['showItemDuty'] == true || (isSecurity && localSettings['showItemDuty'] != false);
+    if (showDuty) {
+      final dutyLabel = localSettings['customDutyHeader']?.toString().trim().isNotEmpty == true
+          ? localSettings['customDutyHeader']!.toString().trim()
+          : 'Duty';
+      cols.add(TemplateColumnConfig(
+        key: 'duty',
+        label: dutyLabel,
+        width: '65',
+        priority: 2,
+        align: 'center',
+      ));
+    }
+
+    final rawCustom = localSettings['customColumns_items'];
+    if (rawCustom is List) {
+      for (final c in rawCustom) {
+        if (c is Map && c['isVisible'] != false) {
+          cols.add(TemplateColumnConfig(
+            key: c['id']?.toString() ?? c['label']?.toString().toLowerCase() ?? 'custom',
+            label: c['label']?.toString() ?? 'Field',
+            width: '70',
+            priority: 2,
+            align: 'center',
+          ));
+        }
+      }
+    }
+
+    if (localSettings['showItemUnit'] == true) {
+      final unitLabel = localSettings['customUnitHeader']?.toString().trim().isNotEmpty == true
+          ? localSettings['customUnitHeader']!.toString().trim()
+          : 'Unit';
+      cols.add(TemplateColumnConfig(
+        key: 'unit',
+        label: unitLabel,
+        width: '50',
+        priority: 3,
+        align: 'center',
+      ));
+    }
+
+    if (localSettings['showItemTax'] == true) {
+      cols.add(const TemplateColumnConfig(
+        key: 'hsn',
+        label: 'HSN/SAC',
+        width: '65',
+        priority: 3,
+        align: 'center',
+      ));
+    }
+
+    if (localSettings['showItemRate'] != false) {
+      final rateLabel = localSettings['customRateHeader']?.toString().trim().isNotEmpty == true
+          ? localSettings['customRateHeader']!.toString().trim()
+          : 'Rate';
+      cols.add(TemplateColumnConfig(
+        key: 'rate',
+        label: rateLabel,
+        width: '85',
+        priority: 2,
+        align: 'right',
+      ));
+    }
+
+    if (localSettings['showItemDiscount'] == true) {
+      cols.add(const TemplateColumnConfig(
+        key: 'discount',
+        label: 'Disc %',
+        width: '50',
+        priority: 3,
+        align: 'center',
+      ));
+    }
+
+    final amountLabel = localSettings['customAmountHeader']?.toString().trim().isNotEmpty == true
+        ? localSettings['customAmountHeader']!.toString().trim()
+        : 'Amount';
+    cols.add(TemplateColumnConfig(
+      key: 'amount',
+      label: amountLabel,
+      width: '95',
+      priority: 1,
+      align: 'right',
+    ));
+
+    final sections = [
+      TemplateSection(
+        id: 'sec_header',
+        type: 'header',
+        isEnabled: localSettings['showDocumentTitle'] != false,
+        config: const TemplateSectionConfig(
+          logoMaxWidth: 140,
+          logoMaxHeight: 65,
+          companyBlockAlign: 'left',
+        ),
+      ),
+      TemplateSection(
+        id: 'sec_party',
+        type: 'party_details',
+        isEnabled: localSettings['showBillFrom'] != false ||
+            localSettings['showBillTo'] != false ||
+            localSettings['showShippingSection'] == true,
+      ),
+      TemplateSection(
+        id: 'sec_items',
+        type: 'item_table',
+        isEnabled: true,
+        config: TemplateSectionConfig(
+          columns: cols,
+          rowMinHeight: rowHeight,
+          stripedRows: tableStyle != 'clean',
+          showBorders: tableStyle == 'boxed',
+          repeatHeader: true,
+        ),
+      ),
+      const TemplateSection(
+        id: 'sec_totals',
+        type: 'totals',
+        isEnabled: true,
+        config: TemplateSectionConfig(totalsAlign: 'right', keepWithPrevious: true),
+      ),
+      TemplateSection(
+        id: 'sec_bank_qr',
+        type: 'bank_qr',
+        isEnabled: localSettings['showBankDetails'] != false || localSettings['showQrCode'] != false,
+        config: TemplateSectionConfig(
+          showQr: localSettings['showQrCode'] != false,
+          qrSize: 85,
+        ),
+      ),
+      TemplateSection(
+        id: 'sec_notes',
+        type: 'notes_terms',
+        isEnabled: localSettings['showNotes'] != false ||
+            localSettings['showTerms'] != false ||
+            localSettings['showPaymentInstructions'] != false,
+      ),
+      TemplateSection(
+        id: 'sec_sign',
+        type: 'signature',
+        isEnabled: localSettings['showSignature'] != false,
+        config: TemplateSectionConfig(
+          signatureMode: SignatureMode.fixedBottom,
+          signatureHeight: 70,
+          signatureLabel: localSettings['signeeTitle']?.toString().trim().isNotEmpty == true
+              ? localSettings['signeeTitle']!.toString().trim()
+              : 'Authorized Signatory',
+        ),
+      ),
+      const TemplateSection(
+        id: 'sec_footer',
+        type: 'footer',
+        isEnabled: true,
+      ),
+    ];
+
+    return DocumentTemplateSchema(
+      metadata: TemplateMetadata(
+        id: templateId ?? 'wysiwyg_custom',
+        name: templateName ?? 'WYSIWYG Template',
+        category: businessCategory ?? (isSecurity ? 'Security Agency' : 'General'),
+        pageSize: TemplatePageSize.a4,
+      ),
+      style: TemplateStyle(
+        fontFamily: fontFamily,
+        baseSize: baseFont,
+        primaryColor: primaryHex,
+        secondaryColor: secondaryHex,
+        accentColor: '#F59E0B',
+        zebraColor: tableStyle == 'striped' ? '#F8FAFC' : '#FFFFFF',
+        borderRadius: tableStyle == 'boxed' ? 4 : 6,
+      ),
+      sections: sections,
+    );
+  }
+
   DocumentTemplateSchema copyWith({
     TemplateMetadata? metadata,
     TemplateStyle? style,

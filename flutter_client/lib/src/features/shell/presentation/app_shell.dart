@@ -15,18 +15,16 @@ import '../../ai/presentation/ai_chat_screen.dart';
 import '../../invoices/invoice_feature.dart';
 import '../../reports/presentation/reports_screen.dart';
 import '../../settings/data/settings_repository.dart';
-import '../../settings/presentation/invoice_settings_screen.dart';
 import '../../settings/presentation/settings_screen.dart';
 import '../../tax/presentation/tax_calculator_screen.dart';
 import '../../team/presentation/team_management_screen.dart';
 import '../../templates/data/template_config.dart';
-import '../../templates/presentation/templates_screen.dart';
+import '../../templates/presentation/invoice_template_studio_screen.dart';
 import '../../employees/presentation/employee_management_screen.dart';
 import '../../settings/presentation/email_scheduler_settings_screen.dart';
 import '../../audit/presentation/audit_logs_screen.dart';
 import '../../payroll/data/payroll_repository.dart';
 import '../../payroll/presentation/payroll_screen.dart';
-import '../../../shared/widgets/company_workspace_modal.dart';
 import 'placeholder_screen.dart';
 
 enum _Destination {
@@ -34,6 +32,7 @@ enum _Destination {
   invoices('Invoices', Icons.receipt_long_outlined),
   aiAgent('AI Agent', Icons.auto_awesome_outlined),
   expenses('Expenses', Icons.payments_outlined),
+  templates('Templates', Icons.auto_awesome_mosaic_outlined),
   menu('More', Icons.menu);
 
   const _Destination(this.label, this.icon);
@@ -48,7 +47,6 @@ class AppShell extends StatefulWidget {
     required this.onLogout,
     required this.apiClient,
     required this.dashboardRepository,
-    this.onWorkspaceSwitched,
     super.key,
   });
 
@@ -56,7 +54,6 @@ class AppShell extends StatefulWidget {
   final Future<void> Function() onLogout;
   final ApiClient apiClient;
   final DashboardRepository dashboardRepository;
-  final ValueChanged<AuthSession>? onWorkspaceSwitched;
 
   @override
   State<AppShell> createState() => _AppShellState();
@@ -179,28 +176,23 @@ class _AppShellState extends State<AppShell> {
     if (!isWide) {
       final showBottomBar = !_invoiceFullscreen &&
           !(_destination == _Destination.menu && _moreSection != null);
-      return Scaffold(
-        body: page,
-        bottomNavigationBar: showBottomBar
-            ? NavigationBar(
-                selectedIndex: _destination.index,
-                onDestinationSelected: (index) => setState(() {
-                  _destination = _Destination.values[index];
-                  _moreSection = null;
-                  _invoiceFullscreen = false;
-                  if (_destination == _Destination.invoices) {
-                    _invoiceStatusFilter = 'All';
-                  }
-                }),
-                destinations: [
-                  for (final item in _Destination.values)
-                    NavigationDestination(
-                      icon: Icon(item.icon),
-                      label: item.label,
-                    ),
-                ],
-              )
-            : null,
+      return PopScope(
+        canPop: _destination == _Destination.dashboard && _moreSection == null,
+        onPopInvokedWithResult: (didPop, _) {
+          if (didPop) return;
+          if (_moreSection != null) {
+            setState(() => _moreSection = null);
+          } else if (_destination != _Destination.dashboard) {
+            setState(() {
+              _destination = _Destination.dashboard;
+              _moreSection = null;
+            });
+          }
+        },
+        child: Scaffold(
+          body: page,
+          bottomNavigationBar: showBottomBar ? _buildMobileBottomBar() : null,
+        ),
       );
     }
 
@@ -227,45 +219,31 @@ class _AppShellState extends State<AppShell> {
                     color: Color(0xFF1E3A8A),
                   ),
                   const SizedBox(height: 8),
-                  Tooltip(
-                    message: 'Switch Company / Workspace',
-                    child: InkWell(
-                      onTap: () => CompanyWorkspaceModal.show(
-                        context: context,
-                        currentSession: widget.session,
-                        apiClient: widget.apiClient,
-                        onWorkspaceSwitched: (newSession) {
-                          widget.onWorkspaceSwitched?.call(newSession);
-                        },
-                      ),
+                  Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 4),
+                    decoration: BoxDecoration(
+                      color: const Color(0x1F00F2FE),
                       borderRadius: BorderRadius.circular(10),
-                      child: Container(
-                        padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 4),
-                        decoration: BoxDecoration(
-                          color: const Color(0x1F00F2FE),
-                          borderRadius: BorderRadius.circular(10),
-                          border: Border.all(color: const Color(0xFF00F2FE), width: 1),
-                        ),
-                        child: Row(
-                          mainAxisSize: MainAxisSize.min,
-                          children: [
-                            const Icon(Icons.business_rounded, size: 14, color: Color(0xFF00F2FE)),
-                            const SizedBox(width: 4),
-                            ConstrainedBox(
-                              constraints: const BoxConstraints(maxWidth: 58),
-                              child: Text(
-                                widget.session.company?.code ?? 'Workspace',
-                                overflow: TextOverflow.ellipsis,
-                                style: const TextStyle(
-                                  fontSize: 10,
-                                  fontWeight: FontWeight.bold,
-                                  color: Color(0xFF00F2FE),
-                                ),
-                              ),
+                      border: Border.all(color: const Color(0xFF00F2FE), width: 1),
+                    ),
+                    child: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        const Icon(Icons.business_rounded, size: 14, color: Color(0xFF00F2FE)),
+                        const SizedBox(width: 4),
+                        ConstrainedBox(
+                          constraints: const BoxConstraints(maxWidth: 58),
+                          child: Text(
+                            widget.session.company?.code ?? 'Workspace',
+                            overflow: TextOverflow.ellipsis,
+                            style: const TextStyle(
+                              fontSize: 10,
+                              fontWeight: FontWeight.bold,
+                              color: Color(0xFF00F2FE),
                             ),
-                          ],
+                          ),
                         ),
-                      ),
+                      ],
                     ),
                   ),
                 ],
@@ -292,7 +270,6 @@ class _AppShellState extends State<AppShell> {
           session: widget.session,
           repository: widget.dashboardRepository,
           localSettings: _invoiceLocalSettings,
-          onWorkspaceSwitched: widget.onWorkspaceSwitched,
           registeredCompanyName: _invoiceLocalSettings['businessName']?.toString().trim().isNotEmpty == true
               ? _invoiceLocalSettings['businessName']!.toString().trim()
               : (_invoiceLocalSettings['companyName']?.toString().trim().isNotEmpty == true
@@ -317,7 +294,10 @@ class _AppShellState extends State<AppShell> {
           onOpenAiChat: () => setState(
             () => _destination = _Destination.aiAgent,
           ),
-          onOpenTemplates: () => _openMoreSection('Templates'),
+          onOpenTemplates: () => setState(() {
+            _destination = _Destination.templates;
+            _moreSection = null;
+          }),
           onOpenPayroll: () => _openMoreSection('Payroll & Disbursals'),
           onOpenAuditLogs: () => _openMoreSection('Audit Logs'),
         ),
@@ -338,6 +318,14 @@ class _AppShellState extends State<AppShell> {
               '${widget.session.company?.id ?? widget.session.user.companyId ?? widget.session.user.email}:${widget.session.user.email.toLowerCase()}',
         ),
       _Destination.expenses => _buildExpenses(),
+      _Destination.templates => InvoiceTemplateStudioScreen(
+          apiClient: widget.apiClient,
+          initialConfig: _preferredTemplate,
+          initialLocalSettings: _invoiceLocalSettings,
+          onSaveLocalSettings: _saveInvoiceSettings,
+          onSaveTemplate: _saveTemplate,
+          onBack: () => setState(() => _destination = _Destination.dashboard),
+        ),
       _Destination.menu => _buildMorePage(),
     };
   }
@@ -383,13 +371,17 @@ class _AppShellState extends State<AppShell> {
         ),
       'Team management' =>
         TeamManagementScreen(apiClient: widget.apiClient, onBack: onBack),
-      'Templates' => TemplatesScreen(
+      'Templates' ||
+      'Invoice settings' ||
+      'Invoice & Template Studio' ||
+      'Invoice & Template Settings' =>
+        InvoiceTemplateStudioScreen(
           apiClient: widget.apiClient,
           initialConfig: _preferredTemplate,
           initialLocalSettings: _invoiceLocalSettings,
           onSaveLocalSettings: _saveInvoiceSettings,
+          onSaveTemplate: _saveTemplate,
           onBack: onBack,
-          onSave: _saveTemplate,
         ),
       'Settings' || 'Business Settings' || 'Business settings' => SettingsScreen(
           apiClient: widget.apiClient,
@@ -399,12 +391,6 @@ class _AppShellState extends State<AppShell> {
             () => _invoiceLocalSettings = Map<String, Object?>.from(settings),
           ),
           onBack: onBack,
-        ),
-      'Invoice settings' => InvoiceSettingsScreen(
-          apiClient: widget.apiClient,
-          initialLocalSettings: _invoiceLocalSettings,
-          onBack: onBack,
-          onSaveLocalSettings: _saveInvoiceSettings,
         ),
       'Tax calculator' => TaxCalculatorScreen(onBack: onBack),
       _ => PlaceholderScreen(
@@ -440,6 +426,269 @@ class _AppShellState extends State<AppShell> {
         repository: ExpensesRepository(apiClient: widget.apiClient),
         initialLocalSettings: _invoiceLocalSettings,
       );
+
+  Widget _buildMobileBottomBar() {
+    const activeColor = Color(0xFF2563EB);
+    const inactiveColor = Color(0xFF64748B);
+
+    return Container(
+      decoration: const BoxDecoration(
+        color: Colors.white,
+        border: Border(top: BorderSide(color: Color(0xFFE2E8F0))),
+        boxShadow: [
+          BoxShadow(
+            color: Color(0x08000000),
+            blurRadius: 10,
+            offset: Offset(0, -2),
+          ),
+        ],
+      ),
+      child: SafeArea(
+        top: false,
+        child: SizedBox(
+          height: 60,
+          child: Row(
+            mainAxisAlignment: MainAxisAlignment.spaceAround,
+            children: [
+              // 1. Invoices
+              _buildBottomNavItem(
+                icon: Icons.description_outlined,
+                isSelected: _destination == _Destination.invoices,
+                activeColor: activeColor,
+                inactiveColor: inactiveColor,
+                onTap: () => setState(() {
+                  _destination = _Destination.invoices;
+                  _moreSection = null;
+                  _invoiceStatusFilter = 'All';
+                }),
+              ),
+
+              // 2. Center Prominent Plus Button
+              GestureDetector(
+                onTap: _showQuickCreateSheet,
+                child: Container(
+                  width: 44,
+                  height: 44,
+                  decoration: BoxDecoration(
+                    color: const Color(0xFF2563EB),
+                    shape: BoxShape.circle,
+                    boxShadow: [
+                      BoxShadow(
+                        color: const Color(0xFF2563EB).withValues(alpha: 0.35),
+                        blurRadius: 8,
+                        offset: const Offset(0, 3),
+                      ),
+                    ],
+                  ),
+                  child: const Center(
+                    child: Icon(Icons.add_rounded, color: Colors.white, size: 26),
+                  ),
+                ),
+              ),
+
+              // 3. Clients
+              _buildBottomNavItem(
+                icon: Icons.people_outline_rounded,
+                isSelected: _destination == _Destination.menu && _moreSection == 'Clients',
+                activeColor: activeColor,
+                inactiveColor: inactiveColor,
+                onTap: () => setState(() {
+                  _destination = _Destination.menu;
+                  _moreSection = 'Clients';
+                }),
+              ),
+
+              // 4. More / Grid
+              _buildBottomNavItem(
+                icon: Icons.grid_view_rounded,
+                isSelected: _destination == _Destination.menu && _moreSection != 'Clients',
+                activeColor: activeColor,
+                inactiveColor: inactiveColor,
+                onTap: () => setState(() {
+                  _destination = _Destination.menu;
+                  _moreSection = null;
+                }),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildBottomNavItem({
+    required IconData icon,
+    required bool isSelected,
+    required Color activeColor,
+    required Color inactiveColor,
+    required VoidCallback onTap,
+  }) {
+    return InkWell(
+      onTap: onTap,
+      borderRadius: BorderRadius.circular(10),
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Icon(
+              icon,
+              size: 24,
+              color: isSelected ? activeColor : inactiveColor,
+            ),
+            const SizedBox(height: 3),
+            if (isSelected)
+              Container(
+                width: 4,
+                height: 4,
+                decoration: BoxDecoration(
+                  color: activeColor,
+                  shape: BoxShape.circle,
+                ),
+              )
+            else
+              const SizedBox(height: 4),
+          ],
+        ),
+      ),
+    );
+  }
+
+  void _showQuickCreateSheet() {
+    showModalBottomSheet<void>(
+      context: context,
+      backgroundColor: Colors.transparent,
+      builder: (ctx) => Container(
+        padding: const EdgeInsets.fromLTRB(20, 16, 20, 24),
+        decoration: const BoxDecoration(
+          color: Colors.white,
+          borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+        ),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Center(
+              child: Container(
+                width: 36,
+                height: 4,
+                decoration: BoxDecoration(
+                  color: const Color(0xFFCBD5E1),
+                  borderRadius: BorderRadius.circular(2),
+                ),
+              ),
+            ),
+            const SizedBox(height: 16),
+            const Text(
+              'Quick Create',
+              style: TextStyle(fontSize: 17, fontWeight: FontWeight.w800, color: Color(0xFF0F172A)),
+            ),
+            const SizedBox(height: 14),
+            _quickActionTile(
+              icon: Icons.receipt_long_rounded,
+              iconColor: const Color(0xFF2563EB),
+              iconBg: const Color(0xFFEFF6FF),
+              title: 'Create Invoice',
+              subtitle: 'Draft a new client invoice or quotation',
+              onTap: () {
+                Navigator.of(ctx).pop();
+                setState(() {
+                  _destination = _Destination.invoices;
+                  _invoiceStatusFilter = 'All';
+                });
+              },
+            ),
+            const SizedBox(height: 8),
+            _quickActionTile(
+              icon: Icons.payments_outlined,
+              iconColor: const Color(0xFF16A34A),
+              iconBg: const Color(0xFFDCFCE7),
+              title: 'Record Expense',
+              subtitle: 'Add a business receipt or operational expense',
+              onTap: () {
+                Navigator.of(ctx).pop();
+                setState(() => _destination = _Destination.expenses);
+              },
+            ),
+            const SizedBox(height: 8),
+            _quickActionTile(
+              icon: Icons.person_add_alt_1_rounded,
+              iconColor: const Color(0xFF0284C7),
+              iconBg: const Color(0xFFE0F2FE),
+              title: 'Add New Client',
+              subtitle: 'Register customer details, GSTIN and billing address',
+              onTap: () {
+                Navigator.of(ctx).pop();
+                setState(() {
+                  _destination = _Destination.menu;
+                  _moreSection = 'Clients';
+                });
+              },
+            ),
+            const SizedBox(height: 8),
+            _quickActionTile(
+              icon: Icons.badge_outlined,
+              iconColor: const Color(0xFF7C3AED),
+              iconBg: const Color(0xFFF3E8FF),
+              title: 'Add Employee / Staff',
+              subtitle: 'Onboard guard, supervisor, or field personnel',
+              onTap: () {
+                Navigator.of(ctx).pop();
+                _openMoreSection('Employee management');
+              },
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _quickActionTile({
+    required IconData icon,
+    required Color iconColor,
+    required Color iconBg,
+    required String title,
+    required String subtitle,
+    required VoidCallback onTap,
+  }) {
+    return InkWell(
+      onTap: onTap,
+      borderRadius: BorderRadius.circular(12),
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+        decoration: BoxDecoration(
+          color: const Color(0xFFF8FAFC),
+          borderRadius: BorderRadius.circular(12),
+          border: Border.all(color: const Color(0xFFE2E8F0)),
+        ),
+        child: Row(
+          children: [
+            Container(
+              width: 38,
+              height: 38,
+              decoration: BoxDecoration(
+                color: iconBg,
+                borderRadius: BorderRadius.circular(10),
+              ),
+              child: Icon(icon, color: iconColor, size: 20),
+            ),
+            const SizedBox(width: 12),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(title, style: const TextStyle(fontSize: 13.5, fontWeight: FontWeight.w700, color: Color(0xFF0F172A))),
+                  const SizedBox(height: 1),
+                  Text(subtitle, style: const TextStyle(fontSize: 11, color: Color(0xFF64748B))),
+                ],
+              ),
+            ),
+            const Icon(Icons.chevron_right_rounded, color: Color(0xFF94A3B8), size: 18),
+          ],
+        ),
+      ),
+    );
+  }
 }
 
 class _MoreMenu extends StatelessWidget {
@@ -469,32 +718,62 @@ class _MoreMenu extends StatelessWidget {
         ('Payroll & Disbursals', Icons.account_balance_wallet_outlined),
       if (isAdmin) ('Employee management', Icons.badge_outlined),
       if (isAdmin) ('Team management', Icons.groups_outlined),
-      if (canSeeInvoices) ('Templates', Icons.dashboard_customize_outlined),
+      if (isAdmin || canSeeInvoices)
+        ('Invoice & Template Studio', Icons.tune_rounded),
       if (isAdmin) ('Business Settings', Icons.settings_outlined),
       if (isAdmin) ('Email & Reminders', Icons.alarm_on_rounded),
-      if (isAdmin) ('Invoice settings', Icons.tune_outlined),
       ('Tax calculator', Icons.calculate_outlined),
     ];
     return Scaffold(
+      backgroundColor: const Color(0xFFF8FAFC),
       appBar: AppBar(
-        title: const Text('More'),
+        elevation: 0,
+        scrolledUnderElevation: 0,
+        backgroundColor: Colors.transparent,
+        title: const Text(
+          'More',
+          style: TextStyle(
+            fontSize: 22,
+            fontWeight: FontWeight.w700,
+            color: Color(0xFF0F172A),
+          ),
+        ),
         actions: [
           IconButton(
             onPressed: onLogout,
             tooltip: 'Sign out',
-            icon: const Icon(Icons.logout),
+            icon: const Icon(Icons.logout_rounded, color: Color(0xFF0F172A)),
           ),
         ],
       ),
       body: ListView(
-        padding: const EdgeInsets.all(20),
+        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
         children: [
           for (final section in sections)
-            Card(
+            Container(
+              margin: const EdgeInsets.only(bottom: 10),
+              decoration: BoxDecoration(
+                color: const Color(0xFFF1F5F9).withValues(alpha: 0.5),
+                borderRadius: BorderRadius.circular(14),
+                border: Border.all(color: const Color(0xFFE2E8F0)),
+              ),
               child: ListTile(
-                leading: Icon(section.$2),
-                title: Text(section.$1),
-                trailing: const Icon(Icons.chevron_right),
+                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+                contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 2),
+                leading: Icon(section.$2, color: const Color(0xFF334155), size: 22),
+                title: Text(
+                  section.$1,
+                  style: const TextStyle(
+                    fontSize: 14.5,
+                    fontWeight: FontWeight.w500,
+                    color: Color(0xFF0F172A),
+                  ),
+                ),
+                trailing: const Icon(
+                  Icons.chevron_right_rounded,
+                  color: Color(0xFF64748B),
+                  size: 20,
+                ),
                 onTap: () => onSelect(section.$1),
               ),
             ),

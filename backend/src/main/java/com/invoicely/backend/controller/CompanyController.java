@@ -58,15 +58,6 @@ public class CompanyController {
         return new ResponseEntity<>(ApiResponse.ok("Company workspace created successfully", response), HttpStatus.CREATED);
     }
 
-    @PostMapping("/switch/{id}")
-    @Operation(summary = "Switch active company workspace and receive updated scoped JWT token")
-    public ResponseEntity<ApiResponse<AuthResponse>> switchCompany(
-            @PathVariable Long id,
-            @AuthenticationPrincipal UserPrincipal principal) {
-        AuthResponse response = companyService.switchCompany(id, principal);
-        return ResponseEntity.ok(ApiResponse.ok("Active workspace switched successfully", response));
-    }
-
     @GetMapping("/join-requests")
     @PreAuthorize("hasAnyRole('ADMIN', 'DEVELOPER')")
     @Operation(summary = "Get pending or historical join requests from employees (Admin / Developer)")

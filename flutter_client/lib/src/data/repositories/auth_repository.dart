@@ -85,10 +85,6 @@ class AuthRepository {
     return AuthSession.fromJson(data);
   }
 
-  Future<AuthSession> switchCompany(int companyId) async {
-    final data = await _apiClient.postJson('api/v1/companies/switch/$companyId', const {});
-    return _saveSession(data);
-  }
 
   Future<AuthSession> createCompanyWorkspace(Map<String, dynamic> payload) async {
     final data = await _apiClient.postJson('api/v1/companies', payload);

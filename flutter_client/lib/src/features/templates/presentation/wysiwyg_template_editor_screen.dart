@@ -1,4 +1,6 @@
+import 'dart:convert';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:printing/printing.dart';
 
 import '../../../shared/widgets/app_card.dart';
@@ -100,6 +102,114 @@ class _WysiwygTemplateEditorScreenState extends State<WysiwygTemplateEditorScree
     }
   }
 
+  void _showJsonModal() {
+    final jsonStr = const JsonEncoder.withIndent('  ').convert(_schema.toJson());
+    final textController = TextEditingController(text: jsonStr);
+
+    showDialog<void>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: Row(
+          children: [
+            const Icon(Icons.data_object_rounded, color: Color(0xFF0284C7)),
+            const SizedBox(width: 8),
+            const Text('WYSIWYG Template JSON', style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold)),
+            const Spacer(),
+            IconButton(
+              icon: const Icon(Icons.close, size: 20),
+              onPressed: () => Navigator.of(ctx).pop(),
+            ),
+          ],
+        ),
+        content: SizedBox(
+          width: 650,
+          height: 480,
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              Row(
+                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                children: [
+                  const Text(
+                    'Full declarative template schema (JSON). Edit or copy below:',
+                    style: TextStyle(fontSize: 12, color: Color(0xFF64748B)),
+                  ),
+                  OutlinedButton.icon(
+                    icon: const Icon(Icons.copy_rounded, size: 14),
+                    label: const Text('Copy JSON', style: TextStyle(fontSize: 12)),
+                    onPressed: () {
+                      Clipboard.setData(ClipboardData(text: textController.text));
+                      ScaffoldMessenger.of(context).showSnackBar(
+                        const SnackBar(content: Text('✓ Template JSON copied to clipboard!')),
+                      );
+                    },
+                  ),
+                ],
+              ),
+              const SizedBox(height: 10),
+              Expanded(
+                child: Container(
+                  decoration: BoxDecoration(
+                    color: const Color(0xFF0F172A),
+                    borderRadius: BorderRadius.circular(8),
+                    border: Border.all(color: const Color(0xFF334155)),
+                  ),
+                  padding: const EdgeInsets.all(12),
+                  child: TextField(
+                    controller: textController,
+                    maxLines: null,
+                    expands: true,
+                    style: const TextStyle(
+                      fontFamily: 'monospace',
+                      fontSize: 11.5,
+                      color: Color(0xFF38BDF8),
+                      height: 1.4,
+                    ),
+                    decoration: const InputDecoration(
+                      border: InputBorder.none,
+                      contentPadding: EdgeInsets.zero,
+                    ),
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(ctx).pop(),
+            child: const Text('Cancel'),
+          ),
+          FilledButton.icon(
+            icon: const Icon(Icons.check, size: 16),
+            label: const Text('Apply JSON to Template'),
+            onPressed: () {
+              try {
+                final map = jsonDecode(textController.text) as Map<String, dynamic>;
+                final newSchema = DocumentTemplateSchema.fromJson(map);
+                setState(() => _schema = newSchema);
+                Navigator.of(ctx).pop();
+                ScaffoldMessenger.of(context).showSnackBar(
+                  const SnackBar(
+                    backgroundColor: Color(0xFF16A34A),
+                    content: Text('✓ Template JSON successfully parsed and applied!'),
+                  ),
+                );
+              } catch (e) {
+                ScaffoldMessenger.of(ctx).showSnackBar(
+                  SnackBar(
+                    backgroundColor: const Color(0xFFDC2626),
+                    content: Text('Invalid JSON format: $e'),
+                  ),
+                );
+              }
+            },
+          ),
+        ],
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     final layoutResult = _computeCurrentLayout();
@@ -115,6 +225,12 @@ class _WysiwygTemplateEditorScreenState extends State<WysiwygTemplateEditorScree
               ),
         title: const Text('WYSIWYG Template Studio'),
         actions: [
+          OutlinedButton.icon(
+            icon: const Icon(Icons.code_rounded, size: 16),
+            label: const Text('Template JSON'),
+            onPressed: _showJsonModal,
+          ),
+          const SizedBox(width: 8),
           OutlinedButton.icon(
             icon: const Icon(Icons.picture_as_pdf_outlined, size: 16),
             label: const Text('Export Verified PDF'),
@@ -353,6 +469,19 @@ class _WysiwygTemplateEditorScreenState extends State<WysiwygTemplateEditorScree
               });
             },
           ),
+          const SizedBox(height: 4),
+          Wrap(
+            spacing: 6,
+            runSpacing: 6,
+            children: [
+              _buildSimulatorChip(6, '6 Items (1 Page)'),
+              _buildSimulatorChip(10, '10 Items (1 Page Full)'),
+              _buildSimulatorChip(12, '12 Items (2 Pages)'),
+              _buildSimulatorChip(20, '20 Items (2 Pages)'),
+              _buildSimulatorChip(25, '25 Items (3 Pages)'),
+            ],
+          ),
+          const SizedBox(height: 8),
           SwitchListTile(
             dense: true,
             contentPadding: EdgeInsets.zero,
@@ -377,6 +506,22 @@ class _WysiwygTemplateEditorScreenState extends State<WysiwygTemplateEditorScree
           ),
         ],
       ),
+    );
+  }
+
+  Widget _buildSimulatorChip(int count, String label) {
+    final selected = _simulatedItemCount == count;
+    return ChoiceChip(
+      label: Text(label, style: TextStyle(fontSize: 10.5, fontWeight: selected ? FontWeight.bold : FontWeight.w500)),
+      selected: selected,
+      selectedColor: const Color(0xFFE0F2FE),
+      side: BorderSide(color: selected ? const Color(0xFF0284C7) : const Color(0xFFCBD5E1)),
+      onSelected: (_) {
+        setState(() {
+          _simulatedItemCount = count;
+          _activePageIndex = 0;
+        });
+      },
     );
   }
 
@@ -530,7 +675,7 @@ class _WysiwygTemplateEditorScreenState extends State<WysiwygTemplateEditorScree
           const Text('Signature Placement & Rules', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 13)),
           const SizedBox(height: 8),
           DropdownButtonFormField<SignatureMode>(
-            initialValue: currentMode,
+            value: currentMode,
             decoration: const InputDecoration(
               labelText: 'Signature Mode',
               isDense: true,

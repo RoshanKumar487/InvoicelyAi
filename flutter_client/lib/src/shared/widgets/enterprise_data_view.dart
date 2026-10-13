@@ -150,7 +150,7 @@ class EnterpriseTableColumn<T> {
   final Widget Function(BuildContext context, T item) cellBuilder;
   final double width;
   final bool alignRight;
-  final Comparable? Function(T item)? sortKey;
+  final Comparable<dynamic>? Function(T item)? sortKey;
 }
 
 /// Generic, highly reusable enterprise data view supporting:
@@ -1406,7 +1406,7 @@ class _EnterpriseFilterDialogState extends State<EnterpriseFilterDialog> {
 
   @override
   Widget build(BuildContext context) {
-    final dateFormat = (DateTime dt) => dt.toIso8601String().substring(0, 10);
+    String dateFormat(DateTime dt) => dt.toIso8601String().substring(0, 10);
 
     return Dialog(
       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),

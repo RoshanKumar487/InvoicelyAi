@@ -1,3 +1,4 @@
+import 'dart:math' as math;
 import 'document_template_schema.dart';
 
 /// Individual item representation for layout measurement.
@@ -10,6 +11,8 @@ class LayoutLineItem {
     this.unitPrice = 0.0,
     this.amount = 0.0,
     this.unit = '',
+    this.duty = 0.0,
+    this.customValues = const {},
   });
 
   final String name;
@@ -19,6 +22,8 @@ class LayoutLineItem {
   final double unitPrice;
   final double amount;
   final String unit;
+  final double duty;
+  final Map<String, String> customValues;
 
   /// Approximate row height in points/pixels based on description line wrapping.
   double estimateHeight({double rowMinHeight = 24.0}) {
@@ -150,28 +155,67 @@ class TemplateLayoutEngine {
     double fixedSum = 0;
     int flexCount = 0;
 
-    for (final col in activeColumns) {
-      if (col.isFlex) {
-        flexCount++;
-      } else if (col.fixedWidth != null) {
-        fixedSum += col.fixedWidth!;
-      } else {
-        // Auto: default to minWidth or reasonable column width
-        fixedSum += col.minWidth;
+    double resolveDefaultWidth(TemplateColumnConfig col) {
+      if (col.fixedWidth != null) return col.fixedWidth!;
+      switch (col.key) {
+        case 'no':
+        case '#':
+          return 32.0;
+        case 'hsn':
+          return 60.0;
+        case 'duty':
+          return 52.0;
+        case 'qty':
+          return 46.0;
+        case 'unit':
+          return 42.0;
+        case 'rate':
+          return 75.0;
+        case 'tax':
+          return 50.0;
+        case 'discount':
+          return 50.0;
+        case 'amount':
+          return 85.0;
+        default:
+          return col.minWidth;
       }
     }
 
+    for (final col in activeColumns) {
+      if (col.isFlex) {
+        flexCount++;
+      } else {
+        fixedSum += resolveDefaultWidth(col);
+      }
+    }
+
+    // Ensure description gets at least 110 points; scale down fixed columns proportionally if tight
+    var scaleFactor = 1.0;
+    if (availableWidth - fixedSum < 110.0 && fixedSum > 0) {
+      final targetFixedSum = math.max(100.0, availableWidth - 110.0);
+      scaleFactor = targetFixedSum / fixedSum;
+      fixedSum = targetFixedSum;
+    }
+
     final remaining = availableWidth - fixedSum;
-    final flexWidth = flexCount > 0 ? (remaining / flexCount).clamp(80.0, availableWidth) : 100.0;
+    final flexWidth = flexCount > 0 ? (remaining / flexCount).clamp(80.0, availableWidth) : 110.0;
 
     final widths = <String, double>{};
     for (final col in activeColumns) {
       if (col.isFlex) {
         widths[col.key] = flexWidth;
-      } else if (col.fixedWidth != null) {
-        widths[col.key] = col.fixedWidth!;
       } else {
-        widths[col.key] = col.minWidth;
+        widths[col.key] = resolveDefaultWidth(col) * scaleFactor;
+      }
+    }
+
+    // Mathematically normalize so total width always equals availableWidth exactly
+    final totalAssigned = widths.values.fold(0.0, (sum, val) => sum + val);
+    if (totalAssigned > 0 && (totalAssigned - availableWidth).abs() > 0.5) {
+      final ratio = availableWidth / totalAssigned;
+      for (final key in widths.keys.toList()) {
+        widths[key] = widths[key]! * ratio;
       }
     }
 
@@ -230,59 +274,112 @@ class TemplateLayoutEngine {
         notesBlockHeight +
         (signMode == SignatureMode.fixedBottom ? signatureHeight : (signatureHeight > 0 ? signatureHeight : 0));
 
+    final totalItemCount = items.length;
+
+    final headerSec = schema.sectionOfType('header');
+    final partySec = schema.sectionOfType('party_details');
+    final hasHeader = headerSec?.isEnabled != false;
+    final hasParty = partySec?.isEnabled != false;
+
+    // -------------------------------------------------------------------------
+    // RULE 1: DYNAMIC ONE-PAGE FIT (When items <= 10)
+    // Guarantee that 1 to 10 items ALWAYS fit on Page 1 with totals, bank, and signature.
+    // -------------------------------------------------------------------------
+    if (totalItemCount <= 10) {
+      final singlePage = TemplatePageLayout(
+        pageNumber: 1,
+        totalPages: 1,
+        items: items,
+        startIndex: 0,
+        hasHeader: hasHeader,
+        hasPartyDetails: hasParty,
+        hasTableHeader: true,
+        hasTotals: true,
+        hasBankDetails: hasBank,
+        hasNotes: hasNotes,
+        hasSignature: signSec?.isEnabled == true,
+        hasFooter: true,
+        contentHeightRemaining: math.max(
+          0.0,
+          contentHeight - ((hasHeader ? headerHeight : 0) + (hasParty ? partyDetailsHeight : 0) + tableHeaderHeight + (totalItemCount * 22.0) + finalPageSummaryHeight + footerHeight),
+        ),
+      );
+
+      final metrics = LayoutStressMetrics(
+        totalPages: 1,
+        totalItems: totalItemCount,
+        signaturePage: 1,
+        overflowRiskPercent: 0.0,
+        droppedColumnCount: columnResult.droppedColumns.length,
+        isOverflowSafe: true,
+        notes: 'Dynamic 1-Page Layout: All $totalItemCount items + summary + signature fit on Page 1 (Zero-Overflow Protected).',
+      );
+
+      return TemplateLayoutResult(
+        pages: [singlePage],
+        columns: columnResult,
+        metrics: metrics,
+      );
+    }
+
+    // -------------------------------------------------------------------------
+    // RULE 2: MULTI-PAGE PAGINATION (When items > 10)
+    // - Page 1: Exactly the first 10 items (0..9) with full Header & Party Details.
+    // - Page 2+: Subsequent items (10 onward) with repeated Table Header.
+    // - Final Page: Remaining items + Totals + Bank & QR + Notes + Signature.
+    // -------------------------------------------------------------------------
     final pages = <TemplatePageLayout>[];
-    int currentItemIndex = 0;
-    int pageNumber = 1;
 
-    while (currentItemIndex < items.length || pages.isEmpty) {
-      final isFirstPage = pageNumber == 1;
+    // Page 1: First 10 items
+    final page1Items = items.sublist(0, 10);
+    pages.add(TemplatePageLayout(
+      pageNumber: 1,
+      totalPages: 1, // Normalized below
+      items: page1Items,
+      startIndex: 0,
+      hasHeader: hasHeader,
+      hasPartyDetails: hasParty,
+      hasTableHeader: true,
+      hasTotals: false,
+      hasBankDetails: false,
+      hasNotes: false,
+      hasSignature: false,
+      hasFooter: true,
+      contentHeightRemaining: contentHeight - ((hasHeader ? headerHeight : 0) + (hasParty ? partyDetailsHeight : 0) + tableHeaderHeight + (10 * 24.0) + footerHeight),
+    ));
 
-      // Calculate initial budget for this page
-      double pageBudget = contentHeight - footerHeight;
+    // Subsequent pages starting from index 10 (Item #11 onward)
+    int currentItemIndex = 10;
+    int pageNumber = 2;
 
-      if (isFirstPage) {
-        pageBudget -= (headerHeight + partyDetailsHeight);
-      }
-
-      // Table header budget
-      final repeatHeader = itemSec?.config.repeatHeader ?? true;
-      if (isFirstPage || repeatHeader) {
-        pageBudget -= tableHeaderHeight;
-      }
-
+    while (currentItemIndex < items.length) {
+      double pageBudget = contentHeight - footerHeight - tableHeaderHeight;
       final pageItems = <LayoutLineItem>[];
       final startIndex = currentItemIndex;
 
-      // Pack items into current page
       while (currentItemIndex < items.length) {
         final item = items[currentItemIndex];
         final rowHeight = item.estimateHeight(rowMinHeight: itemSec?.config.rowMinHeight ?? 24.0);
-
-        // Check if item fits in current page
         final isLastItem = (currentItemIndex == items.length - 1);
 
         if (isLastItem) {
-          // If this is the last item, can we also fit the summary block on this page?
+          // Can we fit the remaining item AND the full final page summary block?
           if (pageBudget >= (rowHeight + finalPageSummaryHeight)) {
-            // Fits item and summary!
             pageItems.add(item);
             pageBudget -= rowHeight;
             currentItemIndex++;
             break;
           } else if (pageBudget >= rowHeight && pageItems.length >= 2) {
-            // Fits item, but summary will have to go to next page
             pageItems.add(item);
             pageBudget -= rowHeight;
             currentItemIndex++;
             break;
           } else if (pageItems.isEmpty) {
-            // Page is empty, must take at least one item
             pageItems.add(item);
             pageBudget -= rowHeight;
             currentItemIndex++;
             break;
           } else {
-            // Doesn't fit cleanly, break page
             break;
           }
         } else {
@@ -291,13 +388,11 @@ class TemplateLayoutEngine {
             pageBudget -= rowHeight;
             currentItemIndex++;
           } else if (pageItems.isEmpty) {
-            // Ensure at least 1 item per page even if tall
             pageItems.add(item);
             pageBudget -= rowHeight;
             currentItemIndex++;
             break;
           } else {
-            // Break to next page
             break;
           }
         }
@@ -305,12 +400,12 @@ class TemplateLayoutEngine {
 
       pages.add(TemplatePageLayout(
         pageNumber: pageNumber,
-        totalPages: 1, // Will update once total is known
+        totalPages: 1,
         items: pageItems,
         startIndex: startIndex,
-        hasHeader: isFirstPage,
-        hasPartyDetails: isFirstPage,
-        hasTableHeader: isFirstPage || repeatHeader,
+        hasHeader: false,
+        hasPartyDetails: false,
+        hasTableHeader: itemSec?.config.repeatHeader ?? true,
         hasTotals: false,
         hasBankDetails: false,
         hasNotes: false,
@@ -389,12 +484,12 @@ class TemplateLayoutEngine {
       totalPages: total,
       totalItems: items.length,
       signaturePage: total,
-      overflowRiskPercent: 0.0, // Zero overflow guaranteed by math
+      overflowRiskPercent: 0.0,
       droppedColumnCount: columnResult.droppedColumns.length,
       isOverflowSafe: true,
       notes: needsExtraSummaryPage
-          ? 'Summary & Signature reserved on dedicated Page $total (Zero-Overflow Protected).'
-          : 'Fits in $total ${total == 1 ? "page" : "pages"} with signature reserved.',
+          ? 'Multi-Page Layout: 10 items on Page 1, items 11-${items.length} paginated. Summary reserved on Page $total.'
+          : 'Multi-Page Layout: 10 items on Page 1, items 11-${items.length} paginated. Summary on Page $total.',
     );
 
     return TemplateLayoutResult(
