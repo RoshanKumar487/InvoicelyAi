@@ -1,4 +1,3 @@
-import 'dart:convert';
 import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
@@ -10,11 +9,6 @@ import '../../../shared/widgets/signature_pad_dialog.dart';
 import '../../../shared/widgets/whatsapp_icon.dart';
 import '../../settings/data/settings_repository.dart';
 import '../../templates/data/template_config.dart';
-import '../../templates/data/document_template_schema.dart';
-import '../../templates/data/template_layout_engine.dart';
-import '../../templates/data/wysiwyg_pdf_exporter.dart';
-import '../../templates/presentation/wysiwyg_template_editor_screen.dart';
-import '../../templates/presentation/widgets/wysiwyg_canvas_preview.dart';
 import '../data/invoice.dart';
 import '../data/invoice_docx_export.dart';
 import '../data/invoice_pdf_export.dart';
@@ -186,74 +180,6 @@ class _InvoicePreviewScreenState extends State<InvoicePreviewScreen>
     setState(() => _zoomScale = targetScale);
   }
 
-  bool get _isWysiwyg => _localSettings['useLegacyTemplates'] != true;
-
-  DocumentTemplateSchema _getWysiwygSchema() {
-    final customJson = _localSettings['wysiwyg_custom_template_json']?.toString();
-    if (customJson != null && customJson.trim().isNotEmpty) {
-      try {
-        final map = jsonDecode(customJson) as Map<String, dynamic>;
-        return DocumentTemplateSchema.fromJson(map);
-      } catch (_) {}
-    }
-    return DocumentTemplateSchema.fromSettings(
-      localSettings: _localSettings,
-      templateId: _template?.id,
-      templateName: _template?.name,
-      businessCategory: _activeBusinessCategory,
-      defaultColor: _template?.color,
-      defaultSecondaryColor: _template?.secondaryColor,
-    );
-  }
-
-  TemplateLayoutResult _getWysiwygLayout(DocumentTemplateSchema schema) {
-    final layoutItems = _effectiveInvoice.items.map((it) {
-      return LayoutLineItem(
-        name: it.description,
-        description: it.itemDetails,
-        hsn: '998525',
-        qty: it.quantity,
-        duty: it.dutyCount,
-        unitPrice: it.unitPrice,
-        amount: it.total,
-        unit: it.unit.isNotEmpty ? it.unit : 'Days',
-      );
-    }).toList();
-
-    return TemplateLayoutEngine.computeLayout(
-      schema: schema,
-      items: layoutItems,
-      pageWidth: schema.metadata.pageSize.previewWidth,
-      pageHeight: schema.metadata.pageSize.previewHeight,
-      hasBank: _localSettings['showBankDetails'] != false,
-      hasNotes: _localSettings['showNotes'] != false && _effectiveInvoice.notes.isNotEmpty,
-    );
-  }
-
-  void _openWysiwygStudio() {
-    final currentSchema = _getWysiwygSchema();
-    Navigator.of(context).push(
-      MaterialPageRoute<void>(
-        builder: (ctx) => WysiwygTemplateEditorScreen(
-          initialSchema: currentSchema,
-          onSaveSchema: (newSchema) async {
-            final updated = Map<String, Object?>.from(_localSettings)
-              ..['wysiwyg_custom_template_json'] = jsonEncode(newSchema.toJson())
-              ..['preferredTemplateId'] = 'wysiwyg_dynamic';
-            setState(() {
-              _localSettings = updated;
-              _selectedTemplateId = 'wysiwyg_dynamic';
-            });
-            await widget.onSaveLocalSettings?.call(updated);
-            if (mounted) {
-              _showMessage('✓ WYSIWYG Template JSON saved & applied!');
-            }
-          },
-          onBack: () => Navigator.of(ctx).pop(),
-        ),
-      ),
-    );
-  }
 
   Future<void> _loadProfile() async {
     try {
@@ -267,12 +193,13 @@ class _InvoicePreviewScreenState extends State<InvoicePreviewScreen>
 
   static String _mapPresetAlias(String id) {
     return switch (id) {
+      'security_agency' => 'security_modern',
       'security_gst' => 'security_modern',
       'security-service' => 'security_modern',
-      'wasm_wysiwyg' => 'wysiwyg_dynamic',
       'consulting' => 'consulting_standard',
       'retail' => 'retail_standard',
       'modern' => 'modern_minimal',
+      'gst_service' => 'gst_tax_invoice',
       _ => id,
     };
   }
@@ -294,7 +221,9 @@ class _InvoicePreviewScreenState extends State<InvoicePreviewScreen>
 
     // 2. Company Default / Preferred Template from localSettings
     final prefId = _localSettings['preferredTemplateId']?.toString() ??
-        _localSettings['company_default_template_id']?.toString();
+        _localSettings['company_default_template_id']?.toString() ??
+        _localSettings['templateId']?.toString() ??
+        _localSettings['studio_preset']?.toString();
     if (prefId != null && prefId.isNotEmpty) {
       if (widget.preferredTemplate?.id == prefId) {
         return widget.preferredTemplate;
@@ -476,67 +405,12 @@ class _InvoicePreviewScreenState extends State<InvoicePreviewScreen>
       _invoice.invoiceNumber.replaceAll(RegExp(r'[^A-Za-z0-9_-]'), '_');
 
   Future<Uint8List> _generatePdfBytes() async {
-    if (_isWysiwyg) {
-      final schema = _getWysiwygSchema();
-      final layoutResult = _getWysiwygLayout(schema);
-      return WysiwygPdfExporter.build(
-        schema: schema,
-        layoutResult: layoutResult,
-        companyName: _profile['companyName']?.toString() ??
-            _localSettings['companyName']?.toString() ??
-            'My Company',
-        companyAddress: _profile['address']?.toString() ??
-            _localSettings['companyAddress']?.toString() ??
-            '',
-        companyGstin: _profile['gstin']?.toString() ??
-            _localSettings['companyGst']?.toString() ??
-            '',
-        companyPan: _profile['pan']?.toString() ?? '',
-        clientName: _effectiveInvoice.clientName,
-        clientCompany: _effectiveInvoice.clientCompany,
-        clientAddress: _effectiveInvoice.clientAddress,
-        clientGstin: _effectiveInvoice.clientTaxId,
-        currencySymbol: _activeCurrencySymbol,
-        invoiceNumber: _effectiveInvoice.invoiceNumber,
-        issueDate: _effectiveInvoice.issueDate,
-        dueDate: _effectiveInvoice.dueDate,
-        total: _effectiveInvoice.total,
-        subtotal: _effectiveInvoice.subtotal,
-        tax: _effectiveInvoice.taxAmount,
-        notes: _effectiveInvoice.notes,
-        terms: _effectiveInvoice.terms,
-        bankName: _localSettings['bankName']?.toString() ?? '',
-        accountNumber: _localSettings['bankAccount']?.toString() ?? '',
-        ifsc: _localSettings['bankIfsc']?.toString() ?? '',
-        upiId: _localSettings['bankUpi']?.toString() ?? '',
-        signatureBase64: _localSettings['invoiceSignature']?.toString(),
-        logoBase64: _localSettings['invoiceLogo']?.toString(),
-        showLogo: _localSettings['showLogo'] != false,
-        showBankDetails: _localSettings['showBankDetails'] != false,
-        showNotes: _localSettings['showNotes'] != false,
-        showTerms: _localSettings['showTerms'] != false,
-        showSignature: _localSettings['showSignature'] != false,
-        showDueDate: _localSettings['showDueDate'] == true,
-        showPoNumber: _localSettings['showPoNumber'] == true,
-        showPaymentTerms: _localSettings['showPaymentTerms'] == true,
-        showStatus: _localSettings['showStatus'] == true,
-        showShipping: _localSettings['showShippingSection'] == true,
-        customTitle: _localSettings['customTitle']?.toString() ?? _template?.title,
-        customBillToLabel: _localSettings['customBillToLabel']?.toString() ?? 'BILLED TO',
-        customShipToLabel: _localSettings['customShipToLabel']?.toString() ?? 'DISPATCH & SUPPLY DETAILS',
-        customInvoiceNoLabel: _localSettings['customInvoiceNoLabel']?.toString() ?? 'Invoice #',
-        customDateLabel: _localSettings['customDateLabel']?.toString() ?? 'Issue Date',
-        customDueDateLabel: _localSettings['customDueDateLabel']?.toString() ?? 'Due Date',
-        customPoLabel: _localSettings['customPoLabel']?.toString() ?? 'PO Number',
-      );
-    } else {
-      return InvoicePdfExport.build(
-        _effectiveInvoice,
-        template: _template,
-        localSettings: _localSettings,
-        businessProfile: _profile,
-      );
-    }
+    return InvoicePdfExport.build(
+      _effectiveInvoice,
+      template: _template,
+      localSettings: _localSettings,
+      businessProfile: _profile,
+    );
   }
 
   Future<void> _printPdf() async {
@@ -784,7 +658,6 @@ class _InvoicePreviewScreenState extends State<InvoicePreviewScreen>
       builder: (ctx) => TemplatePickerModal(
         selectedId: _template?.id,
         activeBusinessCategory: _activeBusinessCategory,
-        onOpenWysiwygStudio: _openWysiwygStudio,
         onSelectTemplate: (preset) {
           setState(() {
             _selectedTemplateId = preset.id;
@@ -891,21 +764,6 @@ class _InvoicePreviewScreenState extends State<InvoicePreviewScreen>
           ),
         ),
         actions: [
-          // 0. WYSIWYG STUDIO SHORTCUT (If active, open JSON Studio)
-          if (_isWysiwyg)
-            _buildPillButton(
-              tooltip: 'Edit WYSIWYG Template JSON',
-              backgroundColor:
-                  isDark ? const Color(0xFF1E3A8A) : const Color(0xFFDBEAFE),
-              child: IconButton(
-                icon: const Icon(
-                  Icons.data_object_rounded,
-                  size: 18,
-                  color: Color(0xFF2563EB),
-                ),
-                onPressed: _openWysiwygStudio,
-              ),
-            ),
 
           // 1. SWITCH TEMPLATE (Palette button opening category-wise template studio sheet)
           _buildPillButton(
@@ -990,8 +848,6 @@ class _InvoicePreviewScreenState extends State<InvoicePreviewScreen>
                   _delete();
                 case 'branding':
                   widget.onOpenBusinessSettings?.call();
-                case 'wysiwyg_json':
-                  _openWysiwygStudio();
                 default:
                   if (action.startsWith('status:')) {
                     _changeStatus(action.substring(7));
@@ -999,17 +855,6 @@ class _InvoicePreviewScreenState extends State<InvoicePreviewScreen>
               }
             },
             itemBuilder: (context) => [
-              if (_isWysiwyg) ...[
-                const PopupMenuItem(
-                  value: 'wysiwyg_json',
-                  child: ListTile(
-                    leading: Icon(Icons.data_object_rounded, color: Color(0xFF2563EB)),
-                    title: Text('Edit Template JSON'),
-                    contentPadding: EdgeInsets.zero,
-                  ),
-                ),
-                const PopupMenuDivider(),
-              ],
               const PopupMenuItem(
                 value: 'sign',
                 child: ListTile(
@@ -1252,19 +1097,13 @@ class _InvoicePreviewScreenState extends State<InvoicePreviewScreen>
                             ),
                           ],
 
-                          // A4 PAPER DOCUMENT CARD (WYSIWYG DYNAMIC OR STANDARD ENGINE)
-                          if (_isWysiwyg)
-                            _buildWysiwygCanvas(
-                              invoice: invoice,
-                              isMobile: isMobile,
-                            )
-                          else
-                            _buildA4Paper(
-                              invoice: invoice,
-                              template: template,
-                              templateColor: templateColor,
-                              isMobile: isMobile,
-                            ),
+                          // A4 PAPER DOCUMENT CARD (DESIGNED IN TEMPLATE STUDIO)
+                          _buildA4Paper(
+                            invoice: invoice,
+                            template: template,
+                            templateColor: templateColor,
+                            isMobile: isMobile,
+                          ),
 
                           const SizedBox(height: 140), // generous bottom clearance
                         ],
@@ -1393,81 +1232,6 @@ class _InvoicePreviewScreenState extends State<InvoicePreviewScreen>
       profile: _profile,
       onSignTap: _openDocuHubSigner,
     );
-  }
-
-  Widget _buildWysiwygCanvas({
-    required Invoice invoice,
-    required bool isMobile,
-  }) {
-    final schema = _getWysiwygSchema();
-    final layoutResult = _getWysiwygLayout(schema);
-
-    return WysiwygCanvasPreview(
-      schema: schema,
-      layoutResult: layoutResult,
-      renderAllPagesStacked: true,
-      companyName: _profile['companyName']?.toString() ??
-          _localSettings['companyName']?.toString() ??
-          'My Company',
-      companyAddress: _profile['address']?.toString() ??
-          _localSettings['companyAddress']?.toString() ??
-          '',
-      companyGstin: _profile['gstin']?.toString() ??
-          _localSettings['companyGst']?.toString() ??
-          '',
-      companyPan: _profile['pan']?.toString() ?? '',
-      clientName: invoice.clientName,
-      clientCompany: invoice.clientCompany,
-      clientAddress: invoice.clientAddress,
-      clientGstin: invoice.clientTaxId,
-      currencySymbol: _activeCurrencySymbol,
-      invoiceNumber: invoice.invoiceNumber,
-      issueDate: invoice.issueDate,
-      dueDate: invoice.dueDate,
-      total: invoice.total,
-      subtotal: invoice.subtotal,
-      tax: invoice.taxAmount,
-      notes: invoice.notes,
-      terms: invoice.terms,
-      bankName: _localSettings['bankName']?.toString() ?? '',
-      accountNumber: _localSettings['bankAccount']?.toString() ?? '',
-      ifsc: _localSettings['bankIfsc']?.toString() ?? '',
-      upiId: _localSettings['bankUpi']?.toString() ?? '',
-      signatureBase64: _localSettings['invoiceSignature']?.toString(),
-      logoWidget: _getLogoWidget(height: 45),
-      showLogo: _localSettings['showLogo'] != false,
-      showBankDetails: _localSettings['showBankDetails'] != false,
-      showNotes: _localSettings['showNotes'] != false,
-      showTerms: _localSettings['showTerms'] != false,
-      showSignature: _localSettings['showSignature'] != false,
-      showDueDate: _localSettings['showDueDate'] == true,
-      showPoNumber: _localSettings['showPoNumber'] == true,
-      showPaymentTerms: _localSettings['showPaymentTerms'] == true,
-      showStatus: _localSettings['showStatus'] == true,
-      showShipping: _localSettings['showShippingSection'] == true,
-      customTitle: _localSettings['customTitle']?.toString() ?? _template?.title,
-      customBillToLabel: _localSettings['customBillToLabel']?.toString() ?? 'BILLED TO',
-      customShipToLabel: _localSettings['customShipToLabel']?.toString() ?? 'DISPATCH & SUPPLY DETAILS',
-      customInvoiceNoLabel: _localSettings['customInvoiceNoLabel']?.toString() ?? 'Invoice #',
-      customDateLabel: _localSettings['customDateLabel']?.toString() ?? 'Issue Date',
-      customDueDateLabel: _localSettings['customDueDateLabel']?.toString() ?? 'Due Date',
-      customPoLabel: _localSettings['customPoLabel']?.toString() ?? 'PO Number',
-    );
-  }
-
-  Widget? _getLogoWidget({double height = 45}) {
-    final encoded = _localSettings['invoiceLogo']?.toString() ?? '';
-    if (encoded.isEmpty) return null;
-    try {
-      return Image.memory(
-        base64Decode(encoded),
-        height: height,
-        fit: BoxFit.contain,
-        errorBuilder: (_, __, ___) => const SizedBox.shrink(),
-      );
-    } catch (_) {
-      return null;
-    }
   }
 }
 

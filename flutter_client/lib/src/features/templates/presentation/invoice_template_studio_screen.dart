@@ -87,14 +87,6 @@ class _InvoiceTemplateStudioScreenState
       primaryColor: Color(0xFF1E3A8A),
     ),
     StudioTemplateOption(
-      id: 'wasm_wysiwyg',
-      name: 'WASM / WYSIWYG Interactive Studio',
-      presetKey: 'wasm_wysiwyg',
-      description: 'Dynamic WASM-rendered boxed line items with single-page auto-fit.',
-      primaryColor: Color(0xFF0284C7),
-      isWasm: true,
-    ),
-    StudioTemplateOption(
       id: 'gst_service',
       name: 'Professional GST Service Invoice',
       presetKey: 'gst_service',
@@ -281,10 +273,7 @@ class _InvoiceTemplateStudioScreenState
       _nameController.text = _templateName;
       _primaryColor = matched.primaryColor;
 
-      if (presetKey == 'wasm_wysiwyg') {
-        _tableBorderStyle = 'boxed';
-        _sampleDataset = 'WASM Security & Tech';
-      } else if (presetKey == 'security_agency') {
+      if (presetKey == 'security_agency') {
         _tableBorderStyle = 'boxed';
         _sampleDataset = 'Security Agency (Northstar)';
       } else if (presetKey == 'gst_service') {
@@ -329,8 +318,8 @@ class _InvoiceTemplateStudioScreenState
         category: _activePreset,
         color: '#${_primaryColor.toARGB32().toRadixString(16).padLeft(8, '0').substring(2)}',
         font: _fontFamily,
-        itemHeader: _activePreset == 'security_agency' || _activePreset == 'wasm_wysiwyg' ? 'Particulars' : 'Description',
-        businessCategory: _activePreset == 'security_agency' || _activePreset == 'wasm_wysiwyg' ? 'Security Agency' : 'Corporate Suite',
+        itemHeader: _activePreset == 'security_agency' ? 'Particulars' : 'Description',
+        businessCategory: _activePreset == 'security_agency' ? 'Security Agency' : 'Corporate Suite',
         dutyHeader: 'Duty Days',
         showDuty: true,
         quantityHeader: _activePreset == 'security_agency' ? 'Guards' : 'Qty',
@@ -489,7 +478,7 @@ class _InvoiceTemplateStudioScreenState
       'studio_template_name': _templateName,
       'studio_preset': _activePreset,
       'studio_sections_json': sectionsJson,
-      'businessCategory': _activePreset == 'security_agency' || _activePreset == 'wasm_wysiwyg' ? 'Security Agency' : 'Corporate Suite',
+      'businessCategory': _activePreset == 'security_agency' ? 'Security Agency' : 'Corporate Suite',
       'dutyHeader': 'Duty Days',
       'showDuty': true,
       'preferredTemplateId': _selectedTemplateId,
@@ -1918,12 +1907,10 @@ class _InvoiceTemplateStudioScreenState
                     child: Row(
                       mainAxisSize: MainAxisSize.min,
                       children: [
-                        Icon(
-                          _activePreset == 'wasm_wysiwyg'
-                              ? Icons.view_compact_rounded
-                              : Icons.style_outlined,
+                        const Icon(
+                          Icons.style_outlined,
                           size: 15,
-                          color: const Color(0xFF2563EB),
+                          color: Color(0xFF2563EB),
                         ),
                         const SizedBox(width: 7),
                         ConstrainedBox(
@@ -2632,8 +2619,6 @@ class _InvoiceTemplateStudioScreenState
             children: [
               _buildPresetChip('security_agency', 'Security Agency', Icons.security_rounded),
               const SizedBox(width: 8),
-              _buildPresetChip('wasm_wysiwyg', 'WASM Studio', Icons.view_compact_rounded),
-              const SizedBox(width: 8),
               _buildPresetChip('gst_service', 'GST Service', Icons.apartment_rounded),
               const SizedBox(width: 8),
               _buildPresetChip('consulting', 'Consulting', Icons.person_outline_rounded),
@@ -2981,7 +2966,7 @@ class _InvoiceTemplateStudioScreenState
                                 fit: BoxFit.contain,
                               )
                             : Icon(
-                                _activePreset == 'security_agency' || _activePreset == 'wasm_wysiwyg'
+                                _activePreset == 'security_agency'
                                     ? Icons.shield_rounded
                                     : Icons.business_rounded,
                                 size: 28 * _fontScale,
@@ -2996,7 +2981,7 @@ class _InvoiceTemplateStudioScreenState
                     children: [
                       if (_isFieldVisible(brandingSection, 'f_biz_name'))
                         Text(
-                          _activePreset == 'security_agency' || _activePreset == 'wasm_wysiwyg'
+                          _activePreset == 'security_agency'
                               ? (_uppercaseHeadings ? 'NORTHSTAR' : 'Northstar')
                               : (_uppercaseHeadings ? 'ENTERPRISE TECH' : 'Enterprise Tech'),
                           style: _docStyle(
@@ -3007,7 +2992,7 @@ class _InvoiceTemplateStudioScreenState
                           ),
                         ),
                       Text(
-                        _activePreset == 'security_agency' || _activePreset == 'wasm_wysiwyg'
+                        _activePreset == 'security_agency'
                             ? (_uppercaseHeadings ? 'SECURITY SERVICES' : 'Security Services')
                             : (_uppercaseHeadings ? 'SOLUTIONS & SERVICES' : 'Solutions & Services'),
                         style: _docStyle(
@@ -3430,20 +3415,7 @@ class _InvoiceTemplateStudioScreenState
     final List<({String label, int flex, TextAlign align})> columns;
     final List<List<String>> rows;
 
-    if (_activePreset == 'wasm_wysiwyg') {
-      columns = [
-        (label: 'Particulars', flex: 5, align: TextAlign.left),
-        (label: 'Qty', flex: 2, align: TextAlign.center),
-        (label: 'Duty', flex: 2, align: TextAlign.center),
-        (label: 'Rate (₹)', flex: 3, align: TextAlign.right),
-        (label: 'Total (₹)', flex: 3, align: TextAlign.right),
-      ];
-      rows = [
-        ['Security Guard (12-hour shift)', '4', '26', '2,150.00', '2,23,600.00'],
-        ['Armed Guard (12-hour shift)', '2', '26', '2,850.00', '1,48,200.00'],
-        ['Security Supervisor (Day shift)', '1', '26', '3,200.00', '83,200.00'],
-      ];
-    } else if (_activePreset == 'gst_service') {
+    if (_activePreset == 'gst_service') {
       columns = [
         (label: 'Service Description & Scope', flex: 5, align: TextAlign.left),
         (label: 'SAC Code', flex: 2, align: TextAlign.center),

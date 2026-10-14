@@ -64,8 +64,6 @@ class TemplateConfig {
   final bool showSignature;
   final String footer;
 
-  bool get isWysiwyg => id == 'wysiwyg_dynamic';
-
   Map<String, Object?> toJson() => {
         'id': id,
         'name': name,
@@ -219,33 +217,6 @@ String _requiredString(Map<String, dynamic> json, String key) {
 }
 
 const templatePresets = <TemplateConfig>[
-  // ===========================================================================
-  // 0. DYNAMIC WYSIWYG (DECLARATIVE JSON AUTO-FIT ENGINE)
-  // ===========================================================================
-  TemplateConfig(
-    id: 'wysiwyg_dynamic',
-    name: 'WYSIWYG Dynamic (JSON Engine)',
-    title: 'TAX INVOICE',
-    category: 'WYSIWYG',
-    businessCategory: 'Corporate Suite',
-    designStyle: 'Smart',
-    color: '#2563EB',
-    secondaryColor: '#3B82F6',
-    font: 'Inter',
-    itemHeader: 'Item Description',
-    quantityHeader: 'Qty',
-    rateHeader: 'Rate',
-    amountHeader: 'Amount',
-    showDuty: false,
-    showQrCode: true,
-    showSignature: true,
-    showBankDetails: true,
-    showNotes: true,
-    showTerms: true,
-    headerLayout: 'modern',
-    tableStyle: 'clean',
-  ),
-
   // ===========================================================================
   // 1. SECURITY AGENCY & GUARDS PRESETS (6 Distinct Market Styles)
   // ===========================================================================

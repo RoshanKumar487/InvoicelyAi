@@ -759,69 +759,8 @@ class _DashboardHeader extends StatelessWidget {
 
     return Row(
       children: [
-        // 1. Hamburger Menu Button
-        InkWell(
-          onTap: onMenuTap,
-          borderRadius: BorderRadius.circular(10),
-          child: Container(
-            width: 38,
-            height: 38,
-            decoration: BoxDecoration(
-              color: const Color(0xFFF8FAFC),
-              borderRadius: BorderRadius.circular(10),
-              border: Border.all(color: const Color(0xFFE2E8F0)),
-            ),
-            child: const Icon(
-              Icons.menu_rounded,
-              color: Color(0xFF0F172A),
-              size: 22,
-            ),
-          ),
-        ),
-        const SizedBox(width: 12),
-
-        // 2. App Logo (Purple gradient box + Invoicely AI text)
-        Container(
-          width: 34,
-          height: 34,
-          decoration: BoxDecoration(
-            gradient: const LinearGradient(
-              colors: [Color(0xFF6366F1), Color(0xFF8B5CF6)],
-              begin: Alignment.topLeft,
-              end: Alignment.bottomRight,
-            ),
-            borderRadius: BorderRadius.circular(10),
-            boxShadow: [
-              BoxShadow(
-                color: const Color(0xFF8B5CF6).withValues(alpha: 0.3),
-                blurRadius: 6,
-                offset: const Offset(0, 2),
-              ),
-            ],
-          ),
-          child: const Center(
-            child: Icon(
-              Icons.auto_awesome_rounded,
-              color: Colors.white,
-              size: 18,
-            ),
-          ),
-        ),
-        const SizedBox(width: 10),
-        const Text(
-          'Invoicely AI',
-          style: TextStyle(
-            fontSize: 18,
-            fontWeight: FontWeight.w800,
-            color: Color(0xFF0F172A),
-            letterSpacing: -0.4,
-          ),
-        ),
-
-        const Spacer(),
-
-        // Desktop Search Bar
         if (isDesktop) ...[
+          const Spacer(),
           Container(
             height: 38,
             width: 240,
@@ -852,6 +791,31 @@ class _DashboardHeader extends StatelessWidget {
             icon: const Icon(Icons.refresh_rounded, size: 20, color: Color(0xFF64748B)),
           ),
           const SizedBox(width: 4),
+        ] else ...[
+          Expanded(
+            child: Container(
+              height: 38,
+              decoration: BoxDecoration(
+                color: const Color(0xFFF8FAFC),
+                borderRadius: BorderRadius.circular(10),
+                border: Border.all(color: const Color(0xFFE2E8F0)),
+              ),
+              child: TextField(
+                controller: searchController,
+                onChanged: onSearchChanged,
+                style: const TextStyle(fontSize: 13),
+                decoration: const InputDecoration(
+                  hintText: 'Search anything...',
+                  hintStyle: TextStyle(fontSize: 12, color: Color(0xFF94A3B8)),
+                  prefixIcon: Icon(Icons.search_rounded, size: 18, color: Color(0xFF94A3B8)),
+                  border: InputBorder.none,
+                  isDense: true,
+                  contentPadding: EdgeInsets.symmetric(vertical: 9),
+                ),
+              ),
+            ),
+          ),
+          const SizedBox(width: 8),
         ],
 
         // 3. Notification Bell with unread dot

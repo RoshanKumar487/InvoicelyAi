@@ -32,7 +32,6 @@ enum _Destination {
   invoices('Invoices', Icons.receipt_long_outlined),
   aiAgent('AI Agent', Icons.auto_awesome_outlined),
   expenses('Expenses', Icons.payments_outlined),
-  templates('Templates', Icons.auto_awesome_mosaic_outlined),
   menu('More', Icons.menu);
 
   const _Destination(this.label, this.icon);
@@ -191,7 +190,26 @@ class _AppShellState extends State<AppShell> {
         },
         child: Scaffold(
           body: page,
-          bottomNavigationBar: showBottomBar ? _buildMobileBottomBar() : null,
+          bottomNavigationBar: showBottomBar
+              ? NavigationBar(
+                  selectedIndex: _destination.index,
+                  onDestinationSelected: (index) => setState(() {
+                    _destination = _Destination.values[index];
+                    _moreSection = null;
+                    _invoiceFullscreen = false;
+                    if (_destination == _Destination.invoices) {
+                      _invoiceStatusFilter = 'All';
+                    }
+                  }),
+                  destinations: [
+                    for (final item in _Destination.values)
+                      NavigationDestination(
+                        icon: Icon(item.icon),
+                        label: item.label,
+                      ),
+                  ],
+                )
+              : null,
         ),
       );
     }
@@ -294,10 +312,7 @@ class _AppShellState extends State<AppShell> {
           onOpenAiChat: () => setState(
             () => _destination = _Destination.aiAgent,
           ),
-          onOpenTemplates: () => setState(() {
-            _destination = _Destination.templates;
-            _moreSection = null;
-          }),
+          onOpenTemplates: () => _openMoreSection('Invoice & Template Studio'),
           onOpenPayroll: () => _openMoreSection('Payroll & Disbursals'),
           onOpenAuditLogs: () => _openMoreSection('Audit Logs'),
         ),
@@ -318,14 +333,6 @@ class _AppShellState extends State<AppShell> {
               '${widget.session.company?.id ?? widget.session.user.companyId ?? widget.session.user.email}:${widget.session.user.email.toLowerCase()}',
         ),
       _Destination.expenses => _buildExpenses(),
-      _Destination.templates => InvoiceTemplateStudioScreen(
-          apiClient: widget.apiClient,
-          initialConfig: _preferredTemplate,
-          initialLocalSettings: _invoiceLocalSettings,
-          onSaveLocalSettings: _saveInvoiceSettings,
-          onSaveTemplate: _saveTemplate,
-          onBack: () => setState(() => _destination = _Destination.dashboard),
-        ),
       _Destination.menu => _buildMorePage(),
     };
   }
@@ -426,269 +433,6 @@ class _AppShellState extends State<AppShell> {
         repository: ExpensesRepository(apiClient: widget.apiClient),
         initialLocalSettings: _invoiceLocalSettings,
       );
-
-  Widget _buildMobileBottomBar() {
-    const activeColor = Color(0xFF2563EB);
-    const inactiveColor = Color(0xFF64748B);
-
-    return Container(
-      decoration: const BoxDecoration(
-        color: Colors.white,
-        border: Border(top: BorderSide(color: Color(0xFFE2E8F0))),
-        boxShadow: [
-          BoxShadow(
-            color: Color(0x08000000),
-            blurRadius: 10,
-            offset: Offset(0, -2),
-          ),
-        ],
-      ),
-      child: SafeArea(
-        top: false,
-        child: SizedBox(
-          height: 60,
-          child: Row(
-            mainAxisAlignment: MainAxisAlignment.spaceAround,
-            children: [
-              // 1. Invoices
-              _buildBottomNavItem(
-                icon: Icons.description_outlined,
-                isSelected: _destination == _Destination.invoices,
-                activeColor: activeColor,
-                inactiveColor: inactiveColor,
-                onTap: () => setState(() {
-                  _destination = _Destination.invoices;
-                  _moreSection = null;
-                  _invoiceStatusFilter = 'All';
-                }),
-              ),
-
-              // 2. Center Prominent Plus Button
-              GestureDetector(
-                onTap: _showQuickCreateSheet,
-                child: Container(
-                  width: 44,
-                  height: 44,
-                  decoration: BoxDecoration(
-                    color: const Color(0xFF2563EB),
-                    shape: BoxShape.circle,
-                    boxShadow: [
-                      BoxShadow(
-                        color: const Color(0xFF2563EB).withValues(alpha: 0.35),
-                        blurRadius: 8,
-                        offset: const Offset(0, 3),
-                      ),
-                    ],
-                  ),
-                  child: const Center(
-                    child: Icon(Icons.add_rounded, color: Colors.white, size: 26),
-                  ),
-                ),
-              ),
-
-              // 3. Clients
-              _buildBottomNavItem(
-                icon: Icons.people_outline_rounded,
-                isSelected: _destination == _Destination.menu && _moreSection == 'Clients',
-                activeColor: activeColor,
-                inactiveColor: inactiveColor,
-                onTap: () => setState(() {
-                  _destination = _Destination.menu;
-                  _moreSection = 'Clients';
-                }),
-              ),
-
-              // 4. More / Grid
-              _buildBottomNavItem(
-                icon: Icons.grid_view_rounded,
-                isSelected: _destination == _Destination.menu && _moreSection != 'Clients',
-                activeColor: activeColor,
-                inactiveColor: inactiveColor,
-                onTap: () => setState(() {
-                  _destination = _Destination.menu;
-                  _moreSection = null;
-                }),
-              ),
-            ],
-          ),
-        ),
-      ),
-    );
-  }
-
-  Widget _buildBottomNavItem({
-    required IconData icon,
-    required bool isSelected,
-    required Color activeColor,
-    required Color inactiveColor,
-    required VoidCallback onTap,
-  }) {
-    return InkWell(
-      onTap: onTap,
-      borderRadius: BorderRadius.circular(10),
-      child: Container(
-        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Icon(
-              icon,
-              size: 24,
-              color: isSelected ? activeColor : inactiveColor,
-            ),
-            const SizedBox(height: 3),
-            if (isSelected)
-              Container(
-                width: 4,
-                height: 4,
-                decoration: BoxDecoration(
-                  color: activeColor,
-                  shape: BoxShape.circle,
-                ),
-              )
-            else
-              const SizedBox(height: 4),
-          ],
-        ),
-      ),
-    );
-  }
-
-  void _showQuickCreateSheet() {
-    showModalBottomSheet<void>(
-      context: context,
-      backgroundColor: Colors.transparent,
-      builder: (ctx) => Container(
-        padding: const EdgeInsets.fromLTRB(20, 16, 20, 24),
-        decoration: const BoxDecoration(
-          color: Colors.white,
-          borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
-        ),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Center(
-              child: Container(
-                width: 36,
-                height: 4,
-                decoration: BoxDecoration(
-                  color: const Color(0xFFCBD5E1),
-                  borderRadius: BorderRadius.circular(2),
-                ),
-              ),
-            ),
-            const SizedBox(height: 16),
-            const Text(
-              'Quick Create',
-              style: TextStyle(fontSize: 17, fontWeight: FontWeight.w800, color: Color(0xFF0F172A)),
-            ),
-            const SizedBox(height: 14),
-            _quickActionTile(
-              icon: Icons.receipt_long_rounded,
-              iconColor: const Color(0xFF2563EB),
-              iconBg: const Color(0xFFEFF6FF),
-              title: 'Create Invoice',
-              subtitle: 'Draft a new client invoice or quotation',
-              onTap: () {
-                Navigator.of(ctx).pop();
-                setState(() {
-                  _destination = _Destination.invoices;
-                  _invoiceStatusFilter = 'All';
-                });
-              },
-            ),
-            const SizedBox(height: 8),
-            _quickActionTile(
-              icon: Icons.payments_outlined,
-              iconColor: const Color(0xFF16A34A),
-              iconBg: const Color(0xFFDCFCE7),
-              title: 'Record Expense',
-              subtitle: 'Add a business receipt or operational expense',
-              onTap: () {
-                Navigator.of(ctx).pop();
-                setState(() => _destination = _Destination.expenses);
-              },
-            ),
-            const SizedBox(height: 8),
-            _quickActionTile(
-              icon: Icons.person_add_alt_1_rounded,
-              iconColor: const Color(0xFF0284C7),
-              iconBg: const Color(0xFFE0F2FE),
-              title: 'Add New Client',
-              subtitle: 'Register customer details, GSTIN and billing address',
-              onTap: () {
-                Navigator.of(ctx).pop();
-                setState(() {
-                  _destination = _Destination.menu;
-                  _moreSection = 'Clients';
-                });
-              },
-            ),
-            const SizedBox(height: 8),
-            _quickActionTile(
-              icon: Icons.badge_outlined,
-              iconColor: const Color(0xFF7C3AED),
-              iconBg: const Color(0xFFF3E8FF),
-              title: 'Add Employee / Staff',
-              subtitle: 'Onboard guard, supervisor, or field personnel',
-              onTap: () {
-                Navigator.of(ctx).pop();
-                _openMoreSection('Employee management');
-              },
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-
-  Widget _quickActionTile({
-    required IconData icon,
-    required Color iconColor,
-    required Color iconBg,
-    required String title,
-    required String subtitle,
-    required VoidCallback onTap,
-  }) {
-    return InkWell(
-      onTap: onTap,
-      borderRadius: BorderRadius.circular(12),
-      child: Container(
-        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
-        decoration: BoxDecoration(
-          color: const Color(0xFFF8FAFC),
-          borderRadius: BorderRadius.circular(12),
-          border: Border.all(color: const Color(0xFFE2E8F0)),
-        ),
-        child: Row(
-          children: [
-            Container(
-              width: 38,
-              height: 38,
-              decoration: BoxDecoration(
-                color: iconBg,
-                borderRadius: BorderRadius.circular(10),
-              ),
-              child: Icon(icon, color: iconColor, size: 20),
-            ),
-            const SizedBox(width: 12),
-            Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(title, style: const TextStyle(fontSize: 13.5, fontWeight: FontWeight.w700, color: Color(0xFF0F172A))),
-                  const SizedBox(height: 1),
-                  Text(subtitle, style: const TextStyle(fontSize: 11, color: Color(0xFF64748B))),
-                ],
-              ),
-            ),
-            const Icon(Icons.chevron_right_rounded, color: Color(0xFF94A3B8), size: 18),
-          ],
-        ),
-      ),
-    );
-  }
 }
 
 class _MoreMenu extends StatelessWidget {

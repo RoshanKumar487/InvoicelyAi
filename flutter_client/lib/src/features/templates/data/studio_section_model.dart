@@ -239,11 +239,9 @@ class StudioSection {
       // 4. Services & Duty
       StudioSection(
         id: 'sec_services',
-        title: preset == 'wasm_wysiwyg' ? 'Line Items & Duty (WASM)' : 'Services & Duty',
-        subtitle: preset == 'wasm_wysiwyg'
-            ? 'Boxed line items: Qty, Duty, Rate & Total calculated per duty'
-            : 'Guard details, duty days, shifts and service location',
-        icon: preset == 'wasm_wysiwyg' ? Icons.view_compact_rounded : Icons.shield_outlined,
+        title: 'Services & Duty',
+        subtitle: 'Guard details, duty days, shifts and service location',
+        icon: Icons.shield_outlined,
         enabled: true,
         fields: [
           StudioField(id: 'f_srv_loc', label: 'Service Location', type: StudioFieldType.text, isRequired: true, isVisible: true, defaultValue: 'Tech Park, Whitefield, Bengaluru, Karnataka - 560066'),
