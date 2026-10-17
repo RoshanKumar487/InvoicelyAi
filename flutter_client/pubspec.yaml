@@ -22,6 +22,7 @@ dependencies:
   share_plus: ^12.0.2
   shared_preferences: ^2.2.0
   speech_to_text: ^7.0.0
+  flutter_tts: ^4.2.2
   url_launcher: ^6.3.2
 
 dev_dependencies:
