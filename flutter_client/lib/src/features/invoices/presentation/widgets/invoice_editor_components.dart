@@ -183,14 +183,36 @@ class TotalsPreview extends StatelessWidget {
                   ),
                 ),
                 const SizedBox(height: 6),
-                if (invoice.isRcm)
+                if (invoice.isRcm) ...[
                   TotalLine(
                     label: 'Reverse Charge (RCM)',
                     value: '${_symbol}0.00',
                     badgeText: 'Payable by Recipient',
                     badgeColor: const Color(0xFFFEF3C7),
                     valueColor: const Color(0xFFB45309),
-                  )
+                  ),
+                  Container(
+                    margin: const EdgeInsets.symmetric(vertical: 4),
+                    padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                    decoration: BoxDecoration(
+                      color: const Color(0xFFFFFBEB),
+                      borderRadius: BorderRadius.circular(8),
+                      border: Border.all(color: const Color(0xFFFDE68A)),
+                    ),
+                    child: const Row(
+                      children: [
+                        Icon(Icons.info_outline_rounded, size: 14, color: Color(0xFFD97706)),
+                        SizedBox(width: 6),
+                        Expanded(
+                          child: Text(
+                            'Tax is payable directly to government by recipient (RCM Sec 9(3)/9(4)). Supplier invoice total excludes tax collection.',
+                            style: TextStyle(fontSize: 10.5, fontWeight: FontWeight.w600, color: Color(0xFF92400E)),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ]
                 else if (isGst) ...[
                   TotalLine(
                     label: 'CGST (${_num(halfTaxRate)}%)',
@@ -280,9 +302,11 @@ class TotalsPreview extends StatelessWidget {
                           ),
                           const SizedBox(height: 2),
                           Text(
-                            invoice.isTaxInclusive
-                                ? 'Inclusive of all applicable taxes'
-                                : 'Inclusive of ${invoice.taxLabel} (${_num(invoice.taxRate)}%)',
+                            invoice.isRcm
+                                ? 'Reverse Charge: GST payable by Recipient'
+                                : (invoice.isTaxInclusive
+                                    ? 'Inclusive of all applicable taxes'
+                                    : 'Inclusive of ${invoice.taxLabel} (${_num(invoice.taxRate)}%)'),
                             style: const TextStyle(
                               color: Color(0xFF93C5FD),
                               fontSize: 11,

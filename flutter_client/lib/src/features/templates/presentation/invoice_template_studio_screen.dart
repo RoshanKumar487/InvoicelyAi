@@ -17,8 +17,12 @@ import '../../invoices/data/invoice_pdf_export.dart';
 import '../data/company_letterhead.dart';
 import '../data/studio_section_model.dart';
 import '../data/template_config.dart';
+import 'widgets/company_letterhead_studio_card.dart';
 import 'widgets/formula_builder_popup.dart';
 import 'widgets/invoice_section_accordion.dart';
+import 'widgets/studio_field_dialogs.dart';
+import 'widgets/studio_style_dialogs.dart';
+import 'widgets/studio_template_selector_dialog.dart';
 
 class InvoiceTemplateStudioScreen extends StatefulWidget {
   const InvoiceTemplateStudioScreen({
@@ -41,24 +45,6 @@ class InvoiceTemplateStudioScreen extends StatefulWidget {
   @override
   State<InvoiceTemplateStudioScreen> createState() =>
       _InvoiceTemplateStudioScreenState();
-}
-
-class StudioTemplateOption {
-  const StudioTemplateOption({
-    required this.id,
-    required this.name,
-    required this.presetKey,
-    required this.description,
-    required this.primaryColor,
-    this.isWasm = false,
-  });
-
-  final String id;
-  final String name;
-  final String presetKey;
-  final String description;
-  final Color primaryColor;
-  final bool isWasm;
 }
 
 class _InvoiceTemplateStudioScreenState
@@ -158,6 +144,7 @@ class _InvoiceTemplateStudioScreenState
   // Automatic Daily Wage & Formula Calculation State
   String _itemCalculationFormula = 'monthly_salary_30';
   double _standardDutyDays = 30.0;
+  bool _isRcmApplicable = false;
 
   // Organization & Audit Metadata (Backend Persistence)
   String _orgCode = '';
@@ -477,6 +464,7 @@ class _InvoiceTemplateStudioScreenState
     if (formula != null && formula.isNotEmpty) _itemCalculationFormula = formula;
     final stdDays = double.tryParse(map['standardDutyDays']?.toString() ?? '');
     if (stdDays != null && stdDays > 0) _standardDutyDays = stdDays;
+    if (map['isRcmApplicable'] != null) _isRcmApplicable = map['isRcmApplicable'] == true;
 
     final sectionsRaw = map['studio_sections_json'];
     if (sectionsRaw is String && sectionsRaw.isNotEmpty) {
@@ -978,6 +966,7 @@ class _InvoiceTemplateStudioScreenState
       'letterhead_cin': _letterheadCin,
       'itemCalculationFormula': _itemCalculationFormula,
       'standardDutyDays': _standardDutyDays.toString(),
+      'isRcmApplicable': _isRcmApplicable,
     };
     widget.onSaveLocalSettings?.call(data);
     await _localPreferences.writeString('sections_cache', sectionsJson);
@@ -1176,312 +1165,31 @@ class _InvoiceTemplateStudioScreenState
   }
 
   void _showAddFieldDialog(StudioSection section) {
-    final labelCtrl = TextEditingController();
-    final defaultValCtrl = TextEditingController();
-    final formulaCtrl = TextEditingController();
-    StudioFieldType selectedType = StudioFieldType.text;
-    bool isRequired = false;
-
-    showDialog<void>(
-      context: context,
-      builder: (ctx) => StatefulBuilder(
-        builder: (context, setDlgState) => AlertDialog(
-          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-          title: Row(
-            children: [
-              const Icon(Icons.add_circle_outline, color: Color(0xFF2563EB)),
-              const SizedBox(width: 8),
-              Expanded(
-                child: Text('Add Custom Field to "${section.title}"',
-                    style: const TextStyle(fontSize: 15.5, fontWeight: FontWeight.bold)),
-              ),
-            ],
-          ),
-          content: SingleChildScrollView(
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                const Text('Field Label *', style: TextStyle(fontWeight: FontWeight.w600, fontSize: 13)),
-                const SizedBox(height: 6),
-                TextField(
-                  controller: labelCtrl,
-                  decoration: InputDecoration(
-                    hintText: 'e.g. Supervisor Name, Allowance, Shift Bonus',
-                    isDense: true,
-                    border: OutlineInputBorder(borderRadius: BorderRadius.circular(8)),
-                  ),
-                ),
-                const SizedBox(height: 14),
-                const Text('Field Type', style: TextStyle(fontWeight: FontWeight.w600, fontSize: 13)),
-                const SizedBox(height: 6),
-                DropdownButtonFormField<StudioFieldType>(
-                  value: selectedType,
-                  decoration: InputDecoration(
-                    isDense: true,
-                    border: OutlineInputBorder(borderRadius: BorderRadius.circular(8)),
-                  ),
-                  items: StudioFieldType.values.map((t) {
-                    return DropdownMenuItem(
-                      value: t,
-                      child: Row(
-                        children: [
-                          Icon(t.icon, size: 16, color: const Color(0xFF475569)),
-                          const SizedBox(width: 8),
-                          Text(t.label),
-                        ],
-                      ),
-                    );
-                  }).toList(),
-                  onChanged: (val) {
-                    if (val != null) setDlgState(() => selectedType = val);
-                  },
-                ),
-                const SizedBox(height: 14),
-                const Text('Default Value (Optional)', style: TextStyle(fontWeight: FontWeight.w600, fontSize: 13)),
-                const SizedBox(height: 6),
-                TextField(
-                  controller: defaultValCtrl,
-                  decoration: InputDecoration(
-                    hintText: 'Initial value',
-                    isDense: true,
-                    border: OutlineInputBorder(borderRadius: BorderRadius.circular(8)),
-                  ),
-                ),
-                const SizedBox(height: 14),
-                const Text('Auto-Calculation Formula (Optional)', style: TextStyle(fontWeight: FontWeight.w600, fontSize: 13)),
-                const SizedBox(height: 6),
-                Row(
-                  children: [
-                    Expanded(
-                      child: TextField(
-                        controller: formulaCtrl,
-                        decoration: InputDecoration(
-                          hintText: 'e.g. (Monthly Rate ÷ 30) × Qty × Duty',
-                          isDense: true,
-                          prefixIcon: const Icon(Icons.functions_rounded, size: 16, color: Color(0xFF2563EB)),
-                          border: OutlineInputBorder(borderRadius: BorderRadius.circular(8)),
-                        ),
-                      ),
-                    ),
-                    const SizedBox(width: 6),
-                    IconButton.filledTonal(
-                      tooltip: 'Open Formula Builder Popup',
-                      icon: const Icon(Icons.functions_rounded, size: 18, color: Color(0xFF1D4ED8)),
-                      onPressed: () async {
-                        final res = await FormulaBuilderPopup.show(
-                          context,
-                          targetTitle: labelCtrl.text.trim().isNotEmpty
-                              ? labelCtrl.text.trim()
-                              : 'New Custom Field',
-                          initialFormulaCode: _itemCalculationFormula,
-                          initialExpression: formulaCtrl.text.trim(),
-                          initialStandardDays: _standardDutyDays,
-                        );
-                        if (res != null) {
-                          setDlgState(() {
-                            formulaCtrl.text = res.formulaExpression;
-                            _itemCalculationFormula = res.formulaCode;
-                            _standardDutyDays = res.standardDutyDays;
-                          });
-                        }
-                      },
-                    ),
-                  ],
-                ),
-                const SizedBox(height: 10),
-                SwitchListTile(
-                  contentPadding: EdgeInsets.zero,
-                  title: const Text('Required Field', style: TextStyle(fontSize: 13, fontWeight: FontWeight.w600)),
-                  value: isRequired,
-                  activeColor: const Color(0xFF2563EB),
-                  onChanged: (val) => setDlgState(() => isRequired = val),
-                ),
-              ],
-            ),
-          ),
-          actions: [
-            TextButton(
-              onPressed: () => Navigator.of(ctx).pop(),
-              child: const Text('Cancel'),
-            ),
-            ElevatedButton(
-              style: ElevatedButton.styleFrom(
-                backgroundColor: const Color(0xFF2563EB),
-                foregroundColor: Colors.white,
-                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
-              ),
-              onPressed: () {
-                final label = labelCtrl.text.trim();
-                if (label.isEmpty) return;
-                setState(() {
-                  section.fields.add(
-                    StudioField(
-                      id: 'fld_${DateTime.now().microsecondsSinceEpoch}',
-                      label: label,
-                      type: selectedType,
-                      isRequired: isRequired,
-                      isVisible: true,
-                      defaultValue: defaultValCtrl.text.trim(),
-                      formula: formulaCtrl.text.trim(),
-                    ),
-                  );
-                  _markSaved();
-                });
-                Navigator.of(ctx).pop();
-              },
-              child: const Text('Add Field'),
-            ),
-          ],
-        ),
-      ),
+    StudioAddFieldDialog.show(
+      context,
+      section: section,
+      initialFormulaCode: _itemCalculationFormula,
+      initialStandardDays: _standardDutyDays,
+      onFieldAdded: (newField) {
+        setState(() {
+          section.fields.add(newField);
+          _markSaved();
+        });
+      },
     );
   }
 
   void _showEditFieldDialog(StudioSection section, StudioField field) {
-    final labelCtrl = TextEditingController(text: field.label);
-    final defaultValCtrl = TextEditingController(text: field.defaultValue);
-    final formulaCtrl = TextEditingController(text: field.formula);
-    StudioFieldType selectedType = field.type;
-    bool isRequired = field.isRequired;
-
-    showDialog<void>(
-      context: context,
-      builder: (ctx) => StatefulBuilder(
-        builder: (context, setDlgState) => AlertDialog(
-          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-          title: Text('Edit Field "${field.label}"',
-              style: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold)),
-          content: SingleChildScrollView(
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                const Text('Field Label', style: TextStyle(fontWeight: FontWeight.w600, fontSize: 13)),
-                const SizedBox(height: 6),
-                TextField(
-                  controller: labelCtrl,
-                  decoration: InputDecoration(
-                    isDense: true,
-                    border: OutlineInputBorder(borderRadius: BorderRadius.circular(8)),
-                  ),
-                ),
-                const SizedBox(height: 14),
-                const Text('Field Type', style: TextStyle(fontWeight: FontWeight.w600, fontSize: 13)),
-                const SizedBox(height: 6),
-                DropdownButtonFormField<StudioFieldType>(
-                  value: selectedType,
-                  decoration: InputDecoration(
-                    isDense: true,
-                    border: OutlineInputBorder(borderRadius: BorderRadius.circular(8)),
-                  ),
-                  items: StudioFieldType.values.map((t) {
-                    return DropdownMenuItem(
-                      value: t,
-                      child: Row(
-                        children: [
-                          Icon(t.icon, size: 16, color: const Color(0xFF475569)),
-                          const SizedBox(width: 8),
-                          Text(t.label),
-                        ],
-                      ),
-                    );
-                  }).toList(),
-                  onChanged: (val) {
-                    if (val != null) setDlgState(() => selectedType = val);
-                  },
-                ),
-                const SizedBox(height: 14),
-                const Text('Default Value', style: TextStyle(fontWeight: FontWeight.w600, fontSize: 13)),
-                const SizedBox(height: 6),
-                TextField(
-                  controller: defaultValCtrl,
-                  decoration: InputDecoration(
-                    isDense: true,
-                    border: OutlineInputBorder(borderRadius: BorderRadius.circular(8)),
-                  ),
-                ),
-                const SizedBox(height: 14),
-                const Text('Formula / Auto-Calculation', style: TextStyle(fontWeight: FontWeight.w600, fontSize: 13)),
-                const SizedBox(height: 6),
-                Row(
-                  children: [
-                    Expanded(
-                      child: TextField(
-                        controller: formulaCtrl,
-                        decoration: InputDecoration(
-                          hintText: 'e.g. (Monthly Rate ÷ 30) × Qty × Duty',
-                          isDense: true,
-                          prefixIcon: const Icon(Icons.functions_rounded, size: 16, color: Color(0xFF2563EB)),
-                          border: OutlineInputBorder(borderRadius: BorderRadius.circular(8)),
-                        ),
-                      ),
-                    ),
-                    const SizedBox(width: 6),
-                    IconButton.filledTonal(
-                      tooltip: 'Configure Formula in Popup',
-                      icon: const Icon(Icons.functions_rounded, size: 18, color: Color(0xFF1D4ED8)),
-                      onPressed: () async {
-                        final res = await FormulaBuilderPopup.show(
-                          context,
-                          targetTitle: labelCtrl.text.trim().isNotEmpty
-                              ? labelCtrl.text.trim()
-                              : field.label,
-                          initialFormulaCode: _itemCalculationFormula,
-                          initialExpression: formulaCtrl.text.trim(),
-                          initialStandardDays: _standardDutyDays,
-                        );
-                        if (res != null) {
-                          setDlgState(() {
-                            formulaCtrl.text = res.formulaExpression;
-                            _itemCalculationFormula = res.formulaCode;
-                            _standardDutyDays = res.standardDutyDays;
-                          });
-                        }
-                      },
-                    ),
-                  ],
-                ),
-                const SizedBox(height: 10),
-                SwitchListTile(
-                  contentPadding: EdgeInsets.zero,
-                  title: const Text('Required Field', style: TextStyle(fontSize: 13, fontWeight: FontWeight.w600)),
-                  value: isRequired,
-                  activeColor: const Color(0xFF2563EB),
-                  onChanged: (val) => setDlgState(() => isRequired = val),
-                ),
-              ],
-            ),
-          ),
-          actions: [
-            TextButton(
-              onPressed: () => Navigator.of(ctx).pop(),
-              child: const Text('Cancel'),
-            ),
-            ElevatedButton(
-              style: ElevatedButton.styleFrom(
-                backgroundColor: const Color(0xFF2563EB),
-                foregroundColor: Colors.white,
-                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
-              ),
-              onPressed: () {
-                final label = labelCtrl.text.trim();
-                if (label.isEmpty) return;
-                setState(() {
-                  field.label = label;
-                  field.type = selectedType;
-                  field.isRequired = isRequired;
-                  field.defaultValue = defaultValCtrl.text.trim();
-                  field.formula = formulaCtrl.text.trim();
-                  _markSaved();
-                });
-                Navigator.of(ctx).pop();
-              },
-              child: const Text('Save Changes'),
-            ),
-          ],
-        ),
-      ),
+    StudioEditFieldDialog.show(
+      context,
+      field: field,
+      initialFormulaCode: _itemCalculationFormula,
+      initialStandardDays: _standardDutyDays,
+      onSaveField: (updatedField) {
+        setState(() {
+          _markSaved();
+        });
+      },
     );
   }
 
@@ -1536,555 +1244,67 @@ class _InvoiceTemplateStudioScreenState
   }
 
   void _showStyleDialog() {
-    String tempFont = _fontFamily;
-    double tempScale = _fontScale;
-    bool tempUppercase = _uppercaseHeadings;
-    String tempTitle = _documentTitle;
-    Color tempPrimary = _primaryColor;
-    Color tempHeaderText = _tableHeaderTextColor;
-    String tempBorderStyle = _tableBorderStyle;
-    final titleCtrl = TextEditingController(text: tempTitle);
-
-    showDialog<void>(
-      context: context,
-      builder: (ctx) => StatefulBuilder(
-        builder: (ctx, setDlgState) => AlertDialog(
-          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-          titlePadding: const EdgeInsets.fromLTRB(20, 18, 20, 12),
-          contentPadding: const EdgeInsets.symmetric(horizontal: 20),
-          title: Row(
-            children: [
-              Container(
-                padding: const EdgeInsets.all(7),
-                decoration: BoxDecoration(
-                  color: const Color(0xFF2563EB).withValues(alpha: 0.12),
-                  shape: BoxShape.circle,
-                ),
-                child: const Icon(Icons.palette_outlined, color: Color(0xFF2563EB), size: 18),
-              ),
-              const SizedBox(width: 10),
-              const Text(
-                'Document Style & Typography',
-                style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold, color: Color(0xFF0F172A)),
-              ),
-            ],
-          ),
-          content: SizedBox(
-            width: 480,
-            child: SingleChildScrollView(
-              child: Column(
-                mainAxisSize: MainAxisSize.min,
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  const SizedBox(height: 8),
-
-                  // 1. Document Title Text
-                  const Text('Document Title', style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold, color: Color(0xFF334155))),
-                  const SizedBox(height: 6),
-                  TextField(
-                    controller: titleCtrl,
-                    decoration: InputDecoration(
-                      hintText: 'e.g. TAX INVOICE',
-                      isDense: true,
-                      contentPadding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
-                      border: OutlineInputBorder(borderRadius: BorderRadius.circular(8)),
-                    ),
-                    onChanged: (v) => tempTitle = v,
-                  ),
-                  const SizedBox(height: 12),
-
-                  // Uppercase headings toggle
-                  SwitchListTile(
-                    dense: true,
-                    contentPadding: EdgeInsets.zero,
-                    title: const Text('Uppercase Headings', style: TextStyle(fontSize: 12.5, fontWeight: FontWeight.w600)),
-                    subtitle: const Text('Display titles in capital letters (TAX INVOICE)', style: TextStyle(fontSize: 11, color: Color(0xFF64748B))),
-                    value: tempUppercase,
-                    activeColor: const Color(0xFF2563EB),
-                    onChanged: (v) => setDlgState(() => tempUppercase = v),
-                  ),
-                  const Divider(height: 20),
-
-                  // 2. Font Family
-                  const Text('Font Family', style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold, color: Color(0xFF334155))),
-                  const SizedBox(height: 6),
-                  Wrap(
-                    spacing: 8,
-                    runSpacing: 6,
-                    children: ['Inter', 'Roboto', 'Poppins', 'Merriweather', 'Courier'].map((font) {
-                      final isSel = tempFont == font;
-                      return ChoiceChip(
-                        label: Text(font, style: TextStyle(fontSize: 11.5, fontWeight: isSel ? FontWeight.bold : FontWeight.normal)),
-                        selected: isSel,
-                        selectedColor: const Color(0xFF2563EB),
-                        labelStyle: TextStyle(color: isSel ? Colors.white : const Color(0xFF334155)),
-                        onSelected: (_) => setDlgState(() => tempFont = font),
-                      );
-                    }).toList(),
-                  ),
-                  const Divider(height: 20),
-
-                  // 3. Text Size Scale
-                  const Text('Font Size Scaling', style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold, color: Color(0xFF334155))),
-                  const SizedBox(height: 6),
-                  Row(
-                    children: [
-                      _buildScaleBtn('Compact (88%)', 0.88, tempScale, (s) => setDlgState(() => tempScale = s)),
-                      const SizedBox(width: 8),
-                      _buildScaleBtn('Standard (100%)', 1.0, tempScale, (s) => setDlgState(() => tempScale = s)),
-                      const SizedBox(width: 8),
-                      _buildScaleBtn('Large (112%)', 1.12, tempScale, (s) => setDlgState(() => tempScale = s)),
-                    ],
-                  ),
-                  const Divider(height: 20),
-
-                  // 4. Primary Brand / Table Header Color
-                  const Text('Brand & Table Header Color', style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold, color: Color(0xFF334155))),
-                  const SizedBox(height: 8),
-                  Wrap(
-                    spacing: 10,
-                    runSpacing: 8,
-                    children: const [
-                      Color(0xFF1E3A8A), // Navy
-                      Color(0xFF2563EB), // Royal Blue
-                      Color(0xFF0284C7), // Sky Tech
-                      Color(0xFF0F172A), // Slate Dark
-                      Color(0xFF059669), // Emerald
-                      Color(0xFF991B1B), // Crimson
-                      Color(0xFFD97706), // Amber
-                      Color(0xFF7C3AED), // Purple
-                      Color(0xFF0D9488), // Teal
-                    ].map((col) {
-                      final isSel = tempPrimary == col;
-                      return InkWell(
-                        onTap: () => setDlgState(() => tempPrimary = col),
-                        borderRadius: BorderRadius.circular(20),
-                        child: Container(
-                          width: 32,
-                          height: 32,
-                          decoration: BoxDecoration(
-                            color: col,
-                            shape: BoxShape.circle,
-                            border: Border.all(color: isSel ? Colors.white : Colors.transparent, width: 2),
-                            boxShadow: [
-                              if (isSel)
-                                BoxShadow(color: col.withValues(alpha: 0.5), blurRadius: 6, spreadRadius: 2),
-                            ],
-                          ),
-                          child: isSel ? const Icon(Icons.check, size: 16, color: Colors.white) : null,
-                        ),
-                      );
-                    }).toList(),
-                  ),
-                  const Divider(height: 20),
-
-                  // 5. Table Header Text Color
-                  const Text('Table Header Text Color', style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold, color: Color(0xFF334155))),
-                  const SizedBox(height: 6),
-                  Row(
-                    children: [
-                      ChoiceChip(
-                        label: const Text('White Text', style: TextStyle(fontSize: 11)),
-                        selected: tempHeaderText == Colors.white,
-                        selectedColor: const Color(0xFF0F172A),
-                        labelStyle: TextStyle(color: tempHeaderText == Colors.white ? Colors.white : const Color(0xFF334155)),
-                        onSelected: (_) => setDlgState(() => tempHeaderText = Colors.white),
-                      ),
-                      const SizedBox(width: 8),
-                      ChoiceChip(
-                        label: const Text('Dark Text', style: TextStyle(fontSize: 11)),
-                        selected: tempHeaderText == const Color(0xFF1E293B),
-                        selectedColor: const Color(0xFF0F172A),
-                        labelStyle: TextStyle(color: tempHeaderText == const Color(0xFF1E293B) ? Colors.white : const Color(0xFF334155)),
-                        onSelected: (_) => setDlgState(() => tempHeaderText = const Color(0xFF1E293B)),
-                      ),
-                    ],
-                  ),
-                  const Divider(height: 20),
-
-                  // 6. Table Border Style (Boxed vs Lines vs Striped)
-                  const Text('Line Items Border Style', style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold, color: Color(0xFF334155))),
-                  const SizedBox(height: 6),
-                  Row(
-                    children: [
-                      _buildBorderBtn('Boxed Borders', 'boxed', tempBorderStyle, (b) => setDlgState(() => tempBorderStyle = b)),
-                      const SizedBox(width: 8),
-                      _buildBorderBtn('Clean Dividers', 'lines', tempBorderStyle, (b) => setDlgState(() => tempBorderStyle = b)),
-                      const SizedBox(width: 8),
-                      _buildBorderBtn('Striped Rows', 'striped', tempBorderStyle, (b) => setDlgState(() => tempBorderStyle = b)),
-                    ],
-                  ),
-                  const SizedBox(height: 12),
-                ],
-              ),
-            ),
-          ),
-          actions: [
-            TextButton(
-              onPressed: () => Navigator.of(ctx).pop(),
-              child: const Text('Cancel'),
-            ),
-            ElevatedButton(
-              style: ElevatedButton.styleFrom(
-                backgroundColor: const Color(0xFF2563EB),
-                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
-              ),
-              onPressed: () {
-                setState(() {
-                  _fontFamily = tempFont;
-                  _fontScale = tempScale;
-                  _uppercaseHeadings = tempUppercase;
-                  _documentTitle = titleCtrl.text.trim().isNotEmpty ? titleCtrl.text.trim() : tempTitle;
-                  _primaryColor = tempPrimary;
-                  _tableHeaderTextColor = tempHeaderText;
-                  _tableBorderStyle = tempBorderStyle;
-                  _markSaved();
-                });
-                _localPreferences.writeString('studio_font_family', _fontFamily);
-                _localPreferences.writeString('studio_font_scale', _fontScale.toString());
-                _localPreferences.writeString('studio_table_border', _tableBorderStyle);
-                _localPreferences.writeString('studio_doc_title', _documentTitle);
-                Navigator.of(ctx).pop();
-                ScaffoldMessenger.of(context).showSnackBar(
-                  const SnackBar(
-                    content: Text('✓ Style applied to invoice template!'),
-                    behavior: SnackBarBehavior.floating,
-                  ),
-                );
-              },
-              child: const Text('Apply Style', style: TextStyle(color: Colors.white)),
-            ),
-          ],
-        ),
+    StudioStyleDialog.show(
+      context,
+      initialConfig: StudioStyleConfig(
+        fontFamily: _fontFamily,
+        fontScale: _fontScale,
+        uppercaseHeadings: _uppercaseHeadings,
+        documentTitle: _documentTitle,
+        primaryColor: _primaryColor,
+        tableHeaderTextColor: _tableHeaderTextColor,
+        tableBorderStyle: _tableBorderStyle,
       ),
-    );
-  }
-
-  Widget _buildScaleBtn(String label, double scale, double current, ValueChanged<double> onSelect) {
-    final isSel = (current - scale).abs() < 0.01;
-    return Expanded(
-      child: OutlinedButton(
-        style: OutlinedButton.styleFrom(
-          padding: const EdgeInsets.symmetric(vertical: 8),
-          backgroundColor: isSel ? const Color(0xFF2563EB) : Colors.white,
-          side: BorderSide(color: isSel ? const Color(0xFF2563EB) : const Color(0xFFCBD5E1)),
-          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
-        ),
-        onPressed: () => onSelect(scale),
-        child: Text(
-          label,
-          style: TextStyle(
-            fontSize: 11,
-            fontWeight: isSel ? FontWeight.bold : FontWeight.w500,
-            color: isSel ? Colors.white : const Color(0xFF334155),
+      onApplyStyle: (updated) {
+        setState(() {
+          _fontFamily = updated.fontFamily;
+          _fontScale = updated.fontScale;
+          _uppercaseHeadings = updated.uppercaseHeadings;
+          _documentTitle = updated.documentTitle;
+          _primaryColor = updated.primaryColor;
+          _tableHeaderTextColor = updated.tableHeaderTextColor;
+          _tableBorderStyle = updated.tableBorderStyle;
+          _markSaved();
+        });
+        _localPreferences.writeString('studio_font_family', _fontFamily);
+        _localPreferences.writeString('studio_font_scale', _fontScale.toString());
+        _localPreferences.writeString('studio_table_border', _tableBorderStyle);
+        _localPreferences.writeString('studio_doc_title', _documentTitle);
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('âœ“ Style applied to invoice template!'),
+            behavior: SnackBarBehavior.floating,
           ),
-        ),
-      ),
-    );
-  }
-
-  Widget _buildBorderBtn(String label, String key, String current, ValueChanged<String> onSelect) {
-    final isSel = current == key;
-    return Expanded(
-      child: OutlinedButton(
-        style: OutlinedButton.styleFrom(
-          padding: const EdgeInsets.symmetric(vertical: 8),
-          backgroundColor: isSel ? const Color(0xFF2563EB) : Colors.white,
-          side: BorderSide(color: isSel ? const Color(0xFF2563EB) : const Color(0xFFCBD5E1)),
-          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
-        ),
-        onPressed: () => onSelect(key),
-        child: Text(
-          label,
-          style: TextStyle(
-            fontSize: 11,
-            fontWeight: isSel ? FontWeight.bold : FontWeight.w500,
-            color: isSel ? Colors.white : const Color(0xFF334155),
-          ),
-        ),
-      ),
+        );
+      },
     );
   }
 
   void _showPageSettingsDialog() {
-    bool tempQr = _showQrCode;
-    String tempWatermark = _watermark;
-    String tempMargin = _pageMargin;
-
-    showDialog<void>(
-      context: context,
-      builder: (ctx) => StatefulBuilder(
-        builder: (ctx, setDlgState) => AlertDialog(
-          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-          title: const Row(
-            children: [
-              Icon(Icons.tune_rounded, color: Color(0xFF2563EB), size: 18),
-              SizedBox(width: 8),
-              Text('Page & Document Settings', style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold)),
-            ],
-          ),
-          content: Column(
-            mainAxisSize: MainAxisSize.min,
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              const Text('Paper Format', style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold, color: Color(0xFF334155))),
-              const SizedBox(height: 6),
-              Row(
-                children: const [
-                  Chip(label: Text('A4 (210 × 297 mm)', style: TextStyle(fontSize: 11, fontWeight: FontWeight.bold, color: Color(0xFF2563EB)))),
-                  SizedBox(width: 8),
-                  Chip(label: Text('Letter (8.5 × 11 in)', style: TextStyle(fontSize: 11))),
-                ],
-              ),
-              const Divider(height: 20),
-              const Text('Page Margins', style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold, color: Color(0xFF334155))),
-              const SizedBox(height: 6),
-              Wrap(
-                spacing: 8,
-                children: ['Compact (10mm)', 'Standard (16mm)', 'Spacious (24mm)'].map((m) {
-                  final isSel = tempMargin == m;
-                  return ChoiceChip(
-                    label: Text(m, style: const TextStyle(fontSize: 11)),
-                    selected: isSel,
-                    selectedColor: const Color(0xFF2563EB),
-                    labelStyle: TextStyle(color: isSel ? Colors.white : const Color(0xFF334155)),
-                    onSelected: (_) => setDlgState(() => tempMargin = m),
-                  );
-                }).toList(),
-              ),
-              const Divider(height: 20),
-              SwitchListTile(
-                dense: true,
-                contentPadding: EdgeInsets.zero,
-                title: const Text('Show UPI Scan & Pay QR Code', style: TextStyle(fontSize: 12.5, fontWeight: FontWeight.w600)),
-                value: tempQr,
-                activeColor: const Color(0xFF2563EB),
-                onChanged: (v) => setDlgState(() => tempQr = v),
-              ),
-              const Divider(height: 20),
-              const Text('Watermark', style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold, color: Color(0xFF334155))),
-              const SizedBox(height: 6),
-              Wrap(
-                spacing: 8,
-                children: ['None', 'DRAFT', 'ORIGINAL FOR RECIPIENT'].map((w) {
-                  final isSel = tempWatermark == w;
-                  return ChoiceChip(
-                    label: Text(w, style: const TextStyle(fontSize: 11)),
-                    selected: isSel,
-                    selectedColor: const Color(0xFF2563EB),
-                    labelStyle: TextStyle(color: isSel ? Colors.white : const Color(0xFF334155)),
-                    onSelected: (_) => setDlgState(() => tempWatermark = w),
-                  );
-                }).toList(),
-              ),
-            ],
-          ),
-          actions: [
-            TextButton(onPressed: () => Navigator.of(ctx).pop(), child: const Text('Cancel')),
-            ElevatedButton(
-              style: ElevatedButton.styleFrom(
-                backgroundColor: const Color(0xFF2563EB),
-                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
-              ),
-              onPressed: () {
-                setState(() {
-                  _showQrCode = tempQr;
-                  _watermark = tempWatermark;
-                  _pageMargin = tempMargin;
-                  _markSaved();
-                });
-                Navigator.of(ctx).pop();
-              },
-              child: const Text('Save Settings', style: TextStyle(color: Colors.white)),
-            ),
-          ],
-        ),
-      ),
+    StudioPageSettingsDialog.show(
+      context,
+      showQrCode: _showQrCode,
+      watermark: _watermark,
+      pageMargin: _pageMargin,
+      onSaveSettings: (tempQr, tempWatermark, tempMargin) {
+        setState(() {
+          _showQrCode = tempQr;
+          _watermark = tempWatermark;
+          _pageMargin = tempMargin;
+          _markSaved();
+        });
+      },
     );
   }
 
   void _showTemplateSelectorDialog() {
-    showDialog<void>(
-      context: context,
-      builder: (ctx) => AlertDialog(
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-        titlePadding: const EdgeInsets.fromLTRB(20, 18, 20, 12),
-        contentPadding: const EdgeInsets.symmetric(horizontal: 16),
-        title: Row(
-          children: [
-            Container(
-              padding: const EdgeInsets.all(7),
-              decoration: BoxDecoration(
-                color: const Color(0xFF2563EB).withValues(alpha: 0.12),
-                shape: BoxShape.circle,
-              ),
-              child: const Icon(Icons.auto_awesome_mosaic_rounded, color: Color(0xFF2563EB), size: 18),
-            ),
-            const SizedBox(width: 10),
-            const Text(
-              'Select Invoice Template',
-              style: TextStyle(fontSize: 17, fontWeight: FontWeight.bold, color: Color(0xFF0F172A)),
-            ),
-          ],
-        ),
-        content: SizedBox(
-          width: 520,
-          child: SingleChildScrollView(
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                const SizedBox(height: 6),
-                for (final t in _availableTemplates) ...[
-                  _buildTemplateOptionCard(ctx, t),
-                  const SizedBox(height: 8),
-                ],
-              ],
-            ),
-          ),
-        ),
-        actions: [
-          TextButton(onPressed: () => Navigator.of(ctx).pop(), child: const Text('Close')),
-        ],
-      ),
-    );
-  }
-
-  Widget _buildTemplateOptionCard(BuildContext ctx, StudioTemplateOption t) {
-    final isCurrent = _activePreset == t.presetKey;
-    final isDefault = _companyDefaultTemplateId == t.id;
-
-    return Container(
-      padding: const EdgeInsets.all(12),
-      decoration: BoxDecoration(
-        color: isCurrent ? const Color(0xFFEFF6FF) : Colors.white,
-        borderRadius: BorderRadius.circular(12),
-        border: Border.all(
-          color: isCurrent ? const Color(0xFF93C5FD) : const Color(0xFFE2E8F0),
-          width: isCurrent ? 1.5 : 1.0,
-        ),
-      ),
-      child: Row(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Container(
-            width: 36,
-            height: 36,
-            decoration: BoxDecoration(
-              color: t.primaryColor,
-              borderRadius: BorderRadius.circular(8),
-            ),
-            child: Center(
-              child: Icon(
-                t.isWasm ? Icons.view_compact_rounded : Icons.description_outlined,
-                color: Colors.white,
-                size: 18,
-              ),
-            ),
-          ),
-          const SizedBox(width: 12),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Row(
-                  children: [
-                    Expanded(
-                      child: Text(
-                        t.name,
-                        style: TextStyle(
-                          fontSize: 13.5,
-                          fontWeight: FontWeight.bold,
-                          color: isCurrent ? const Color(0xFF1E3A8A) : const Color(0xFF0F172A),
-                        ),
-                      ),
-                    ),
-                    if (isDefault) ...[
-                      const SizedBox(width: 6),
-                      Container(
-                        padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 2),
-                        decoration: BoxDecoration(
-                          color: const Color(0xFFFEF3C7),
-                          borderRadius: BorderRadius.circular(10),
-                          border: Border.all(color: const Color(0xFFFDE68A)),
-                        ),
-                        child: const Row(
-                          mainAxisSize: MainAxisSize.min,
-                          children: [
-                            Icon(Icons.star_rounded, size: 12, color: Color(0xFFD97706)),
-                            SizedBox(width: 3),
-                            Text(
-                              'Default',
-                              style: TextStyle(fontSize: 10, fontWeight: FontWeight.bold, color: Color(0xFFD97706)),
-                            ),
-                          ],
-                        ),
-                      ),
-                    ],
-                    if (t.isWasm) ...[
-                      const SizedBox(width: 6),
-                      Container(
-                        padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 2),
-                        decoration: BoxDecoration(
-                          color: const Color(0xFFE0F2FE),
-                          borderRadius: BorderRadius.circular(10),
-                        ),
-                        child: const Text(
-                          'WASM Engine',
-                          style: TextStyle(fontSize: 9.5, fontWeight: FontWeight.bold, color: Color(0xFF0284C7)),
-                        ),
-                      ),
-                    ],
-                  ],
-                ),
-                const SizedBox(height: 3),
-                Text(
-                  t.description,
-                  style: const TextStyle(fontSize: 11, color: Color(0xFF64748B)),
-                ),
-                const SizedBox(height: 10),
-                Row(
-                  children: [
-                    ElevatedButton(
-                      style: ElevatedButton.styleFrom(
-                        backgroundColor: isCurrent ? const Color(0xFF0F172A) : const Color(0xFF2563EB),
-                        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-                        minimumSize: Size.zero,
-                        tapTargetSize: MaterialTapTargetSize.shrinkWrap,
-                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(6)),
-                      ),
-                      onPressed: () {
-                        _selectTemplate(t);
-                        Navigator.of(ctx).pop();
-                      },
-                      child: Text(
-                        isCurrent ? 'Active & Editing' : 'Select & Edit',
-                        style: const TextStyle(fontSize: 11.5, color: Colors.white, fontWeight: FontWeight.w600),
-                      ),
-                    ),
-                    const SizedBox(width: 8),
-                    if (!isDefault)
-                      OutlinedButton(
-                        style: OutlinedButton.styleFrom(
-                          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
-                          minimumSize: Size.zero,
-                          tapTargetSize: MaterialTapTargetSize.shrinkWrap,
-                          side: const BorderSide(color: Color(0xFFCBD5E1)),
-                          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(6)),
-                        ),
-                        onPressed: () {
-                          _selectTemplate(t);
-                          _setAsCompanyDefault();
-                          Navigator.of(ctx).pop();
-                        },
-                        child: const Text('Set as Default', style: TextStyle(fontSize: 11, color: Color(0xFF475569))),
-                      ),
-                  ],
-                ),
-              ],
-            ),
-          ),
-        ],
-      ),
+    StudioTemplateSelectorDialog.show(
+      context,
+      availableTemplates: _availableTemplates,
+      activePreset: _activePreset,
+      companyDefaultTemplateId: _companyDefaultTemplateId,
+      onSelectTemplate: _selectTemplate,
+      onSetAsCompanyDefault: (t) => _setAsCompanyDefault(),
     );
   }
 
@@ -2349,7 +1569,7 @@ class _InvoiceTemplateStudioScreenState
                       duration: const Duration(milliseconds: 160),
                       padding: const EdgeInsets.symmetric(vertical: 8),
                       decoration: !_previewOnlyOnMobile
-                          ? AppTheme.neuPillDecoration(radius: 13, isActive: true, activeColor: AppColors.neuActiveDark)
+                          ? AppTheme.neuPillDecoration(radius: 13, isActive: true, activeColor: const Color(0xFFE2E8F0))
                           : null,
                       child: Center(
                         child: Text(
@@ -2357,7 +1577,7 @@ class _InvoiceTemplateStudioScreenState
                           style: TextStyle(
                             fontSize: 12.5,
                             fontWeight: !_previewOnlyOnMobile ? FontWeight.w800 : FontWeight.w600,
-                            color: !_previewOnlyOnMobile ? Colors.white : const Color(0xFF475569),
+                            color: !_previewOnlyOnMobile ? const Color(0xFF0F172A) : const Color(0xFF475569),
                           ),
                         ),
                       ),
@@ -2373,7 +1593,7 @@ class _InvoiceTemplateStudioScreenState
                       duration: const Duration(milliseconds: 160),
                       padding: const EdgeInsets.symmetric(vertical: 8),
                       decoration: _previewOnlyOnMobile
-                          ? AppTheme.neuPillDecoration(radius: 13, isActive: true, activeColor: AppColors.neuActiveDark)
+                          ? AppTheme.neuPillDecoration(radius: 13, isActive: true, activeColor: const Color(0xFFE2E8F0))
                           : null,
                       child: Center(
                         child: Text(
@@ -2381,7 +1601,7 @@ class _InvoiceTemplateStudioScreenState
                           style: TextStyle(
                             fontSize: 12.5,
                             fontWeight: _previewOnlyOnMobile ? FontWeight.w800 : FontWeight.w600,
-                            color: _previewOnlyOnMobile ? Colors.white : const Color(0xFF475569),
+                            color: _previewOnlyOnMobile ? const Color(0xFF0F172A) : const Color(0xFF475569),
                           ),
                         ),
                       ),
@@ -2404,8 +1624,8 @@ class _InvoiceTemplateStudioScreenState
   // 1. Top Studio Bar
   Widget _buildTopStudioBar() {
     return Container(
-      height: 64,
-      padding: const EdgeInsets.symmetric(horizontal: 16),
+      constraints: const BoxConstraints(minHeight: 56),
+      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 4),
       decoration: BoxDecoration(
         color: AppColors.neuSurface,
         border: const Border(bottom: BorderSide(color: Color(0xFFD5DCE6))),
@@ -2422,121 +1642,171 @@ class _InvoiceTemplateStudioScreenState
           final isCompact = constraints.maxWidth < 700;
 
           if (isCompact) {
-            // Mobile-optimized Top Studio Bar: Back button, Template selector, Save & Publish actions
-            return Row(
-              children: [
-                // Back Button
-                InkWell(
-                  onTap: widget.onBack ?? () => Navigator.of(context).maybePop(),
-                  borderRadius: BorderRadius.circular(18),
-                  child: Container(
-                    width: 36,
-                    height: 36,
-                    decoration: AppTheme.neuOrbDecoration(),
-                    child: const Icon(Icons.arrow_back, size: 18, color: Color(0xFF0F172A)),
-                  ),
-                ),
-                const SizedBox(width: 8),
+            // Mobile-optimized 2-tier Top Studio Bar:
+            // Tier 1: Back button, Full-width Template selector with dropdown arrow, and More menu
+            // Tier 2: Status pill ('Draft'/'Published'), Save status message, Save Draft button, and Publish button
+            return Padding(
+              padding: const EdgeInsets.symmetric(vertical: 6),
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Row(
+                    children: [
+                      // Back Button
+                      InkWell(
+                        onTap: widget.onBack ?? () => Navigator.of(context).maybePop(),
+                        borderRadius: BorderRadius.circular(18),
+                        child: Container(
+                          width: 36,
+                          height: 36,
+                          decoration: AppTheme.neuOrbDecoration(),
+                          child: const Icon(Icons.arrow_back, size: 18, color: Color(0xFF0F172A)),
+                        ),
+                      ),
+                      const SizedBox(width: 8),
 
-                // Template Selector Pill (Truncated if needed)
-                Expanded(
-                  child: InkWell(
-                    onTap: _showTemplateSelectorDialog,
-                    borderRadius: BorderRadius.circular(12),
-                    child: Container(
-                      padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 6),
-                      decoration: AppTheme.neuPillDecoration(radius: 12),
-                      child: Row(
-                        mainAxisSize: MainAxisSize.min,
-                        children: [
-                          const Icon(
-                            Icons.style_outlined,
-                            size: 14,
-                            color: Color(0xFF2563EB),
-                          ),
-                          const SizedBox(width: 6),
-                          Flexible(
-                            child: Text(
-                              _templateName,
-                              overflow: TextOverflow.ellipsis,
-                              style: const TextStyle(
-                                fontSize: 12.5,
-                                fontWeight: FontWeight.w700,
-                                color: Color(0xFF1E293B),
-                              ),
+                      // Template Selector Pill (takes available space)
+                      Expanded(
+                        child: InkWell(
+                          onTap: _showTemplateSelectorDialog,
+                          borderRadius: BorderRadius.circular(12),
+                          child: Container(
+                            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 7),
+                            decoration: AppTheme.neuPillDecoration(radius: 12),
+                            child: Row(
+                              children: [
+                                const Icon(
+                                  Icons.style_outlined,
+                                  size: 15,
+                                  color: Color(0xFF2563EB),
+                                ),
+                                const SizedBox(width: 6),
+                                Expanded(
+                                  child: Text(
+                                    _templateName,
+                                    overflow: TextOverflow.ellipsis,
+                                    style: const TextStyle(
+                                      fontSize: 12.5,
+                                      fontWeight: FontWeight.w700,
+                                      color: Color(0xFF1E293B),
+                                    ),
+                                  ),
+                                ),
+                                const SizedBox(width: 4),
+                                const Icon(Icons.keyboard_arrow_down_rounded, size: 16, color: Color(0xFF64748B)),
+                              ],
                             ),
                           ),
-                          const SizedBox(width: 2),
-                          const Icon(Icons.keyboard_arrow_down_rounded, size: 15, color: Color(0xFF64748B)),
+                        ),
+                      ),
+                      const SizedBox(width: 6),
+
+                      // More Menu
+                      PopupMenuButton<String>(
+                        icon: const Icon(Icons.more_vert_rounded, color: Color(0xFF64748B), size: 20),
+                        padding: EdgeInsets.zero,
+                        constraints: const BoxConstraints(minWidth: 32),
+                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+                        onSelected: (val) {
+                          if (val == 'reset') {
+                            setState(() => _sections = StudioSection.defaultSections(preset: _activePreset));
+                            ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Sections reset to default')));
+                          } else if (val == 'export') {
+                            _exportPdfDocument();
+                          } else if (val == 'rename') {
+                            setState(() => _isEditingName = true);
+                          } else if (val == 'default') {
+                            _setAsCompanyDefault();
+                          }
+                        },
+                        itemBuilder: (ctx) => [
+                          const PopupMenuItem(value: 'export', child: Text('Export PDF Document')),
+                          const PopupMenuItem(value: 'rename', child: Text('Rename Template')),
+                          const PopupMenuItem(value: 'default', child: Text('Set as Company Default')),
+                          const PopupMenuItem(value: 'duplicate', child: Text('Duplicate Template')),
+                          const PopupMenuItem(value: 'reset', child: Text('Reset to Preset Defaults')),
                         ],
                       ),
-                    ),
-                  ),
-                ),
-                const SizedBox(width: 6),
-
-                // Compact Save Draft Button
-                IconButton(
-                  icon: _saving
-                      ? const SizedBox(width: 16, height: 16, child: CircularProgressIndicator(strokeWidth: 2))
-                      : const Icon(Icons.save_outlined, size: 20, color: Color(0xFF2563EB)),
-                  tooltip: 'Save Draft',
-                  onPressed: _saving ? null : _saveDraft,
-                  style: IconButton.styleFrom(
-                    backgroundColor: const Color(0xFFEFF6FF),
-                    padding: const EdgeInsets.all(7),
-                  ),
-                ),
-                const SizedBox(width: 4),
-
-                // Compact Publish Button
-                ElevatedButton(
-                  style: ElevatedButton.styleFrom(
-                    backgroundColor: AppColors.neuActiveDark,
-                    padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
-                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
-                    elevation: 0,
-                    minimumSize: Size.zero,
-                  ),
-                  onPressed: _saving ? null : _publishTemplate,
-                  child: const Row(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      Icon(Icons.rocket_launch_rounded, size: 13, color: Colors.white),
-                      SizedBox(width: 4),
-                      Text('Publish', style: TextStyle(fontSize: 11.5, fontWeight: FontWeight.w700, color: Colors.white)),
                     ],
                   ),
-                ),
-                const SizedBox(width: 2),
+                  const SizedBox(height: 8),
+                  Row(
+                    children: [
+                      // Status Badge
+                      Container(
+                        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                        decoration: BoxDecoration(
+                          color: _templateStatus == 'Published' ? const Color(0xFFECFDF5) : const Color(0xFFF1F5F9),
+                          borderRadius: BorderRadius.circular(10),
+                          border: Border.all(
+                            color: _templateStatus == 'Published' ? const Color(0xFFA7F3D0) : const Color(0xFFCBD5E1),
+                          ),
+                        ),
+                        child: Text(
+                          _templateStatus,
+                          style: TextStyle(
+                            fontSize: 10.5,
+                            fontWeight: FontWeight.w700,
+                            color: _templateStatus == 'Published' ? const Color(0xFF059669) : const Color(0xFF475569),
+                          ),
+                        ),
+                      ),
+                      const SizedBox(width: 6),
+                      // Cloud Sync Indicator
+                      Flexible(
+                        child: Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            const Icon(Icons.check_circle_rounded, size: 12, color: Color(0xFF16A34A)),
+                            const SizedBox(width: 3),
+                            Flexible(
+                              child: Text(
+                                _saveMessage,
+                                overflow: TextOverflow.ellipsis,
+                                style: const TextStyle(fontSize: 10.5, color: Color(0xFF16A34A), fontWeight: FontWeight.w600),
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                      const Spacer(),
 
-                // More Menu
-                PopupMenuButton<String>(
-                  icon: const Icon(Icons.more_vert_rounded, color: Color(0xFF64748B), size: 20),
-                  padding: EdgeInsets.zero,
-                  constraints: const BoxConstraints(minWidth: 32),
-                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
-                  onSelected: (val) {
-                    if (val == 'reset') {
-                      setState(() => _sections = StudioSection.defaultSections(preset: _activePreset));
-                      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Sections reset to default')));
-                    } else if (val == 'export') {
-                      _exportPdfDocument();
-                    } else if (val == 'rename') {
-                      setState(() => _isEditingName = true);
-                    } else if (val == 'default') {
-                      _setAsCompanyDefault();
-                    }
-                  },
-                  itemBuilder: (ctx) => [
-                    const PopupMenuItem(value: 'export', child: Text('Export PDF Document')),
-                    const PopupMenuItem(value: 'rename', child: Text('Rename Template')),
-                    const PopupMenuItem(value: 'default', child: Text('Set as Company Default')),
-                    const PopupMenuItem(value: 'duplicate', child: Text('Duplicate Template')),
-                    const PopupMenuItem(value: 'reset', child: Text('Reset to Preset Defaults')),
-                  ],
-                ),
-              ],
+                      // Compact Save Draft Button
+                      OutlinedButton.icon(
+                        icon: _saving
+                            ? const SizedBox(width: 12, height: 12, child: CircularProgressIndicator(strokeWidth: 1.5))
+                            : const Icon(Icons.save_outlined, size: 14, color: Color(0xFF2563EB)),
+                        label: const Text('Save Draft', style: TextStyle(fontSize: 11, fontWeight: FontWeight.w700, color: Color(0xFF2563EB))),
+                        onPressed: _saving ? null : _saveDraft,
+                        style: OutlinedButton.styleFrom(
+                          side: const BorderSide(color: Color(0xFF93C5FD)),
+                          backgroundColor: const Color(0xFFEFF6FF),
+                          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+                          minimumSize: Size.zero,
+                          tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                        ),
+                      ),
+                      const SizedBox(width: 6),
+
+                      // Compact Publish Button
+                      ElevatedButton.icon(
+                        icon: const Icon(Icons.rocket_launch_rounded, size: 13, color: Colors.white),
+                        label: const Text('Publish', style: TextStyle(fontSize: 11, fontWeight: FontWeight.w700, color: Colors.white)),
+                        style: ElevatedButton.styleFrom(
+                          backgroundColor: AppColors.neuActiveDark,
+                          padding: const EdgeInsets.symmetric(horizontal: 11, vertical: 7),
+                          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+                          elevation: 0,
+                          minimumSize: Size.zero,
+                          tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                        ),
+                        onPressed: _saving ? null : _publishTemplate,
+                      ),
+                    ],
+                  ),
+                ],
+              ),
             );
           }
 
@@ -2938,164 +2208,178 @@ class _InvoiceTemplateStudioScreenState
   }
 
   Widget _buildBrandingAssetsCustomContent() {
-    return Container(
-      padding: const EdgeInsets.all(12),
-      decoration: BoxDecoration(
-        color: const Color(0xFFF8FAFC),
-        borderRadius: BorderRadius.circular(10),
-        border: Border.all(color: const Color(0xFFE2E8F0)),
-      ),
-      child: Column(
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        final isNarrow = constraints.maxWidth < 450;
+        return Container(
+          padding: const EdgeInsets.all(12),
+          decoration: BoxDecoration(
+            color: const Color(0xFFF8FAFC),
+            borderRadius: BorderRadius.circular(10),
+            border: Border.all(color: const Color(0xFFE2E8F0)),
+          ),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Row(
+                children: [
+                  const Icon(Icons.palette_outlined, size: 16, color: Color(0xFF2563EB)),
+                  const SizedBox(width: 8),
+                  const Expanded(
+                    child: Text(
+                      'Branding Assets (Company Logo & Official Stamp)',
+                      style: TextStyle(
+                        fontSize: 12.5,
+                        fontWeight: FontWeight.w700,
+                        color: Color(0xFF0F172A),
+                      ),
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                  ),
+                  Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                    decoration: BoxDecoration(
+                      color: const Color(0xFFEFF6FF),
+                      borderRadius: BorderRadius.circular(6),
+                    ),
+                    child: const Text(
+                      'Live Sync',
+                      style: TextStyle(fontSize: 10, fontWeight: FontWeight.bold, color: Color(0xFF2563EB)),
+                    ),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 4),
+              const Text(
+                'Upload your official company logo and round/oval seal for live A4 document branding and PDF generation.',
+                style: TextStyle(fontSize: 11, color: Color(0xFF64748B)),
+              ),
+              const SizedBox(height: 12),
+              // Logo Block
+              _buildBrandingAssetRow(
+                isNarrow: isNarrow,
+                previewWidget: Container(
+                  width: 50,
+                  height: 50,
+                  decoration: BoxDecoration(
+                    color: Colors.white,
+                    borderRadius: BorderRadius.circular(8),
+                    border: Border.all(color: const Color(0xFFCBD5E1)),
+                  ),
+                  child: _logoBase64 != null
+                      ? ClipRRect(
+                          borderRadius: BorderRadius.circular(7),
+                          child: Image.memory(
+                            base64Decode(_logoBase64!),
+                            fit: BoxFit.contain,
+                          ),
+                        )
+                      : const Icon(Icons.business_outlined, color: Color(0xFF94A3B8), size: 24),
+                ),
+                title: 'Company Logo',
+                subtitle: _logoBase64 != null ? 'Logo uploaded & active on invoices' : 'No logo uploaded (using preset icon)',
+                isUploaded: _logoBase64 != null,
+                onPick: _pickLogo,
+                onRemove: _removeLogo,
+                pickLabel: 'Upload Logo',
+                replaceLabel: 'Replace',
+              ),
+              const SizedBox(height: 10),
+              const Divider(height: 1, color: Color(0xFFE2E8F0)),
+              const SizedBox(height: 10),
+              // Stamp Block
+              _buildBrandingAssetRow(
+                isNarrow: isNarrow,
+                previewWidget: Container(
+                  width: 50,
+                  height: 50,
+                  decoration: BoxDecoration(
+                    color: Colors.white,
+                    shape: BoxShape.circle,
+                    border: Border.all(color: const Color(0xFFCBD5E1)),
+                  ),
+                  child: _stampBase64 != null
+                      ? ClipOval(
+                          child: Image.memory(
+                            base64Decode(_stampBase64!),
+                            fit: BoxFit.contain,
+                          ),
+                        )
+                      : const Icon(Icons.verified_outlined, color: Color(0xFF94A3B8), size: 24),
+                ),
+                title: 'Official Company Stamp / Seal',
+                subtitle: _stampBase64 != null ? 'Stamp uploaded & applied to signature block' : 'No stamp uploaded',
+                isUploaded: _stampBase64 != null,
+                onPick: _pickStamp,
+                onRemove: _removeStamp,
+                pickLabel: 'Upload Stamp',
+                replaceLabel: 'Replace',
+              ),
+            ],
+          ),
+        );
+      },
+    );
+  }
+
+  Widget _buildBrandingAssetRow({
+    required bool isNarrow,
+    required Widget previewWidget,
+    required String title,
+    required String subtitle,
+    required bool isUploaded,
+    required VoidCallback onPick,
+    required VoidCallback onRemove,
+    required String pickLabel,
+    required String replaceLabel,
+  }) {
+    if (isNarrow) {
+      return Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Row(
             children: [
-              const Icon(Icons.palette_outlined, size: 16, color: Color(0xFF2563EB)),
-              const SizedBox(width: 8),
-              const Text(
-                'Branding Assets (Company Logo & Official Stamp)',
-                style: TextStyle(
-                  fontSize: 12.5,
-                  fontWeight: FontWeight.w700,
-                  color: Color(0xFF0F172A),
-                ),
-              ),
-              const Spacer(),
-              Container(
-                padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
-                decoration: BoxDecoration(
-                  color: const Color(0xFFEFF6FF),
-                  borderRadius: BorderRadius.circular(6),
-                ),
-                child: const Text(
-                  'Live Sync',
-                  style: TextStyle(fontSize: 10, fontWeight: FontWeight.bold, color: Color(0xFF2563EB)),
-                ),
-              ),
-            ],
-          ),
-          const SizedBox(height: 4),
-          const Text(
-            'Upload your official company logo and round/oval seal for live A4 document branding and PDF generation.',
-            style: TextStyle(fontSize: 11, color: Color(0xFF64748B)),
-          ),
-          const SizedBox(height: 12),
-          // Logo Row
-          Row(
-            children: [
-              Container(
-                width: 50,
-                height: 50,
-                decoration: BoxDecoration(
-                  color: Colors.white,
-                  borderRadius: BorderRadius.circular(8),
-                  border: Border.all(color: const Color(0xFFCBD5E1)),
-                ),
-                child: _logoBase64 != null
-                    ? ClipRRect(
-                        borderRadius: BorderRadius.circular(7),
-                        child: Image.memory(
-                          base64Decode(_logoBase64!),
-                          fit: BoxFit.contain,
-                        ),
-                      )
-                    : const Icon(Icons.business_outlined, color: Color(0xFF94A3B8), size: 24),
-              ),
-              const SizedBox(width: 12),
+              previewWidget,
+              const SizedBox(width: 10),
               Expanded(
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    const Text(
-                      'Company Logo',
-                      style: TextStyle(fontSize: 12, fontWeight: FontWeight.w600, color: Color(0xFF1E293B)),
+                    Text(
+                      title,
+                      style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w600, color: Color(0xFF1E293B)),
                     ),
                     Text(
-                      _logoBase64 != null ? 'Logo uploaded & active on invoices' : 'No logo uploaded (using preset icon)',
-                      style: TextStyle(fontSize: 11, color: _logoBase64 != null ? const Color(0xFF059669) : const Color(0xFF64748B)),
+                      subtitle,
+                      style: TextStyle(fontSize: 11, color: isUploaded ? const Color(0xFF059669) : const Color(0xFF64748B)),
                     ),
                   ],
                 ),
               ),
+            ],
+          ),
+          const SizedBox(height: 8),
+          Row(
+            mainAxisAlignment: MainAxisAlignment.end,
+            children: [
               OutlinedButton.icon(
-                icon: Icon(_logoBase64 != null ? Icons.edit_outlined : Icons.upload_outlined, size: 14),
-                label: Text(_logoBase64 != null ? 'Replace' : 'Upload Logo', style: const TextStyle(fontSize: 11.5)),
+                icon: Icon(isUploaded ? Icons.edit_outlined : Icons.upload_outlined, size: 14),
+                label: Text(isUploaded ? replaceLabel : pickLabel, style: const TextStyle(fontSize: 11.5)),
                 style: OutlinedButton.styleFrom(
                   padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
                   side: const BorderSide(color: Color(0xFF93C5FD)),
                   shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
                   backgroundColor: Colors.white,
                 ),
-                onPressed: _pickLogo,
+                onPressed: onPick,
               ),
-              if (_logoBase64 != null) ...[
-                const SizedBox(width: 4),
+              if (isUploaded) ...[
+                const SizedBox(width: 6),
                 IconButton(
                   icon: const Icon(Icons.delete_outline_rounded, size: 16, color: Color(0xFFEF4444)),
-                  tooltip: 'Remove Logo',
-                  onPressed: _removeLogo,
-                  constraints: const BoxConstraints(minWidth: 28, minHeight: 28),
-                  padding: EdgeInsets.zero,
-                ),
-              ],
-            ],
-          ),
-          const SizedBox(height: 10),
-          const Divider(height: 1, color: Color(0xFFE2E8F0)),
-          const SizedBox(height: 10),
-          // Stamp Row
-          Row(
-            children: [
-              Container(
-                width: 50,
-                height: 50,
-                decoration: BoxDecoration(
-                  color: Colors.white,
-                  shape: BoxShape.circle,
-                  border: Border.all(color: const Color(0xFFCBD5E1)),
-                ),
-                child: _stampBase64 != null
-                    ? ClipOval(
-                        child: Image.memory(
-                          base64Decode(_stampBase64!),
-                          fit: BoxFit.contain,
-                        ),
-                      )
-                    : const Icon(Icons.verified_outlined, color: Color(0xFF94A3B8), size: 24),
-              ),
-              const SizedBox(width: 12),
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    const Text(
-                      'Official Company Stamp / Seal',
-                      style: TextStyle(fontSize: 12, fontWeight: FontWeight.w600, color: Color(0xFF1E293B)),
-                    ),
-                    Text(
-                      _stampBase64 != null ? 'Stamp uploaded & applied to signature block' : 'No stamp uploaded',
-                      style: TextStyle(fontSize: 11, color: _stampBase64 != null ? const Color(0xFF059669) : const Color(0xFF64748B)),
-                    ),
-                  ],
-                ),
-              ),
-              OutlinedButton.icon(
-                icon: Icon(_stampBase64 != null ? Icons.edit_outlined : Icons.upload_outlined, size: 14),
-                label: Text(_stampBase64 != null ? 'Replace' : 'Upload Stamp', style: const TextStyle(fontSize: 11.5)),
-                style: OutlinedButton.styleFrom(
-                  padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
-                  side: const BorderSide(color: Color(0xFF93C5FD)),
-                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
-                  backgroundColor: Colors.white,
-                ),
-                onPressed: _pickStamp,
-              ),
-              if (_stampBase64 != null) ...[
-                const SizedBox(width: 4),
-                IconButton(
-                  icon: const Icon(Icons.delete_outline_rounded, size: 16, color: Color(0xFFEF4444)),
-                  tooltip: 'Remove Stamp',
-                  onPressed: _removeStamp,
+                  tooltip: 'Remove',
+                  onPressed: onRemove,
                   constraints: const BoxConstraints(minWidth: 28, minHeight: 28),
                   padding: EdgeInsets.zero,
                 ),
@@ -3103,172 +2387,304 @@ class _InvoiceTemplateStudioScreenState
             ],
           ),
         ],
-      ),
+      );
+    }
+    return Row(
+      children: [
+        previewWidget,
+        const SizedBox(width: 12),
+        Expanded(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                title,
+                style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w600, color: Color(0xFF1E293B)),
+              ),
+              Text(
+                subtitle,
+                style: TextStyle(fontSize: 11, color: isUploaded ? const Color(0xFF059669) : const Color(0xFF64748B)),
+              ),
+            ],
+          ),
+        ),
+        OutlinedButton.icon(
+          icon: Icon(isUploaded ? Icons.edit_outlined : Icons.upload_outlined, size: 14),
+          label: Text(isUploaded ? replaceLabel : pickLabel, style: const TextStyle(fontSize: 11.5)),
+          style: OutlinedButton.styleFrom(
+            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+            side: const BorderSide(color: Color(0xFF93C5FD)),
+            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+            backgroundColor: Colors.white,
+          ),
+          onPressed: onPick,
+        ),
+        if (isUploaded) ...[
+          const SizedBox(width: 4),
+          IconButton(
+            icon: const Icon(Icons.delete_outline_rounded, size: 16, color: Color(0xFFEF4444)),
+            tooltip: 'Remove',
+            onPressed: onRemove,
+            constraints: const BoxConstraints(minWidth: 28, minHeight: 28),
+            padding: EdgeInsets.zero,
+          ),
+        ],
+      ],
     );
   }
 
   Widget _buildBankCustomContent() {
-    return Container(
-      padding: const EdgeInsets.all(12),
-      decoration: BoxDecoration(
-        color: const Color(0xFFF8FAFC),
-        borderRadius: BorderRadius.circular(10),
-        border: Border.all(color: const Color(0xFFE2E8F0)),
-      ),
-      child: Row(
-        children: [
-          Container(
-            padding: const EdgeInsets.all(8),
-            decoration: BoxDecoration(
-              color: const Color(0xFFEFF6FF),
-              borderRadius: BorderRadius.circular(8),
-            ),
-            child: const Icon(Icons.account_balance_outlined, color: Color(0xFF2563EB), size: 18),
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        final isNarrow = constraints.maxWidth < 460;
+        return Container(
+          padding: const EdgeInsets.all(12),
+          decoration: BoxDecoration(
+            color: const Color(0xFFF8FAFC),
+            borderRadius: BorderRadius.circular(10),
+            border: Border.all(color: const Color(0xFFE2E8F0)),
           ),
-          const SizedBox(width: 10),
-          const Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  'Bank Account & Payment QR',
-                  style: TextStyle(fontSize: 12, fontWeight: FontWeight.w600, color: Color(0xFF1E293B)),
-                ),
-                Text(
-                  'Bank transfer details & UPI QR codes automatically display in payment box.',
-                  style: TextStyle(fontSize: 11, color: Color(0xFF64748B)),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Row(
+                children: [
+                  Container(
+                    padding: const EdgeInsets.all(8),
+                    decoration: BoxDecoration(
+                      color: const Color(0xFFEFF6FF),
+                      borderRadius: BorderRadius.circular(8),
+                    ),
+                    child: const Icon(Icons.account_balance_outlined, color: Color(0xFF2563EB), size: 18),
+                  ),
+                  const SizedBox(width: 10),
+                  const Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          'Bank Account & Payment QR',
+                          style: TextStyle(fontSize: 12, fontWeight: FontWeight.w600, color: Color(0xFF1E293B)),
+                        ),
+                        Text(
+                          'Bank transfer details & UPI QR codes automatically display in payment box.',
+                          style: TextStyle(fontSize: 11, color: Color(0xFF64748B)),
+                        ),
+                      ],
+                    ),
+                  ),
+                  if (!isNarrow) ...[
+                    const SizedBox(width: 8),
+                    OutlinedButton.icon(
+                      icon: const Icon(Icons.draw_rounded, size: 14),
+                      label: const Text('Capture Signature', style: TextStyle(fontSize: 11)),
+                      style: OutlinedButton.styleFrom(
+                        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                        side: const BorderSide(color: Color(0xFF93C5FD)),
+                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+                        backgroundColor: Colors.white,
+                      ),
+                      onPressed: _captureSignatureInStudio,
+                    ),
+                  ],
+                ],
+              ),
+              if (isNarrow) ...[
+                const SizedBox(height: 8),
+                Align(
+                  alignment: Alignment.centerRight,
+                  child: OutlinedButton.icon(
+                    icon: const Icon(Icons.draw_rounded, size: 14),
+                    label: const Text('Capture Signature', style: TextStyle(fontSize: 11)),
+                    style: OutlinedButton.styleFrom(
+                      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                      side: const BorderSide(color: Color(0xFF93C5FD)),
+                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+                      backgroundColor: Colors.white,
+                    ),
+                    onPressed: _captureSignatureInStudio,
+                  ),
                 ),
               ],
-            ),
+            ],
           ),
-          OutlinedButton.icon(
-            icon: const Icon(Icons.draw_rounded, size: 14),
-            label: const Text('Capture Signature', style: TextStyle(fontSize: 11)),
-            style: OutlinedButton.styleFrom(
-              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
-              side: const BorderSide(color: Color(0xFF93C5FD)),
-              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
-              backgroundColor: Colors.white,
-            ),
-            onPressed: _captureSignatureInStudio,
-          ),
-        ],
-      ),
+        );
+      },
     );
   }
 
   Widget _buildSignatureCustomContent() {
-    return Container(
-      padding: const EdgeInsets.all(12),
-      decoration: BoxDecoration(
-        color: const Color(0xFFF8FAFC),
-        borderRadius: BorderRadius.circular(10),
-        border: Border.all(color: const Color(0xFFE2E8F0)),
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Row(
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        final isNarrow = constraints.maxWidth < 460;
+        return Container(
+          padding: const EdgeInsets.all(12),
+          decoration: BoxDecoration(
+            color: const Color(0xFFF8FAFC),
+            borderRadius: BorderRadius.circular(10),
+            border: Border.all(color: const Color(0xFFE2E8F0)),
+          ),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              const Icon(Icons.draw_rounded, size: 16, color: Color(0xFF2563EB)),
-              const SizedBox(width: 8),
+              Row(
+                children: [
+                  const Icon(Icons.draw_rounded, size: 16, color: Color(0xFF2563EB)),
+                  const SizedBox(width: 8),
+                  const Expanded(
+                    child: Text(
+                      'Authorized Digital Signature (DocuHub Signer)',
+                      style: TextStyle(
+                        fontSize: 12.5,
+                        fontWeight: FontWeight.w700,
+                        color: Color(0xFF0F172A),
+                      ),
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                  ),
+                  Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                    decoration: BoxDecoration(
+                      color: const Color(0xFFECFDF5),
+                      borderRadius: BorderRadius.circular(6),
+                      border: Border.all(color: const Color(0xFFA7F3D0)),
+                    ),
+                    child: const Text(
+                      'Legal Signatory',
+                      style: TextStyle(fontSize: 10, fontWeight: FontWeight.bold, color: Color(0xFF059669)),
+                    ),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 4),
               const Text(
-                'Authorized Digital Signature (DocuHub Signer)',
-                style: TextStyle(
-                  fontSize: 12.5,
-                  fontWeight: FontWeight.w700,
-                  color: Color(0xFF0F172A),
-                ),
+                'Draw ink signature or create styled typography to sign generated invoices and PDF documents.',
+                style: TextStyle(fontSize: 11, color: Color(0xFF64748B)),
               ),
-              const Spacer(),
-              Container(
-                padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
-                decoration: BoxDecoration(
-                  color: const Color(0xFFECFDF5),
-                  borderRadius: BorderRadius.circular(6),
-                  border: Border.all(color: const Color(0xFFA7F3D0)),
+              const SizedBox(height: 12),
+              // Signature Preview & Capture Action (Responsive for narrow screens)
+              if (isNarrow) ...[
+                Center(
+                  child: Container(
+                    width: double.infinity,
+                    height: 58,
+                    decoration: BoxDecoration(
+                      color: Colors.white,
+                      borderRadius: BorderRadius.circular(8),
+                      border: Border.all(color: const Color(0xFFCBD5E1)),
+                    ),
+                    child: _signatureBase64 != null
+                        ? Padding(
+                            padding: const EdgeInsets.all(4),
+                            child: Image.memory(
+                              base64Decode(_signatureBase64!),
+                              fit: BoxFit.contain,
+                            ),
+                          )
+                        : const Center(
+                            child: Text(
+                              'No Signature Saved',
+                              style: TextStyle(fontSize: 10.5, color: Color(0xFF94A3B8), fontStyle: FontStyle.italic),
+                            ),
+                          ),
+                  ),
                 ),
-                child: const Text(
-                  'Legal Signatory',
-                  style: TextStyle(fontSize: 10, fontWeight: FontWeight.bold, color: Color(0xFF059669)),
-                ),
-              ),
-            ],
-          ),
-          const SizedBox(height: 4),
-          const Text(
-            'Draw ink signature or create styled typography to sign generated invoices and PDF documents.',
-            style: TextStyle(fontSize: 11, color: Color(0xFF64748B)),
-          ),
-          const SizedBox(height: 12),
-          // Signature Preview & Capture Action
-          Row(
-            children: [
-              Container(
-                width: 140,
-                height: 52,
-                decoration: BoxDecoration(
-                  color: Colors.white,
-                  borderRadius: BorderRadius.circular(8),
-                  border: Border.all(color: const Color(0xFFCBD5E1)),
-                ),
-                child: _signatureBase64 != null
-                    ? Padding(
-                        padding: const EdgeInsets.all(4),
-                        child: Image.memory(
-                          base64Decode(_signatureBase64!),
-                          fit: BoxFit.contain,
-                        ),
-                      )
-                    : const Center(
-                        child: Text(
-                          'No Signature Saved',
-                          style: TextStyle(fontSize: 10.5, color: Color(0xFF94A3B8), fontStyle: FontStyle.italic),
-                        ),
-                      ),
-              ),
-              const SizedBox(width: 12),
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
+                const SizedBox(height: 8),
+                Row(
                   children: [
-                    FilledButton.icon(
-                      icon: const Icon(Icons.draw_outlined, size: 15),
-                      label: Text(
-                        _signatureBase64 != null ? 'Redraw / Edit Signature' : 'Capture / Draw Signature',
-                        style: const TextStyle(fontSize: 11.5, fontWeight: FontWeight.w600),
+                    Expanded(
+                      child: FilledButton.icon(
+                        icon: const Icon(Icons.draw_outlined, size: 15),
+                        label: Text(
+                          _signatureBase64 != null ? 'Redraw Signature' : 'Capture Signature',
+                          style: const TextStyle(fontSize: 11.5, fontWeight: FontWeight.w600),
+                        ),
+                        style: FilledButton.styleFrom(
+                          backgroundColor: const Color(0xFF2563EB),
+                          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+                          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+                        ),
+                        onPressed: _captureSignatureInStudio,
                       ),
-                      style: FilledButton.styleFrom(
-                        backgroundColor: const Color(0xFF2563EB),
-                        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
-                      ),
-                      onPressed: _captureSignatureInStudio,
                     ),
                     if (_signatureBase64 != null) ...[
-                      const SizedBox(height: 4),
-                      TextButton.icon(
-                        icon: const Icon(Icons.delete_outline_rounded, size: 14, color: Color(0xFFEF4444)),
-                        label: const Text('Clear Signature', style: TextStyle(fontSize: 11, color: Color(0xFFEF4444))),
-                        style: TextButton.styleFrom(
-                          padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
-                          minimumSize: Size.zero,
-                          tapTargetSize: MaterialTapTargetSize.shrinkWrap,
-                        ),
+                      const SizedBox(width: 8),
+                      IconButton(
+                        icon: const Icon(Icons.delete_outline_rounded, size: 18, color: Color(0xFFEF4444)),
+                        tooltip: 'Clear Signature',
                         onPressed: _removeSignature,
                       ),
                     ],
                   ],
                 ),
-              ),
-            ],
-          ),
-          const SizedBox(height: 12),
-          // Metadata Fields: Signatory Name & Title
-          Row(
-            children: [
-              Expanded(
-                child: TextFormField(
+              ] else ...[
+                Row(
+                  children: [
+                    Container(
+                      width: 140,
+                      height: 52,
+                      decoration: BoxDecoration(
+                        color: Colors.white,
+                        borderRadius: BorderRadius.circular(8),
+                        border: Border.all(color: const Color(0xFFCBD5E1)),
+                      ),
+                      child: _signatureBase64 != null
+                          ? Padding(
+                              padding: const EdgeInsets.all(4),
+                              child: Image.memory(
+                                base64Decode(_signatureBase64!),
+                                fit: BoxFit.contain,
+                              ),
+                            )
+                          : const Center(
+                              child: Text(
+                                'No Signature Saved',
+                                style: TextStyle(fontSize: 10.5, color: Color(0xFF94A3B8), fontStyle: FontStyle.italic),
+                              ),
+                            ),
+                    ),
+                    const SizedBox(width: 12),
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          FilledButton.icon(
+                            icon: const Icon(Icons.draw_outlined, size: 15),
+                            label: Text(
+                              _signatureBase64 != null ? 'Redraw / Edit Signature' : 'Capture / Draw Signature',
+                              style: const TextStyle(fontSize: 11.5, fontWeight: FontWeight.w600),
+                            ),
+                            style: FilledButton.styleFrom(
+                              backgroundColor: const Color(0xFF2563EB),
+                              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+                            ),
+                            onPressed: _captureSignatureInStudio,
+                          ),
+                          if (_signatureBase64 != null) ...[
+                            const SizedBox(height: 4),
+                            TextButton.icon(
+                              icon: const Icon(Icons.delete_outline_rounded, size: 14, color: Color(0xFFEF4444)),
+                              label: const Text('Clear Signature', style: TextStyle(fontSize: 11, color: Color(0xFFEF4444))),
+                              style: TextButton.styleFrom(
+                                padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                                minimumSize: Size.zero,
+                                tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                              ),
+                              onPressed: _removeSignature,
+                            ),
+                          ],
+                        ],
+                      ),
+                    ),
+                  ],
+                ),
+              ],
+              const SizedBox(height: 12),
+              // Metadata Fields: Signatory Name & Title (Responsive for narrow screens)
+              if (isNarrow) ...[
+                TextFormField(
                   initialValue: _signeeName ?? '',
                   decoration: InputDecoration(
                     labelText: 'Signatory Name',
@@ -3282,10 +2698,8 @@ class _InvoiceTemplateStudioScreenState
                     _markSaved();
                   },
                 ),
-              ),
-              const SizedBox(width: 8),
-              Expanded(
-                child: TextFormField(
+                const SizedBox(height: 8),
+                TextFormField(
                   initialValue: _signeeTitle ?? 'Authorized Signatory',
                   decoration: InputDecoration(
                     labelText: 'Signatory Title',
@@ -3299,8 +2713,110 @@ class _InvoiceTemplateStudioScreenState
                     _markSaved();
                   },
                 ),
+              ] else ...[
+                Row(
+                  children: [
+                    Expanded(
+                      child: TextFormField(
+                        initialValue: _signeeName ?? '',
+                        decoration: InputDecoration(
+                          labelText: 'Signatory Name',
+                          hintText: 'e.g. R. K. Sharma',
+                          isDense: true,
+                          contentPadding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+                          border: OutlineInputBorder(borderRadius: BorderRadius.circular(8)),
+                        ),
+                        onChanged: (val) {
+                          _signeeName = val;
+                          _markSaved();
+                        },
+                      ),
+                    ),
+                    const SizedBox(width: 8),
+                    Expanded(
+                      child: TextFormField(
+                        initialValue: _signeeTitle ?? 'Authorized Signatory',
+                        decoration: InputDecoration(
+                          labelText: 'Signatory Title',
+                          hintText: 'e.g. Director / Partner',
+                          isDense: true,
+                          contentPadding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+                          border: OutlineInputBorder(borderRadius: BorderRadius.circular(8)),
+                        ),
+                        onChanged: (val) {
+                          _signeeTitle = val;
+                          _markSaved();
+                        },
+                      ),
+                    ),
+                  ],
+                ),
+              ],
+            ],
+          ),
+        );
+      },
+    );
+  }
+
+  Widget _buildTaxTotalsCustomContent() {
+    return Container(
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(
+        color: const Color(0xFFF8FAFC),
+        borderRadius: BorderRadius.circular(10),
+        border: Border.all(color: const Color(0xFFE2E8F0)),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              const Icon(Icons.receipt_long_rounded, size: 16, color: Color(0xFF2563EB)),
+              const SizedBox(width: 8),
+              const Expanded(
+                child: Text(
+                  'Taxation & Reverse Charge (RCM) Configuration',
+                  style: TextStyle(
+                    fontSize: 12.5,
+                    fontWeight: FontWeight.w700,
+                    color: Color(0xFF0F172A),
+                  ),
+                ),
               ),
             ],
+          ),
+          const SizedBox(height: 4),
+          const Text(
+            'Configure default taxation mode and Reverse Charge Mechanism (RCM) for invoices generated with this template.',
+            style: TextStyle(fontSize: 11, color: Color(0xFF64748B)),
+          ),
+          const SizedBox(height: 10),
+          Container(
+            decoration: BoxDecoration(
+              color: Colors.white,
+              borderRadius: BorderRadius.circular(8),
+              border: Border.all(color: const Color(0xFFCBD5E1)),
+            ),
+            child: SwitchListTile(
+              dense: true,
+              value: _isRcmApplicable,
+              activeColor: const Color(0xFF2563EB),
+              title: const Text(
+                'Enable Reverse Charge Mechanism (RCM) by Default',
+                style: TextStyle(fontSize: 12.5, fontWeight: FontWeight.w700, color: Color(0xFF0F172A)),
+              ),
+              subtitle: const Text(
+                'When enabled, invoices show "Tax Payable on Reverse Charge Basis by Recipient" and grand total excludes supplier tax collection.',
+                style: TextStyle(fontSize: 11, color: Color(0xFF64748B)),
+              ),
+              onChanged: (val) {
+                setState(() {
+                  _isRcmApplicable = val;
+                  _markSaved();
+                });
+              },
+            ),
           ),
         ],
       ),
@@ -3328,332 +2844,68 @@ class _InvoiceTemplateStudioScreenState
   }
 
   Widget _buildCompanyLetterheadStudioCard() {
-    final lhConfig = _currentLetterheadConfig();
-    return Container(
-      margin: const EdgeInsets.only(bottom: 14),
-      decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(12),
-        border: Border.all(
-          color: _letterheadEnabled ? const Color(0xFF93C5FD) : const Color(0xFFE2E8F0),
-          width: _letterheadEnabled ? 1.5 : 1,
-        ),
-        boxShadow: const [
-          BoxShadow(
-            color: Color(0x08000000),
-            blurRadius: 8,
-            offset: Offset(0, 2),
-          ),
-        ],
-      ),
-      child: Theme(
-        data: Theme.of(context).copyWith(dividerColor: Colors.transparent),
-        child: ExpansionTile(
-          initiallyExpanded: true,
-          tilePadding: const EdgeInsets.symmetric(horizontal: 14, vertical: 4),
-          childrenPadding: const EdgeInsets.fromLTRB(14, 0, 14, 14),
-          leading: Container(
-            padding: const EdgeInsets.all(8),
-            decoration: BoxDecoration(
-              gradient: const LinearGradient(
-                colors: [Color(0xFF1E3A8A), Color(0xFF06B6D4)],
-              ),
-              borderRadius: BorderRadius.circular(8),
-            ),
-            child: const Icon(Icons.branding_watermark_rounded, color: Colors.white, size: 18),
-          ),
-          title: Row(
-            children: [
-              const Expanded(
-                child: Text(
-                  'Company Letterhead (Header & Footer)',
-                  style: TextStyle(
-                    fontSize: 13.5,
-                    fontWeight: FontWeight.w800,
-                    color: Color(0xFF0F172A),
-                  ),
-                ),
-              ),
-              Container(
-                padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 2),
-                decoration: BoxDecoration(
-                  color: _letterheadEnabled ? const Color(0xFFDCFCE7) : const Color(0xFFF1F5F9),
-                  borderRadius: BorderRadius.circular(10),
-                ),
-                child: Text(
-                  _letterheadEnabled ? 'DEFAULT FOR ALL DOCS' : 'OFF',
-                  style: TextStyle(
-                    fontSize: 9.5,
-                    fontWeight: FontWeight.w800,
-                    color: _letterheadEnabled ? const Color(0xFF15803D) : const Color(0xFF64748B),
-                  ),
-                ),
-              ),
-            ],
-          ),
-          subtitle: const Text(
-            'Auto-applies header & footer to Invoices, Biodata, Quotations & PDFs',
-            style: TextStyle(fontSize: 11, color: Color(0xFF64748B)),
-          ),
-          children: [
-            // Master Toggle: Default for All Documents
-            SwitchListTile(
-              dense: true,
-              contentPadding: EdgeInsets.zero,
-              title: const Text(
-                'Use as Default Letterhead for All Documents (Invoice / Biodata)',
-                style: TextStyle(fontSize: 12, fontWeight: FontWeight.w700, color: Color(0xFF1E293B)),
-              ),
-              subtitle: const Text(
-                'Replaces standard header & footer with your branded letterhead banner',
-                style: TextStyle(fontSize: 10.5, color: Color(0xFF64748B)),
-              ),
-              value: _letterheadEnabled,
-              activeColor: const Color(0xFF2563EB),
-              onChanged: (val) {
-                setState(() {
-                  _letterheadEnabled = val;
-                  _markSaved();
-                });
-              },
-            ),
-            const SizedBox(height: 8),
-
-            // Layout Design Picker
-            const Align(
-              alignment: Alignment.centerLeft,
-              child: Text(
-                'Select Letterhead Layout Design:',
-                style: TextStyle(fontSize: 11.5, fontWeight: FontWeight.w700, color: Color(0xFF334155)),
-              ),
-            ),
-            const SizedBox(height: 8),
-            Wrap(
-              spacing: 8,
-              runSpacing: 8,
-              children: kLetterheadPresets.map((preset) {
-                final isSelected = _letterheadStyleId == preset.id;
-                return InkWell(
-                  onTap: () {
-                    setState(() {
-                      _letterheadStyleId = preset.id;
-                      if (preset.id == 'classic_traditional') {
-                        _letterheadEnabled = false;
-                      } else {
-                        _letterheadEnabled = true;
-                      }
-                      _markSaved();
-                    });
-                  },
-                  borderRadius: BorderRadius.circular(8),
-                  child: Container(
-                    padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 7),
-                    decoration: BoxDecoration(
-                      color: isSelected ? const Color(0xFFEFF6FF) : const Color(0xFFF8FAFC),
-                      borderRadius: BorderRadius.circular(8),
-                      border: Border.all(
-                        color: isSelected ? const Color(0xFF2563EB) : const Color(0xFFCBD5E1),
-                        width: isSelected ? 1.8 : 1,
-                      ),
-                    ),
-                    child: Row(
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        Container(
-                          width: 12,
-                          height: 12,
-                          decoration: BoxDecoration(
-                            gradient: LinearGradient(
-                              colors: [preset.accentColor, preset.secondaryColor],
-                            ),
-                            shape: BoxShape.circle,
-                          ),
-                        ),
-                        const SizedBox(width: 6),
-                        Text(
-                          preset.name,
-                          style: TextStyle(
-                            fontSize: 11,
-                            fontWeight: isSelected ? FontWeight.w800 : FontWeight.w600,
-                            color: isSelected ? const Color(0xFF1E3A8A) : const Color(0xFF334155),
-                          ),
-                        ),
-                      ],
-                    ),
-                  ),
-                );
-              }).toList(),
-            ),
-            const SizedBox(height: 12),
-
-            // Live Mini Preview of Header + Footer (Matching User's NY Solutions Reference)
-            if (lhConfig.isLetterheadActive) ...[
-              Container(
-                padding: const EdgeInsets.all(10),
-                decoration: BoxDecoration(
-                  color: const Color(0xFFF1F5F9),
-                  borderRadius: BorderRadius.circular(8),
-                  border: Border.all(color: const Color(0xFFE2E8F0)),
-                ),
-                child: Column(
-                  children: [
-                    FittedBox(
-                      fit: BoxFit.scaleDown,
-                      child: SizedBox(
-                        width: 680,
-                        child: CompanyLetterheadWidgets.buildHeaderBanner(
-                          config: lhConfig,
-                          overridePrimaryColor: _primaryColor,
-                          showGstBadges: false,
-                        ),
-                      ),
-                    ),
-                    const Text(
-                      'Header (for all documents)',
-                      style: TextStyle(fontSize: 10, fontWeight: FontWeight.w700, color: Color(0xFF334155)),
-                    ),
-                    const SizedBox(height: 8),
-                    FittedBox(
-                      fit: BoxFit.scaleDown,
-                      child: SizedBox(
-                        width: 680,
-                        child: CompanyLetterheadWidgets.buildFooterBanner(
-                          config: lhConfig,
-                          overridePrimaryColor: _primaryColor,
-                        ),
-                      ),
-                    ),
-                    const SizedBox(height: 4),
-                    const Text(
-                      'Footer (for all documents)',
-                      style: TextStyle(fontSize: 10, fontWeight: FontWeight.w700, color: Color(0xFF334155)),
-                    ),
-                  ],
-                ),
-              ),
-              const SizedBox(height: 12),
-            ],
-
-            // Editable Letterhead Details
-            Row(
-              children: [
-                Expanded(
-                  child: TextFormField(
-                    initialValue: _letterheadCompanyName,
-                    decoration: InputDecoration(
-                      labelText: 'Company Name on Letterhead',
-                      isDense: true,
-                      contentPadding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
-                      border: OutlineInputBorder(borderRadius: BorderRadius.circular(8)),
-                    ),
-                    onChanged: (v) {
-                      setState(() {
-                        _letterheadCompanyName = v;
-                        _markSaved();
-                      });
-                    },
-                  ),
-                ),
-                const SizedBox(width: 8),
-                Expanded(
-                  child: TextFormField(
-                    initialValue: _letterheadTagline,
-                    decoration: InputDecoration(
-                      labelText: 'Company Tagline / Slogan',
-                      isDense: true,
-                      contentPadding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
-                      border: OutlineInputBorder(borderRadius: BorderRadius.circular(8)),
-                    ),
-                    onChanged: (v) {
-                      setState(() {
-                        _letterheadTagline = v;
-                        _markSaved();
-                      });
-                    },
-                  ),
-                ),
-              ],
-            ),
-            const SizedBox(height: 8),
-            Row(
-              children: [
-                Expanded(
-                  child: TextFormField(
-                    initialValue: _letterheadPhone,
-                    decoration: InputDecoration(
-                      labelText: 'Phone Number',
-                      isDense: true,
-                      contentPadding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
-                      border: OutlineInputBorder(borderRadius: BorderRadius.circular(8)),
-                    ),
-                    onChanged: (v) {
-                      setState(() {
-                        _letterheadPhone = v;
-                        _markSaved();
-                      });
-                    },
-                  ),
-                ),
-                const SizedBox(width: 8),
-                Expanded(
-                  child: TextFormField(
-                    initialValue: _letterheadEmail,
-                    decoration: InputDecoration(
-                      labelText: 'Official Email',
-                      isDense: true,
-                      contentPadding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
-                      border: OutlineInputBorder(borderRadius: BorderRadius.circular(8)),
-                    ),
-                    onChanged: (v) {
-                      setState(() {
-                        _letterheadEmail = v;
-                        _markSaved();
-                      });
-                    },
-                  ),
-                ),
-                const SizedBox(width: 8),
-                Expanded(
-                  child: TextFormField(
-                    initialValue: _letterheadWebsite,
-                    decoration: InputDecoration(
-                      labelText: 'Website URL',
-                      isDense: true,
-                      contentPadding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
-                      border: OutlineInputBorder(borderRadius: BorderRadius.circular(8)),
-                    ),
-                    onChanged: (v) {
-                      setState(() {
-                        _letterheadWebsite = v;
-                        _markSaved();
-                      });
-                    },
-                  ),
-                ),
-              ],
-            ),
-            const SizedBox(height: 8),
-            TextFormField(
-              initialValue: _letterheadAddress,
-              decoration: InputDecoration(
-                labelText: 'Registered Office Address (Header & Footer)',
-                isDense: true,
-                contentPadding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
-                border: OutlineInputBorder(borderRadius: BorderRadius.circular(8)),
-              ),
-              onChanged: (v) {
-                setState(() {
-                  _letterheadAddress = v;
-                  _markSaved();
-                });
-              },
-            ),
-          ],
-        ),
-      ),
+    return CompanyLetterheadStudioCard(
+      config: _currentLetterheadConfig(),
+      letterheadEnabled: _letterheadEnabled,
+      letterheadStyleId: _letterheadStyleId,
+      primaryColor: _primaryColor,
+      letterheadCompanyName: _letterheadCompanyName,
+      letterheadTagline: _letterheadTagline,
+      letterheadPhone: _letterheadPhone,
+      letterheadEmail: _letterheadEmail,
+      letterheadWebsite: _letterheadWebsite,
+      letterheadAddress: _letterheadAddress,
+      onEnabledChanged: (val) {
+        setState(() {
+          _letterheadEnabled = val;
+          _markSaved();
+        });
+      },
+      onStyleChanged: (styleId, enabled) {
+        setState(() {
+          _letterheadStyleId = styleId;
+          _letterheadEnabled = enabled;
+          _markSaved();
+        });
+      },
+      onCompanyNameChanged: (v) {
+        setState(() {
+          _letterheadCompanyName = v;
+          _markSaved();
+        });
+      },
+      onTaglineChanged: (v) {
+        setState(() {
+          _letterheadTagline = v;
+          _markSaved();
+        });
+      },
+      onPhoneChanged: (v) {
+        setState(() {
+          _letterheadPhone = v;
+          _markSaved();
+        });
+      },
+      onEmailChanged: (v) {
+        setState(() {
+          _letterheadEmail = v;
+          _markSaved();
+        });
+      },
+      onWebsiteChanged: (v) {
+        setState(() {
+          _letterheadWebsite = v;
+          _markSaved();
+        });
+      },
+      onAddressChanged: (v) {
+        setState(() {
+          _letterheadAddress = v;
+          _markSaved();
+        });
+      },
     );
   }
-
   // 3. Left Column: Accordion Section Editor
   Widget _buildLeftAccordionEditor() {
     return LayoutBuilder(
@@ -3679,6 +2931,7 @@ class _InvoiceTemplateStudioScreenState
                 'sec_branding' => _buildBrandingAssetsCustomContent(),
                 'sec_bank' => _buildBankCustomContent(),
                 'sec_terms' => _buildSignatureCustomContent(),
+                'sec_tax_totals' => _buildTaxTotalsCustomContent(),
                 _ => null,
               },
               onEnabledChanged: (val) => _onSectionEnabledChanged(section, val),
@@ -4347,10 +3600,14 @@ class _InvoiceTemplateStudioScreenState
                       _buildSummaryRow('Discount', '(-) ₹ 5,000.00'),
                     if (_isFieldVisible(taxTotalsSection, 'f_tot_taxable'))
                       _buildSummaryRow('Taxable Amount', '₹ 3,66,800.00', isBold: true),
-                    if (_isFieldVisible(taxTotalsSection, 'f_tot_cgst'))
-                      _buildSummaryRow('CGST (9%)', '₹ 33,012.00'),
-                    if (_isFieldVisible(taxTotalsSection, 'f_tot_sgst'))
-                      _buildSummaryRow('SGST (9%)', '₹ 33,012.00'),
+                    if (_isRcmApplicable) ...[
+                      _buildSummaryRow('Reverse Charge (RCM)', 'Tax Payable by Recipient', isBold: true),
+                    ] else ...[
+                      if (_isFieldVisible(taxTotalsSection, 'f_tot_cgst'))
+                        _buildSummaryRow('CGST (9%)', '₹ 33,012.00'),
+                      if (_isFieldVisible(taxTotalsSection, 'f_tot_sgst'))
+                        _buildSummaryRow('SGST (9%)', '₹ 33,012.00'),
+                    ],
                     if (_isFieldVisible(taxTotalsSection, 'f_tot_grand')) ...[
                       const SizedBox(height: 6),
                       Container(
@@ -4368,7 +3625,7 @@ class _InvoiceTemplateStudioScreenState
                               style: _docStyle(fontSize: 12, fontWeight: FontWeight.w800, color: _primaryColor),
                             ),
                             Text(
-                              '₹ 4,32,824.00',
+                              _isRcmApplicable ? '₹ 3,66,800.00' : '₹ 4,32,824.00',
                               style: _docStyle(fontSize: 12, fontWeight: FontWeight.w800, color: _primaryColor),
                             ),
                           ],

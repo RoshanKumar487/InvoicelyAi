@@ -1021,7 +1021,13 @@ class InvoicePreviewA4Paper extends StatelessWidget {
                               _formatAmount(invoice.taxableAmount),
                               isBold: true,
                             ),
-                          if (!invoice.isRcm && invoice.taxRate > 0) ...[
+                          if (invoice.isRcm) ...[
+                            _buildSummaryRow(
+                              'Reverse Charge (RCM)',
+                              'Tax Payable by Recipient',
+                              isBold: true,
+                            ),
+                          ] else if (invoice.taxRate > 0) ...[
                             if (!gstBreakdown.isInterState) ...[
                               if (_isFieldVisible(taxTotalsSection, 'f_tot_cgst'))
                                 _buildSummaryRow(

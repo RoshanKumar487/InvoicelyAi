@@ -193,11 +193,13 @@ class DesktopLineItemsTableHeader extends StatelessWidget {
   const DesktopLineItemsTableHeader({
     required this.localSettings,
     required this.currencySymbol,
+    this.forceShowDuty,
     super.key,
   });
 
   final Map<String, Object?> localSettings;
   final String currencySymbol;
+  final bool? forceShowDuty;
 
   @override
   Widget build(BuildContext context) {
@@ -233,7 +235,8 @@ class DesktopLineItemsTableHeader extends StatelessWidget {
         itemLabel.toLowerCase().contains('guard') ||
         itemLabel.toLowerCase().contains('designation');
 
-    final showDuty = ls['showItemDuty'] == true || isSecurityOrStaffing;
+    final showDuty = forceShowDuty ??
+        (ls['showItemDuty'] == true || isSecurityOrStaffing);
     final showUnit = ls['showItemUnit'] != false;
     final showDiscount = ls['showItemDiscount'] == true;
 
@@ -324,6 +327,7 @@ class LineItemEditor extends StatefulWidget {
     this.onDuplicate,
     this.issueDate,
     this.forceDesktopRow,
+    this.forceShowDuty,
     this.employees = const <Employee>[],
     this.onOpenFormulaSettings,
     super.key,
@@ -340,6 +344,7 @@ class LineItemEditor extends StatefulWidget {
   final VoidCallback? onDuplicate;
   final String? issueDate;
   final bool? forceDesktopRow;
+  final bool? forceShowDuty;
   final List<Employee> employees;
   final VoidCallback? onOpenFormulaSettings;
 
@@ -666,9 +671,10 @@ class _LineItemEditorState extends State<LineItemEditor> {
         itemLabel.toLowerCase().contains('guard') ||
         itemLabel.toLowerCase().contains('designation');
 
-    final showDuty = ls['showItemDuty'] == true ||
-        isSecurityOrStaffing ||
-        widget.item.dutyCount > 0;
+    final showDuty = widget.forceShowDuty ??
+        (ls['showItemDuty'] == true ||
+            isSecurityOrStaffing ||
+            widget.item.dutyCount > 0);
     final showUnit = ls['showItemUnit'] != false;
     final showDiscount = ls['showItemDiscount'] == true;
 

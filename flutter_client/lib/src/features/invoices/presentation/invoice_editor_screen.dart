@@ -75,6 +75,7 @@ class _InvoiceEditorScreenState extends State<InvoiceEditorScreen> {
   late String _taxType;
   late String _template;
   late bool _taxInclusive;
+  late bool _isRcm;
   late List<InvoiceItem> _items;
   List<Client> _clients = const [];
   List<Employee> _employees = const [];
@@ -173,6 +174,8 @@ class _InvoiceEditorScreenState extends State<InvoiceEditorScreen> {
     _template = invoice?.templateId ?? widget.preferredTemplate?.id ?? 'modern';
     _taxInclusive = invoice?.isTaxInclusive ??
         (_localSettings['defaultTaxInclusive'] == true);
+    _isRcm = invoice?.isRcm ??
+        (_localSettings['isRcmApplicable'] == true);
     _selectedClientId = invoice?.clientId;
     _showNotesSection = invoice != null ||
         _localSettings['showNotesSection'] == true ||
@@ -472,7 +475,7 @@ class _InvoiceEditorScreenState extends State<InvoiceEditorScreen> {
         templateId: _template,
         createdAt: widget.invoice?.createdAt,
         paidDate: widget.invoice?.paidDate,
-        isRcm: widget.invoice?.isRcm ?? (_localSettings['isRcmApplicable'] == true),
+        isRcm: _isRcm,
       );
 
   Future<void> _pickDate({required bool issue}) async {
@@ -602,6 +605,9 @@ class _InvoiceEditorScreenState extends State<InvoiceEditorScreen> {
               double.tryParse(applied['standardDutyDays']?.toString() ?? '30') ?? 30.0;
           setState(() {
             _localSettings = applied;
+            if (applied.containsKey('isRcmApplicable')) {
+              _isRcm = applied['isRcmApplicable'] == true;
+            }
             if (applied['industryPresetId'] == 'security' &&
                 _items.isNotEmpty &&
                 _items.first.description.trim().isEmpty) {
@@ -992,10 +998,33 @@ class _InvoiceEditorScreenState extends State<InvoiceEditorScreen> {
             Text(
               '${_taxLabel.text} ${_num(_value(_taxRate))}% · $_taxType'
               '${_taxInclusive ? ' · tax included in prices' : ''}'
+              '${_isRcm ? ' · RCM Applicable' : ''}'
               ' · ${_currencyCode.text}',
               style: Theme.of(context).textTheme.bodySmall,
             ),
-            const SizedBox(height: 14),
+            const SizedBox(height: 8),
+            Wrap(
+              spacing: 8,
+              runSpacing: 6,
+              children: [
+                FilterChip(
+                  label: const Text('Tax Inclusive', style: TextStyle(fontSize: 11.5, fontWeight: FontWeight.w700)),
+                  selected: _taxInclusive,
+                  onSelected: (val) => setState(() => _taxInclusive = val),
+                  visualDensity: VisualDensity.compact,
+                ),
+                FilterChip(
+                  label: const Text('RCM Applicable', style: TextStyle(fontSize: 11.5, fontWeight: FontWeight.w700)),
+                  selected: _isRcm,
+                  onSelected: (val) => setState(() {
+                    _isRcm = val;
+                    _localSettings['isRcmApplicable'] = val;
+                  }),
+                  visualDensity: VisualDensity.compact,
+                ),
+              ],
+            ),
+            const SizedBox(height: 10),
             _ResponsiveFields(
               children: _buildAdjustmentFields(draft),
             ),
@@ -1434,6 +1463,12 @@ class _InvoiceEditorScreenState extends State<InvoiceEditorScreen> {
                                 DesktopLineItemsTableHeader(
                                   localSettings: _localSettings,
                                   currencySymbol: sym,
+                                  forceShowDuty: _localSettings['showItemDuty'] == true ||
+                                      _localSettings['industryPresetId'] == 'security' ||
+                                      _localSettings['businessType'] == 'security' ||
+                                      _localSettings['industryPresetId'] == 'hr_staffing' ||
+                                      (_localSettings['customItemHeader']?.toString().toLowerCase().contains('guard') == true) ||
+                                      _items.any((item) => item.dutyCount > 0),
                                 ),
 
                                 // Single-Line Item Rows
@@ -1446,6 +1481,12 @@ class _InvoiceEditorScreenState extends State<InvoiceEditorScreen> {
                                     localSettings: _localSettings,
                                     issueDate: _issueDate,
                                     forceDesktopRow: true,
+                                    forceShowDuty: _localSettings['showItemDuty'] == true ||
+                                        _localSettings['industryPresetId'] == 'security' ||
+                                        _localSettings['businessType'] == 'security' ||
+                                        _localSettings['industryPresetId'] == 'hr_staffing' ||
+                                        (_localSettings['customItemHeader']?.toString().toLowerCase().contains('guard') == true) ||
+                                        _items.any((item) => item.dutyCount > 0),
                                     employees: _employees,
                                     onOpenFormulaSettings: _openFormulaPopup,
                                     showDescriptionField: _globalShowItemDescriptions ||
@@ -1580,14 +1621,33 @@ class _InvoiceEditorScreenState extends State<InvoiceEditorScreen> {
                                       title: 'Tax, Discounts & Adjustments',
                                       subtitle:
                                           '${_taxLabel.text} ${_num(_value(_taxRate))}% ($_taxType) · ${_currencyCode.text}',
-                                      trailing: FilterChip(
-                                        label: const Text(
-                                          'Tax Inclusive',
-                                          style: TextStyle(fontSize: 11.5, fontWeight: FontWeight.w700),
-                                        ),
-                                        selected: _taxInclusive,
-                                        onSelected: (val) => setState(() => _taxInclusive = val),
-                                        visualDensity: VisualDensity.compact,
+                                      trailing: Wrap(
+                                        spacing: 8,
+                                        runSpacing: 4,
+                                        crossAxisAlignment: WrapCrossAlignment.center,
+                                        children: [
+                                          FilterChip(
+                                            label: const Text(
+                                              'Tax Inclusive',
+                                              style: TextStyle(fontSize: 11.5, fontWeight: FontWeight.w700),
+                                            ),
+                                            selected: _taxInclusive,
+                                            onSelected: (val) => setState(() => _taxInclusive = val),
+                                            visualDensity: VisualDensity.compact,
+                                          ),
+                                          FilterChip(
+                                            label: const Text(
+                                              'RCM Applicable',
+                                              style: TextStyle(fontSize: 11.5, fontWeight: FontWeight.w700),
+                                            ),
+                                            selected: _isRcm,
+                                            onSelected: (val) => setState(() {
+                                              _isRcm = val;
+                                              _localSettings['isRcmApplicable'] = val;
+                                            }),
+                                            visualDensity: VisualDensity.compact,
+                                          ),
+                                        ],
                                       ),
                                       children: [
                                         Row(
