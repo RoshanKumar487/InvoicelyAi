@@ -58,9 +58,11 @@ public class TemplateRenderer {
         BigDecimal amountPaid = invoice.getAmountPaid() != null ? invoice.getAmountPaid() : BigDecimal.ZERO;
         vars.put("amountPaid", amountPaid.toPlainString());
 
-        // Approximate total / balance calculation from invoice fields
-        vars.put("balanceDue", amountPaid.compareTo(BigDecimal.ZERO) == 0 ? "Pending Balance" : "Remaining Balance");
-        vars.put("amountDue", vars.get("currencySymbol") + " " + amountPaid.toPlainString());
+        BigDecimal total = invoice.getTotal();
+        BigDecimal balanceDue = invoice.getBalanceDue();
+        vars.put("total", total.toPlainString());
+        vars.put("balanceDue", balanceDue.toPlainString());
+        vars.put("amountDue", vars.get("currencySymbol") + " " + balanceDue.toPlainString());
 
         if (company != null) {
             vars.put("companyName", company.getCompanyName() != null ? company.getCompanyName() : "Invoicely");

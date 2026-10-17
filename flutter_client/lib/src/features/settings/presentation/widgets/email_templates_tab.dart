@@ -1,20 +1,22 @@
-import 'dart:convert';
-
 import 'package:flutter/material.dart';
 
 import '../../../../core/api/api_client.dart';
+import '../../../../core/storage/local_preferences.dart';
 import '../../../../shared/widgets/app_card.dart';
 import '../../../notifications/data/notification_repository.dart';
+import '../email_scheduler_settings_screen.dart';
 
 class EmailTemplatesTab extends StatefulWidget {
   const EmailTemplatesTab({
     required this.apiClient,
     required this.profile,
+    this.localPreferences,
     super.key,
   });
 
   final ApiClient apiClient;
   final Map<String, dynamic> profile;
+  final LocalPreferences? localPreferences;
 
   @override
   State<EmailTemplatesTab> createState() => _EmailTemplatesTabState();
@@ -299,14 +301,39 @@ class _EmailTemplatesTabState extends State<EmailTemplatesTab> {
                 ),
               ),
               const SizedBox(width: 8),
-              OutlinedButton.icon(
-                onPressed: _showOutboxAuditSheet,
-                style: OutlinedButton.styleFrom(
-                  foregroundColor: const Color(0xFF38BDF8),
-                  side: const BorderSide(color: Color(0xFF38BDF8)),
-                ),
-                icon: const Icon(Icons.outbox_rounded, size: 16),
-                label: const Text('Outbox Audit'),
+              Wrap(
+                spacing: 8,
+                runSpacing: 8,
+                children: [
+                  OutlinedButton.icon(
+                    onPressed: () {
+                      Navigator.of(context).push(
+                        MaterialPageRoute<void>(
+                          builder: (ctx) => EmailSchedulerSettingsScreen(
+                            apiClient: widget.apiClient,
+                            localPreferences: widget.localPreferences ?? LocalPreferences(scope: 'global'),
+                            onBack: () => Navigator.of(ctx).pop(),
+                          ),
+                        ),
+                      );
+                    },
+                    style: OutlinedButton.styleFrom(
+                      foregroundColor: const Color(0xFF38BDF8),
+                      side: const BorderSide(color: Color(0xFF38BDF8)),
+                    ),
+                    icon: const Icon(Icons.alarm_on_rounded, size: 16),
+                    label: const Text('Scheduler & SMTP'),
+                  ),
+                  OutlinedButton.icon(
+                    onPressed: _showOutboxAuditSheet,
+                    style: OutlinedButton.styleFrom(
+                      foregroundColor: const Color(0xFF38BDF8),
+                      side: const BorderSide(color: Color(0xFF38BDF8)),
+                    ),
+                    icon: const Icon(Icons.outbox_rounded, size: 16),
+                    label: const Text('Outbox Audit'),
+                  ),
+                ],
               ),
             ],
           ),
@@ -547,7 +574,7 @@ class _OutboxAuditBottomSheetState extends State<_OutboxAuditBottomSheet> {
     try {
       final metrics = await widget.repository.loadMetrics();
       final queueResp = await widget.repository.loadQueue();
-      final content = queueResp['data']?['content'] ?? queueResp['content'] ?? [];
+      final content = queueResp['data']?['content'] ?? queueResp['content'] ?? <dynamic>[];
       final List<Map<String, dynamic>> items = (content as List<dynamic>).map((e) => Map<String, dynamic>.from(e as Map)).toList();
 
       if (!mounted) return;

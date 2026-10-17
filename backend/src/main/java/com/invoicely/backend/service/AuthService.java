@@ -22,6 +22,8 @@ public class AuthService {
     private final UserRepository userRepository;
     private final CompanyRepository companyRepository;
     private final CompanyJoinRequestRepository joinRequestRepository;
+    private final com.invoicely.backend.repository.CompanyMembershipRepository companyMembershipRepository;
+    private final com.invoicely.backend.repository.BusinessProfileRepository businessProfileRepository;
     private final PasswordEncoder passwordEncoder;
     private final JwtTokenProvider tokenProvider;
     private final String developerSecretKey;
@@ -30,6 +32,8 @@ public class AuthService {
             UserRepository userRepository,
             CompanyRepository companyRepository,
             CompanyJoinRequestRepository joinRequestRepository,
+            com.invoicely.backend.repository.CompanyMembershipRepository companyMembershipRepository,
+            com.invoicely.backend.repository.BusinessProfileRepository businessProfileRepository,
             PasswordEncoder passwordEncoder,
             JwtTokenProvider tokenProvider,
             @Value("${app.developer.secret-key:invoicely_dev_secret_2026}") String developerSecretKey
@@ -37,9 +41,25 @@ public class AuthService {
         this.userRepository = userRepository;
         this.companyRepository = companyRepository;
         this.joinRequestRepository = joinRequestRepository;
+        this.companyMembershipRepository = companyMembershipRepository;
+        this.businessProfileRepository = businessProfileRepository;
         this.passwordEncoder = passwordEncoder;
         this.tokenProvider = tokenProvider;
         this.developerSecretKey = developerSecretKey;
+    }
+
+    private Company syncCompanyWithProfile(Company company) {
+        if (company == null || company.getId() == null) return company;
+        businessProfileRepository.findFirstByCompanyId(company.getId()).ifPresent(profile -> {
+            String bpName = profile.getBusinessName();
+            if (bpName != null && !bpName.isBlank()
+                    && !"Apex Nova Dynamics".equalsIgnoreCase(bpName.trim())
+                    && !bpName.trim().equals(company.getCompanyName())) {
+                company.setCompanyName(bpName.trim());
+                companyRepository.save(company);
+            }
+        });
+        return company;
     }
 
     @Transactional
@@ -63,6 +83,18 @@ public class AuthService {
         company.setPhone(request.getMobile().trim());
         company = companyRepository.save(company);
 
+        // Initialize BusinessProfile for this company
+        BusinessProfile profile = new BusinessProfile();
+        profile.setCompanyId(company.getId());
+        profile.setBusinessName(company.getCompanyName());
+        profile.setLegalName(company.getCompanyName());
+        if (company.getGstin() != null) profile.setGstin(company.getGstin());
+        if (company.getEmail() != null) profile.setEmail(company.getEmail());
+        if (company.getPhone() != null) profile.setPhone(company.getPhone());
+        if (company.getLocation() != null) profile.setAddress(company.getLocation());
+        if (company.getSignatureStampUrl() != null) profile.setStampUrl(company.getSignatureStampUrl());
+        businessProfileRepository.save(profile);
+
         // Creator receives ADMIN role and ACTIVE status
         User adminUser = new User(
                 request.getFullName().trim(),
@@ -75,11 +107,19 @@ public class AuthService {
         );
         adminUser = userRepository.save(adminUser);
 
+        // Record initial company membership
+        companyMembershipRepository.save(new com.invoicely.backend.model.CompanyMembership(
+                adminUser.getId(),
+                company.getId(),
+                Role.ADMIN,
+                true
+        ));
+
         String token = tokenProvider.generateToken(adminUser);
         return new AuthResponse(
                 token,
                 new UserSummaryDto(adminUser),
-                new CompanySummaryDto(company),
+                new CompanySummaryDto(company, "ADMIN", true),
                 "Company and Admin registered successfully. Share Company Code '" + companyCode + "' with your employees."
         );
     }
@@ -94,6 +134,7 @@ public class AuthService {
         Company company = companyRepository.findByCompanyCode(searchCode)
                 .orElseGet(() -> companyRepository.findByCompanyNameIgnoreCase(request.getCompanyCode().trim())
                         .orElseThrow(() -> new ResourceNotFoundException("Company", "companyCode", request.getCompanyCode())));
+        company = syncCompanyWithProfile(company);
 
         // Employee is registered with PENDING_APPROVAL status
         User employee = new User(
@@ -157,7 +198,7 @@ public class AuthService {
         );
     }
 
-    @Transactional(readOnly = true)
+    @Transactional
     public AuthResponse login(LoginRequest request) {
         String identifier = request.getIdentifier().trim().toLowerCase(Locale.ROOT);
         User user = userRepository.findByEmailOrMobile(identifier, identifier)
@@ -182,6 +223,7 @@ public class AuthService {
         Company company = null;
         if (user.getCompanyId() != null) {
             company = companyRepository.findById(user.getCompanyId()).orElse(null);
+            company = syncCompanyWithProfile(company);
         }
 
         String token = tokenProvider.generateToken(user);
@@ -193,7 +235,7 @@ public class AuthService {
         );
     }
 
-    @Transactional(readOnly = true)
+    @Transactional
     public AuthResponse getMe(UserPrincipal principal) {
         User user = userRepository.findById(principal.getId())
                 .orElseThrow(() -> new ResourceNotFoundException("User", "id", principal.getId()));
@@ -201,6 +243,7 @@ public class AuthService {
         Company company = null;
         if (user.getCompanyId() != null) {
             company = companyRepository.findById(user.getCompanyId()).orElse(null);
+            company = syncCompanyWithProfile(company);
         }
 
         return new AuthResponse(

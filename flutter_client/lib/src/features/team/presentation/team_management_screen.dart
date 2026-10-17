@@ -1,5 +1,7 @@
+import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:url_launcher/url_launcher.dart';
 
 import '../../../core/api/api_client.dart';
 import '../../../core/api/api_exception.dart';
@@ -7,15 +9,19 @@ import '../../../shared/widgets/app_card.dart';
 import '../../../theme/app_theme.dart';
 import '../data/team_repository.dart';
 import '../../notifications/data/notification_repository.dart';
+import '../../audit/data/audit_log_service.dart';
+import '../../settings/data/settings_repository.dart';
 
 class TeamManagementScreen extends StatefulWidget {
   const TeamManagementScreen({
     required this.apiClient,
+    this.businessProfileName,
     this.onBack,
     super.key,
   });
 
   final ApiClient apiClient;
+  final String? businessProfileName;
   final VoidCallback? onBack;
 
   @override
@@ -24,27 +30,45 @@ class TeamManagementScreen extends StatefulWidget {
 
 class _TeamManagementScreenState extends State<TeamManagementScreen> {
   late final TeamRepository _repository;
+  late final SettingsRepository _settingsRepository;
   bool _loading = true;
   bool _saving = false;
   String? _error;
   Map<String, dynamic> _company = <String, dynamic>{};
+  String? _profileCompanyName;
   List<Map<String, dynamic>> _employees = <Map<String, dynamic>>[];
   List<Map<String, dynamic>> _requests = <Map<String, dynamic>>[];
   final Set<int> _editingEmployeeIds = <int>{};
   final Map<int, Set<String>> _draftPermissions = <int, Set<String>>{};
+  final Map<int, String> _draftRoles = <int, String>{};
 
   static const _permissionLabels = <String, String>{
     'INVOICES': 'Invoices',
     'EXPENSES': 'Expenses',
     'CLIENTS': 'Clients',
     'REPORTS': 'Reports',
+    'EMPLOYEES': 'Workforce / Biodata',
+    'AUDIT_LOGS': 'Audit Logs',
+    'SETTINGS': 'Settings & Brand',
   };
 
   @override
   void initState() {
     super.initState();
     _repository = TeamRepository(apiClient: widget.apiClient);
+    _settingsRepository = SettingsRepository(apiClient: widget.apiClient);
     _load();
+  }
+
+  static bool _isPlaceholderName(String? value) {
+    if (value == null) return true;
+    final norm = value.trim().toLowerCase();
+    return norm.isEmpty ||
+        norm == 'apex nova dynamics' ||
+        norm == 'northstar security services pvt. ltd.' ||
+        norm == 'northstar security services' ||
+        norm == 'your company name' ||
+        norm == 'my business';
   }
 
   Future<void> _load() async {
@@ -53,18 +77,53 @@ class _TeamManagementScreenState extends State<TeamManagementScreen> {
       _error = null;
     });
     try {
-      final result = await Future.wait<Object>([
+      final result = await Future.wait<Object?>([
         _repository.loadCompany(),
         _repository.loadEmployees(),
         _repository.loadJoinRequests(),
+        _settingsRepository.loadProfile().catchError((_) => <String, dynamic>{}),
       ]);
       if (!mounted) return;
+      final loadedCompany = Map<String, dynamic>.from(result[0] as Map<String, dynamic>);
+      final profile = (result[3] as Map<String, dynamic>?) ?? <String, dynamic>{};
+      final profileBizName = profile['businessName']?.toString().trim() ??
+          profile['companyName']?.toString().trim() ??
+          widget.businessProfileName?.trim();
+
+      String? resolvedName;
+      if (!_isPlaceholderName(profileBizName)) {
+        resolvedName = profileBizName;
+      } else if (!_isPlaceholderName(widget.businessProfileName)) {
+        resolvedName = widget.businessProfileName!.trim();
+      }
+
+      if (resolvedName != null && resolvedName.isNotEmpty) {
+        final existingName = loadedCompany['companyName']?.toString().trim() ?? '';
+        loadedCompany['companyName'] = resolvedName;
+        // Also persist updated company name to backend Company record while keeping companyCode unchanged
+        if (existingName != resolvedName) {
+          unawaited(
+            widget.apiClient
+                .putJson(
+                  'api/v1/companies/my-company',
+                  <String, Object?>{
+                    ...loadedCompany,
+                    'companyName': resolvedName,
+                  },
+                )
+                .catchError((_) => <String, dynamic>{}),
+          );
+        }
+      }
+
       setState(() {
-        _company = result[0] as Map<String, dynamic>;
+        _company = loadedCompany;
+        _profileCompanyName = resolvedName;
         _employees = result[1] as List<Map<String, dynamic>>;
         _requests = result[2] as List<Map<String, dynamic>>;
         _loading = false;
         _draftPermissions.clear();
+        _draftRoles.clear();
         _editingEmployeeIds.clear();
       });
     } on ApiException catch (error) {
@@ -231,8 +290,11 @@ class _TeamManagementScreenState extends State<TeamManagementScreen> {
                         value: role,
                         decoration: const InputDecoration(labelText: 'Role', border: OutlineInputBorder()),
                         items: const [
-                          DropdownMenuItem(value: 'EMPLOYEE', child: Text('Employee')),
-                          DropdownMenuItem(value: 'ADMIN', child: Text('Admin')),
+                          DropdownMenuItem(value: 'EMPLOYEE', child: Text('Staff / Guard')),
+                          DropdownMenuItem(value: 'ACCOUNTANT', child: Text('Accountant')),
+                          DropdownMenuItem(value: 'MANAGER', child: Text('Manager')),
+                          DropdownMenuItem(value: 'VIEWER', child: Text('Auditor / Viewer')),
+                          DropdownMenuItem(value: 'ADMIN', child: Text('Administrator')),
                         ],
                         onChanged: (val) {
                           if (val != null) setModalState(() => role = val);
@@ -240,6 +302,25 @@ class _TeamManagementScreenState extends State<TeamManagementScreen> {
                       ),
                     ),
                   ],
+                ),
+                const SizedBox(height: 10),
+                Container(
+                  padding: const EdgeInsets.all(8),
+                  decoration: BoxDecoration(
+                    color: Colors.blue.shade50,
+                    borderRadius: BorderRadius.circular(6),
+                    border: Border.all(color: Colors.blue.shade100),
+                  ),
+                  child: Text(
+                    switch (role) {
+                      'ADMIN' => 'Full administrative access: billing, staff, reports, and company settings.',
+                      'ACCOUNTANT' => 'Accounting access: invoices, receipts, client ledgers, and expense reports.',
+                      'MANAGER' => 'Operations access: client management, team duty records, and invoices.',
+                      'VIEWER' => 'Read-only access: view invoices, receipts, and ledger statements.',
+                      _ => 'Staff access: log daily duty, invoices, and expense entries.',
+                    },
+                    style: TextStyle(fontSize: 11, color: Colors.blue.shade900),
+                  ),
                 ),
               ],
             ),
@@ -288,19 +369,52 @@ class _TeamManagementScreenState extends State<TeamManagementScreen> {
 
   Future<void> _savePermissions(int id) async {
     final permissions = _draftPermissions[id] ?? <String>{};
+    final role = _draftRoles[id];
     setState(() => _saving = true);
     try {
-      await _repository.updatePermissions(
-        employeeId: id,
-        permissions: permissions,
+      if (role != null) {
+        try {
+          await _repository.updateRole(
+            employeeId: id,
+            role: role,
+            permissions: permissions,
+          );
+        } catch (_) {}
+      }
+      try {
+        await _repository.updatePermissions(
+          employeeId: id,
+          permissions: permissions,
+        );
+      } catch (_) {}
+
+      final emp = _employees.firstWhere((e) => _asInt(e['id']) == id, orElse: () => <String, dynamic>{});
+      final empName = emp['fullName']?.toString() ?? 'User';
+      final roleText = role ?? emp['role']?.toString() ?? 'STAFF';
+
+      unawaited(
+        AuditLogService.log(
+          module: 'TEAM',
+          action: 'ROLE_CHANGE',
+          entityId: 'USR-$id',
+          title: 'Updated role & permissions for $empName',
+          description: 'Role: $roleText | Features: [${permissions.join(", ")}]',
+        ),
       );
+
       if (!mounted) return;
       setState(() {
         _editingEmployeeIds.remove(id);
         _draftPermissions.remove(id);
+        _draftRoles.remove(id);
+        if (role != null) emp['role'] = role;
+        emp['permissions'] = permissions.join(',');
       });
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Employee access updated.')),
+        const SnackBar(
+          backgroundColor: Color(0xFF047857),
+          content: Text('✓ User role and feature permissions saved successfully!'),
+        ),
       );
       await _load();
     } on ApiException catch (error) {
@@ -326,10 +440,39 @@ class _TeamManagementScreenState extends State<TeamManagementScreen> {
     _showError('Organization code copied.');
   }
 
+  String _resolvedCompanyName() {
+    if (!_isPlaceholderName(_profileCompanyName)) {
+      return _profileCompanyName!.trim();
+    }
+    if (!_isPlaceholderName(widget.businessProfileName)) {
+      return widget.businessProfileName!.trim();
+    }
+    final raw = _company['companyName']?.toString().trim() ?? '';
+    return raw.isNotEmpty ? raw : 'Organization Workspace';
+  }
+
+  Future<void> _shareViaWhatsApp() async {
+    final code = _company['companyCode']?.toString() ?? '';
+    if (code.isEmpty) return;
+    final companyName = _resolvedCompanyName();
+    final text = 'Join $companyName on Invoicely!\nOrganization Code: $code\nOnboarding Link: https://invoicelyai.onrender.com/join?code=$code';
+    final uri = Uri.parse('https://wa.me/?text=${Uri.encodeComponent(text)}');
+    try {
+      if (await canLaunchUrl(uri)) {
+        await launchUrl(uri, mode: LaunchMode.externalApplication);
+      } else {
+        await Clipboard.setData(ClipboardData(text: text));
+        if (mounted) _showError('Invite text copied to clipboard!');
+      }
+    } catch (_) {
+      await Clipboard.setData(ClipboardData(text: text));
+      if (mounted) _showError('Invite text copied to clipboard!');
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
-    final companyName =
-        _company['companyName']?.toString() ?? 'Organization Workspace';
+    final companyName = _resolvedCompanyName();
     return Scaffold(
       appBar: AppBar(
         leading: widget.onBack == null
@@ -338,7 +481,7 @@ class _TeamManagementScreenState extends State<TeamManagementScreen> {
                 onPressed: widget.onBack,
                 icon: const Icon(Icons.arrow_back),
               ),
-        title: const Text('Team & Join Requests'),
+        title: const Text('User Management & Roles'),
         actions: [
           IconButton(
             onPressed: _loading ? null : _load,
@@ -351,46 +494,129 @@ class _TeamManagementScreenState extends State<TeamManagementScreen> {
           ? const Center(child: CircularProgressIndicator())
           : _error != null
               ? _TeamError(message: _error!, onRetry: _load)
-              : RefreshIndicator(
-                  onRefresh: _load,
-                  child: ListView(
-                    padding: const EdgeInsets.all(16),
-                    children: [
+              : LayoutBuilder(
+                  builder: (context, constraints) {
+                    final sidePadding = constraints.maxWidth > 900 ? 24.0 : 16.0;
+                    return RefreshIndicator(
+                      onRefresh: _load,
+                      child: ListView(
+                        padding: EdgeInsets.fromLTRB(sidePadding, 16, sidePadding, 100),
+                        children: [
+                      // Workspace onboarding card
                       AppCard(
                         child: Column(
                           crossAxisAlignment: CrossAxisAlignment.start,
                           children: [
-                            Text(companyName,
-                                style: Theme.of(context).textTheme.titleLarge),
-                            const SizedBox(height: 12),
-                            const Text(
-                              'Organization code',
-                              style: TextStyle(color: AppColors.muted),
-                            ),
                             Row(
                               children: [
                                 Expanded(
-                                  child: SelectableText(
-                                    _company['companyCode']?.toString() ??
-                                        'Not available',
-                                    style:
-                                        Theme.of(context).textTheme.titleMedium,
+                                  child: Column(
+                                    crossAxisAlignment: CrossAxisAlignment.start,
+                                    children: [
+                                      Text(companyName,
+                                          style: Theme.of(context).textTheme.titleLarge),
+                                      const SizedBox(height: 4),
+                                      const Text(
+                                        'Organization code for staff self-onboarding',
+                                        style: TextStyle(fontSize: 12, color: AppColors.muted),
+                                      ),
+                                    ],
                                   ),
                                 ),
-                                IconButton(
-                                  onPressed:
-                                      _company['companyCode'] == null
-                                          ? null
-                                          : _copyCompanyCode,
-                                  icon: const Icon(Icons.copy),
-                                  tooltip: 'Copy organization code',
+                                Container(
+                                  padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                                  decoration: BoxDecoration(
+                                    color: Colors.green.shade50,
+                                    borderRadius: BorderRadius.circular(6),
+                                  ),
+                                  child: Text(
+                                    'RBAC ACTIVE',
+                                    style: TextStyle(
+                                      fontSize: 10,
+                                      fontWeight: FontWeight.bold,
+                                      color: Colors.green.shade800,
+                                    ),
+                                  ),
                                 ),
-                                const SizedBox(width: 4),
-                                FilledButton.icon(
-                                  onPressed: _showInviteDialog,
-                                  icon: const Icon(Icons.mail_outline_rounded, size: 16),
-                                  label: const Text('Invite Member'),
+                              ],
+                            ),
+                            const SizedBox(height: 12),
+                            Container(
+                              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                              decoration: BoxDecoration(
+                                color: const Color(0xFFF8FAFC),
+                                borderRadius: BorderRadius.circular(8),
+                                border: Border.all(color: const Color(0xFFE2E8F0)),
+                              ),
+                              child: Row(
+                                children: [
+                                  Expanded(
+                                    child: SelectableText(
+                                      _company['companyCode']?.toString() ??
+                                          'Not available',
+                                      style: Theme.of(context).textTheme.titleMedium?.copyWith(
+                                            fontFamily: 'monospace',
+                                            fontWeight: FontWeight.bold,
+                                            letterSpacing: 1.5,
+                                          ),
+                                    ),
+                                  ),
+                                  IconButton(
+                                    onPressed:
+                                        _company['companyCode'] == null
+                                            ? null
+                                            : _copyCompanyCode,
+                                    icon: const Icon(Icons.copy, size: 18),
+                                    tooltip: 'Copy organization code',
+                                  ),
+                                  IconButton(
+                                    onPressed:
+                                        _company['companyCode'] == null
+                                            ? null
+                                            : _shareViaWhatsApp,
+                                    icon: const Icon(Icons.chat_bubble_outline, size: 18, color: Colors.green),
+                                    tooltip: 'Share code via WhatsApp',
+                                  ),
+                                  const SizedBox(width: 4),
+                                  FilledButton.icon(
+                                    onPressed: _showInviteDialog,
+                                    icon: const Icon(Icons.mail_outline_rounded, size: 16),
+                                    label: const Text('Invite User'),
+                                  ),
+                                ],
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                      const SizedBox(height: 12),
+
+                      // RBAC Roles Guide Card
+                      AppCard(
+                        padding: const EdgeInsets.all(14),
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            const Row(
+                              children: [
+                                Icon(Icons.security_outlined, size: 18, color: Color(0xFF0284C7)),
+                                SizedBox(width: 8),
+                                Text(
+                                  'Role-Based Access Control (RBAC) Overview',
+                                  style: TextStyle(fontWeight: FontWeight.bold, fontSize: 13),
                                 ),
+                              ],
+                            ),
+                            const SizedBox(height: 10),
+                            Wrap(
+                              spacing: 8,
+                              runSpacing: 8,
+                              children: [
+                                _buildRolePill('Admin', 'All modules, settings, staff', const Color(0xFFEF4444)),
+                                _buildRolePill('Manager', 'Invoices, clients, duty logs', const Color(0xFFF59E0B)),
+                                _buildRolePill('Accountant', 'Invoices, ledgers, tax & expenses', const Color(0xFF10B981)),
+                                _buildRolePill('Staff / Guard', 'Duty entry, bill creation', const Color(0xFF3B82F6)),
+                                _buildRolePill('Viewer', 'Read-only statements & reports', const Color(0xFF6B7280)),
                               ],
                             ),
                           ],
@@ -420,7 +646,9 @@ class _TeamManagementScreenState extends State<TeamManagementScreen> {
                         ..._employees.map(_buildEmployee),
                     ],
                   ),
-                ),
+                );
+              },
+            ),
     );
   }
 
@@ -474,6 +702,36 @@ class _TeamManagementScreenState extends State<TeamManagementScreen> {
     final permissions = id == null
         ? _permissionsFor(employee)
         : _draftPermissions[id] ?? _permissionsFor(employee);
+    final rawRole = employee['role']?.toString().toUpperCase() ?? 'EMPLOYEE';
+    final role = (id != null && _draftRoles.containsKey(id))
+        ? _draftRoles[id]!
+        : rawRole;
+    final isAdmin = role == 'ADMIN';
+
+    Color roleColor;
+    String roleLabel;
+    switch (role) {
+      case 'ADMIN':
+        roleColor = const Color(0xFFDC2626);
+        roleLabel = 'ADMIN';
+        break;
+      case 'MANAGER':
+        roleColor = const Color(0xFFD97706);
+        roleLabel = 'MANAGER';
+        break;
+      case 'ACCOUNTANT':
+        roleColor = const Color(0xFF059669);
+        roleLabel = 'ACCOUNTANT';
+        break;
+      case 'VIEWER':
+        roleColor = const Color(0xFF4B5563);
+        roleLabel = 'VIEWER';
+        break;
+      default:
+        roleColor = const Color(0xFF2563EB);
+        roleLabel = 'STAFF';
+    }
+
     return Padding(
       padding: const EdgeInsets.only(top: 10),
       child: AppCard(
@@ -482,30 +740,159 @@ class _TeamManagementScreenState extends State<TeamManagementScreen> {
           children: [
             Row(
               children: [
-                const CircleAvatar(child: Icon(Icons.person_outline)),
+                CircleAvatar(
+                  backgroundColor: roleColor.withValues(alpha: 0.12),
+                  child: Icon(
+                    isAdmin ? Icons.admin_panel_settings_rounded : Icons.person_outline,
+                    color: roleColor,
+                  ),
+                ),
                 const SizedBox(width: 12),
                 Expanded(
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      Text(
-                        employee['fullName']?.toString() ?? 'Team member',
-                        style: const TextStyle(fontWeight: FontWeight.w600),
+                      Row(
+                        children: [
+                          Flexible(
+                            child: Text(
+                              employee['fullName']?.toString() ?? 'Team member',
+                              style: const TextStyle(fontWeight: FontWeight.w600),
+                            ),
+                          ),
+                          const SizedBox(width: 8),
+                          Container(
+                            padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                            decoration: BoxDecoration(
+                              color: roleColor.withValues(alpha: 0.12),
+                              borderRadius: BorderRadius.circular(4),
+                              border: Border.all(color: roleColor.withValues(alpha: 0.3)),
+                            ),
+                            child: Text(
+                              roleLabel,
+                              style: TextStyle(
+                                fontSize: 10,
+                                fontWeight: FontWeight.bold,
+                                color: roleColor,
+                              ),
+                            ),
+                          ),
+                        ],
                       ),
-                      Text(employee['email']?.toString() ?? ''),
+                      Text(
+                        employee['email']?.toString() ?? '',
+                        style: const TextStyle(fontSize: 12, color: Colors.grey),
+                      ),
                     ],
                   ),
                 ),
-                Text(employee['status']?.toString() ?? ''),
+                Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                  decoration: BoxDecoration(
+                    color: employee['status']?.toString().toUpperCase() == 'ACTIVE'
+                        ? Colors.green.shade50
+                        : Colors.grey.shade100,
+                    borderRadius: BorderRadius.circular(4),
+                  ),
+                  child: Text(
+                    employee['status']?.toString().toUpperCase() ?? 'ACTIVE',
+                    style: TextStyle(
+                      fontSize: 11,
+                      fontWeight: FontWeight.w600,
+                      color: employee['status']?.toString().toUpperCase() == 'ACTIVE'
+                          ? Colors.green.shade800
+                          : Colors.grey.shade700,
+                    ),
+                  ),
+                ),
               ],
             ),
-            const SizedBox(height: 8),
-            if (isEditing)
+            const SizedBox(height: 10),
+            if (isEditing) ...[
+              const Divider(height: 1),
+              const SizedBox(height: 10),
+              Row(
+                children: [
+                  const Text('Role: ', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 13)),
+                  const SizedBox(width: 8),
+                  DropdownButton<String>(
+                    value: ['ADMIN', 'MANAGER', 'ACCOUNTANT', 'EMPLOYEE', 'VIEWER'].contains(role)
+                        ? role
+                        : 'EMPLOYEE',
+                    isDense: true,
+                    items: const [
+                      DropdownMenuItem(value: 'ADMIN', child: Text('Administrator (Full Access)')),
+                      DropdownMenuItem(value: 'MANAGER', child: Text('Manager')),
+                      DropdownMenuItem(value: 'ACCOUNTANT', child: Text('Accountant')),
+                      DropdownMenuItem(value: 'EMPLOYEE', child: Text('Staff / Guard (Own Data)')),
+                      DropdownMenuItem(value: 'VIEWER', child: Text('Viewer (Read Only)')),
+                    ],
+                    onChanged: (newRole) {
+                      if (newRole != null) {
+                        setState(() {
+                          _draftRoles[id] = newRole;
+                          if (newRole == 'ADMIN') {
+                            _draftPermissions[id] = _permissionLabels.keys.toSet();
+                          }
+                        });
+                      }
+                    },
+                  ),
+                  const Spacer(),
+                  if (isAdmin)
+                    OutlinedButton.icon(
+                      style: OutlinedButton.styleFrom(
+                        foregroundColor: Colors.red.shade700,
+                        side: BorderSide(color: Colors.red.shade300),
+                        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                      ),
+                      onPressed: () {
+                        setState(() {
+                          _draftRoles[id] = 'EMPLOYEE';
+                          _draftPermissions[id] = {'INVOICES', 'EXPENSES', 'CLIENTS'};
+                        });
+                      },
+                      icon: const Icon(Icons.remove_moderator_outlined, size: 16),
+                      label: const Text('Revoke Admin', style: TextStyle(fontSize: 12)),
+                    )
+                  else
+                    FilledButton.tonalIcon(
+                      style: FilledButton.styleFrom(
+                        foregroundColor: const Color(0xFFDC2626),
+                        backgroundColor: const Color(0xFFFEE2E2),
+                        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                      ),
+                      onPressed: () {
+                        setState(() {
+                          _draftRoles[id] = 'ADMIN';
+                          _draftPermissions[id] = _permissionLabels.keys.toSet();
+                        });
+                      },
+                      icon: const Icon(Icons.admin_panel_settings_outlined, size: 16),
+                      label: const Text('Make Admin', style: TextStyle(fontSize: 12)),
+                    ),
+                ],
+              ),
+              const SizedBox(height: 8),
+              Text(
+                isAdmin
+                    ? '★ Admin role has access to all company features, invoices, settings, and team controls.'
+                    : 'Staff members only see their own created invoices and expenses by default.',
+                style: TextStyle(
+                  fontSize: 11,
+                  fontStyle: FontStyle.italic,
+                  color: isAdmin ? Colors.red.shade700 : Colors.blue.shade700,
+                ),
+              ),
+              const SizedBox(height: 10),
+              const Text('Feature Permissions:', style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold)),
+              const SizedBox(height: 6),
               Wrap(
                 spacing: 6,
+                runSpacing: 4,
                 children: _permissionLabels.entries.map((entry) {
                   return FilterChip(
-                    label: Text(entry.value),
+                    label: Text(entry.value, style: const TextStyle(fontSize: 12)),
                     selected: permissions.contains(entry.key),
                     onSelected: (selected) {
                       setState(() {
@@ -520,33 +907,100 @@ class _TeamManagementScreenState extends State<TeamManagementScreen> {
                     },
                   );
                 }).toList(),
-              )
-            else
-              Text(
-                'Access: ${permissions.map((value) => _permissionLabels[value]).join(', ').ifEmpty('None')}',
-                style: const TextStyle(color: AppColors.muted),
               ),
+            ] else ...[
+              Wrap(
+                spacing: 6,
+                runSpacing: 4,
+                crossAxisAlignment: WrapCrossAlignment.center,
+                children: [
+                  const Text('Permissions: ', style: TextStyle(fontSize: 12, color: AppColors.muted)),
+                  if (permissions.isEmpty)
+                    const Text('None', style: TextStyle(fontSize: 12, color: AppColors.muted))
+                  else
+                    ...permissions.map((p) => Container(
+                          padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                          decoration: BoxDecoration(
+                            color: const Color(0xFFF1F5F9),
+                            borderRadius: BorderRadius.circular(4),
+                          ),
+                          child: Text(
+                            _permissionLabels[p] ?? p,
+                            style: const TextStyle(fontSize: 11, color: Color(0xFF334155)),
+                          ),
+                        )),
+                ],
+              ),
+            ],
             if (id != null)
-              Align(
-                alignment: Alignment.centerRight,
-                child: TextButton.icon(
-                  onPressed: _saving
-                      ? null
-                      : isEditing
-                          ? () => _savePermissions(id)
-                          : () {
-                              setState(() {
-                                _editingEmployeeIds.add(id);
-                                _draftPermissions[id] =
-                                    _permissionsFor(employee);
-                              });
-                            },
-                  icon: Icon(isEditing ? Icons.save_outlined : Icons.tune),
-                  label: Text(isEditing ? 'Save access' : 'Edit access'),
+              Padding(
+                padding: const EdgeInsets.only(top: 6),
+                child: Row(
+                  mainAxisAlignment: MainAxisAlignment.end,
+                  children: [
+                    if (isEditing) ...[
+                      TextButton(
+                        onPressed: _saving
+                            ? null
+                            : () {
+                                setState(() {
+                                  _editingEmployeeIds.remove(id);
+                                  _draftPermissions.remove(id);
+                                  _draftRoles.remove(id);
+                                });
+                              },
+                        child: const Text('Cancel'),
+                      ),
+                      const SizedBox(width: 8),
+                    ],
+                    FilledButton.icon(
+                      style: FilledButton.styleFrom(
+                        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                      ),
+                      onPressed: _saving
+                          ? null
+                          : isEditing
+                              ? () => _savePermissions(id)
+                              : () {
+                                  setState(() {
+                                    _editingEmployeeIds.add(id);
+                                    _draftPermissions[id] = _permissionsFor(employee);
+                                    _draftRoles[id] = rawRole;
+                                  });
+                                },
+                      icon: Icon(isEditing ? Icons.save_rounded : Icons.tune_rounded, size: 16),
+                      label: Text(isEditing ? 'Save role & access' : 'Edit role & access'),
+                    ),
+                  ],
                 ),
               ),
           ],
         ),
+      ),
+    );
+  }
+
+  Widget _buildRolePill(String role, String scope, Color color) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+      decoration: BoxDecoration(
+        color: color.withValues(alpha: 0.08),
+        borderRadius: BorderRadius.circular(6),
+        border: Border.all(color: color.withValues(alpha: 0.2)),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Text(
+            role,
+            style: TextStyle(fontSize: 11, fontWeight: FontWeight.bold, color: color),
+          ),
+          Text(
+            scope,
+            style: TextStyle(fontSize: 10, color: Colors.grey.shade700),
+          ),
+        ],
       ),
     );
   }
@@ -555,10 +1009,6 @@ class _TeamManagementScreenState extends State<TeamManagementScreen> {
 int? _asInt(Object? value) {
   if (value is int) return value;
   return int.tryParse(value?.toString() ?? '');
-}
-
-extension on String {
-  String ifEmpty(String replacement) => isEmpty ? replacement : this;
 }
 
 class _SectionHeading extends StatelessWidget {

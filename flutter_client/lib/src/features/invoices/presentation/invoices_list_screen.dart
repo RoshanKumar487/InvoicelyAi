@@ -1,8 +1,12 @@
+import 'dart:async';
 import 'package:flutter/material.dart';
 
 import '../../../core/api/api_exception.dart';
+import '../../../shared/utils/table_export_helper.dart';
 import '../../../shared/widgets/app_card.dart';
+import '../../../shared/widgets/enterprise_data_view.dart';
 import '../../../shared/widgets/offline_cache_banner.dart';
+import '../../audit/data/audit_log_service.dart';
 import '../data/invoice.dart';
 import '../data/invoice_repository.dart';
 
@@ -39,9 +43,13 @@ class _InvoicesListScreenState extends State<InvoicesListScreen> {
   final _searchController = TextEditingController();
   List<Invoice> _invoices = [];
   String _filter = 'All';
+  String _creatorFilter = 'All'; // 'All' or 'Me'
+  bool _showCreatorFilter = false;
   String? _error;
   bool _loading = true;
   bool _usingCachedData = false;
+  DateTimeRange? _dateRange;
+  final Set<String> _selectedIds = {};
 
   @override
   void initState() {
@@ -95,6 +103,7 @@ class _InvoicesListScreenState extends State<InvoicesListScreen> {
           ),
           FilledButton(
             onPressed: () => Navigator.pop(context, true),
+            style: FilledButton.styleFrom(backgroundColor: Colors.red),
             child: const Text('Delete'),
           ),
         ],
@@ -103,6 +112,15 @@ class _InvoicesListScreenState extends State<InvoicesListScreen> {
     if (confirmed != true || !mounted) return;
     try {
       await widget.repository.deleteInvoice(id);
+      unawaited(
+        AuditLogService.log(
+          module: 'INVOICE',
+          action: 'DELETE',
+          entityId: invoice.invoiceNumber,
+          title: 'Deleted invoice ${invoice.invoiceNumber}',
+          description: 'Removed invoice for ${invoice.clientName} (₹${invoice.total.toStringAsFixed(2)})',
+        ),
+      );
       await _load();
     } on ApiException catch (error) {
       if (mounted) _showMessage(error.message);
@@ -116,6 +134,15 @@ class _InvoicesListScreenState extends State<InvoicesListScreen> {
     if (id == null) return;
     try {
       await widget.repository.updateStatus(id, status);
+      unawaited(
+        AuditLogService.log(
+          module: 'INVOICE',
+          action: 'STATUS_CHANGE',
+          entityId: invoice.invoiceNumber,
+          title: 'Changed ${invoice.invoiceNumber} status to $status',
+          description: 'Updated billing status for ${invoice.clientName} to $status',
+        ),
+      );
       await _load();
     } on ApiException catch (error) {
       if (mounted) _showMessage(error.message);
@@ -130,20 +157,254 @@ class _InvoicesListScreenState extends State<InvoicesListScreen> {
       ..showSnackBar(SnackBar(content: Text(message)));
   }
 
+  void _downloadInvoicesReport(List<Invoice> currentInvoices) {
+    TableExportHelper.showExportMenu(
+      context: context,
+      title: 'Invoices Ledger',
+      headers: ['Invoice #', 'Client', 'Company', 'Issue Date', 'Due Date', 'Total', 'Balance Due', 'Status'],
+      rows: currentInvoices.map((inv) => [
+        inv.invoiceNumber.isEmpty ? 'INV-${inv.id ?? ""}' : inv.invoiceNumber,
+        inv.clientName,
+        inv.clientCompany,
+        inv.issueDate,
+        inv.dueDate,
+        inv.total.toStringAsFixed(2),
+        inv.balanceDue.toStringAsFixed(2),
+        inv.status,
+      ]).toList(),
+    );
+  }
+
+  Future<void> _batchMarkStatus(String status) async {
+    final count = _selectedIds.length;
+    for (final idStr in _selectedIds.toList()) {
+      final inv = _invoices.firstWhere(
+        (i) => (i.id?.toString() == idStr) || (i.invoiceNumber == idStr),
+        orElse: () => _invoices.first,
+      );
+      if (inv.id != null) {
+        await widget.repository.updateStatus(inv.id!, status);
+      }
+    }
+    setState(() => _selectedIds.clear());
+    _showMessage('Updated $count invoices to $status');
+    await _load();
+  }
+
+  List<EnterpriseTableColumn<Invoice>> _invoiceTableColumns() {
+    return [
+      EnterpriseTableColumn<Invoice>(
+        title: 'Invoice #',
+        width: 140,
+        sortKey: (inv) => inv.invoiceNumber,
+        cellBuilder: (ctx, inv) => InkWell(
+          onTap: () => widget.onOpen(inv),
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              const Icon(Icons.receipt_long_rounded, size: 16, color: Color(0xFF0284C7)),
+              const SizedBox(width: 6),
+              Text(
+                inv.invoiceNumber.isEmpty ? 'INV-${inv.id ?? ""}' : inv.invoiceNumber,
+                style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 13, color: Color(0xFF0284C7)),
+              ),
+            ],
+          ),
+        ),
+      ),
+      EnterpriseTableColumn<Invoice>(
+        title: 'Client / Company',
+        width: 200,
+        sortKey: (inv) => inv.clientName.toLowerCase(),
+        cellBuilder: (ctx, inv) => Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            Text(
+              inv.clientName.isNotEmpty ? inv.clientName : 'Walk-in Client',
+              style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 13),
+              overflow: TextOverflow.ellipsis,
+            ),
+            if (inv.clientCompany.isNotEmpty)
+              Text(
+                inv.clientCompany,
+                style: const TextStyle(fontSize: 11, color: Color(0xFF64748B)),
+                overflow: TextOverflow.ellipsis,
+              ),
+          ],
+        ),
+      ),
+      EnterpriseTableColumn<Invoice>(
+        title: 'Issue Date',
+        width: 110,
+        sortKey: (inv) => inv.issueDate,
+        cellBuilder: (ctx, inv) => Text(inv.issueDate, style: const TextStyle(fontSize: 12)),
+      ),
+      EnterpriseTableColumn<Invoice>(
+        title: 'Due Date',
+        width: 110,
+        sortKey: (inv) => inv.dueDate,
+        cellBuilder: (ctx, inv) => Text(inv.dueDate, style: const TextStyle(fontSize: 12)),
+      ),
+      EnterpriseTableColumn<Invoice>(
+        title: 'Total Amount',
+        width: 130,
+        alignRight: true,
+        sortKey: (inv) => inv.total,
+        cellBuilder: (ctx, inv) => Text(
+          _money(inv.total, inv.currencySymbol),
+          style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 13),
+        ),
+      ),
+      EnterpriseTableColumn<Invoice>(
+        title: 'Balance Due',
+        width: 130,
+        alignRight: true,
+        sortKey: (inv) => inv.balanceDue,
+        cellBuilder: (ctx, inv) => Text(
+          inv.balanceDue > 0 ? _money(inv.balanceDue, inv.currencySymbol) : '₹0.00',
+          style: TextStyle(
+            fontWeight: FontWeight.bold,
+            fontSize: 13,
+            color: inv.balanceDue > 0 ? const Color(0xFFDC2626) : const Color(0xFF16A34A),
+          ),
+        ),
+      ),
+      EnterpriseTableColumn<Invoice>(
+        title: 'Status',
+        width: 130,
+        sortKey: (inv) => inv.status,
+        cellBuilder: (ctx, inv) => EnterpriseStatusDropdown(
+          currentStatus: inv.status,
+          options: const ['Draft', 'Sent', 'Paid', 'Overdue', 'Cancelled'],
+          onChanged: (newStatus) => _setStatus(inv, newStatus),
+        ),
+      ),
+      EnterpriseTableColumn<Invoice>(
+        title: 'Actions',
+        width: 90,
+        cellBuilder: (ctx, inv) => Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            IconButton(
+              icon: const Icon(Icons.visibility_outlined, size: 18),
+              tooltip: 'View preview',
+              onPressed: () => widget.onOpen(inv),
+            ),
+            PopupMenuButton<String>(
+              icon: const Icon(Icons.more_vert, size: 18),
+              tooltip: 'More actions',
+              onSelected: (action) {
+                if (action == 'edit') widget.onEdit(inv);
+                if (action == 'delete') _delete(inv);
+                if (action == 'mark_paid') _setStatus(inv, 'Paid');
+                if (action == 'mark_sent') _setStatus(inv, 'Sent');
+              },
+              itemBuilder: (context) => [
+                const PopupMenuItem(value: 'edit', child: Text('Edit Invoice')),
+                if (inv.status.toLowerCase() != 'paid')
+                  const PopupMenuItem(value: 'mark_paid', child: Text('Mark as Paid')),
+                if (inv.status.toLowerCase() == 'draft')
+                  const PopupMenuItem(value: 'mark_sent', child: Text('Mark as Sent')),
+                const PopupMenuDivider(),
+                const PopupMenuItem(
+                  value: 'delete',
+                  child: Text('Delete Invoice', style: TextStyle(color: Colors.red)),
+                ),
+              ],
+            ),
+          ],
+        ),
+      ),
+    ];
+  }
+
+  List<EnterpriseMetricCardItem> _buildMetrics(List<Invoice> allInvoices) {
+    final totalInvoiced = allInvoices.fold<double>(0.0, (acc, i) => acc + i.total);
+    final paidInvoices = allInvoices.where((i) => i.status.toLowerCase() == 'paid').toList();
+    final totalPaid = paidInvoices.fold<double>(0.0, (acc, i) => acc + i.total);
+    final outstandingInvoices = allInvoices.where((i) => i.balanceDue > 0 && i.status.toLowerCase() != 'paid').toList();
+    final totalOutstanding = outstandingInvoices.fold<double>(0.0, (acc, i) => acc + i.balanceDue);
+    final overdueCount = allInvoices.where((i) => i.status.toLowerCase() == 'overdue').length;
+
+    return [
+      EnterpriseMetricCardItem(
+        label: 'Total Invoiced',
+        value: '₹${totalInvoiced.toStringAsFixed(0)}',
+        count: '${allInvoices.length} bills',
+        icon: Icons.receipt_long_rounded,
+        color: const Color(0xFF1E3A8A),
+        filterKey: 'All',
+        isSelected: _filter == 'All',
+        onTap: () => setState(() => _filter = 'All'),
+      ),
+      EnterpriseMetricCardItem(
+        label: 'Total Collected',
+        value: '₹${totalPaid.toStringAsFixed(0)}',
+        count: '${paidInvoices.length} paid',
+        icon: Icons.check_circle_outline,
+        color: const Color(0xFF047857),
+        filterKey: 'Paid',
+        isSelected: _filter.toLowerCase() == 'paid',
+        onTap: () => setState(() => _filter = _filter.toLowerCase() == 'paid' ? 'All' : 'Paid'),
+      ),
+      EnterpriseMetricCardItem(
+        label: 'Outstanding',
+        value: '₹${totalOutstanding.toStringAsFixed(0)}',
+        count: '${outstandingInvoices.length} pending',
+        icon: Icons.pending_actions_rounded,
+        color: const Color(0xFFD97706),
+        filterKey: 'Outstanding',
+        isSelected: _filter == 'Outstanding',
+        onTap: () => setState(() => _filter = _filter == 'Outstanding' ? 'All' : 'Outstanding'),
+      ),
+      EnterpriseMetricCardItem(
+        label: 'Overdue Bills',
+        value: '$overdueCount overdue',
+        count: 'Action required',
+        icon: Icons.warning_amber_rounded,
+        color: const Color(0xFFDC2626),
+        filterKey: 'Overdue',
+        isSelected: _filter.toLowerCase() == 'overdue',
+        onTap: () => setState(() => _filter = _filter.toLowerCase() == 'overdue' ? 'All' : 'Overdue'),
+      ),
+    ];
+  }
+
   @override
   Widget build(BuildContext context) {
     final query = _searchController.text.trim().toLowerCase();
-    final invoices = _invoices.where((invoice) {
-      final matchesStatus = _filter == 'All' ||
-          invoice.status.toLowerCase() == _filter.toLowerCase();
+
+    final filtered = _invoices.where((invoice) {
+      bool matchesStatus = true;
+      if (_filter == 'Outstanding') {
+        matchesStatus = invoice.balanceDue > 0 && invoice.status.toLowerCase() != 'paid';
+      } else if (_filter != 'All') {
+        matchesStatus = invoice.status.toLowerCase() == _filter.toLowerCase();
+      }
+
+      if (_dateRange != null) {
+        final issue = DateTime.tryParse(invoice.issueDate);
+        if (issue != null) {
+          if (issue.isBefore(_dateRange!.start) ||
+              issue.isAfter(_dateRange!.end.add(const Duration(days: 1)))) {
+            return false;
+          }
+        }
+      }
+
       final matchesSearch = query.isEmpty ||
           invoice.invoiceNumber.toLowerCase().contains(query) ||
           invoice.clientName.toLowerCase().contains(query) ||
           invoice.clientCompany.toLowerCase().contains(query) ||
           invoice.clientEmail.toLowerCase().contains(query);
-      return matchesStatus && matchesSearch;
-    }).toList()
-      ..sort((first, second) => second.issueDate.compareTo(first.issueDate));
+
+      final matchesCreator = _creatorFilter == 'All' ||
+          invoice.createdByUserName.toLowerCase().contains('you') ||
+          invoice.createdByUserName.toLowerCase().contains('me');
+
+      return matchesStatus && matchesSearch && matchesCreator;
+    }).toList();
 
     return Scaffold(
       appBar: AppBar(
@@ -165,6 +426,14 @@ class _InvoicesListScreenState extends State<InvoicesListScreen> {
         ),
         actions: [
           IconButton(
+            tooltip: _showCreatorFilter ? 'Hide creator filter' : 'Filter by creator',
+            onPressed: () => setState(() => _showCreatorFilter = !_showCreatorFilter),
+            icon: Icon(
+              Icons.filter_list_rounded,
+              color: _creatorFilter != 'All' || _showCreatorFilter ? const Color(0xFF0284C7) : null,
+            ),
+          ),
+          IconButton(
             tooltip: 'Refresh invoices',
             onPressed: _loading ? null : _load,
             icon: const Icon(Icons.sync),
@@ -177,115 +446,168 @@ class _InvoicesListScreenState extends State<InvoicesListScreen> {
         icon: const Icon(Icons.add),
         label: const Text('New invoice'),
       ),
-      body: RefreshIndicator(
-        onRefresh: _load,
-        child: ListView(
-          padding: const EdgeInsets.fromLTRB(20, 8, 20, 100),
-          children: [
-            TextField(
-              controller: _searchController,
-              onChanged: (_) => setState(() {}),
-              textInputAction: TextInputAction.search,
-              decoration: InputDecoration(
-                prefixIcon: const Icon(Icons.search),
-                hintText: 'Search invoice number, client or email',
-                suffixIcon: _searchController.text.isEmpty
-                    ? null
-                    : IconButton(
-                        tooltip: 'Clear search',
-                        onPressed: () {
-                          _searchController.clear();
-                          setState(() {});
-                        },
-                        icon: const Icon(Icons.close),
-                      ),
-              ),
-            ),
-            const SizedBox(height: 14),
-            SizedBox(
-              height: 42,
-              child: ListView.separated(
-                scrollDirection: Axis.horizontal,
-                itemCount: _filters.length,
-                separatorBuilder: (_, __) => const SizedBox(width: 8),
-                itemBuilder: (context, index) {
-                  final filter = _filters[index];
-                  return ChoiceChip(
-                    label: Text(filter),
-                    selected: _filter == filter,
-                    onSelected: (_) => setState(() => _filter = filter),
-                  );
-                },
-              ),
-            ),
-            const SizedBox(height: 18),
-            Row(
+      body: LayoutBuilder(
+        builder: (context, constraints) {
+          final horizontalPadding = constraints.maxWidth > 900 ? 24.0 : 16.0;
+
+          return RefreshIndicator(
+            onRefresh: _load,
+            child: ListView(
+              padding: EdgeInsets.fromLTRB(horizontalPadding, 8, horizontalPadding, 100),
               children: [
-                Expanded(
-                  child: Text(
-                    'All invoices',
-                    style: Theme.of(context).textTheme.titleLarge?.copyWith(
-                          fontWeight: FontWeight.w800,
+                if (_error != null) ...[
+                  AppCard(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        const Text(
+                          'Invoices could not be loaded',
+                          style: TextStyle(fontWeight: FontWeight.w700),
                         ),
+                        const SizedBox(height: 6),
+                        Text(_error!),
+                        Align(
+                          alignment: Alignment.centerRight,
+                          child: TextButton.icon(
+                            onPressed: _load,
+                            icon: const Icon(Icons.refresh),
+                            label: const Text('Retry'),
+                          ),
+                        ),
+                      ],
+                    ),
                   ),
-                ),
-                Text(
-                  '${invoices.length} ${invoices.length == 1 ? 'record' : 'records'}',
-                  style: Theme.of(context).textTheme.bodyMedium,
-                ),
+                  const SizedBox(height: 12),
+                ],
+
+                if (_showCreatorFilter) ...[
+                  Container(
+                    margin: const EdgeInsets.only(bottom: 12),
+                    padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+                    decoration: BoxDecoration(
+                      color: const Color(0xFFF0F9FF),
+                      borderRadius: BorderRadius.circular(10),
+                      border: Border.all(color: const Color(0xFFBAE6FD)),
+                    ),
+                    child: Row(
+                      children: [
+                        const Icon(Icons.person_pin_circle_rounded, size: 18, color: Color(0xFF0284C7)),
+                        const SizedBox(width: 8),
+                        const Text(
+                          'Filter by Creator:',
+                          style: TextStyle(fontWeight: FontWeight.bold, fontSize: 13, color: Color(0xFF0369A1)),
+                        ),
+                        const Spacer(),
+                        SegmentedButton<String>(
+                          segments: const [
+                            ButtonSegment(value: 'All', label: Text('All Creators')),
+                            ButtonSegment(value: 'Me', label: Text('Created by Me')),
+                          ],
+                          selected: {_creatorFilter},
+                          onSelectionChanged: (set) => setState(() => _creatorFilter = set.first),
+                        ),
+                      ],
+                    ),
+                  ),
+                ],
+
+                if (_loading && _invoices.isEmpty)
+                  const Padding(
+                    padding: EdgeInsets.all(48),
+                    child: Center(child: CircularProgressIndicator()),
+                  )
+                else
+                  EnterpriseDataView<Invoice>(
+                    items: filtered,
+                    headerTitle: 'Invoice Directory',
+                    metrics: _buildMetrics(_invoices),
+                    dateRange: _dateRange,
+                    onDateRangeChanged: (range) => setState(() => _dateRange = range),
+                    onDownloadReport: () => _downloadInvoicesReport(filtered),
+                    searchController: _searchController,
+                    searchHint: 'Search invoice #, client or email...',
+                    filterChips: _filters,
+                    selectedFilterChip: _filter == 'Outstanding' ? null : _filter,
+                    onFilterChipSelected: (f) => setState(() => _filter = f),
+                    idGetter: (inv) => inv.id?.toString() ?? inv.invoiceNumber,
+                    selectedIds: _selectedIds,
+                    onToggleSelect: (id) => setState(() {
+                      if (_selectedIds.contains(id)) {
+                        _selectedIds.remove(id);
+                      } else {
+                        _selectedIds.add(id);
+                      }
+                    }),
+                    onSelectAll: (ids) => setState(() => _selectedIds.addAll(ids)),
+                    onDeselectAll: () => setState(() => _selectedIds.clear()),
+                    batchActions: [
+                      FilledButton.icon(
+                        style: FilledButton.styleFrom(
+                          backgroundColor: Colors.white,
+                          foregroundColor: const Color(0xFF16A34A),
+                          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                        ),
+                        icon: const Icon(Icons.check_circle, size: 15),
+                        label: const Text('Mark Paid', style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold)),
+                        onPressed: () => _batchMarkStatus('Paid'),
+                      ),
+                      const SizedBox(width: 8),
+                      OutlinedButton.icon(
+                        style: OutlinedButton.styleFrom(
+                          foregroundColor: Colors.white,
+                          side: const BorderSide(color: Colors.white70),
+                          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                        ),
+                        icon: const Icon(Icons.send_rounded, size: 15),
+                        label: const Text('Mark Sent', style: TextStyle(fontSize: 12)),
+                        onPressed: () => _batchMarkStatus('Sent'),
+                      ),
+                      const SizedBox(width: 8),
+                      IconButton(
+                        icon: const Icon(Icons.file_download_outlined, color: Colors.white, size: 18),
+                        tooltip: 'Export Selected',
+                        onPressed: () {
+                          final selected = _invoices.where((i) => _selectedIds.contains(i.id?.toString()) || _selectedIds.contains(i.invoiceNumber)).toList();
+                          _downloadInvoicesReport(selected);
+                        },
+                      ),
+                    ],
+                    onRowTap: (inv) => widget.onOpen(inv),
+                    topTrailing: SegmentedButton<String>(
+                      segments: const [
+                        ButtonSegment(value: 'All', label: Text('All')),
+                        ButtonSegment(value: 'Me', label: Text('Created by Me')),
+                      ],
+                      selected: {_creatorFilter},
+                      onSelectionChanged: (set) => setState(() => _creatorFilter = set.first),
+                    ),
+                    groupBy: (inv) => inv.status.toUpperCase(),
+                    groupLabelBuilder: (status, items) {
+                      final total = items.fold<double>(0.0, (acc, i) => acc + i.total);
+                      return '$status (${items.length} ${items.length == 1 ? "invoice" : "invoices"} · ₹${total.toStringAsFixed(2)})';
+                    },
+                    emptyWidget: _EmptyInvoices(
+                      hasInvoices: _invoices.isNotEmpty,
+                      onCreate: widget.onCreate,
+                    ),
+                    cardBuilder: (context, invoice) => _InvoiceCard(
+                      invoice: invoice,
+                      onOpen: () => widget.onOpen(invoice),
+                      onEdit: () => widget.onEdit(invoice),
+                      onDelete: () => _delete(invoice),
+                      onStatusChanged: (status) => _setStatus(invoice, status),
+                    ),
+                    columns: _invoiceTableColumns(),
+                  ),
               ],
             ),
-            const SizedBox(height: 12),
-            if (_error != null) ...[
-              AppCard(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    const Text(
-                      'Invoices could not be loaded',
-                      style: TextStyle(fontWeight: FontWeight.w700),
-                    ),
-                    const SizedBox(height: 6),
-                    Text(_error!),
-                    Align(
-                      alignment: Alignment.centerRight,
-                      child: TextButton.icon(
-                        onPressed: _load,
-                        icon: const Icon(Icons.refresh),
-                        label: const Text('Retry'),
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-            ] else if (_loading && _invoices.isEmpty) ...[
-              const Padding(
-                padding: EdgeInsets.all(48),
-                child: Center(child: CircularProgressIndicator()),
-              ),
-            ] else if (invoices.isEmpty) ...[
-              _EmptyInvoices(
-                hasInvoices: _invoices.isNotEmpty,
-                onCreate: widget.onCreate,
-              ),
-            ] else ...[
-              for (final invoice in invoices) ...[
-                _InvoiceCard(
-                  invoice: invoice,
-                  onOpen: () => widget.onOpen(invoice),
-                  onEdit: () => widget.onEdit(invoice),
-                  onDelete: () => _delete(invoice),
-                  onStatusChanged: (status) => _setStatus(invoice, status),
-                ),
-                const SizedBox(height: 10),
-              ],
-            ],
-          ],
-        ),
+          );
+        },
       ),
     );
   }
 }
+
 
 class _InvoiceCard extends StatelessWidget {
   const _InvoiceCard({

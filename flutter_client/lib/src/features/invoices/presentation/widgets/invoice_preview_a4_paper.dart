@@ -2,8 +2,11 @@ import 'dart:convert';
 import 'package:flutter/material.dart';
 
 import '../../data/invoice.dart';
+import '../../../../core/utils/amount_to_words.dart';
+import '../../../../core/utils/gst_tax_calculator.dart';
+import '../../../templates/data/company_letterhead.dart';
+import '../../../templates/data/studio_section_model.dart';
 import '../../../templates/data/template_config.dart';
-import 'invoice_preview_widgets.dart';
 
 const double a4PaperWidth = 760.0;
 const double a4PaperMinHeight = 1075.0;
@@ -28,16 +31,98 @@ class InvoicePreviewA4Paper extends StatelessWidget {
   final Map<String, Object?> profile;
   final VoidCallback? onSignTap;
 
-  bool _show(String key, {bool fallback = true}) {
-    if (localSettings.containsKey(key)) {
-      return localSettings[key] == true;
-    }
-    return fallback;
+  String get _activePreset {
+    final preset = localSettings['studio_preset']?.toString().trim();
+    if (preset != null && preset.isNotEmpty) return preset;
+    final cat = (template?.category ?? '').toLowerCase();
+    if (cat.contains('gst')) return 'gst_service';
+    if (cat.contains('consult')) return 'consulting';
+    if (cat.contains('retail')) return 'retail';
+    return 'security_agency';
   }
 
-  String _label(String key, String fallback) {
-    final custom = localSettings[key]?.toString().trim();
-    return (custom != null && custom.isNotEmpty) ? custom : fallback;
+  Color get _primaryColor {
+    final savedHex = localSettings['studio_primary_color']?.toString().trim();
+    if (savedHex != null && savedHex.isNotEmpty) {
+      final parsed = int.tryParse(savedHex.replaceFirst('#', ''), radix: 16);
+      if (parsed != null) return Color(0xFF000000 | parsed);
+    }
+    return templateColor;
+  }
+
+  Color get _tableHeaderTextColor {
+    final savedHex =
+        localSettings['studio_table_header_text_color']?.toString().trim();
+    if (savedHex != null && savedHex.isNotEmpty) {
+      final parsed = int.tryParse(savedHex.replaceFirst('#', ''), radix: 16);
+      if (parsed != null) return Color(0xFF000000 | parsed);
+    }
+    return Colors.white;
+  }
+
+  String get _fontFamily {
+    final saved = localSettings['studio_font_family']?.toString().trim();
+    if (saved != null && saved.isNotEmpty) return saved;
+    final tplFont = template?.font.trim();
+    if (tplFont != null && tplFont.isNotEmpty) return tplFont;
+    return 'Inter';
+  }
+
+  double get _fontScale {
+    final saved = localSettings['studio_font_scale']?.toString().trim();
+    if (saved != null && saved.isNotEmpty) {
+      final parsed = double.tryParse(saved);
+      if (parsed != null && parsed > 0) return parsed.clamp(0.75, 1.35);
+    }
+    return 1.0;
+  }
+
+  bool get _uppercaseHeadings {
+    final saved = localSettings['studio_uppercase_headings'];
+    if (saved is bool) return saved;
+    if (saved is String) return saved.toLowerCase() == 'true';
+    return true;
+  }
+
+  String get _tableBorderStyle {
+    final saved = localSettings['studio_table_border']?.toString().trim();
+    if (saved != null && saved.isNotEmpty) return saved;
+    return 'boxed';
+  }
+
+  String get _watermark {
+    final saved = localSettings['studio_watermark']?.toString().trim();
+    if (saved != null && saved.isNotEmpty) return saved;
+    return 'None';
+  }
+
+  EdgeInsets get _pagePadding {
+    final margin = localSettings['studio_page_margin']?.toString().trim() ??
+        'Standard (16mm)';
+    return switch (margin) {
+      'Compact (10mm)' => const EdgeInsets.all(20),
+      'Spacious (24mm)' => const EdgeInsets.all(44),
+      _ => const EdgeInsets.all(32),
+    };
+  }
+
+  bool get _showQrCode {
+    final saved = localSettings['showQrCode'];
+    if (saved is bool) return saved;
+    if (saved is String) return saved.toLowerCase() == 'true';
+    return true;
+  }
+
+  String get _documentTitle {
+    final custom = localSettings['customTitle']?.toString().trim();
+    if (custom != null && custom.isNotEmpty) return custom;
+    final tplTitle = template?.title.trim();
+    if (tplTitle != null &&
+        tplTitle.isNotEmpty &&
+        !tplTitle.contains('—')) {
+      return tplTitle;
+    }
+    return 'TAX INVOICE';
   }
 
   String get _currencySymbol {
@@ -51,940 +136,1673 @@ class InvoicePreviewA4Paper extends StatelessWidget {
     return '₹';
   }
 
-  List<Map<String, dynamic>> _customFields(String key) {
-    final raw = localSettings[key];
-    if (raw is List) {
-      return raw.map((e) => Map<String, dynamic>.from(e as Map)).toList();
-    }
-    if (raw is String && raw.isNotEmpty) {
+  List<StudioSection> get _sections {
+    final raw = localSettings['studio_sections_json']?.toString().trim();
+    if (raw != null && raw.isNotEmpty) {
       try {
         final decoded = jsonDecode(raw);
         if (decoded is List) {
-          return decoded.map((e) => Map<String, dynamic>.from(e as Map)).toList();
+          final parsed = decoded
+              .whereType<Map<dynamic, dynamic>>()
+              .map((e) => StudioSection.fromJson(Map<String, dynamic>.from(e)))
+              .toList();
+          if (parsed.isNotEmpty) return parsed;
         }
       } catch (_) {}
     }
-    return <Map<String, dynamic>>[];
+    return StudioSection.defaultSections(preset: _activePreset);
   }
 
-  Image? _brandImage(String key, {double height = 65}) {
-    final encoded = localSettings[key]?.toString() ?? '';
-    if (encoded.isEmpty) return null;
-    try {
-      return Image.memory(
-        base64Decode(encoded),
-        height: height,
-        fit: BoxFit.contain,
-        errorBuilder: (_, __, ___) => const SizedBox.shrink(),
-      );
-    } on FormatException {
-      return null;
+  StudioSection _findSection(List<StudioSection> sections, String id) {
+    return sections.firstWhere(
+      (s) => s.id == id,
+      orElse: () => StudioSection(
+        id: id,
+        title: id,
+        subtitle: '',
+        icon: Icons.view_module_rounded,
+        enabled: true,
+      ),
+    );
+  }
+
+  bool _isFieldVisible(StudioSection section, String fieldId, {bool fallback = true}) {
+    final idx = section.fields.indexWhere((f) => f.id == fieldId);
+    if (idx == -1) return fallback;
+    return section.fields[idx].isVisible;
+  }
+
+  StudioField? _findField(StudioSection section, String fieldId) {
+    final idx = section.fields.indexWhere((f) => f.id == fieldId);
+    if (idx == -1) return null;
+    return section.fields[idx];
+  }
+
+  String _columnLabel(StudioSection section, String fieldId, String fallback) {
+    final fld = _findField(section, fieldId);
+    if (fld == null || fld.label.trim().isEmpty) return fallback;
+    return fld.label.replaceFirst(RegExp(r'\s*Column$', caseSensitive: false), '');
+  }
+
+  List<StudioField> _customVisibleFields(
+    StudioSection section,
+    Set<String> builtInIds,
+  ) {
+    return section.fields
+        .where((f) => f.isVisible && !builtInIds.contains(f.id))
+        .toList();
+  }
+
+  TextStyle _docStyle({
+    double fontSize = 10,
+    FontWeight fontWeight = FontWeight.normal,
+    Color color = const Color(0xFF1E293B),
+    FontStyle fontStyle = FontStyle.normal,
+    double? letterSpacing,
+    double? height,
+  }) {
+    return TextStyle(
+      fontFamily: _fontFamily,
+      fontSize: fontSize * _fontScale,
+      fontWeight: fontWeight,
+      color: color,
+      fontStyle: fontStyle,
+      letterSpacing: letterSpacing,
+      height: height,
+    );
+  }
+
+  String _formatNumber(double val) {
+    final isNeg = val < 0;
+    final absVal = val.abs();
+    final parts = absVal.toStringAsFixed(2).split('.');
+    final intPart = parts[0];
+    final decPart = parts[1];
+    if (intPart.length <= 3) {
+      return '${isNeg ? '-' : ''}$intPart.$decPart';
     }
+    final lastThree = intPart.substring(intPart.length - 3);
+    final otherNumbers = intPart.substring(0, intPart.length - 3);
+    final formattedOther = otherNumbers.replaceAllMapped(
+      RegExp(r'\B(?=(\d{2})+(?!\d))'),
+      (_) => ',',
+    );
+    return '${isNeg ? '-' : ''}$formattedOther,$lastThree.$decPart';
   }
 
-  List<String> _shippingLines() {
+  String _formatAmount(double val) => '$_currencySymbol ${_formatNumber(val)}';
+
+  Map<String, dynamic> _shippingMap() {
     final json = invoice.shippingDetailsJson;
-    if (json.trim().isEmpty || json.trim() == '{}') return const [];
+    if (json.trim().isEmpty || json.trim() == '{}') return const {};
     try {
       final decoded = jsonDecode(json);
-      if (decoded is! Map<String, dynamic> || decoded['isEnabled'] != true) {
-        return const [];
-      }
-      const fields = <String, String>{
-        'shippingAddress': 'Shipping address',
-        'deliveryAddress': 'Delivery address',
-        'shippingMethod': 'Shipping method',
-        'courier': 'Carrier',
-        'trackingNumber': 'Tracking',
-        'expectedDelivery': 'Expected delivery',
-      };
-      return fields.entries
-          .where((entry) =>
-              decoded[entry.key]?.toString().trim().isNotEmpty == true)
-          .map((entry) => '${entry.value}: ${decoded[entry.key]}')
-          .toList(growable: false);
-    } on FormatException {
-      return const ['Shipping details could not be displayed.'];
-    }
+      if (decoded is Map<String, dynamic>) return decoded;
+    } catch (_) {}
+    return const {};
   }
 
   @override
   Widget build(BuildContext context) {
-    final signatureImage =
-        _show('showSignature') ? _brandImage('invoiceSignature') : null;
-    final stampImage = _show('showStamp') ? _brandImage('invoiceStamp', height: 85) : null;
-    final logoImage =
-        (_show('showLogo') && (template?.showLogo ?? true)) ? _brandImage('invoiceLogo') : null;
+    final sections = _sections;
+    final brandingSection = _findSection(sections, 'sec_branding');
+    final identitySection = _findSection(sections, 'sec_identity');
+    final clientSection = _findSection(sections, 'sec_client');
+    final servicesSection = _findSection(sections, 'sec_services');
+    final taxTotalsSection = _findSection(sections, 'sec_tax_totals');
+    final bankSection = _findSection(sections, 'sec_bank');
+    final termsSection = _findSection(sections, 'sec_terms');
 
-    final documentTitle = _label(
-      'customTitle',
-      template?.title ?? 'INVOICE',
+    // Business details from profile / localSettings with clean fallbacks
+    final companyLegalName = (profile['companyName']?.toString().trim().isNotEmpty == true)
+        ? profile['companyName']!.toString().trim()
+        : (localSettings['companyName']?.toString().trim().isNotEmpty == true
+            ? localSettings['companyName']!.toString().trim()
+            : (_findField(brandingSection, 'f_biz_name')?.defaultValue.trim().isNotEmpty == true
+                ? _findField(brandingSection, 'f_biz_name')!.defaultValue.trim()
+                : 'Northstar Security Services Ltd.'));
+
+    // Derive Brand Headline & Subtitle from company name or preset
+    final words = companyLegalName.split(RegExp(r'\s+'));
+    final brandHeadline = words.isNotEmpty
+        ? words.first
+        : (_activePreset == 'security_agency' ? 'NORTHSTAR' : 'ENTERPRISE');
+    final brandSubtitle = words.length > 1
+        ? words.sublist(1).join(' ').replaceAll(RegExp(r'\b(Pvt\.?|Ltd\.?|LLP|Inc\.?)\b', caseSensitive: false), '').trim()
+        : (_activePreset == 'security_agency' ? 'SECURITY SERVICES' : 'SOLUTIONS & SERVICES');
+
+    final companyTagline = (profile['tagline']?.toString().trim().isNotEmpty == true)
+        ? profile['tagline']!.toString().trim()
+        : (localSettings['companyTagline']?.toString().trim().isNotEmpty == true
+            ? localSettings['companyTagline']!.toString().trim()
+            : (_findField(brandingSection, 'f_biz_tagline')?.defaultValue.trim().isNotEmpty == true
+                ? _findField(brandingSection, 'f_biz_tagline')!.defaultValue.trim()
+                : 'Safe People  |  Secure Tomorrow'));
+
+    final companyAddress = (profile['companyAddress']?.toString().trim().isNotEmpty == true)
+        ? profile['companyAddress']!.toString().trim()
+        : (localSettings['companyAddress']?.toString().trim().isNotEmpty == true
+            ? localSettings['companyAddress']!.toString().trim()
+            : '#12, 3rd Floor, Green Park, Bengaluru,\nKarnataka - 560076');
+
+    final companyGstin = (profile['taxId']?.toString().trim().isNotEmpty == true)
+        ? profile['taxId']!.toString().trim()
+        : (localSettings['companyGstin']?.toString().trim().isNotEmpty == true
+            ? localSettings['companyGstin']!.toString().trim()
+            : (_findField(brandingSection, 'f_biz_gstin')?.defaultValue.trim().isNotEmpty == true
+                ? _findField(brandingSection, 'f_biz_gstin')!.defaultValue.trim()
+                : '29ABCDE1234F1Z5'));
+
+    final companyPan = (profile['panNumber']?.toString().trim().isNotEmpty == true)
+        ? profile['panNumber']!.toString().trim()
+        : (localSettings['companyPan']?.toString().trim().isNotEmpty == true
+            ? localSettings['companyPan']!.toString().trim()
+            : (_findField(brandingSection, 'f_biz_pan')?.defaultValue.trim().isNotEmpty == true
+                ? _findField(brandingSection, 'f_biz_pan')!.defaultValue.trim()
+                : (companyGstin.length >= 12 ? companyGstin.substring(2, 12) : 'ABCDE1234F')));
+
+    final companyPhone = (profile['companyPhone']?.toString().trim().isNotEmpty == true)
+        ? profile['companyPhone']!.toString().trim()
+        : (localSettings['companyPhone']?.toString().trim().isNotEmpty == true
+            ? localSettings['companyPhone']!.toString().trim()
+            : '+91 98765 43210');
+
+    final companyEmail = (profile['companyEmail']?.toString().trim().isNotEmpty == true)
+        ? profile['companyEmail']!.toString().trim()
+        : (localSettings['companyEmail']?.toString().trim().isNotEmpty == true
+            ? localSettings['companyEmail']!.toString().trim()
+            : 'info@northstarsecurity.in');
+
+    final logoBase64 = localSettings['invoiceLogo']?.toString().trim();
+    final stampBase64 = localSettings['invoiceStamp']?.toString().trim();
+    final signatureBase64 = localSettings['invoiceSignature']?.toString().trim();
+    final signeeTitle = (localSettings['signeeTitle']?.toString().trim().isNotEmpty == true)
+        ? localSettings['signeeTitle']!.toString().trim()
+        : (_findField(termsSection, 'f_trm_title')?.defaultValue.trim().isNotEmpty == true
+            ? _findField(termsSection, 'f_trm_title')!.defaultValue.trim()
+            : 'Authorized Signatory');
+
+    // Client details
+    final clientDisplayName = invoice.clientCompany.trim().isNotEmpty
+        ? invoice.clientCompany.trim()
+        : (invoice.clientName.trim().isNotEmpty
+            ? invoice.clientName.trim()
+            : 'ABC Industries Pvt. Ltd.');
+    final clientContactPerson =
+        (invoice.clientCompany.trim().isNotEmpty &&
+                invoice.clientName.trim().isNotEmpty &&
+                invoice.clientName.trim() != invoice.clientCompany.trim())
+            ? invoice.clientName.trim()
+            : (_findField(clientSection, 'f_cli_contact')?.defaultValue.trim() ?? '');
+    final clientAddr = invoice.clientAddress.trim().isNotEmpty
+        ? invoice.clientAddress.trim()
+        : '101, Business Tower, MG Road,\nBengaluru, Karnataka - 560001';
+    final clientGstin = invoice.clientTaxId.trim().isNotEmpty
+        ? invoice.clientTaxId.trim()
+        : '29AABCA1234B1Z2';
+    final clientPhone = invoice.clientPhone.trim().isNotEmpty
+        ? invoice.clientPhone.trim()
+        : '+91 98800 11223';
+
+    // Service Location & Billing Period
+    final shipping = _shippingMap();
+    final serviceLocation = (shipping['shippingAddress']?.toString().trim().isNotEmpty == true)
+        ? shipping['shippingAddress']!.toString().trim()
+        : ((shipping['deliveryAddress']?.toString().trim().isNotEmpty == true)
+            ? shipping['deliveryAddress']!.toString().trim()
+            : (_findField(servicesSection, 'f_srv_loc')?.defaultValue.trim().isNotEmpty == true
+                ? _findField(servicesSection, 'f_srv_loc')!.defaultValue.trim()
+                : (invoice.clientAddress.trim().isNotEmpty
+                    ? invoice.clientAddress.trim()
+                    : 'Tech Park, Whitefield\nBengaluru, Karnataka - 560066')));
+
+    final billingPeriod = (_findField(servicesSection, 'f_srv_period')?.defaultValue.trim().isNotEmpty == true)
+        ? _findField(servicesSection, 'f_srv_period')!.defaultValue.trim()
+        : '${invoice.issueDate.isNotEmpty ? invoice.issueDate : '01 Apr 2025'} - ${invoice.dueDate.isNotEmpty ? invoice.dueDate : '30 Apr 2025'}';
+
+    // Tax & Totals calculation
+    final gstBreakdown = GstTaxCalculator.calculate(
+      taxableAmount: invoice.taxableAmount,
+      taxRate: invoice.taxRate,
+      taxLabel: invoice.taxLabel,
+      taxType: invoice.taxType,
+      isRcm: invoice.isRcm,
+      supplierPlaceOfSupply: companyAddress,
+      clientPlaceOfSupply: invoice.clientAddress,
     );
-    final invoiceNoLabel = _label('customInvoiceNoLabel', 'Invoice #');
-    final issueDateLabel = _label('customDateLabel', 'Creation Date');
-    final dueDateLabel = _label('customDueDateLabel', 'Due Date');
-    final poLabel = _label('customPoLabel', 'PO Number');
-    final billToLabel = _label('customBillToLabel', 'BILL TO');
-    final notesLabel = _label('customNotesLabel', 'Notes');
-    final termsLabel = _label('customTermsLabel', 'Terms and conditions');
-    final signeeTitle = _label('signeeTitle', 'Authorized Signatory');
-    final signeeName = _label('signeeName', '');
 
-    final customDetails = _customFields('customFields_details');
-    final customBilling = _customFields('customFields_billing');
-    final customAdjustments = _customFields('customFields_adjustments');
-    final customFooter = _customFields('customFields_footer');
-
-    final showBillFrom = _show('showBillFrom', fallback: true) && (template?.showBillFrom ?? true);
-    final showBank = _show('showBankDetails', fallback: true) && (template?.showBankDetails ?? true);
-    final showBillTo = _show('showBillTo', fallback: true) && (template?.showBillTo ?? true);
-
-    final bizName = profile['businessName']?.toString().trim().isNotEmpty == true
-        ? profile['businessName'].toString()
-        : (localSettings['businessName']?.toString().trim().isNotEmpty == true
-            ? localSettings['businessName'].toString()
-            : '');
-    final bizLegalName = profile['legalName']?.toString().trim().isNotEmpty == true
-        ? profile['legalName'].toString()
-        : '';
-    final bizAddress = profile['address']?.toString().trim().isNotEmpty == true
-        ? profile['address'].toString()
-        : (localSettings['businessAddress']?.toString().trim().isNotEmpty == true
-            ? localSettings['businessAddress'].toString()
-            : '');
-    final bizGstin = profile['gstin']?.toString().trim().isNotEmpty == true
-        ? profile['gstin'].toString()
-        : (profile['taxId']?.toString().trim().isNotEmpty == true
-            ? profile['taxId'].toString()
-            : (localSettings['businessGstin']?.toString().trim().isNotEmpty == true
-                ? localSettings['businessGstin'].toString()
-                : ''));
-    final bizPan = profile['panNumber']?.toString().trim().isNotEmpty == true
-        ? profile['panNumber'].toString()
-        : (localSettings['businessPan']?.toString().trim().isNotEmpty == true
-            ? localSettings['businessPan'].toString()
-            : '');
-    final bizPhone = profile['phone']?.toString().trim().isNotEmpty == true
-        ? profile['phone'].toString()
-        : (localSettings['businessPhone']?.toString().trim().isNotEmpty == true
-            ? localSettings['businessPhone'].toString()
-            : '');
-    final bizEmail = profile['email']?.toString().trim().isNotEmpty == true
-        ? profile['email'].toString()
-        : (localSettings['businessEmail']?.toString().trim().isNotEmpty == true
-            ? localSettings['businessEmail'].toString()
-            : '');
-    final bizWebsite = profile['website']?.toString().trim().isNotEmpty == true
-        ? profile['website'].toString()
-        : (localSettings['businessWebsite']?.toString().trim().isNotEmpty == true
-            ? localSettings['businessWebsite'].toString()
-            : '');
-
-    final bankName = profile['bankName']?.toString().trim().isNotEmpty == true
-        ? profile['bankName'].toString()
+    // Bank details
+    final bankName = (profile['bankName']?.toString().trim().isNotEmpty == true)
+        ? profile['bankName']!.toString().trim()
         : (localSettings['bankName']?.toString().trim().isNotEmpty == true
-            ? localSettings['bankName'].toString()
-            : '');
-    final accountHolder = profile['accountHolder']?.toString().trim().isNotEmpty == true
-        ? profile['accountHolder'].toString()
-        : (localSettings['accountHolder']?.toString().trim().isNotEmpty == true
-            ? localSettings['accountHolder'].toString()
-            : '');
-    final accountNumber = profile['accountNumber']?.toString().trim().isNotEmpty == true
-        ? profile['accountNumber'].toString()
+            ? localSettings['bankName']!.toString().trim()
+            : (_findField(bankSection, 'f_bnk_name')?.defaultValue.trim().isNotEmpty == true
+                ? _findField(bankSection, 'f_bnk_name')!.defaultValue.trim()
+                : 'HDFC Bank'));
+    final bankAccount = (profile['accountNumber']?.toString().trim().isNotEmpty == true)
+        ? profile['accountNumber']!.toString().trim()
         : (localSettings['accountNumber']?.toString().trim().isNotEmpty == true
-            ? localSettings['accountNumber'].toString()
-            : '');
-    final ifscCode = profile['ifscCode']?.toString().trim().isNotEmpty == true
-        ? profile['ifscCode'].toString()
+            ? localSettings['accountNumber']!.toString().trim()
+            : (_findField(bankSection, 'f_bnk_ac')?.defaultValue.trim().isNotEmpty == true
+                ? _findField(bankSection, 'f_bnk_ac')!.defaultValue.trim()
+                : '50200012345678'));
+    final bankIfsc = (profile['ifscCode']?.toString().trim().isNotEmpty == true)
+        ? profile['ifscCode']!.toString().trim()
         : (localSettings['ifscCode']?.toString().trim().isNotEmpty == true
-            ? localSettings['ifscCode'].toString()
-            : '');
-    final upiId = profile['upiId']?.toString().trim().isNotEmpty == true
-        ? profile['upiId'].toString()
+            ? localSettings['ifscCode']!.toString().trim()
+            : (_findField(bankSection, 'f_bnk_ifsc')?.defaultValue.trim().isNotEmpty == true
+                ? _findField(bankSection, 'f_bnk_ifsc')!.defaultValue.trim()
+                : 'HDFC0001234'));
+    final bankUpi = (profile['upiId']?.toString().trim().isNotEmpty == true)
+        ? profile['upiId']!.toString().trim()
         : (localSettings['upiId']?.toString().trim().isNotEmpty == true
-            ? localSettings['upiId'].toString()
-            : '');
-    final paymentLink = profile['paymentLink']?.toString().trim().isNotEmpty == true
-        ? profile['paymentLink'].toString()
-        : (localSettings['paymentLink']?.toString().trim().isNotEmpty == true
-            ? localSettings['paymentLink'].toString()
-            : '');
+            ? localSettings['upiId']!.toString().trim()
+            : (_findField(bankSection, 'f_bnk_upi')?.defaultValue.trim().isNotEmpty == true
+                ? _findField(bankSection, 'f_bnk_upi')!.defaultValue.trim()
+                : 'northstar@hdfcbank'));
+
+    // Terms lines
+    final termsLines = <String>[];
+    if (invoice.terms.trim().isNotEmpty) {
+      termsLines.addAll(
+        invoice.terms
+            .split('\n')
+            .map((l) => l.trim())
+            .where((l) => l.isNotEmpty),
+      );
+    }
+    if (invoice.notes.trim().isNotEmpty) {
+      termsLines.addAll(
+        invoice.notes
+            .split('\n')
+            .map((l) => l.trim())
+            .where((l) => l.isNotEmpty),
+      );
+    }
+    if (termsLines.isEmpty) {
+      final defaultTrm = _findField(termsSection, 'f_trm_lines')?.defaultValue.trim() ?? '';
+      if (defaultTrm.isNotEmpty) {
+        termsLines.addAll(
+          defaultTrm.split('\n').map((l) => l.trim()).where((l) => l.isNotEmpty),
+        );
+      } else {
+        termsLines.addAll(const [
+          '1. Payment due within 15 days from the date of invoice.',
+          '2. Late payment attracts 18% annual interest.',
+          '3. Security personnel are deployed as per the agreed schedule.',
+          '4. Any dispute must be reported within 7 days of service completion.',
+        ]);
+      }
+    }
+
+    final letterheadConfig = CompanyLetterheadConfig.fromSettings(
+      localSettings: localSettings,
+      profile: profile,
+      fallbackCompanyName: companyLegalName,
+      fallbackAddress: companyAddress.replaceAll('\n', ', '),
+      fallbackPhone: companyPhone,
+      fallbackEmail: companyEmail,
+      fallbackGstin: companyGstin,
+      fallbackPan: companyPan,
+      fallbackLogoBase64: logoBase64,
+    );
 
     return Container(
       width: a4PaperWidth,
       constraints: const BoxConstraints(minHeight: a4PaperMinHeight),
       decoration: BoxDecoration(
         color: Colors.white,
-        borderRadius: BorderRadius.circular(8),
+        borderRadius: BorderRadius.circular(4),
         boxShadow: const [
           BoxShadow(
-            color: Color(0x66000000),
-            blurRadius: 28,
-            spreadRadius: 4,
-            offset: Offset(0, 12),
+            color: Color(0x1A000000),
+            blurRadius: 18,
+            offset: Offset(0, 6),
           ),
         ],
       ),
-      padding: const EdgeInsets.symmetric(horizontal: 36, vertical: 36),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.stretch,
+      padding: _pagePadding,
+      child: Stack(
         children: [
-          // Header: Layout based (Classic Centered vs Modern Side-by-Side)
-          if (template?.headerLayout == 'classic') ...[
-            Center(
-              child: Column(
-                children: [
-                  if (logoImage != null) ...[
-                    logoImage,
-                    const SizedBox(height: 8),
-                  ],
-                  if (showBillFrom && bizName.isNotEmpty) ...[
-                    Text(
-                      bizName,
+          if (_watermark != 'None')
+            Positioned.fill(
+              child: IgnorePointer(
+                child: Center(
+                  child: Transform.rotate(
+                    angle: -0.35,
+                    child: Text(
+                      _watermark,
                       style: TextStyle(
-                        fontSize: 20,
+                        fontFamily: _fontFamily,
+                        fontSize: 60 * _fontScale,
                         fontWeight: FontWeight.w900,
-                        color: templateColor,
-                        letterSpacing: 0.5,
+                        color: const Color(0xFF0F172A).withValues(alpha: 0.04),
+                        letterSpacing: 8,
                       ),
-                      textAlign: TextAlign.center,
                     ),
-                    if (bizLegalName.isNotEmpty && bizLegalName != bizName)
-                      Text(bizLegalName, style: const TextStyle(fontSize: 12, color: Color(0xFF475569)), textAlign: TextAlign.center),
-                    if (bizAddress.isNotEmpty)
-                      Text(bizAddress, style: const TextStyle(fontSize: 11, color: Color(0xFF64748B)), textAlign: TextAlign.center),
-                    Wrap(
-                      alignment: WrapAlignment.center,
-                      spacing: 12,
-                      children: [
-                        if (bizGstin.isNotEmpty) Text('GSTIN: $bizGstin', style: const TextStyle(fontSize: 11, fontWeight: FontWeight.w600)),
-                        if (bizPan.isNotEmpty) Text('PAN: $bizPan', style: const TextStyle(fontSize: 11, fontWeight: FontWeight.w600)),
-                        if (bizPhone.isNotEmpty) Text('Ph: $bizPhone', style: const TextStyle(fontSize: 11, color: Color(0xFF64748B))),
-                        if (bizEmail.isNotEmpty) Text('Email: $bizEmail', style: const TextStyle(fontSize: 11, color: Color(0xFF64748B))),
-                      ],
-                    ),
-                    const SizedBox(height: 10),
-                  ],
-                  Text(
-                    documentTitle,
-                    style: TextStyle(
-                      color: templateColor,
-                      fontWeight: FontWeight.w900,
-                      fontSize: 24,
-                      letterSpacing: 1.5,
-                    ),
-                  ),
-                  const SizedBox(height: 4),
-                  Wrap(
-                    alignment: WrapAlignment.center,
-                    spacing: 10,
-                    children: [
-                      Text('$invoiceNoLabel: ${invoice.invoiceNumber}', style: const TextStyle(fontSize: 13, fontWeight: FontWeight.bold)),
-                      if (_show('showIssueDate', fallback: true))
-                        Text('$issueDateLabel: ${invoice.issueDate}', style: const TextStyle(fontSize: 12, color: Color(0xFF475569))),
-                      if (_show('showDueDate', fallback: false))
-                        Text('$dueDateLabel: ${invoice.dueDate}', style: const TextStyle(fontSize: 12, fontWeight: FontWeight.bold)),
-                      if (_show('showStatus', fallback: false))
-                        PreviewStatusChip(status: invoice.status),
-                    ],
-                  ),
-                ],
-              ),
-            ),
-          ] else ...[
-            // Modern Side-by-Side (Default)
-            Row(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      if (logoImage != null) ...[
-                        logoImage,
-                        const SizedBox(height: 8),
-                      ],
-                      if (showBillFrom && bizName.isNotEmpty) ...[
-                        Text(
-                          bizName,
-                          style: const TextStyle(
-                            fontSize: 18,
-                            fontWeight: FontWeight.w900,
-                            color: Color(0xFF0F172A),
-                          ),
-                        ),
-                        if (bizLegalName.isNotEmpty && bizLegalName != bizName)
-                          Text(bizLegalName, style: const TextStyle(fontSize: 12, color: Color(0xFF475569))),
-                        if (bizAddress.isNotEmpty)
-                          Text(bizAddress, style: const TextStyle(fontSize: 12, color: Color(0xFF64748B))),
-                        if (bizGstin.isNotEmpty || bizPan.isNotEmpty)
-                          Text([if (bizGstin.isNotEmpty) 'GSTIN: $bizGstin', if (bizPan.isNotEmpty) 'PAN: $bizPan'].join('  |  '),
-                              style: const TextStyle(fontSize: 11, fontWeight: FontWeight.w600, color: Color(0xFF334155))),
-                        if (bizPhone.isNotEmpty || bizEmail.isNotEmpty)
-                          Text([if (bizPhone.isNotEmpty) bizPhone, if (bizEmail.isNotEmpty) bizEmail].join(' • '),
-                              style: const TextStyle(fontSize: 11, color: Color(0xFF64748B))),
-                        if (bizWebsite.isNotEmpty)
-                          Text(bizWebsite, style: const TextStyle(fontSize: 11, color: Color(0xFF2563EB))),
-                      ],
-                    ],
                   ),
                 ),
-                const SizedBox(width: 12),
-                Column(
-                  crossAxisAlignment: CrossAxisAlignment.end,
-                  children: [
-                    Text(
-                      documentTitle,
-                      style: TextStyle(
-                        color: templateColor,
-                        fontWeight: FontWeight.w900,
-                        fontSize: 24,
-                        letterSpacing: 1.2,
-                      ),
-                    ),
-                    const SizedBox(height: 4),
-                    Text(
-                      '$invoiceNoLabel: ${invoice.invoiceNumber}',
-                      style: const TextStyle(
-                        fontSize: 14,
-                        fontWeight: FontWeight.w700,
-                        color: Color(0xFF334155),
-                      ),
-                    ),
-                    if (_show('showStatus', fallback: false)) ...[
-                      const SizedBox(height: 6),
-                      PreviewStatusChip(status: invoice.status),
-                    ],
-                    const SizedBox(height: 6),
-                    if (_show('showIssueDate', fallback: true))
-                      Text(
-                        '$issueDateLabel: ${invoice.issueDate}',
-                        style: const TextStyle(
-                          fontSize: 12,
-                          fontWeight: FontWeight.w500,
-                          color: Color(0xFF475569),
-                        ),
-                      ),
-                    if (_show('showDueDate', fallback: false))
-                      Text(
-                        '$dueDateLabel: ${invoice.dueDate}',
-                        style: const TextStyle(
-                          fontSize: 12,
-                          fontWeight: FontWeight.w600,
-                          color: Color(0xFF0F172A),
-                        ),
-                      ),
-                    if (_show('showPoNumber', fallback: false) && invoice.poNumber.isNotEmpty)
-                      Text(
-                        '$poLabel: ${invoice.poNumber}',
-                        style: const TextStyle(
-                          fontSize: 12,
-                          color: Color(0xFF64748B),
-                        ),
-                      ),
-                    if (_show('showPaymentTerms', fallback: false) && invoice.paymentTerms.isNotEmpty)
-                      Text(
-                        'Terms: ${invoice.paymentTerms}',
-                        style: const TextStyle(
-                          fontSize: 12,
-                          color: Color(0xFF64748B),
-                        ),
-                      ),
-                    for (final field in customDetails)
-                      if (field['isVisible'] != false && field['label']?.toString().isNotEmpty == true)
-                        Text(
-                          '${field['label']}: ${field['value'] ?? ''}',
-                          style: const TextStyle(
-                            fontSize: 12,
-                            fontWeight: FontWeight.w600,
-                            color: Color(0xFF475569),
-                          ),
-                        ),
-                  ],
-                ),
-              ],
-            ),
-          ],
-
-          const SizedBox(height: 20),
-          Container(height: 2.5, color: templateColor),
-          const SizedBox(height: 20),
-
-          // Bill To & Ship To Details
-          if (showBillTo || ((_show('showShippingSection', fallback: false) || (template?.showShipping ?? false)) && _shippingLines().isNotEmpty)) ...[
-            Row(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                if (showBillTo)
-                  Expanded(
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Text(
-                          billToLabel,
-                          style: TextStyle(
-                            color: templateColor,
-                            fontSize: 12,
-                            fontWeight: FontWeight.w800,
-                            letterSpacing: 0.8,
-                          ),
-                        ),
-                        const SizedBox(height: 6),
-                        Text(
-                          invoice.clientName,
-                          style: const TextStyle(
-                            fontWeight: FontWeight.w800,
-                            fontSize: 16,
-                            color: Color(0xFF0F172A),
-                          ),
-                        ),
-                        if (_show('showClientCompany') && invoice.clientCompany.isNotEmpty)
-                          Text(invoice.clientCompany, style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w500, color: Color(0xFF334155))),
-                        if (_show('showClientEmail') && invoice.clientEmail.isNotEmpty)
-                          Text(invoice.clientEmail, style: const TextStyle(fontSize: 13, color: Color(0xFF475569))),
-                        if (_show('showClientPhone') && invoice.clientPhone.isNotEmpty)
-                          Text(invoice.clientPhone, style: const TextStyle(fontSize: 13, color: Color(0xFF475569))),
-                        if (_show('showClientAddress') && invoice.clientAddress.isNotEmpty)
-                          Text(invoice.clientAddress, style: const TextStyle(fontSize: 13, color: Color(0xFF475569))),
-                        if (_show('showClientTaxId') && invoice.clientTaxId.isNotEmpty)
-                          Text('${_label('customClientTaxIdLabel', 'Tax ID')}: ${invoice.clientTaxId}', style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w600, color: Color(0xFF334155))),
-                        for (final field in customBilling)
-                          if (field['isVisible'] != false && field['label']?.toString().isNotEmpty == true)
-                            Text('${field['label']}: ${field['value'] ?? ''}', style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w500, color: Color(0xFF334155))),
-                      ],
-                    ),
-                  ),
-                if ((_show('showShippingSection', fallback: false) || (template?.showShipping ?? false)) && _shippingLines().isNotEmpty) ...[
-                  if (showBillTo) const SizedBox(width: 14),
-                  Expanded(
-                    child: Container(
-                      padding: const EdgeInsets.all(12),
-                      decoration: BoxDecoration(
-                        color: const Color(0xFFF8FAFC),
-                        borderRadius: BorderRadius.circular(8),
-                        border: Border.all(color: const Color(0xFFE2E8F0)),
-                      ),
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Text(
-                            _label('customShipToLabel', 'SHIPPING DETAILS'),
-                            style: TextStyle(
-                              fontSize: 11,
-                              fontWeight: FontWeight.w800,
-                              color: templateColor,
-                            ),
-                          ),
-                          const SizedBox(height: 4),
-                          for (final line in _shippingLines())
-                            Text(line, style: const TextStyle(fontSize: 12)),
-                        ],
-                      ),
-                    ),
-                  ),
-                ],
-              ],
-            ),
-            const SizedBox(height: 24),
-          ],
-
-          // RCM STATUTORY BADGE
-          if (invoice.isRcm || localSettings['isRcmApplicable'] == true)
-            Container(
-              margin: const EdgeInsets.only(bottom: 12),
-              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
-              decoration: BoxDecoration(
-                color: const Color(0xFF16A34A).withAlpha(18),
-                borderRadius: BorderRadius.circular(6),
-                border: Border.all(color: const Color(0xFF16A34A).withAlpha(90)),
-              ),
-              child: const Row(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  Icon(Icons.shield_outlined, size: 14, color: Color(0xFF16A34A)),
-                  SizedBox(width: 6),
-                  Text(
-                    'Whether tax is payable on Reverse Charge basis: YES (Sec 9(3)/9(4) GST Act)',
-                    style: TextStyle(
-                      fontSize: 10.5,
-                      fontWeight: FontWeight.w700,
-                      color: Color(0xFF15803D),
-                    ),
-                  ),
-                ],
               ),
             ),
-
-          // LINE ITEMS TABLE
-          LineItemsTable(
-            invoice: invoice,
-            localSettings: localSettings,
-            template: template,
-            headerColor: templateColor,
-          ),
-
-          const SizedBox(height: 18),
-
-          // TOTALS SECTION
-          Align(
-            alignment: Alignment.centerRight,
-            child: ConstrainedBox(
-              constraints: const BoxConstraints(maxWidth: 340),
-              child: Column(
-                children: [
-                  PreviewTotalLine(
-                    label: _label('customSubtotalLabel', 'Subtotal'),
-                    value: formatMoney(invoice.subtotal, _currencySymbol),
-                  ),
-                  if (invoice.totalDiscount > 0 && _show('showDiscount', fallback: true))
-                    PreviewTotalLine(
-                      label: _label('customDiscountLabel', 'Discount'),
-                      value: '−${formatMoney(invoice.totalDiscount, _currencySymbol)}',
-                    ),
-                  if (template?.showTaxBreakdown != false && _show('showTax', fallback: true))
-                    if (invoice.isRcm || localSettings['isRcmApplicable'] == true)
-                      const PreviewTotalLine(
-                        label: 'Reverse Charge (RCM)',
-                        value: 'Tax payable by recipient (0.00)',
-                        bold: true,
-                        color: Color(0xFF16A34A),
-                      )
-                    else
-                      PreviewTotalLine(
-                        label: _label('customTaxLabel', '${invoice.taxLabel} (${invoice.taxRate}%)'),
-                        value: formatMoney(invoice.taxAmount, _currencySymbol),
-                      ),
-                  if (invoice.shippingFee > 0 || _show('showShippingFee', fallback: false))
-                    PreviewTotalLine(
-                      label: _label('customShippingLabel', 'Shipping'),
-                      value: formatMoney(invoice.shippingFee, _currencySymbol),
-                    ),
-                  if (invoice.additionalCharges > 0 || _show('showAdditionalCharges', fallback: false))
-                    PreviewTotalLine(
-                      label: _label('customAdjustmentsLabel', 'Additional charges'),
-                      value: formatMoney(invoice.additionalCharges, _currencySymbol),
-                    ),
-                  if (invoice.roundOff != 0 || _show('showRoundOff', fallback: false))
-                    PreviewTotalLine(
-                      label: _label('customRoundOffLabel', 'Round off'),
-                      value: formatMoney(invoice.roundOff, _currencySymbol),
-                    ),
-                  for (final adj in customAdjustments)
-                    if (adj['isVisible'] != false && adj['label']?.toString().isNotEmpty == true)
-                      PreviewTotalLine(
-                        label: adj['label'] as String,
-                        value: adj['value'] != null && adj['value'].toString().isNotEmpty
-                            ? '$_currencySymbol${adj['value']}'
-                            : '−',
-                      ),
-                  const Divider(thickness: 1.5),
-                  PreviewTotalLine(
-                    label: _label('customTotalLabel', 'Total'),
-                    value: formatMoney(invoice.total, _currencySymbol),
-                    bold: true,
-                    fontSize: 16,
-                  ),
-                  if (_show('showAmountPaid', fallback: true))
-                    PreviewTotalLine(
-                      label: _label('customAmountPaidLabel', 'Amount paid'),
-                      value: formatMoney(invoice.amountPaid, _currencySymbol),
-                    ),
-                  if (_show('showBalanceDue', fallback: true))
-                    PreviewTotalLine(
-                      label: _label('customBalanceDueLabel', 'Balance due'),
-                      value: formatMoney(invoice.balanceDue, _currencySymbol),
-                      bold: true,
-                      color: const Color(0xFFDC2626),
-                      fontSize: 16,
-                    ),
-                ],
-              ),
-            ),
-          ),
-
-          // -------------------------------------------------------------------
-          // ROW: BANK & PAYMENT DETAILS + QR CODE (LEFT) & SIGNATURE / STAMP (RIGHT)
-          // -------------------------------------------------------------------
-          const SizedBox(height: 28),
-          Row(
-            crossAxisAlignment: CrossAxisAlignment.start,
+          Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
-              // LEFT HALF: BANK & PAYMENT DETAILS WITH QR CODE (SCAN TO PAY)
-              Expanded(
-                flex: 6,
-                child: (showBank &&
-                        (bankName.isNotEmpty ||
-                            accountNumber.isNotEmpty ||
-                            upiId.isNotEmpty ||
-                            paymentLink.isNotEmpty))
-                    ? Container(
-                        padding: const EdgeInsets.all(12),
-                        decoration: BoxDecoration(
-                          color: const Color(0xFFF8FAFC),
-                          borderRadius: BorderRadius.circular(8),
-                          border: Border.all(color: const Color(0xFFE2E8F0), width: 1.2),
-                        ),
+              // A. Header (Company Letterhead Banner or Classic Business Branding)
+              if (brandingSection.enabled) ...[
+                if (letterheadConfig.isLetterheadActive)
+                  CompanyLetterheadWidgets.buildHeaderBanner(
+                    config: letterheadConfig,
+                    overridePrimaryColor: _primaryColor,
+                    fontScale: _fontScale,
+                    fontFamily: _fontFamily,
+                    showGstBadges: _isFieldVisible(brandingSection, 'f_biz_gstin') ||
+                        _isFieldVisible(brandingSection, 'f_biz_pan'),
+                  )
+                else ...[
+                  Row(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                    children: [
+                      // Left: Logo & Brand Name
+                      Expanded(
+                        flex: 6,
                         child: Row(
-                          crossAxisAlignment: CrossAxisAlignment.start,
+                          crossAxisAlignment: CrossAxisAlignment.center,
                           children: [
-                            // Bank Details Text
+                            if (_isFieldVisible(brandingSection, 'f_biz_logo')) ...[
+                              Container(
+                                width: 46 * _fontScale,
+                                height: 52 * _fontScale,
+                                decoration: BoxDecoration(
+                                  color: (logoBase64 != null && logoBase64.isNotEmpty)
+                                      ? Colors.transparent
+                                      : _primaryColor,
+                                  borderRadius: BorderRadius.circular(6),
+                                ),
+                                child: Center(
+                                  child: (logoBase64 != null && logoBase64.isNotEmpty)
+                                      ? _safeBase64Image(
+                                          logoBase64,
+                                          width: 46 * _fontScale,
+                                          height: 52 * _fontScale,
+                                        )
+                                      : Icon(
+                                          _activePreset == 'security_agency'
+                                              ? Icons.shield_rounded
+                                              : Icons.business_rounded,
+                                          size: 28 * _fontScale,
+                                          color: Colors.white,
+                                        ),
+                                ),
+                              ),
+                              const SizedBox(width: 12),
+                            ],
                             Expanded(
                               child: Column(
                                 crossAxisAlignment: CrossAxisAlignment.start,
                                 children: [
-                                  Row(
-                                    children: [
-                                      Icon(
-                                        Icons.account_balance_rounded,
-                                        size: 15,
-                                        color: templateColor,
-                                      ),
-                                      const SizedBox(width: 6),
-                                      Text(
-                                        'BANK & PAYMENT DETAILS',
-                                        style: TextStyle(
-                                          fontSize: 11,
-                                          fontWeight: FontWeight.w800,
-                                          color: templateColor,
-                                          letterSpacing: 0.5,
-                                        ),
-                                      ),
-                                    ],
-                                  ),
-                                  const SizedBox(height: 8),
-                                  if (bankName.isNotEmpty)
-                                    Padding(
-                                      padding: const EdgeInsets.only(bottom: 3),
-                                      child: Text(
-                                        'Bank: $bankName',
-                                        style: const TextStyle(
-                                          fontSize: 12,
-                                          fontWeight: FontWeight.w600,
-                                          color: Color(0xFF1E293B),
-                                        ),
-                                      ),
-                                    ),
-                                  if (accountHolder.isNotEmpty)
-                                    Padding(
-                                      padding: const EdgeInsets.only(bottom: 3),
-                                      child: Text(
-                                        'A/C Name: $accountHolder',
-                                        style: const TextStyle(
-                                          fontSize: 11.5,
-                                          color: Color(0xFF475569),
-                                        ),
-                                      ),
-                                    ),
-                                  if (accountNumber.isNotEmpty)
-                                    Padding(
-                                      padding: const EdgeInsets.only(bottom: 3),
-                                      child: Text(
-                                        'A/C No: $accountNumber',
-                                        style: const TextStyle(
-                                          fontSize: 12,
-                                          fontWeight: FontWeight.bold,
-                                          color: Color(0xFF0F172A),
-                                        ),
-                                      ),
-                                    ),
-                                  if (ifscCode.isNotEmpty)
-                                    Padding(
-                                      padding: const EdgeInsets.only(bottom: 3),
-                                      child: Text(
-                                        'IFSC / SWIFT: $ifscCode',
-                                        style: const TextStyle(
-                                          fontSize: 11.5,
-                                          fontWeight: FontWeight.w600,
-                                          color: Color(0xFF334155),
-                                        ),
-                                      ),
-                                    ),
-                                  if (upiId.isNotEmpty)
-                                    Padding(
-                                      padding: const EdgeInsets.only(top: 3),
-                                      child: Container(
-                                        padding: const EdgeInsets.symmetric(
-                                            horizontal: 7, vertical: 2.5),
-                                        decoration: BoxDecoration(
-                                          color: const Color(0xFFDCFCE7),
-                                          borderRadius: BorderRadius.circular(4),
-                                        ),
-                                        child: Text(
-                                          'UPI: $upiId',
-                                          style: const TextStyle(
-                                            fontSize: 11,
-                                            fontWeight: FontWeight.bold,
-                                            color: Color(0xFF166534),
-                                          ),
-                                        ),
-                                      ),
-                                    ),
-                                  if (paymentLink.isNotEmpty) ...[
-                                    const SizedBox(height: 4),
+                                  if (_isFieldVisible(brandingSection, 'f_biz_name'))
                                     Text(
-                                      'Pay Link: $paymentLink',
-                                      style: const TextStyle(
-                                        fontSize: 10.5,
-                                        color: Color(0xFF2563EB),
+                                      _uppercaseHeadings
+                                          ? brandHeadline.toUpperCase()
+                                          : brandHeadline,
+                                      style: _docStyle(
+                                        fontSize: 19,
+                                        fontWeight: FontWeight.w900,
+                                        letterSpacing: 0.8,
+                                        color: _primaryColor,
                                       ),
-                                      maxLines: 1,
-                                      overflow: TextOverflow.ellipsis,
+                                    ),
+                                  if (brandSubtitle.isNotEmpty)
+                                    Text(
+                                      _uppercaseHeadings
+                                          ? brandSubtitle.toUpperCase()
+                                          : brandSubtitle,
+                                      style: _docStyle(
+                                        fontSize: 11,
+                                        fontWeight: FontWeight.w700,
+                                        letterSpacing: 1.5,
+                                        color: _primaryColor,
+                                      ),
+                                    ),
+                                  if (_isFieldVisible(brandingSection, 'f_biz_tagline')) ...[
+                                    const SizedBox(height: 2),
+                                    Text(
+                                      companyTagline,
+                                      style: _docStyle(
+                                        fontSize: 9.5,
+                                        color: const Color(0xFF64748B),
+                                        fontStyle: FontStyle.italic,
+                                      ),
                                     ),
                                   ],
                                 ],
                               ),
                             ),
-                            // QR Code (Optional: only if custom QR is uploaded or upiId/paymentLink is configured)
-                            () {
-                              final customQrImage = _brandImage('invoiceQrCode', height: 92);
-                              final hasCustomQr = customQrImage != null;
-                              final hasUpiOrLink = upiId.isNotEmpty || paymentLink.isNotEmpty;
-                              final shouldShowQr = (template?.showQrCode ?? true) &&
-                                  (localSettings['showQrCode'] != false) &&
-                                  (hasCustomQr || hasUpiOrLink);
-
-                              if (!shouldShowQr) return const SizedBox.shrink();
-
-                              return Padding(
-                                padding: const EdgeInsets.only(left: 10),
-                                child: Column(
-                                  mainAxisSize: MainAxisSize.min,
-                                  children: [
-                                    if (hasCustomQr)
-                                      Container(
-                                        width: 92,
-                                        height: 92,
-                                        decoration: BoxDecoration(
-                                          border: Border.all(color: const Color(0xFFCBD5E1)),
-                                          borderRadius: BorderRadius.circular(4),
-                                        ),
-                                        child: ClipRRect(
-                                          borderRadius: BorderRadius.circular(4),
-                                          child: customQrImage,
-                                        ),
-                                      )
-                                    else
-                                      InvoiceQrCodeWidget(
-                                        data: upiId.isNotEmpty
-                                            ? 'upi://pay?pa=$upiId&pn=${Uri.encodeComponent(bizName.isNotEmpty ? bizName : "Merchant")}&am=${(invoice.balanceDue > 0 ? invoice.balanceDue : invoice.total).toStringAsFixed(2)}&cu=INR&tn=${Uri.encodeComponent("Invoice ${invoice.invoiceNumber}")}'
-                                            : paymentLink,
-                                        size: 92,
-                                      ),
-                                    const SizedBox(height: 3),
-                                    Container(
-                                      padding: const EdgeInsets.symmetric(
-                                          horizontal: 6, vertical: 2),
-                                      decoration: BoxDecoration(
-                                        color: const Color(0xFF0F172A),
-                                        borderRadius: BorderRadius.circular(3),
-                                      ),
-                                      child: const Text(
-                                        'SCAN TO PAY',
-                                        style: TextStyle(
-                                          fontSize: 8,
-                                          fontWeight: FontWeight.w900,
-                                          color: Colors.white,
-                                          letterSpacing: 0.5,
-                                        ),
-                                      ),
-                                    ),
-                                  ],
-                                ),
-                              );
-                            }(),
                           ],
                         ),
-                      )
-                    : const SizedBox.shrink(),
-              ),
+                      ),
+                      const SizedBox(width: 16),
 
-              const SizedBox(width: 20),
-
-              // RIGHT HALF: SIGNATURE & STAMP SECTION (Ample Space for Sign/Stamp)
-              Expanded(
-                flex: 5,
-                child: ((_show('showSignature') && (template?.showSignature ?? true)) || _show('showStamp'))
-                    ? Column(
-                        crossAxisAlignment: CrossAxisAlignment.end,
-                        children: [
-                          Row(
-                            mainAxisAlignment: MainAxisAlignment.end,
-                            crossAxisAlignment: CrossAxisAlignment.end,
-                            children: [
-                              if (stampImage != null)
-                                Padding(
-                                  padding: const EdgeInsets.only(right: 8),
-                                  child: stampImage,
+                      // Right: Company Metadata
+                      Expanded(
+                        flex: 5,
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.end,
+                          children: [
+                            if (_isFieldVisible(brandingSection, 'f_biz_name'))
+                              Text(
+                                companyLegalName,
+                                textAlign: TextAlign.right,
+                                style: _docStyle(
+                                  fontSize: 10.5,
+                                  fontWeight: FontWeight.bold,
+                                  color: const Color(0xFF1E293B),
                                 ),
-                              InkWell(
-                                onTap: onSignTap,
-                                borderRadius: BorderRadius.circular(8),
-                                child: Container(
-                                  width: 165,
-                                  constraints: const BoxConstraints(minHeight: 75),
-                                  padding: const EdgeInsets.symmetric(
-                                      horizontal: 8, vertical: 4),
-                                  decoration: BoxDecoration(
-                                    border: Border.all(
-                                      color: signatureImage != null
-                                          ? Colors.transparent
-                                          : const Color(0xFF93C5FD).withAlpha(120),
-                                      style: signatureImage != null
-                                          ? BorderStyle.none
-                                          : BorderStyle.solid,
+                              ),
+                            const SizedBox(height: 1),
+                            if (_isFieldVisible(brandingSection, 'f_biz_addr'))
+                              for (final line in companyAddress.split('\n'))
+                                if (line.trim().isNotEmpty)
+                                  Text(
+                                    line.trim(),
+                                    textAlign: TextAlign.right,
+                                    style: _docStyle(
+                                      fontSize: 9.5,
+                                      color: const Color(0xFF64748B),
                                     ),
-                                    borderRadius: BorderRadius.circular(6),
-                                    color: signatureImage == null
-                                        ? const Color(0xFFF8FAFC)
-                                        : Colors.transparent,
                                   ),
-                                  child: Column(
-                                    mainAxisSize: MainAxisSize.min,
-                                    mainAxisAlignment: MainAxisAlignment.end,
-                                    children: [
-                                      if (signatureImage != null) ...[
-                                        signatureImage,
-                                        const SizedBox(height: 4),
-                                      ] else ...[
-                                        const SizedBox(height: 10),
-                                        const Icon(
-                                          Icons.draw_rounded,
-                                          size: 28,
-                                          color: Color(0xFF2563EB),
+                            if (_isFieldVisible(brandingSection, 'f_biz_gstin') &&
+                                companyGstin.isNotEmpty)
+                              Text(
+                                'GSTIN: $companyGstin',
+                                textAlign: TextAlign.right,
+                                style: _docStyle(
+                                  fontSize: 9.5,
+                                  color: const Color(0xFF64748B),
+                                ),
+                              ),
+                            if (_isFieldVisible(brandingSection, 'f_biz_pan') &&
+                                companyPan.isNotEmpty)
+                              Text(
+                                'PAN: $companyPan',
+                                textAlign: TextAlign.right,
+                                style: _docStyle(
+                                  fontSize: 9.5,
+                                  color: const Color(0xFF64748B),
+                                ),
+                              ),
+                            const SizedBox(height: 2),
+                            if (companyPhone.isNotEmpty)
+                              Text(
+                                '📞 $companyPhone',
+                                textAlign: TextAlign.right,
+                                style: _docStyle(
+                                  fontSize: 9.5,
+                                  color: const Color(0xFF64748B),
+                                ),
+                              ),
+                            if (companyEmail.isNotEmpty)
+                              Text(
+                                '✉ $companyEmail',
+                                textAlign: TextAlign.right,
+                                style: _docStyle(
+                                  fontSize: 9.5,
+                                  color: const Color(0xFF64748B),
+                                ),
+                              ),
+                            for (final cf in _customVisibleFields(
+                              brandingSection,
+                              const {
+                                'f_biz_logo',
+                                'f_biz_name',
+                                'f_biz_tagline',
+                                'f_biz_addr',
+                                'f_biz_gstin',
+                                'f_biz_pan',
+                              },
+                            ))
+                              Text(
+                                '${cf.label}: ${cf.defaultValue.isNotEmpty ? cf.defaultValue : '—'}',
+                                textAlign: TextAlign.right,
+                                style: _docStyle(
+                                  fontSize: 9.5,
+                                  color: const Color(0xFF64748B),
+                                ),
+                              ),
+                          ],
+                        ),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 14),
+                  Divider(height: 1, color: _primaryColor, thickness: 1.5),
+                  const SizedBox(height: 16),
+                ],
+              ],
+
+              // B. Document Title & Details
+              if (identitySection.enabled) ...[
+                Row(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                  children: [
+                    Expanded(
+                      child: Text(
+                        _uppercaseHeadings
+                            ? _documentTitle.toUpperCase()
+                            : _documentTitle,
+                        style: _docStyle(
+                          fontSize: 22,
+                          fontWeight: FontWeight.w900,
+                          letterSpacing: 0.5,
+                          color: const Color(0xFF0F172A),
+                        ),
+                      ),
+                    ),
+                    const SizedBox(width: 16),
+                    Table(
+                      defaultColumnWidth: const IntrinsicColumnWidth(),
+                      children: [
+                        if (_isFieldVisible(identitySection, 'f_doc_number'))
+                          _metaRow(
+                            'Invoice No.',
+                            invoice.invoiceNumber.isNotEmpty
+                                ? invoice.invoiceNumber
+                                : 'INV-2025-0148',
+                          ),
+                        if (_isFieldVisible(identitySection, 'f_doc_issue'))
+                          _metaRow(
+                            'Issue Date',
+                            invoice.issueDate.isNotEmpty
+                                ? invoice.issueDate
+                                : '15 Apr 2025',
+                          ),
+                        if (_isFieldVisible(identitySection, 'f_doc_due'))
+                          _metaRow(
+                            'Due Date',
+                            invoice.dueDate.isNotEmpty
+                                ? invoice.dueDate
+                                : '30 Apr 2025',
+                          ),
+                        if (_isFieldVisible(identitySection, 'f_doc_po'))
+                          _metaRow(
+                            'PO No.',
+                            invoice.poNumber.trim().isNotEmpty
+                                ? invoice.poNumber.trim()
+                                : (_findField(identitySection, 'f_doc_po')
+                                            ?.defaultValue
+                                            .trim()
+                                            .isNotEmpty ==
+                                        true
+                                    ? _findField(identitySection, 'f_doc_po')!
+                                        .defaultValue
+                                        .trim()
+                                    : 'PO-4587/2025'),
+                          ),
+                        for (final cf in _customVisibleFields(
+                          identitySection,
+                          const {
+                            'f_doc_number',
+                            'f_doc_issue',
+                            'f_doc_due',
+                            'f_doc_po',
+                          },
+                        ))
+                          _metaRow(
+                            cf.label,
+                            cf.defaultValue.isNotEmpty ? cf.defaultValue : '—',
+                          ),
+                      ],
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 16),
+              ],
+
+              // C. Bill To & Service Location Boxes
+              if (clientSection.enabled) ...[
+                Row(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    // Bill To Box
+                    Expanded(
+                      flex: 5,
+                      child: Container(
+                        padding: const EdgeInsets.all(12),
+                        decoration: BoxDecoration(
+                          color: const Color(0xFFF8FAFC),
+                          borderRadius: BorderRadius.circular(6),
+                          border: Border.all(color: const Color(0xFFE2E8F0)),
+                        ),
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text(
+                              _uppercaseHeadings ? 'BILL TO' : 'Bill To',
+                              style: _docStyle(
+                                fontSize: 10.5,
+                                fontWeight: FontWeight.bold,
+                                color: const Color(0xFF475569),
+                              ),
+                            ),
+                            const SizedBox(height: 4),
+                            if (_isFieldVisible(clientSection, 'f_cli_name'))
+                              Text(
+                                clientDisplayName,
+                                style: _docStyle(
+                                  fontSize: 11.5,
+                                  fontWeight: FontWeight.bold,
+                                  color: const Color(0xFF0F172A),
+                                ),
+                              ),
+                            const SizedBox(height: 2),
+                            if (_isFieldVisible(clientSection, 'f_cli_addr'))
+                              for (final line in clientAddr.split('\n'))
+                                if (line.trim().isNotEmpty)
+                                  Text(
+                                    line.trim(),
+                                    style: _docStyle(
+                                      fontSize: 10,
+                                      color: const Color(0xFF475569),
+                                    ),
+                                  ),
+                            const SizedBox(height: 2),
+                            if (_isFieldVisible(clientSection, 'f_cli_gstin') &&
+                                clientGstin.isNotEmpty)
+                              Text(
+                                'GSTIN: $clientGstin',
+                                style: _docStyle(
+                                  fontSize: 10,
+                                  color: const Color(0xFF475569),
+                                ),
+                              ),
+                            if (_isFieldVisible(clientSection, 'f_cli_contact') &&
+                                clientContactPerson.isNotEmpty)
+                              Text(
+                                'Contact: $clientContactPerson',
+                                style: _docStyle(
+                                  fontSize: 10,
+                                  color: const Color(0xFF475569),
+                                ),
+                              ),
+                            if (_isFieldVisible(clientSection, 'f_cli_phone') &&
+                                clientPhone.isNotEmpty)
+                              Text(
+                                'Phone: $clientPhone',
+                                style: _docStyle(
+                                  fontSize: 10,
+                                  color: const Color(0xFF475569),
+                                ),
+                              ),
+                            for (final cf in _customVisibleFields(
+                              clientSection,
+                              const {
+                                'f_cli_name',
+                                'f_cli_addr',
+                                'f_cli_gstin',
+                                'f_cli_contact',
+                                'f_cli_phone',
+                              },
+                            ))
+                              Text(
+                                '${cf.label}: ${cf.defaultValue.isNotEmpty ? cf.defaultValue : '—'}',
+                                style: _docStyle(
+                                  fontSize: 10,
+                                  color: const Color(0xFF475569),
+                                ),
+                              ),
+                          ],
+                        ),
+                      ),
+                    ),
+
+                    // Service Location & Billing Period Box
+                    if (_isFieldVisible(servicesSection, 'f_srv_loc') ||
+                        _isFieldVisible(servicesSection, 'f_srv_period')) ...[
+                      const SizedBox(width: 14),
+                      Expanded(
+                        flex: 5,
+                        child: Container(
+                          padding: const EdgeInsets.all(12),
+                          decoration: BoxDecoration(
+                            color: const Color(0xFFF8FAFC),
+                            borderRadius: BorderRadius.circular(6),
+                            border: Border.all(color: const Color(0xFFE2E8F0)),
+                          ),
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              if (_isFieldVisible(servicesSection, 'f_srv_loc')) ...[
+                                Text(
+                                  _uppercaseHeadings
+                                      ? 'SERVICE LOCATION'
+                                      : 'Service Location',
+                                  style: _docStyle(
+                                    fontSize: 10,
+                                    color: const Color(0xFF64748B),
+                                  ),
+                                ),
+                                const SizedBox(height: 2),
+                                ...() {
+                                  final locLines = serviceLocation
+                                      .split('\n')
+                                      .map((e) => e.trim())
+                                      .where((e) => e.isNotEmpty)
+                                      .toList();
+                                  return [
+                                    if (locLines.isNotEmpty)
+                                      Text(
+                                        locLines.first,
+                                        style: _docStyle(
+                                          fontSize: 10.5,
+                                          fontWeight: FontWeight.w600,
+                                          color: const Color(0xFF1E293B),
                                         ),
-                                        const SizedBox(height: 2),
-                                        const Text(
-                                          'Tap to Sign',
-                                          style: TextStyle(
-                                            fontSize: 10,
-                                            color: Color(0xFF2563EB),
-                                            fontWeight: FontWeight.bold,
-                                          ),
-                                        ),
-                                        const SizedBox(height: 8),
-                                      ],
-                                      Container(
-                                        width: 145,
-                                        height: 1,
-                                        color: const Color(0xFF94A3B8),
                                       ),
-                                    ],
+                                    for (final sub in locLines.skip(1))
+                                      Text(
+                                        sub,
+                                        style: _docStyle(
+                                          fontSize: 10,
+                                          color: const Color(0xFF475569),
+                                        ),
+                                      ),
+                                  ];
+                                }(),
+                                if (_isFieldVisible(servicesSection, 'f_srv_period'))
+                                  const SizedBox(height: 8),
+                              ],
+                              if (_isFieldVisible(servicesSection, 'f_srv_period')) ...[
+                                Text(
+                                  _uppercaseHeadings
+                                      ? 'BILLING PERIOD'
+                                      : 'Billing Period',
+                                  style: _docStyle(
+                                    fontSize: 10,
+                                    color: const Color(0xFF64748B),
                                   ),
+                                ),
+                                const SizedBox(height: 2),
+                                Text(
+                                  billingPeriod,
+                                  style: _docStyle(
+                                    fontSize: 10.5,
+                                    fontWeight: FontWeight.w600,
+                                    color: const Color(0xFF1E293B),
+                                  ),
+                                ),
+                                Text(
+                                  '(${invoice.paymentTerms.isNotEmpty ? invoice.paymentTerms : 'Monthly Billing'})',
+                                  style: _docStyle(
+                                    fontSize: 9.5,
+                                    color: const Color(0xFF64748B),
+                                  ),
+                                ),
+                              ],
+                            ],
+                          ),
+                        ),
+                      ),
+                    ],
+                  ],
+                ),
+                const SizedBox(height: 16),
+              ],
+
+              // D. Duty & Line Items Table
+              if (servicesSection.enabled) ...[
+                _buildDynamicLineItemsTable(servicesSection),
+                const SizedBox(height: 16),
+              ],
+
+              // E. Financial Summary & Totals Box
+              if (taxTotalsSection.enabled) ...[
+                Row(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                  children: [
+                    // Left: Amount in Words
+                    Expanded(
+                      flex: 5,
+                      child: Padding(
+                        padding: const EdgeInsets.only(right: 16, top: 4),
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text(
+                              _uppercaseHeadings
+                                  ? 'AMOUNT IN WORDS'
+                                  : 'Amount in Words',
+                              style: _docStyle(
+                                fontSize: 9,
+                                fontWeight: FontWeight.bold,
+                                color: const Color(0xFF64748B),
+                              ),
+                            ),
+                            const SizedBox(height: 3),
+                            Text(
+                              AmountToWords.convert(
+                                invoice.total,
+                                currency: invoice.currencyCode,
+                              ),
+                              style: _docStyle(
+                                fontSize: 9.5,
+                                fontWeight: FontWeight.w600,
+                                color: const Color(0xFF1E293B),
+                                fontStyle: FontStyle.italic,
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ),
+
+                    // Right: Summary Rows & Grand Total Box
+                    SizedBox(
+                      width: 270,
+                      child: Column(
+                        children: [
+                          if (_isFieldVisible(taxTotalsSection, 'f_tot_sub'))
+                            _buildSummaryRow(
+                              'Subtotal',
+                              _formatAmount(invoice.subtotal),
+                            ),
+                          if (_isFieldVisible(taxTotalsSection, 'f_tot_disc') &&
+                              (invoice.totalDiscount > 0 ||
+                                  _isFieldVisible(taxTotalsSection, 'f_tot_disc')))
+                            _buildSummaryRow(
+                              'Discount',
+                              '(-) ${_formatAmount(invoice.totalDiscount)}',
+                            ),
+                          if (_isFieldVisible(taxTotalsSection, 'f_tot_taxable'))
+                            _buildSummaryRow(
+                              'Taxable Amount',
+                              _formatAmount(invoice.taxableAmount),
+                              isBold: true,
+                            ),
+                          if (!invoice.isRcm && invoice.taxRate > 0) ...[
+                            if (!gstBreakdown.isInterState) ...[
+                              if (_isFieldVisible(taxTotalsSection, 'f_tot_cgst'))
+                                _buildSummaryRow(
+                                  'CGST (${(invoice.taxRate / 2).toStringAsFixed(invoice.taxRate % 2 == 0 ? 0 : 1)}%)',
+                                  _formatAmount(invoice.taxAmount / 2),
+                                ),
+                              if (_isFieldVisible(taxTotalsSection, 'f_tot_sgst'))
+                                _buildSummaryRow(
+                                  'SGST (${(invoice.taxRate / 2).toStringAsFixed(invoice.taxRate % 2 == 0 ? 0 : 1)}%)',
+                                  _formatAmount(invoice.taxAmount / 2),
+                                ),
+                            ] else ...[
+                              if (_isFieldVisible(taxTotalsSection, 'f_tot_igst', fallback: true) ||
+                                  _isFieldVisible(taxTotalsSection, 'f_tot_cgst'))
+                                _buildSummaryRow(
+                                  'IGST (${invoice.taxRate.toStringAsFixed(invoice.taxRate % 1 == 0 ? 0 : 1)}%)',
+                                  _formatAmount(invoice.taxAmount),
+                                ),
+                            ],
+                          ],
+                          if (invoice.shippingFee > 0)
+                            _buildSummaryRow(
+                              'Shipping & Handling',
+                              _formatAmount(invoice.shippingFee),
+                            ),
+                          if (invoice.additionalCharges > 0)
+                            _buildSummaryRow(
+                              'Additional Charges',
+                              _formatAmount(invoice.additionalCharges),
+                            ),
+                          if (invoice.roundOff != 0)
+                            _buildSummaryRow(
+                              'Round Off',
+                              _formatAmount(invoice.roundOff),
+                            ),
+                          if (_isFieldVisible(taxTotalsSection, 'f_tot_grand')) ...[
+                            const SizedBox(height: 6),
+                            Container(
+                              padding: const EdgeInsets.symmetric(
+                                horizontal: 10,
+                                vertical: 7,
+                              ),
+                              decoration: BoxDecoration(
+                                color: _primaryColor.withValues(alpha: 0.1),
+                                borderRadius: BorderRadius.circular(4),
+                                border: Border.all(
+                                  color: _primaryColor.withValues(alpha: 0.3),
+                                ),
+                              ),
+                              child: Row(
+                                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                                children: [
+                                  Text(
+                                    _uppercaseHeadings
+                                        ? 'GRAND TOTAL'
+                                        : 'Grand Total',
+                                    style: _docStyle(
+                                      fontSize: 12,
+                                      fontWeight: FontWeight.w800,
+                                      color: _primaryColor,
+                                    ),
+                                  ),
+                                  Flexible(
+                                    child: Text(
+                                      _formatAmount(invoice.total),
+                                      textAlign: TextAlign.right,
+                                      style: _docStyle(
+                                        fontSize: 12,
+                                        fontWeight: FontWeight.w800,
+                                        color: _primaryColor,
+                                      ),
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            ),
+                          ],
+                          if (invoice.amountPaid > 0) ...[
+                            const SizedBox(height: 4),
+                            _buildSummaryRow(
+                              'Amount Paid',
+                              '(-) ${_formatAmount(invoice.amountPaid)}',
+                            ),
+                            _buildSummaryRow(
+                              'Balance Due',
+                              _formatAmount(invoice.balanceDue),
+                              isBold: true,
+                            ),
+                          ],
+                        ],
+                      ),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 16),
+              ],
+
+              // F. Payment Details & UPI QR Code
+              if (bankSection.enabled) ...[
+                Container(
+                  padding: const EdgeInsets.all(12),
+                  decoration: BoxDecoration(
+                    color: const Color(0xFFF8FAFC),
+                    borderRadius: BorderRadius.circular(6),
+                    border: Border.all(color: const Color(0xFFE2E8F0)),
+                  ),
+                  child: Row(
+                    children: [
+                      Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text(
+                              _uppercaseHeadings
+                                  ? 'PAYMENT DETAILS'
+                                  : 'Payment Details',
+                              style: _docStyle(
+                                fontSize: 11,
+                                fontWeight: FontWeight.bold,
+                                color: const Color(0xFF0F172A),
+                              ),
+                            ),
+                            const SizedBox(height: 4),
+                            if (_isFieldVisible(bankSection, 'f_bnk_name'))
+                              Text(
+                                'Bank Name : $bankName',
+                                style: _docStyle(
+                                  fontSize: 10,
+                                  color: const Color(0xFF475569),
+                                ),
+                              ),
+                            if (_isFieldVisible(bankSection, 'f_bnk_ac'))
+                              Text(
+                                'A/C No.      : $bankAccount',
+                                style: _docStyle(
+                                  fontSize: 10,
+                                  color: const Color(0xFF475569),
+                                ),
+                              ),
+                            if (_isFieldVisible(bankSection, 'f_bnk_ifsc'))
+                              Text(
+                                'IFSC           : $bankIfsc',
+                                style: _docStyle(
+                                  fontSize: 10,
+                                  color: const Color(0xFF475569),
+                                ),
+                              ),
+                            if (_isFieldVisible(bankSection, 'f_bnk_upi'))
+                              Text(
+                                'UPI             : $bankUpi',
+                                style: _docStyle(
+                                  fontSize: 10,
+                                  color: const Color(0xFF475569),
+                                ),
+                              ),
+                            if (invoice.paymentInstructions.trim().isNotEmpty) ...[
+                              const SizedBox(height: 2),
+                              Text(
+                                invoice.paymentInstructions.trim(),
+                                style: _docStyle(
+                                  fontSize: 9.5,
+                                  color: const Color(0xFF64748B),
                                 ),
                               ),
                             ],
-                          ),
-                          const SizedBox(height: 5),
-                          Text(
-                            signeeTitle,
-                            style: const TextStyle(
-                              fontSize: 11,
-                              fontWeight: FontWeight.w700,
-                              color: Color(0xFF334155),
-                            ),
-                            textAlign: TextAlign.end,
-                          ),
-                          if (signeeName.isNotEmpty)
-                            Text(
-                              signeeName,
-                              style: const TextStyle(
-                                fontSize: 10.5,
-                                color: Color(0xFF64748B),
+                          ],
+                        ),
+                      ),
+                      if (_showQrCode && _isFieldVisible(bankSection, 'f_bnk_qr'))
+                        Column(
+                          children: [
+                            Container(
+                              width: 56 * _fontScale,
+                              height: 56 * _fontScale,
+                              decoration: BoxDecoration(
+                                color: Colors.white,
+                                borderRadius: BorderRadius.circular(4),
+                                border: Border.all(color: const Color(0xFFCBD5E1)),
                               ),
-                              textAlign: TextAlign.end,
+                              child: Center(
+                                child: Icon(
+                                  Icons.qr_code_2_rounded,
+                                  size: 48 * _fontScale,
+                                  color: const Color(0xFF1E293B),
+                                ),
+                              ),
+                            ),
+                            const SizedBox(height: 2),
+                            Text(
+                              'Scan to Pay',
+                              style: _docStyle(
+                                fontSize: 8.5,
+                                color: const Color(0xFF64748B),
+                              ),
+                            ),
+                          ],
+                        ),
+                    ],
+                  ),
+                ),
+                const SizedBox(height: 16),
+              ],
+
+              // G. Terms & Conditions and Signature
+              if (termsSection.enabled) ...[
+                Row(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Expanded(
+                      flex: 6,
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            _uppercaseHeadings
+                                ? 'TERMS & CONDITIONS'
+                                : 'Terms & Conditions',
+                            style: _docStyle(
+                              fontSize: 10.5,
+                              fontWeight: FontWeight.bold,
+                              color: const Color(0xFF0F172A),
+                            ),
+                          ),
+                          const SizedBox(height: 4),
+                          if (_isFieldVisible(termsSection, 'f_trm_lines'))
+                            for (int i = 0; i < termsLines.length; i++)
+                              Padding(
+                                padding: const EdgeInsets.only(bottom: 1.5),
+                                child: Text(
+                                  RegExp(r'^\d+\.').hasMatch(termsLines[i])
+                                      ? termsLines[i]
+                                      : '${i + 1}. ${termsLines[i]}',
+                                  style: _docStyle(
+                                    fontSize: 8.5,
+                                    color: const Color(0xFF475569),
+                                  ),
+                                ),
+                              ),
+                        ],
+                      ),
+                    ),
+                    const SizedBox(width: 14),
+                    Expanded(
+                      flex: 4,
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.end,
+                        children: [
+                          if (_isFieldVisible(termsSection, 'f_trm_company'))
+                            Text(
+                              'For $companyLegalName',
+                              textAlign: TextAlign.right,
+                              style: _docStyle(
+                                fontSize: 9.5,
+                                fontWeight: FontWeight.bold,
+                                color: const Color(0xFF1E293B),
+                              ),
+                            ),
+                          const SizedBox(height: 8),
+                          // Render Signature and Stamp (with tap-to-sign support)
+                          InkWell(
+                            onTap: onSignTap,
+                            borderRadius: BorderRadius.circular(4),
+                            child: Row(
+                              mainAxisSize: MainAxisSize.min,
+                              crossAxisAlignment: CrossAxisAlignment.end,
+                              children: [
+                                if (stampBase64 != null && stampBase64.isNotEmpty)
+                                  Container(
+                                    width: 38 * _fontScale,
+                                    height: 38 * _fontScale,
+                                    margin: const EdgeInsets.only(right: 6),
+                                    child: _safeBase64Image(
+                                      stampBase64,
+                                      width: 38 * _fontScale,
+                                      height: 38 * _fontScale,
+                                    ),
+                                  ),
+                                if (signatureBase64 != null &&
+                                    signatureBase64.isNotEmpty)
+                                  Container(
+                                    height: 34 * _fontScale,
+                                    constraints: const BoxConstraints(maxWidth: 120),
+                                    child: _safeBase64Image(
+                                      signatureBase64,
+                                      height: 34 * _fontScale,
+                                    ),
+                                  )
+                                else if (onSignTap != null)
+                                  Container(
+                                    height: 28 * _fontScale,
+                                    padding: const EdgeInsets.symmetric(
+                                      horizontal: 8,
+                                      vertical: 4,
+                                    ),
+                                    decoration: BoxDecoration(
+                                      color: const Color(0xFFF8FAFC),
+                                      borderRadius: BorderRadius.circular(4),
+                                      border: Border.all(
+                                        color: const Color(0xFFCBD5E1),
+                                      ),
+                                    ),
+                                    child: Row(
+                                      mainAxisSize: MainAxisSize.min,
+                                      children: [
+                                        Icon(
+                                          Icons.draw_rounded,
+                                          size: 11 * _fontScale,
+                                          color: _primaryColor,
+                                        ),
+                                        const SizedBox(width: 4),
+                                        Text(
+                                          'Tap to Sign',
+                                          style: _docStyle(
+                                            fontSize: 8,
+                                            fontWeight: FontWeight.w600,
+                                            color: _primaryColor,
+                                          ),
+                                        ),
+                                      ],
+                                    ),
+                                  )
+                                else
+                                  SizedBox(height: 26 * _fontScale),
+                              ],
+                            ),
+                          ),
+                          const SizedBox(height: 2),
+                          Container(
+                            width: 110,
+                            height: 1,
+                            color: const Color(0xFFCBD5E1),
+                          ),
+                          const SizedBox(height: 3),
+                          if (_isFieldVisible(termsSection, 'f_trm_title'))
+                            Text(
+                              signeeTitle,
+                              textAlign: TextAlign.right,
+                              style: _docStyle(
+                                fontSize: 9,
+                                color: const Color(0xFF64748B),
+                              ),
+                            ),
+                          if (_isFieldVisible(termsSection, 'f_trm_auto_stamp'))
+                            Text(
+                              '(This is a system generated invoice)',
+                              textAlign: TextAlign.right,
+                              style: _docStyle(
+                                fontSize: 7.5,
+                                color: const Color(0xFF94A3B8),
+                              ),
                             ),
                         ],
-                      )
-                    : const SizedBox.shrink(),
-              ),
+                      ),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 20),
+              ],
+
+              // H. Custom Sections added by user in Template Studio
+              for (final customSec in sections.where(
+                (s) => !const {
+                  'sec_branding',
+                  'sec_identity',
+                  'sec_client',
+                  'sec_services',
+                  'sec_tax_totals',
+                  'sec_bank',
+                  'sec_terms',
+                }.contains(s.id),
+              ))
+                if (customSec.enabled &&
+                    customSec.fields.any((f) => f.isVisible)) ...[
+                  Container(
+                    padding: const EdgeInsets.all(12),
+                    margin: const EdgeInsets.only(bottom: 16),
+                    decoration: BoxDecoration(
+                      color: const Color(0xFFF8FAFC),
+                      borderRadius: BorderRadius.circular(6),
+                      border: Border.all(color: const Color(0xFFCBD5E1)),
+                    ),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          _uppercaseHeadings
+                              ? customSec.title.toUpperCase()
+                              : customSec.title,
+                          style: _docStyle(
+                            fontSize: 10.5,
+                            fontWeight: FontWeight.bold,
+                            color: const Color(0xFF0F172A),
+                          ),
+                        ),
+                        if (customSec.subtitle.isNotEmpty) ...[
+                          const SizedBox(height: 2),
+                          Text(
+                            customSec.subtitle,
+                            style: _docStyle(
+                              fontSize: 9,
+                              color: const Color(0xFF64748B),
+                            ),
+                          ),
+                        ],
+                        const SizedBox(height: 8),
+                        Wrap(
+                          spacing: 16,
+                          runSpacing: 6,
+                          children: customSec.fields
+                              .where((f) => f.isVisible)
+                              .map((f) {
+                            return Row(
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                Text(
+                                  '${f.label}: ',
+                                  style: _docStyle(
+                                    fontSize: 9.5,
+                                    fontWeight: FontWeight.w600,
+                                    color: const Color(0xFF475569),
+                                  ),
+                                ),
+                                Text(
+                                  f.defaultValue.isNotEmpty
+                                      ? f.defaultValue
+                                      : '—',
+                                  style: _docStyle(
+                                    fontSize: 9.5,
+                                    color: const Color(0xFF1E293B),
+                                  ),
+                                ),
+                              ],
+                            );
+                          }).toList(),
+                        ),
+                      ],
+                    ),
+                  ),
+                ],
+
+              // I. Document Footer (Company Letterhead Footer or Classic Footer)
+              if (letterheadConfig.isLetterheadActive)
+                CompanyLetterheadWidgets.buildFooterBanner(
+                  config: letterheadConfig,
+                  overridePrimaryColor: _primaryColor,
+                  fontScale: _fontScale,
+                  fontFamily: _fontFamily,
+                  pageLabel: 'Page 1 of 1',
+                )
+              else ...[
+                const Divider(height: 1, color: Color(0xFFE2E8F0)),
+                const SizedBox(height: 8),
+                Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                  children: [
+                    Text(
+                      'Thank you for your business!',
+                      style: _docStyle(
+                        fontSize: 9,
+                        color: const Color(0xFF64748B),
+                        fontStyle: FontStyle.italic,
+                      ),
+                    ),
+                    Text(
+                      'Page 1 of 1',
+                      style: _docStyle(
+                        fontSize: 8.5,
+                        color: const Color(0xFF94A3B8),
+                      ),
+                    ),
+                  ],
+                ),
+              ],
             ],
           ),
+        ],
+      ),
+    );
+  }
 
-          // -------------------------------------------------------------------
-          // FULL WIDTH (TOTAL DOWN): NOTES, TERMS & CONDITIONS, PAYMENT INSTRUCTIONS
-          // -------------------------------------------------------------------
-          if ((_show('showNotes') && (template?.showNotes ?? true) && invoice.notes.isNotEmpty) ||
-              (_show('showTerms') && (template?.showTerms ?? true) && invoice.terms.isNotEmpty) ||
-              (_show('showPaymentInstructions') &&
-                  (template?.showPaymentInstructions ?? true) &&
-                  invoice.paymentInstructions.isNotEmpty) ||
-              customFooter.any((f) => f['isVisible'] != false)) ...[
-            const Divider(height: 32),
-            if (_show('showNotes') && (template?.showNotes ?? true) && invoice.notes.isNotEmpty) ...[
-              Text(
-                notesLabel.toUpperCase(),
-                style: TextStyle(
-                  fontSize: 11,
-                  fontWeight: FontWeight.w800,
-                  color: templateColor,
-                ),
-              ),
-              const SizedBox(height: 3),
-              Text(
-                invoice.notes,
-                style: const TextStyle(fontSize: 12.5, color: Color(0xFF334155)),
-              ),
-              const SizedBox(height: 10),
-            ],
-            if (_show('showTerms') && (template?.showTerms ?? true) && invoice.terms.isNotEmpty) ...[
-              Text(
-                termsLabel.toUpperCase(),
-                style: TextStyle(
-                  fontSize: 11,
-                  fontWeight: FontWeight.w800,
-                  color: templateColor,
-                ),
-              ),
-              const SizedBox(height: 3),
-              Text(
-                invoice.terms,
-                style: const TextStyle(fontSize: 11.5, color: Color(0xFF475569)),
-              ),
-              const SizedBox(height: 10),
-            ],
-            if (_show('showPaymentInstructions') &&
-                (template?.showPaymentInstructions ?? true) &&
-                invoice.paymentInstructions.isNotEmpty) ...[
-              Text(
-                _label('customPaymentInstructionsLabel', 'PAYMENT INSTRUCTIONS'),
-                style: TextStyle(
-                  fontSize: 11,
-                  fontWeight: FontWeight.w800,
-                  color: templateColor,
-                ),
-              ),
-              const SizedBox(height: 3),
-              Text(
-                invoice.paymentInstructions,
-                style: const TextStyle(fontSize: 11.5, color: Color(0xFF475569)),
-              ),
-            ],
-            for (final foot in customFooter)
-              if (foot['isVisible'] != false && foot['label']?.toString().isNotEmpty == true) ...[
-                const SizedBox(height: 8),
-                Text(
-                  foot['label'].toString().toUpperCase(),
-                  style: TextStyle(fontSize: 11, fontWeight: FontWeight.w800, color: templateColor),
-                ),
-                if (foot['value']?.toString().isNotEmpty == true) ...[
-                  const SizedBox(height: 2),
-                  Text(foot['value'].toString(), style: const TextStyle(fontSize: 11.5, color: Color(0xFF475569))),
-                ],
+  Widget _buildDynamicLineItemsTable(StudioSection section) {
+    final isBoxed = _tableBorderStyle == 'boxed';
+    final isStriped = _tableBorderStyle == 'striped';
+
+    final String defaultCol0;
+    final String defaultCol1;
+    final String defaultCol2;
+    final String defaultCol3;
+    final String defaultCol4;
+
+    if (_activePreset == 'gst_service') {
+      defaultCol0 = 'Service Description & Scope';
+      defaultCol1 = 'SAC Code';
+      defaultCol2 = 'Qty / Hrs';
+      defaultCol3 = 'Rate ($_currencySymbol)';
+      defaultCol4 = 'Amount ($_currencySymbol)';
+    } else if (_activePreset == 'consulting') {
+      defaultCol0 = 'Scope & Deliverables';
+      defaultCol1 = 'Lead Consultant';
+      defaultCol2 = 'Hours / Days';
+      defaultCol3 = 'Rate ($_currencySymbol)';
+      defaultCol4 = 'Amount ($_currencySymbol)';
+    } else if (_activePreset == 'retail') {
+      defaultCol0 = 'Item Description';
+      defaultCol1 = 'SKU / HSN';
+      defaultCol2 = 'Qty';
+      defaultCol3 = 'MRP ($_currencySymbol)';
+      defaultCol4 = 'Net Total ($_currencySymbol)';
+    } else {
+      defaultCol0 = 'Particulars';
+      defaultCol1 = 'Guards';
+      defaultCol2 = 'Duty Days';
+      defaultCol3 = 'Rate ($_currencySymbol)';
+      defaultCol4 = 'Amount ($_currencySymbol)';
+    }
+
+    final allColumns = <({String fieldId, String label, int flex, TextAlign align})>[
+      (
+        fieldId: 'f_col_particulars',
+        label: _columnLabel(section, 'f_col_particulars', defaultCol0),
+        flex: 5,
+        align: TextAlign.left,
+      ),
+      (
+        fieldId: 'f_col_guards',
+        label: _columnLabel(section, 'f_col_guards', defaultCol1),
+        flex: 2,
+        align: TextAlign.center,
+      ),
+      (
+        fieldId: 'f_col_duty',
+        label: _columnLabel(section, 'f_col_duty', defaultCol2),
+        flex: 2,
+        align: TextAlign.center,
+      ),
+      (
+        fieldId: 'f_col_rate',
+        label: _columnLabel(section, 'f_col_rate', defaultCol3),
+        flex: 3,
+        align: TextAlign.right,
+      ),
+      (
+        fieldId: 'f_col_amount',
+        label: _columnLabel(section, 'f_col_amount', defaultCol4),
+        flex: 3,
+        align: TextAlign.right,
+      ),
+    ];
+
+    final allRows = <List<String>>[];
+    if (invoice.items.isNotEmpty) {
+      for (final item in invoice.items) {
+        final desc = item.itemDetails.trim().isNotEmpty
+            ? '${item.description}\n${item.itemDetails.trim()}'
+            : item.description;
+        final qtyStr = item.quantity % 1 == 0
+            ? item.quantity.toInt().toString()
+            : item.quantity.toStringAsFixed(2);
+        final dutyStr = item.dutyCount > 0
+            ? (item.dutyCount % 1 == 0
+                ? item.dutyCount.toInt().toString()
+                : item.dutyCount.toStringAsFixed(1))
+            : (item.standardDutyDays > 0
+                ? item.standardDutyDays.toInt().toString()
+                : '26');
+        final rateStr = _formatNumber(item.unitPrice);
+        final amtStr = _formatNumber(item.total);
+        allRows.add([desc, qtyStr, dutyStr, rateStr, amtStr]);
+      }
+    } else {
+      allRows.add([
+        'Security Guard (12-hour shift)',
+        '4',
+        '26',
+        '2,150.00',
+        '2,23,600.00',
+      ]);
+    }
+
+    final visibleIndices = <int>[];
+    for (int i = 0; i < allColumns.length; i++) {
+      if (_isFieldVisible(section, allColumns[i].fieldId)) {
+        visibleIndices.add(i);
+      }
+    }
+    if (visibleIndices.isEmpty) {
+      visibleIndices.add(0);
+    }
+
+    final columns = [for (final idx in visibleIndices) allColumns[idx]];
+    final rows = [
+      for (final row in allRows)
+        [for (final idx in visibleIndices) row[idx]],
+    ];
+
+    return Container(
+      decoration: BoxDecoration(
+        borderRadius: BorderRadius.circular(4),
+        border: Border.all(color: const Color(0xFFCBD5E1)),
+      ),
+      clipBehavior: Clip.antiAlias,
+      child: Column(
+        children: [
+          // Header Row
+          Container(
+            color: _primaryColor,
+            child: Row(
+              children: [
+                for (int c = 0; c < columns.length; c++)
+                  Expanded(
+                    flex: columns[c].flex,
+                    child: Container(
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 10,
+                        vertical: 8,
+                      ),
+                      decoration: BoxDecoration(
+                        border: isBoxed && c < columns.length - 1
+                            ? const Border(
+                                right: BorderSide(
+                                  color: Color(0x33FFFFFF),
+                                  width: 1,
+                                ),
+                              )
+                            : null,
+                      ),
+                      child: Text(
+                        _uppercaseHeadings
+                            ? columns[c].label.toUpperCase()
+                            : columns[c].label,
+                        textAlign: columns[c].align,
+                        style: _docStyle(
+                          fontSize: 10,
+                          fontWeight: FontWeight.bold,
+                          color: _tableHeaderTextColor,
+                        ),
+                      ),
+                    ),
+                  ),
               ],
-          ],
-          if (template?.footer.isNotEmpty == true) ...[
-            const SizedBox(height: 20),
-            Center(
-              child: Text(
-                template!.footer,
-                style: const TextStyle(fontSize: 10, color: Color(0xFF94A3B8)),
-                textAlign: TextAlign.center,
+            ),
+          ),
+
+          // Body Rows
+          for (int r = 0; r < rows.length; r++) ...[
+            if (r > 0 && !isBoxed)
+              const Divider(height: 1, color: Color(0xFFE2E8F0)),
+            Container(
+              color: isStriped && r.isOdd
+                  ? const Color(0xFFF8FAFC)
+                  : Colors.white,
+              decoration: isBoxed && r < rows.length - 1
+                  ? const BoxDecoration(
+                      border: Border(
+                        bottom: BorderSide(color: Color(0xFFCBD5E1)),
+                      ),
+                    )
+                  : null,
+              child: Row(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  for (int c = 0; c < rows[r].length; c++)
+                    Expanded(
+                      flex: columns[c].flex,
+                      child: Container(
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 10,
+                          vertical: 7,
+                        ),
+                        decoration: BoxDecoration(
+                          border: isBoxed && c < rows[r].length - 1
+                              ? const Border(
+                                  right: BorderSide(color: Color(0xFFCBD5E1)),
+                                )
+                              : null,
+                        ),
+                        child: Text(
+                          rows[r][c],
+                          textAlign: columns[c].align,
+                          style: _docStyle(
+                            fontSize: 10,
+                            fontWeight: c == 0
+                                ? FontWeight.w600
+                                : (c == rows[r].length - 1
+                                    ? FontWeight.bold
+                                    : FontWeight.normal),
+                            color: c == rows[r].length - 1
+                                ? const Color(0xFF0F172A)
+                                : (c == 0
+                                    ? const Color(0xFF1E293B)
+                                    : const Color(0xFF475569)),
+                          ),
+                        ),
+                      ),
+                    ),
+                ],
               ),
             ),
           ],
         ],
       ),
     );
+  }
+
+  TableRow _metaRow(String label, String value) {
+    return TableRow(
+      children: [
+        Padding(
+          padding: const EdgeInsets.symmetric(vertical: 1.5, horizontal: 4),
+          child: Text(
+            label,
+            style: _docStyle(fontSize: 9.5, color: const Color(0xFF64748B)),
+          ),
+        ),
+        Padding(
+          padding: const EdgeInsets.symmetric(vertical: 1.5),
+          child: Text(
+            ':',
+            style: _docStyle(fontSize: 9.5, color: const Color(0xFF64748B)),
+          ),
+        ),
+        Padding(
+          padding: const EdgeInsets.symmetric(vertical: 1.5, horizontal: 4),
+          child: Text(
+            value,
+            style: _docStyle(
+              fontSize: 9.5,
+              fontWeight: FontWeight.bold,
+              color: const Color(0xFF1E293B),
+            ),
+          ),
+        ),
+      ],
+    );
+  }
+
+  Widget _buildSummaryRow(String label, String value, {bool isBold = false}) {
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 2),
+      child: Row(
+        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+        children: [
+          Flexible(
+            child: Text(
+              label,
+              style: _docStyle(
+                fontSize: 10,
+                color: const Color(0xFF64748B),
+                fontWeight: isBold ? FontWeight.bold : FontWeight.normal,
+              ),
+            ),
+          ),
+          const SizedBox(width: 8),
+          Text(
+            value,
+            style: _docStyle(
+              fontSize: 10,
+              color: const Color(0xFF1E293B),
+              fontWeight: isBold ? FontWeight.bold : FontWeight.w600,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _safeBase64Image(
+    String encoded, {
+    double? width,
+    double? height,
+  }) {
+    try {
+      return Image.memory(
+        base64Decode(encoded),
+        width: width,
+        height: height,
+        fit: BoxFit.contain,
+        errorBuilder: (_, __, ___) => const SizedBox.shrink(),
+      );
+    } catch (_) {
+      return const SizedBox.shrink();
+    }
   }
 }

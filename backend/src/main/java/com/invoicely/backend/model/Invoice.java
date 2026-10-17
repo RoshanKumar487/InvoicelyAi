@@ -3,11 +3,21 @@ package com.invoicely.backend.model;
 import jakarta.persistence.*;
 import org.hibernate.annotations.JdbcTypeCode;
 import org.hibernate.type.SqlTypes;
+import com.fasterxml.jackson.databind.JsonNode;
+import com.fasterxml.jackson.databind.ObjectMapper;
 import java.math.BigDecimal;
 
 @Entity
-@Table(name = "invoices")
+@Table(name = "invoices", indexes = {
+    @Index(name = "idx_invoices_company_id", columnList = "company_id"),
+    @Index(name = "idx_invoices_company_user", columnList = "company_id, created_by_user_id"),
+    @Index(name = "idx_invoices_company_status", columnList = "company_id, status"),
+    @Index(name = "idx_invoices_company_client", columnList = "company_id, client_id"),
+    @Index(name = "idx_invoices_number", columnList = "invoice_number")
+})
 public class Invoice {
+
+    private static final ObjectMapper OBJECT_MAPPER = new ObjectMapper();
 
     @Id
     @GeneratedValue(strategy = GenerationType.IDENTITY)
@@ -261,4 +271,72 @@ public class Invoice {
 
     public String getCreatedByUserName() { return createdByUserName; }
     public void setCreatedByUserName(String createdByUserName) { this.createdByUserName = createdByUserName; }
+
+    @Transient
+    public BigDecimal getTotal() {
+        BigDecimal subtotal = BigDecimal.ZERO;
+        if (itemsJson != null && !itemsJson.isBlank()) {
+            try {
+                JsonNode root = OBJECT_MAPPER.readTree(itemsJson);
+                if (root.isArray()) {
+                    for (JsonNode item : root) {
+                        BigDecimal qty = item.has("quantity") ? new BigDecimal(item.get("quantity").asText("1")) : BigDecimal.ONE;
+                        BigDecimal price = item.has("unitPrice") ? new BigDecimal(item.get("unitPrice").asText("0")) : BigDecimal.ZERO;
+                        BigDecimal lineTotal = qty.multiply(price);
+
+                        String formula = item.has("calculationFormula") ? item.get("calculationFormula").asText("") : "";
+                        double dutyCount = item.has("dutyCount") ? item.get("dutyCount").asDouble(0) : 0;
+                        double stdDays = item.has("standardDutyDays") ? item.get("standardDutyDays").asDouble(26) : 26;
+
+                        if ("monthly_salary_26".equalsIgnoreCase(formula) && dutyCount > 0) {
+                            double days = stdDays > 0 ? stdDays : 26.0;
+                            lineTotal = qty.multiply(new BigDecimal(dutyCount)).multiply(price).divide(new BigDecimal(days), 2, java.math.RoundingMode.HALF_UP);
+                        } else if ("monthly_salary_30".equalsIgnoreCase(formula) && dutyCount > 0) {
+                            lineTotal = qty.multiply(new BigDecimal(dutyCount)).multiply(price).divide(new BigDecimal(30), 2, java.math.RoundingMode.HALF_UP);
+                        } else if ("calendar_month".equalsIgnoreCase(formula) && dutyCount > 0) {
+                            double days = stdDays > 0 ? stdDays : 30.0;
+                            lineTotal = price.divide(new BigDecimal(days), 4, java.math.RoundingMode.HALF_UP).multiply(new BigDecimal(dutyCount));
+                        } else if ("per_duty".equalsIgnoreCase(formula) && dutyCount > 0) {
+                            lineTotal = qty.multiply(new BigDecimal(dutyCount)).multiply(price);
+                        }
+
+                        if (item.has("discountRate") && item.get("discountRate").asDouble(0) > 0) {
+                            BigDecimal discRate = new BigDecimal(item.get("discountRate").asText());
+                            BigDecimal itemDisc = lineTotal.multiply(discRate).divide(BigDecimal.valueOf(100), 2, java.math.RoundingMode.HALF_UP);
+                            lineTotal = lineTotal.subtract(itemDisc);
+                        }
+
+                        subtotal = subtotal.add(lineTotal);
+                    }
+                }
+            } catch (Exception ignored) {
+            }
+        }
+
+        BigDecimal discount = discountAmount != null ? discountAmount : BigDecimal.ZERO;
+        if (discountPercent != null && discountPercent.compareTo(BigDecimal.ZERO) > 0) {
+            BigDecimal percentDiscount = subtotal.multiply(discountPercent).divide(BigDecimal.valueOf(100), 2, java.math.RoundingMode.HALF_UP);
+            discount = discount.add(percentDiscount);
+        }
+
+        BigDecimal taxable = subtotal.subtract(discount).max(BigDecimal.ZERO);
+        BigDecimal tax = BigDecimal.ZERO;
+        if (taxRate != null && taxRate.compareTo(BigDecimal.ZERO) > 0 && (isTaxInclusive == null || !isTaxInclusive)) {
+            tax = taxable.multiply(taxRate).divide(BigDecimal.valueOf(100), 2, java.math.RoundingMode.HALF_UP);
+        }
+
+        BigDecimal calculatedTotal = taxable.add(tax);
+        if (shippingFee != null) calculatedTotal = calculatedTotal.add(shippingFee);
+        if (additionalCharges != null) calculatedTotal = calculatedTotal.add(additionalCharges);
+        if (roundOff != null) calculatedTotal = calculatedTotal.add(roundOff);
+
+        return calculatedTotal.setScale(2, java.math.RoundingMode.HALF_UP);
+    }
+
+    @Transient
+    public BigDecimal getBalanceDue() {
+        BigDecimal total = getTotal();
+        BigDecimal paid = amountPaid != null ? amountPaid : BigDecimal.ZERO;
+        return total.subtract(paid).max(BigDecimal.ZERO).setScale(2, java.math.RoundingMode.HALF_UP);
+    }
 }

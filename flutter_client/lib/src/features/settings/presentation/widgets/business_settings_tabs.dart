@@ -730,22 +730,44 @@ class BusinessBrandTermsTab extends StatelessWidget {
                 style: TextStyle(fontSize: 11, color: Color(0xFF64748B)),
               ),
               const SizedBox(height: 14),
-              BusinessBrandingAssetTile(
-                label: 'Company Logo',
-                base64: localSettings['invoiceLogo']?.toString(),
-                onPick: onPickLogo,
-                onRemove: onRemoveLogo,
-                pickLabel: 'Choose Logo',
+              Container(
+                padding: const EdgeInsets.all(12),
+                decoration: BoxDecoration(
+                  color: const Color(0xFFEFF6FF),
+                  borderRadius: BorderRadius.circular(10),
+                  border: Border.all(color: const Color(0xFFBFDBFE)),
+                ),
+                child: Row(
+                  children: [
+                    Container(
+                      padding: const EdgeInsets.all(8),
+                      decoration: const BoxDecoration(
+                        color: Colors.white,
+                        shape: BoxShape.circle,
+                      ),
+                      child: const Icon(Icons.auto_awesome_mosaic_rounded, color: Color(0xFF2563EB), size: 20),
+                    ),
+                    const SizedBox(width: 12),
+                    const Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            'Logo & Stamp Managed in Template Studio',
+                            style: TextStyle(fontWeight: FontWeight.bold, fontSize: 13, color: Color(0xFF1E3A8A)),
+                          ),
+                          SizedBox(height: 2),
+                          Text(
+                            'Official company logo, stamp seals, and header branding are now customized directly in Invoice Template Studio under "Template & Branding" with real-time A4 preview.',
+                            style: TextStyle(fontSize: 11, color: Color(0xFF475569)),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ],
+                ),
               ),
-              const SizedBox(height: 12),
-              BusinessBrandingAssetTile(
-                label: 'Official Company Stamp',
-                base64: localSettings['invoiceStamp']?.toString(),
-                onPick: onPickStamp,
-                onRemove: onRemoveStamp,
-                pickLabel: 'Upload Stamp',
-              ),
-              const SizedBox(height: 12),
+              const SizedBox(height: 14),
               BusinessBrandingAssetTile(
                 label: 'Authorized Signature',
                 base64: localSettings['invoiceSignature']?.toString(),

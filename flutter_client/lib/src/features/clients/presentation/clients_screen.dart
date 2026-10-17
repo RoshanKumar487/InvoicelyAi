@@ -3,7 +3,9 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 
 import '../../../core/api/api_exception.dart';
+import '../../../shared/utils/table_export_helper.dart';
 import '../../../shared/widgets/app_card.dart';
+import '../../../shared/widgets/enterprise_data_view.dart';
 import '../../../shared/widgets/offline_cache_banner.dart';
 import '../../../theme/app_theme.dart';
 import '../data/client.dart';
@@ -27,10 +29,13 @@ class _ClientsScreenState extends State<ClientsScreen> {
   final TextEditingController _searchController = TextEditingController();
   Timer? _searchDebounce;
   List<Client> _clients = const [];
+  String _clientFilter = 'All'; // 'All', 'Corporate', 'Individual', 'TaxRegistered'
   bool _isLoading = true;
   bool _usingCachedData = false;
   String? _error;
   int _loadRequest = 0;
+  DateTimeRange? _dateRange;
+  final Set<String> _selectedIds = {};
 
   @override
   void initState() {
@@ -87,7 +92,7 @@ class _ClientsScreenState extends State<ClientsScreen> {
   Future<void> _createClient() async {
     final client = await showDialog<Client>(
       context: context,
-      builder: (context) => const _ClientEditorDialog(),
+      builder: (context) => const ClientEditorDialog(),
     );
     if (client == null || !mounted) return;
     try {
@@ -105,7 +110,7 @@ class _ClientsScreenState extends State<ClientsScreen> {
   Future<void> _editClient(Client client) async {
     final updated = await showDialog<Client>(
       context: context,
-      builder: (context) => _ClientEditorDialog(client: client),
+      builder: (context) => ClientEditorDialog(client: client),
     );
     if (updated == null || !mounted) return;
     try {
@@ -153,6 +158,168 @@ class _ClientsScreenState extends State<ClientsScreen> {
     }
   }
 
+  Future<void> _updatePaymentTerms(Client client, String newTerms) async {
+    final updated = Client(
+      id: client.id,
+      companyId: client.companyId,
+      name: client.name,
+      companyName: client.companyName,
+      email: client.email,
+      phone: client.phone,
+      address: client.address,
+      taxId: client.taxId,
+      preferredCurrency: client.preferredCurrency,
+      defaultPaymentTerms: newTerms,
+      notes: client.notes,
+      createdAt: client.createdAt,
+    );
+    try {
+      await widget.repository.update(updated);
+      if (mounted) {
+        _showMessage('Payment terms updated to $newTerms.');
+        await _loadClients();
+      }
+    } on ApiException catch (error) {
+      if (mounted) _showMessage(error.message);
+    } catch (_) {
+      if (mounted) _showMessage('Could not update payment terms.');
+    }
+  }
+
+  List<Client> get _visibleClients {
+    return _clients.where((c) {
+      if (_clientFilter == 'Corporate' && c.companyName.trim().isEmpty) return false;
+      if (_clientFilter == 'Individual' && c.companyName.trim().isNotEmpty) return false;
+      if (_clientFilter == 'TaxRegistered' && c.taxId.trim().isEmpty) return false;
+      if (_dateRange != null && c.createdAt != null) {
+        final dt = c.createdAt! > 1000000000000
+            ? DateTime.fromMillisecondsSinceEpoch(c.createdAt!)
+            : DateTime.fromMillisecondsSinceEpoch(c.createdAt! * 1000);
+        if (dt.isBefore(_dateRange!.start) ||
+            dt.isAfter(_dateRange!.end.add(const Duration(days: 1)))) {
+          return false;
+        }
+      }
+      return true;
+    }).toList();
+  }
+
+  List<EnterpriseMetricCardItem> _buildMetrics(List<Client> all) {
+    final total = all.length;
+    final corporate = all.where((c) => c.companyName.trim().isNotEmpty).length;
+    final individual = all.where((c) => c.companyName.trim().isEmpty).length;
+    final taxRegistered = all.where((c) => c.taxId.trim().isNotEmpty).length;
+
+    return [
+      EnterpriseMetricCardItem(
+        label: 'Total Accounts',
+        value: '$total',
+        icon: Icons.groups_outlined,
+        color: const Color(0xFF2563EB),
+        filterKey: 'All',
+        isSelected: _clientFilter == 'All',
+        onTap: () => setState(() => _clientFilter = 'All'),
+      ),
+      EnterpriseMetricCardItem(
+        label: 'Corporate Entities',
+        value: '$corporate',
+        icon: Icons.business_outlined,
+        color: const Color(0xFF059669),
+        filterKey: 'Corporate',
+        isSelected: _clientFilter == 'Corporate',
+        onTap: () => setState(
+          () => _clientFilter = _clientFilter == 'Corporate' ? 'All' : 'Corporate',
+        ),
+      ),
+      EnterpriseMetricCardItem(
+        label: 'Individual Clients',
+        value: '$individual',
+        icon: Icons.person_outline,
+        color: const Color(0xFFD97706),
+        filterKey: 'Individual',
+        isSelected: _clientFilter == 'Individual',
+        onTap: () => setState(
+          () => _clientFilter = _clientFilter == 'Individual' ? 'All' : 'Individual',
+        ),
+      ),
+      EnterpriseMetricCardItem(
+        label: 'Tax Registered (GST)',
+        value: '$taxRegistered',
+        icon: Icons.verified_outlined,
+        color: const Color(0xFF7C3AED),
+        filterKey: 'TaxRegistered',
+        isSelected: _clientFilter == 'TaxRegistered',
+        onTap: () => setState(
+          () => _clientFilter = _clientFilter == 'TaxRegistered' ? 'All' : 'TaxRegistered',
+        ),
+      ),
+    ];
+  }
+
+  void _downloadClientsReport(List<Client> list) {
+    TableExportHelper.showExportMenu(
+      context: context,
+      title: 'Clients Directory',
+      headers: [
+        'ID',
+        'Name',
+        'Company',
+        'Email',
+        'Phone',
+        'Tax ID / GST',
+        'Currency',
+        'Payment Terms',
+        'Address',
+      ],
+      rows: list.map((c) => [
+        '${c.id ?? ""}',
+        c.name,
+        c.companyName,
+        c.email,
+        c.phone,
+        c.taxId,
+        c.preferredCurrency,
+        c.defaultPaymentTerms,
+        c.address,
+      ]).toList(),
+    );
+  }
+
+  Future<void> _batchDeleteSelected() async {
+    final count = _selectedIds.length;
+    if (count == 0) return;
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Delete Selected Clients?'),
+        content: Text('Are you sure you want to delete $count selected clients? This cannot be undone.'),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('Cancel')),
+          FilledButton(
+            style: FilledButton.styleFrom(backgroundColor: Colors.red),
+            onPressed: () => Navigator.pop(ctx, true),
+            child: const Text('Delete All'),
+          ),
+        ],
+      ),
+    );
+    if (confirmed != true || !mounted) return;
+
+    int deleted = 0;
+    for (final idStr in _selectedIds.toList()) {
+      final id = int.tryParse(idStr);
+      if (id != null) {
+        try {
+          await widget.repository.delete(id);
+          deleted++;
+        } catch (_) {}
+      }
+    }
+    setState(() => _selectedIds.clear());
+    _showMessage('Deleted $deleted clients.');
+    await _loadClients();
+  }
+
   void _showMessage(String message) {
     ScaffoldMessenger.of(context)
       ..hideCurrentSnackBar()
@@ -185,42 +352,15 @@ class _ClientsScreenState extends State<ClientsScreen> {
         icon: const Icon(Icons.person_add_alt_1),
         label: const Text('Add client'),
       ),
-      body: Center(
-        child: ConstrainedBox(
-          constraints: const BoxConstraints(maxWidth: 1050),
-          child: RefreshIndicator(
+      body: LayoutBuilder(
+        builder: (context, constraints) {
+          final horizontalPadding = constraints.maxWidth > 900 ? 24.0 : 16.0;
+          return RefreshIndicator(
             onRefresh: _loadClients,
             child: ListView(
-              padding: const EdgeInsets.fromLTRB(20, 8, 20, 100),
+              padding: EdgeInsets.fromLTRB(horizontalPadding, 8, horizontalPadding, 100),
               children: [
                 if (_usingCachedData) const OfflineCacheBanner(),
-                Text(
-                  'Keep your customer details and billing preferences in one place.',
-                  style: Theme.of(context).textTheme.bodyLarge?.copyWith(
-                        color: AppColors.muted,
-                      ),
-                ),
-                const SizedBox(height: 18),
-                TextField(
-                  controller: _searchController,
-                  onChanged: _onSearchChanged,
-                  textInputAction: TextInputAction.search,
-                  decoration: InputDecoration(
-                    hintText: 'Search name, company or email',
-                    prefixIcon: const Icon(Icons.search),
-                    suffixIcon: _searchController.text.isEmpty
-                        ? null
-                        : IconButton(
-                            tooltip: 'Clear search',
-                            onPressed: () {
-                              _searchController.clear();
-                              _onSearchChanged('');
-                            },
-                            icon: const Icon(Icons.close),
-                          ),
-                  ),
-                ),
-                const SizedBox(height: 18),
                 if (_error != null) ...[
                   _ErrorPanel(message: _error!, onRetry: _loadClients),
                   const SizedBox(height: 16),
@@ -230,50 +370,206 @@ class _ClientsScreenState extends State<ClientsScreen> {
                     padding: EdgeInsets.all(48),
                     child: Center(child: CircularProgressIndicator()),
                   )
-                else if (!_isLoading && _clients.isEmpty && _error == null)
-                  _EmptyPanel(
-                    hasSearch: _searchController.text.trim().isNotEmpty,
-                    onAdd: _createClient,
-                    onClear: () {
-                      _searchController.clear();
-                      _loadClients();
+                else
+                  EnterpriseDataView<Client>(
+                    items: _visibleClients,
+                    headerTitle: 'Client Directory',
+                    metrics: _buildMetrics(_clients),
+                    dateRange: _dateRange,
+                    onDateRangeChanged: (range) => setState(() => _dateRange = range),
+                    onDownloadReport: () => _downloadClientsReport(_visibleClients),
+                    idGetter: (c) => c.id?.toString() ?? c.name,
+                    selectedIds: _selectedIds,
+                    onToggleSelect: (id) {
+                      setState(() {
+                        if (_selectedIds.contains(id)) {
+                          _selectedIds.remove(id);
+                        } else {
+                          _selectedIds.add(id);
+                        }
+                      });
                     },
-                  )
-                else ...[
-                  Row(
-                    children: [
-                      Text(
-                        '${_clients.length} ${_clients.length == 1 ? 'client' : 'clients'}',
-                        style: Theme.of(context)
-                            .textTheme
-                            .titleMedium
-                            ?.copyWith(fontWeight: FontWeight.w700),
-                      ),
-                      const Spacer(),
-                      if (_isLoading)
-                        const SizedBox(
-                          width: 18,
-                          height: 18,
-                          child: CircularProgressIndicator(strokeWidth: 2),
+                    onSelectAll: (ids) => setState(() => _selectedIds.addAll(ids)),
+                    onDeselectAll: () => setState(() => _selectedIds.clear()),
+                    onRowTap: (client) => _editClient(client),
+                    batchActions: [
+                      OutlinedButton.icon(
+                        style: OutlinedButton.styleFrom(
+                          foregroundColor: const Color(0xFF0284C7),
+                          side: const BorderSide(color: Color(0xFF0284C7)),
+                          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                          visualDensity: VisualDensity.compact,
                         ),
+                        onPressed: () {
+                          final selected = _visibleClients
+                              .where((c) => _selectedIds.contains(c.id?.toString() ?? c.name))
+                              .toList();
+                          _downloadClientsReport(selected);
+                        },
+                        icon: const Icon(Icons.file_download_outlined, size: 14),
+                        label: const Text('Export Selected', style: TextStyle(fontSize: 12)),
+                      ),
+                      OutlinedButton.icon(
+                        style: OutlinedButton.styleFrom(
+                          foregroundColor: Colors.red,
+                          side: const BorderSide(color: Colors.red),
+                          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                          visualDensity: VisualDensity.compact,
+                        ),
+                        onPressed: _batchDeleteSelected,
+                        icon: const Icon(Icons.delete_outline, size: 14),
+                        label: const Text('Delete Selected', style: TextStyle(fontSize: 12)),
+                      ),
                     ],
-                  ),
-                  const SizedBox(height: 12),
-                  for (final client in _clients) ...[
-                    _ClientCard(
+                    filterChips: const [
+                      'All',
+                      'Corporate',
+                      'Individual',
+                      'Tax Registered',
+                    ],
+                    selectedFilterChip: _clientFilter == 'TaxRegistered'
+                        ? 'Tax Registered'
+                        : _clientFilter,
+                    onFilterChipSelected: (chip) {
+                      setState(() {
+                        if (chip == 'Tax Registered') {
+                          _clientFilter = 'TaxRegistered';
+                        } else {
+                          _clientFilter = chip;
+                        }
+                      });
+                    },
+                    searchController: _searchController,
+                    onSearchChanged: _onSearchChanged,
+                    searchHint: 'Search name, company or email...',
+                    groupBy: (client) =>
+                        client.companyName.isNotEmpty ? client.companyName : 'Individual Clients',
+                    groupLabelBuilder: (comp, items) =>
+                        '$comp (${items.length} ${items.length == 1 ? "contact" : "contacts"})',
+                    emptyWidget: _EmptyPanel(
+                      hasSearch: _searchController.text.trim().isNotEmpty,
+                      onAdd: _createClient,
+                      onClear: () {
+                        _searchController.clear();
+                        _loadClients();
+                      },
+                    ),
+                    cardBuilder: (context, client) => _ClientCard(
                       client: client,
                       onEdit: () => _editClient(client),
                       onDelete: () => _deleteClient(client),
                     ),
-                    const SizedBox(height: 12),
-                  ],
-                ],
+                    columns: _clientTableColumns(),
+                  ),
               ],
             ),
+          );
+        },
+      ),
+    );
+  }
+
+  List<EnterpriseTableColumn<Client>> _clientTableColumns() {
+    return [
+      EnterpriseTableColumn<Client>(
+        title: 'Client / Company',
+        width: 200,
+        sortKey: (client) => client.name.toLowerCase(),
+        cellBuilder: (ctx, client) => Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            CircleAvatar(
+              radius: 14,
+              backgroundColor: const Color(0xFFEFF6FF),
+              foregroundColor: const Color(0xFF1D4ED8),
+              child: Text(
+                client.name.isNotEmpty ? client.name[0].toUpperCase() : 'C',
+                style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 11),
+              ),
+            ),
+            const SizedBox(width: 8),
+            Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                Text(client.name, style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 13)),
+                if (client.companyName.isNotEmpty)
+                  Text(client.companyName, style: const TextStyle(fontSize: 11, color: AppColors.muted)),
+              ],
+            ),
+          ],
+        ),
+      ),
+      EnterpriseTableColumn<Client>(
+        title: 'Email',
+        width: 180,
+        sortKey: (client) => client.email.toLowerCase(),
+        cellBuilder: (ctx, client) => Text(
+          client.email.isNotEmpty ? client.email : '—',
+          style: const TextStyle(fontSize: 12),
+        ),
+      ),
+      EnterpriseTableColumn<Client>(
+        title: 'Phone',
+        width: 140,
+        sortKey: (client) => client.phone,
+        cellBuilder: (ctx, client) => Text(
+          client.phone.isNotEmpty ? client.phone : '—',
+          style: const TextStyle(fontSize: 12),
+        ),
+      ),
+      EnterpriseTableColumn<Client>(
+        title: 'Currency',
+        width: 100,
+        sortKey: (client) => client.preferredCurrency,
+        cellBuilder: (ctx, client) => Text(
+          client.preferredCurrency.isNotEmpty ? client.preferredCurrency : 'INR',
+          style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w600),
+        ),
+      ),
+      EnterpriseTableColumn<Client>(
+        title: 'Payment Terms',
+        width: 135,
+        sortKey: (client) => client.defaultPaymentTerms,
+        cellBuilder: (ctx, client) => EnterpriseStatusDropdown(
+          currentStatus: client.defaultPaymentTerms.isNotEmpty ? client.defaultPaymentTerms : 'Immediate',
+          options: const ['Immediate', 'Net 15', 'Net 30', 'Net 60'],
+          onChanged: (newTerms) => _updatePaymentTerms(client, newTerms),
+        ),
+      ),
+      EnterpriseTableColumn<Client>(
+        title: 'Tax ID / GST',
+        width: 130,
+        sortKey: (client) => client.taxId,
+        cellBuilder: (ctx, client) => Text(
+          client.taxId.isNotEmpty ? client.taxId : '—',
+          style: TextStyle(
+            fontSize: 12,
+            color: client.taxId.isNotEmpty ? const Color(0xFF7C3AED) : AppColors.muted,
+            fontWeight: client.taxId.isNotEmpty ? FontWeight.w600 : FontWeight.normal,
           ),
         ),
       ),
-    );
+      EnterpriseTableColumn<Client>(
+        title: 'Actions',
+        width: 110,
+        cellBuilder: (ctx, client) => Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            IconButton(
+              tooltip: 'Edit Client',
+              icon: const Icon(Icons.edit_outlined, size: 18),
+              onPressed: () => _editClient(client),
+            ),
+            IconButton(
+              tooltip: 'Delete Client',
+              icon: const Icon(Icons.delete_outline, size: 18, color: Colors.red),
+              onPressed: () => _deleteClient(client),
+            ),
+          ],
+        ),
+      ),
+    ];
   }
 }
 
@@ -418,16 +714,16 @@ class _ClientDetail extends StatelessWidget {
       );
 }
 
-class _ClientEditorDialog extends StatefulWidget {
-  const _ClientEditorDialog({this.client});
+class ClientEditorDialog extends StatefulWidget {
+  const ClientEditorDialog({this.client, super.key});
 
   final Client? client;
 
   @override
-  State<_ClientEditorDialog> createState() => _ClientEditorDialogState();
+  State<ClientEditorDialog> createState() => _ClientEditorDialogState();
 }
 
-class _ClientEditorDialogState extends State<_ClientEditorDialog> {
+class _ClientEditorDialogState extends State<ClientEditorDialog> {
   final _formKey = GlobalKey<FormState>();
   late final TextEditingController _name;
   late final TextEditingController _company;

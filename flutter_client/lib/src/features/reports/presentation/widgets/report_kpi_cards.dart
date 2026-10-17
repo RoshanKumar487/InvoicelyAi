@@ -294,43 +294,41 @@ class EnterpriseMetricSummaryStrip extends StatelessWidget {
   final String cycleTimeHeader;
 
   Widget _buildItem(String label, String value, {bool isLast = false}) {
-    return Expanded(
-      child: Container(
-        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
-        decoration: BoxDecoration(
-          border: isLast
-              ? null
-              : const Border(
-                  right: BorderSide(color: Color(0xFFE2E8F0), width: 1),
-                ),
-        ),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: [
-            Text(
-              label,
-              style: const TextStyle(
-                fontSize: 11,
-                fontWeight: FontWeight.w500,
-                color: Color(0xFF64748B),
-                letterSpacing: 0.1,
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+      decoration: BoxDecoration(
+        border: isLast
+            ? null
+            : const Border(
+                right: BorderSide(color: Color(0xFFE2E8F0), width: 1),
               ),
-              maxLines: 1,
-              overflow: TextOverflow.ellipsis,
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        mainAxisAlignment: MainAxisAlignment.center,
+        children: [
+          Text(
+            label,
+            style: const TextStyle(
+              fontSize: 11,
+              fontWeight: FontWeight.w500,
+              color: Color(0xFF64748B),
+              letterSpacing: 0.1,
             ),
-            const SizedBox(height: 6),
-            Text(
-              value,
-              style: const TextStyle(
-                fontSize: 22,
-                fontWeight: FontWeight.w700,
-                color: Color(0xFF0F172A),
-                height: 1.1,
-              ),
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+          ),
+          const SizedBox(height: 6),
+          Text(
+            value,
+            style: const TextStyle(
+              fontSize: 22,
+              fontWeight: FontWeight.w700,
+              color: Color(0xFF0F172A),
+              height: 1.1,
             ),
-          ],
-        ),
+          ),
+        ],
       ),
     );
   }
@@ -390,12 +388,12 @@ class EnterpriseMetricSummaryStrip extends StatelessWidget {
           return IntrinsicHeight(
             child: Row(
               children: [
-                _buildItem(totalLabel, '$totalCount'),
-                _buildItem(inProgressLabel, '$inProgressCount'),
-                _buildItem(sentLabel, '$sentCount'),
-                _buildItem(pendingApprovalLabel, '$pendingApprovalCount'),
-                _buildItem(completedLabel, '$completedCount'),
-                _buildItem(cycleTimeHeader, cycleTimeLabel, isLast: true),
+                Expanded(child: _buildItem(totalLabel, '$totalCount')),
+                Expanded(child: _buildItem(inProgressLabel, '$inProgressCount')),
+                Expanded(child: _buildItem(sentLabel, '$sentCount')),
+                Expanded(child: _buildItem(pendingApprovalLabel, '$pendingApprovalCount')),
+                Expanded(child: _buildItem(completedLabel, '$completedCount')),
+                Expanded(child: _buildItem(cycleTimeHeader, cycleTimeLabel, isLast: true)),
               ],
             ),
           );

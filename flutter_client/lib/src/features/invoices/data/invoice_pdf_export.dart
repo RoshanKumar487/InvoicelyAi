@@ -1,10 +1,13 @@
 import 'dart:convert';
 import 'dart:typed_data';
 
-import 'package:flutter/material.dart' show Color;
 import 'package:pdf/pdf.dart';
 import 'package:pdf/widgets.dart' as pw;
 
+import '../../../core/utils/amount_to_words.dart';
+import '../../../core/utils/gst_tax_calculator.dart';
+import '../../templates/data/company_letterhead.dart';
+import '../../templates/data/studio_section_model.dart';
 import '../../templates/data/template_config.dart';
 import 'invoice.dart';
 
@@ -20,7 +23,7 @@ class InvoicePdfExport {
     if (input == null || input.isEmpty) return '';
     var text = input.replaceAll(_emojiRegex, '');
     text = text
-        .replaceAll('₹', 'Rs.')
+        .replaceAll('₹', 'Rs. ')
         .replaceAll('•', '-')
         .replaceAll('—', '-')
         .replaceAll('–', '-')
@@ -28,7 +31,53 @@ class InvoicePdfExport {
         .replaceAll('”', '"')
         .replaceAll('‘', "'")
         .replaceAll('’', "'");
-    return text.trim();
+    return text.replaceAll(RegExp(r'Rs\.\s+Rs\.'), 'Rs.').trim();
+  }
+
+  static PdfColor _parsePdfColor(String? hex, PdfColor fallback) {
+    if (hex == null || hex.trim().isEmpty) return fallback;
+    final clean = hex.trim().replaceFirst('#', '');
+    final parsed = int.tryParse(clean, radix: 16);
+    if (parsed == null) return fallback;
+    return PdfColor.fromInt(0xFF000000 | parsed);
+  }
+
+  static PdfColor _tintColor(PdfColor base, double opacity) {
+    final r = base.red + (1.0 - base.red) * (1.0 - opacity);
+    final g = base.green + (1.0 - base.green) * (1.0 - opacity);
+    final b = base.blue + (1.0 - base.blue) * (1.0 - opacity);
+    return PdfColor(r.clamp(0.0, 1.0), g.clamp(0.0, 1.0), b.clamp(0.0, 1.0));
+  }
+
+  static pw.MemoryImage? _memoryImage(Object? raw) {
+    final encoded = raw?.toString().trim() ?? '';
+    if (encoded.isEmpty) return null;
+    try {
+      final clean = encoded.contains(',') ? encoded.split(',').last : encoded;
+      final bytes = base64Decode(clean);
+      if (bytes.isEmpty) return null;
+      return pw.MemoryImage(bytes);
+    } catch (_) {
+      return null;
+    }
+  }
+
+  static String _formatNumber(double val) {
+    final isNeg = val < 0;
+    final absVal = val.abs();
+    final parts = absVal.toStringAsFixed(2).split('.');
+    final intPart = parts[0];
+    final decPart = parts[1];
+    if (intPart.length <= 3) {
+      return '${isNeg ? '-' : ''}$intPart.$decPart';
+    }
+    final lastThree = intPart.substring(intPart.length - 3);
+    final otherNumbers = intPart.substring(0, intPart.length - 3);
+    final formattedOther = otherNumbers.replaceAllMapped(
+      RegExp(r'\B(?=(\d{2})+(?!\d))'),
+      (_) => ',',
+    );
+    return '${isNeg ? '-' : ''}$formattedOther,$lastThree.$decPart';
   }
 
   static Future<Uint8List> build(
@@ -37,968 +86,1775 @@ class InvoicePdfExport {
     Map<String, Object?> localSettings = const <String, Object?>{},
     Map<String, dynamic> businessProfile = const <String, dynamic>{},
   }) async {
-    bool show(String key, {bool fallback = true}) {
-      if (localSettings.containsKey(key)) {
-        return localSettings[key] == true;
-      }
-      return fallback;
-    }
+    // 1. Resolve Studio Preset, Sections & Style Settings
+    final presetStr = localSettings['studio_preset']?.toString().trim();
+    final activePreset = (presetStr != null && presetStr.isNotEmpty)
+        ? presetStr
+        : () {
+            final cat = (template?.category ?? '').toLowerCase();
+            if (cat.contains('gst')) return 'gst_service';
+            if (cat.contains('consult')) return 'consulting';
+            if (cat.contains('retail')) return 'retail';
+            return 'security_agency';
+          }();
 
-    final showBillFrom = show('showBillFrom', fallback: true) && (template?.showBillFrom ?? true);
-    final showBank = show('showBankDetails', fallback: true) && (template?.showBankDetails ?? true);
-    final showBillTo = show('showBillTo', fallback: true) && (template?.showBillTo ?? true);
-
-    final bizName = businessProfile['businessName']?.toString().trim().isNotEmpty == true
-        ? businessProfile['businessName'].toString()
-        : (localSettings['businessName']?.toString().trim().isNotEmpty == true
-            ? localSettings['businessName'].toString()
-            : '');
-    final bizLegalName = businessProfile['legalName']?.toString().trim().isNotEmpty == true
-        ? businessProfile['legalName'].toString()
-        : '';
-    final bizAddress = businessProfile['address']?.toString().trim().isNotEmpty == true
-        ? businessProfile['address'].toString()
-        : (localSettings['businessAddress']?.toString().trim().isNotEmpty == true
-            ? localSettings['businessAddress'].toString()
-            : '');
-    final bizGstin = businessProfile['gstin']?.toString().trim().isNotEmpty == true
-        ? businessProfile['gstin'].toString()
-        : (businessProfile['taxId']?.toString().trim().isNotEmpty == true
-            ? businessProfile['taxId'].toString()
-            : (localSettings['businessGstin']?.toString().trim().isNotEmpty == true
-                ? localSettings['businessGstin'].toString()
-                : ''));
-    final bizPan = businessProfile['panNumber']?.toString().trim().isNotEmpty == true
-        ? businessProfile['panNumber'].toString()
-        : (localSettings['businessPan']?.toString().trim().isNotEmpty == true
-            ? localSettings['businessPan'].toString()
-            : '');
-    final bizPhone = businessProfile['phone']?.toString().trim().isNotEmpty == true
-        ? businessProfile['phone'].toString()
-        : (localSettings['businessPhone']?.toString().trim().isNotEmpty == true
-            ? localSettings['businessPhone'].toString()
-            : '');
-    final bizEmail = businessProfile['email']?.toString().trim().isNotEmpty == true
-        ? businessProfile['email'].toString()
-        : (localSettings['businessEmail']?.toString().trim().isNotEmpty == true
-            ? localSettings['businessEmail'].toString()
-            : '');
-
-    final bankName = businessProfile['bankName']?.toString().trim().isNotEmpty == true
-        ? businessProfile['bankName'].toString()
-        : (localSettings['bankName']?.toString().trim().isNotEmpty == true
-            ? localSettings['bankName'].toString()
-            : '');
-    final accountHolder = businessProfile['accountHolder']?.toString().trim().isNotEmpty == true
-        ? businessProfile['accountHolder'].toString()
-        : (localSettings['accountHolder']?.toString().trim().isNotEmpty == true
-            ? localSettings['accountHolder'].toString()
-            : '');
-    final accountNumber = businessProfile['accountNumber']?.toString().trim().isNotEmpty == true
-        ? businessProfile['accountNumber'].toString()
-        : (localSettings['accountNumber']?.toString().trim().isNotEmpty == true
-            ? localSettings['accountNumber'].toString()
-            : '');
-    final ifscCode = businessProfile['ifscCode']?.toString().trim().isNotEmpty == true
-        ? businessProfile['ifscCode'].toString()
-        : (localSettings['ifscCode']?.toString().trim().isNotEmpty == true
-            ? localSettings['ifscCode'].toString()
-            : '');
-    final upiId = businessProfile['upiId']?.toString().trim().isNotEmpty == true
-        ? businessProfile['upiId'].toString()
-        : (localSettings['upiId']?.toString().trim().isNotEmpty == true
-            ? localSettings['upiId'].toString()
-            : '');
-
-    final paymentLink = businessProfile['paymentLink']?.toString().trim().isNotEmpty == true
-        ? businessProfile['paymentLink'].toString()
-        : (localSettings['paymentLink']?.toString().trim().isNotEmpty == true
-            ? localSettings['paymentLink'].toString()
-            : '');
-    final qrPayload = upiId.isNotEmpty
-        ? 'upi://pay?pa=$upiId&pn=${Uri.encodeComponent(bizName.isNotEmpty ? bizName : "Merchant")}&am=${(invoice.balanceDue > 0 ? invoice.balanceDue : invoice.total).toStringAsFixed(2)}&cu=INR&tn=${Uri.encodeComponent("Invoice ${invoice.invoiceNumber}")}'
-        : paymentLink;
-
-    // Currency Symbol Resolution (INR / Rs. Latin-1 safe)
-    final rawCurrency = localSettings['defaultCurrencySymbol']?.toString().trim().isNotEmpty == true
-        ? localSettings['defaultCurrencySymbol'].toString().trim()
-        : (localSettings['defaultCurrency']?.toString().trim().isNotEmpty == true
-            ? localSettings['defaultCurrency'].toString().trim()
-            : (invoice.currencySymbol.trim().isNotEmpty && invoice.currencySymbol.trim() != r'$'
-                ? invoice.currencySymbol.trim()
-                : 'INR'));
-    final currencySymbol = (rawCurrency == '₹' || rawCurrency.toUpperCase() == 'INR') ? 'Rs. ' : rawCurrency;
-
-    List<Map<String, dynamic>> customFields(String key) {
-      final raw = localSettings[key];
-      if (raw is List) {
-        return raw.map((e) => Map<String, dynamic>.from(e as Map)).toList();
-      }
-      if (raw is String && raw.isNotEmpty) {
-        try {
-          final decoded = jsonDecode(raw);
-          if (decoded is List) {
-            return decoded.map((e) => Map<String, dynamic>.from(e as Map)).toList();
+    List<StudioSection> sections =
+        StudioSection.defaultSections(preset: activePreset);
+    final rawSections = localSettings['studio_sections_json']?.toString().trim();
+    if (rawSections != null && rawSections.isNotEmpty) {
+      try {
+        final decoded = jsonDecode(rawSections);
+        if (decoded is List) {
+          final parsed = decoded
+              .whereType<Map<dynamic, dynamic>>()
+              .map((e) => StudioSection.fromJson(Map<String, dynamic>.from(e)))
+              .toList();
+          if (parsed.isNotEmpty) {
+            sections = parsed;
           }
-        } catch (_) {}
-      }
-      return <Map<String, dynamic>>[];
+        }
+      } catch (_) {}
     }
 
-    final logo = (show('showLogo') && (template?.showLogo ?? true))
-        ? _memoryImage(localSettings['invoiceLogo'])
-        : null;
-    final stamp =
-        show('showStamp') ? _memoryImage(localSettings['invoiceStamp']) : null;
-    final signature = (show('showSignature') && (template?.showSignature ?? true))
-        ? _memoryImage(localSettings['invoiceSignature'])
-        : null;
-    final customQrImage = (show('showQrCode') && (template?.showQrCode ?? true))
-        ? _memoryImage(localSettings['invoiceQrCode'])
-        : null;
-    final hasCustomQr = customQrImage != null;
-    final hasUpiOrLink = upiId.isNotEmpty || paymentLink.isNotEmpty;
-    final shouldShowQr = (template?.showQrCode ?? true) &&
-        (localSettings['showQrCode'] != false) &&
-        (hasCustomQr || hasUpiOrLink);
+    StudioSection findSection(String id) {
+      return sections.firstWhere(
+        (s) => s.id == id,
+        orElse: () => StudioSection(
+          id: id,
+          title: id,
+          subtitle: '',
+          icon: StudioFieldType.text.icon,
+          enabled: true,
+        ),
+      );
+    }
 
-    final document = pw.Document(
-      title: 'Invoice ${invoice.invoiceNumber}',
-      author: _cleanText(invoice.clientName),
-      subject: 'Invoice ${invoice.invoiceNumber}',
+    bool isFieldVisible(StudioSection section, String fieldId,
+        {bool fallback = true}) {
+      final idx = section.fields.indexWhere((f) => f.id == fieldId);
+      if (idx == -1) return fallback;
+      return section.fields[idx].isVisible;
+    }
+
+    StudioField? findField(StudioSection section, String fieldId) {
+      final idx = section.fields.indexWhere((f) => f.id == fieldId);
+      if (idx == -1) return null;
+      return section.fields[idx];
+    }
+
+    String columnLabel(StudioSection section, String fieldId, String fallback) {
+      final fld = findField(section, fieldId);
+      if (fld == null || fld.label.trim().isEmpty) return fallback;
+      return _cleanText(
+        fld.label.replaceFirst(RegExp(r'\s*Column$', caseSensitive: false), ''),
+      );
+    }
+
+    List<StudioField> customVisibleFields(
+      StudioSection section,
+      Set<String> builtInIds,
+    ) {
+      return section.fields
+          .where((f) => f.isVisible && !builtInIds.contains(f.id))
+          .toList();
+    }
+
+    final brandingSection = findSection('sec_branding');
+    final identitySection = findSection('sec_identity');
+    final clientSection = findSection('sec_client');
+    final servicesSection = findSection('sec_services');
+    final taxTotalsSection = findSection('sec_tax_totals');
+    final bankSection = findSection('sec_bank');
+    final termsSection = findSection('sec_terms');
+
+    // Colors & Typography
+    final primaryHex = localSettings['studio_primary_color']?.toString().trim();
+    final primaryColor = _parsePdfColor(
+      (primaryHex != null && primaryHex.isNotEmpty)
+          ? primaryHex
+          : template?.color,
+      PdfColor.fromInt(0xFF1E3A8A),
     );
-    final brand = PdfColor.fromInt(_parseColor(template?.color ?? '#1E3A8A'));
-    final secondary =
-        PdfColor.fromInt(_parseColor(template?.secondaryColor ?? '#0D9488'));
-    final customTitle = localSettings['customTitle']?.toString().trim();
-    final title = (customTitle != null && customTitle.isNotEmpty)
-        ? customTitle
-        : template?.title ?? 'INVOICE';
-    final invoiceNoLabel =
-        localSettings['customInvoiceNoLabel']?.toString().trim().isNotEmpty == true
-            ? localSettings['customInvoiceNoLabel'].toString()
-            : 'Invoice';
-    final dateLabel =
-        localSettings['customDateLabel']?.toString().trim().isNotEmpty == true
-            ? localSettings['customDateLabel'].toString()
-            : 'Creation date';
-    final dueDateLabel =
-        localSettings['customDueDateLabel']?.toString().trim().isNotEmpty == true
-            ? localSettings['customDueDateLabel'].toString()
-            : 'Due date';
-    final billToLabel =
-        localSettings['customBillToLabel']?.toString().trim().isNotEmpty == true
-            ? localSettings['customBillToLabel'].toString()
-            : 'BILL TO';
-    final itemHeader =
-        localSettings['customItemHeader']?.toString().trim().isNotEmpty == true
-            ? localSettings['customItemHeader'].toString()
-            : template?.itemHeader ?? 'Description';
-    final qtyHeader =
-        localSettings['customQtyHeader']?.toString().trim().isNotEmpty == true
-            ? localSettings['customQtyHeader'].toString()
-            : template?.quantityHeader ?? 'Qty';
-    final rateHeader =
-        localSettings['customRateHeader']?.toString().trim().isNotEmpty == true
-            ? localSettings['customRateHeader'].toString()
-            : template?.rateHeader ?? 'Rate';
-    final amountHeader =
-        localSettings['customAmountHeader']?.toString().trim().isNotEmpty == true
-            ? localSettings['customAmountHeader'].toString()
-            : template?.amountHeader ?? 'Amount';
+    final headerTextHex =
+        localSettings['studio_table_header_text_color']?.toString().trim();
+    final tableHeaderTextColor = _parsePdfColor(
+      headerTextHex,
+      PdfColors.white,
+    );
 
-    final customCols = customFields('customColumns_items')
-        .where((c) => c['isVisible'] != false)
-        .toList();
-    final dutyHeader =
-        localSettings['customDutyHeader']?.toString().trim().isNotEmpty == true
-            ? localSettings['customDutyHeader'].toString()
-            : (template?.dutyHeader.isNotEmpty == true ? template!.dutyHeader : 'Duty / Days');
-    final showDuty = show('showItemDuty') || invoice.items.any((it) => it.dutyCount > 0);
+    final fontScale = () {
+      final s = localSettings['studio_font_scale']?.toString().trim();
+      if (s != null && s.isNotEmpty) {
+        final parsed = double.tryParse(s);
+        if (parsed != null && parsed > 0) return parsed.clamp(0.75, 1.35);
+      }
+      return 1.0;
+    }();
 
-    // Font selection based on template
-    pw.Font baseFont;
-    pw.Font boldFont;
-    final fontChoice = (template?.font ?? '').toLowerCase();
-    if (fontChoice.contains('times')) {
+    final uppercaseHeadings = () {
+      final u = localSettings['studio_uppercase_headings'];
+      if (u is bool) return u;
+      if (u is String) return u.toLowerCase() == 'true';
+      return true;
+    }();
+
+    final tableBorderStyle =
+        localSettings['studio_table_border']?.toString().trim() ?? 'boxed';
+    final isBoxed = tableBorderStyle == 'boxed';
+    final isStriped = tableBorderStyle == 'striped';
+
+    final watermark =
+        localSettings['studio_watermark']?.toString().trim() ?? 'None';
+
+    final marginStr =
+        localSettings['studio_page_margin']?.toString().trim() ??
+            'Standard (16mm)';
+    final pageMarginPt = switch (marginStr) {
+      'Compact (10mm)' => 22.0,
+      'Spacious (24mm)' => 44.0,
+      _ => 32.0,
+    };
+
+    final showQrCode = () {
+      final q = localSettings['showQrCode'];
+      if (q is bool) return q;
+      if (q is String) return q.toLowerCase() == 'true';
+      return true;
+    }();
+
+    final documentTitle = () {
+      final custom = localSettings['customTitle']?.toString().trim();
+      if (custom != null && custom.isNotEmpty) return _cleanText(custom);
+      final tplTitle = template?.title.trim();
+      if (tplTitle != null && tplTitle.isNotEmpty && !tplTitle.contains('—')) {
+        return _cleanText(tplTitle);
+      }
+      return 'TAX INVOICE';
+    }();
+
+    // Font family selection
+    final fontFamilyStr =
+        (localSettings['studio_font_family']?.toString() ??
+                template?.font ??
+                'Inter')
+            .toLowerCase();
+    late final pw.Font baseFont;
+    late final pw.Font boldFont;
+    late final pw.Font italicFont;
+    late final pw.Font boldItalicFont;
+    if (fontFamilyStr.contains('merriweather') ||
+        fontFamilyStr.contains('times')) {
       baseFont = pw.Font.times();
       boldFont = pw.Font.timesBold();
-    } else if (fontChoice.contains('courier') || fontChoice.contains('consolas')) {
+      italicFont = pw.Font.timesItalic();
+      boldItalicFont = pw.Font.timesBoldItalic();
+    } else if (fontFamilyStr.contains('courier') ||
+        fontFamilyStr.contains('consolas')) {
       baseFont = pw.Font.courier();
       boldFont = pw.Font.courierBold();
+      italicFont = pw.Font.courierOblique();
+      boldItalicFont = pw.Font.courierBoldOblique();
     } else {
       baseFont = pw.Font.helvetica();
       boldFont = pw.Font.helveticaBold();
+      italicFont = pw.Font.helveticaOblique();
+      boldItalicFont = pw.Font.helveticaBoldOblique();
     }
 
-    document.addPage(
-      pw.MultiPage(
-        pageFormat: PdfPageFormat.a4,
-        margin: const pw.EdgeInsets.symmetric(horizontal: 26, vertical: 22),
-        theme: pw.ThemeData.withFont(
-          base: baseFont,
-          bold: boldFont,
-        ),
-        build: (context) => [
-          // -------------------------------------------------------------------
-          // HEADER SECTION (Branch on template?.headerLayout)
-          // -------------------------------------------------------------------
-          () {
-            if (template?.headerLayout == 'classic') {
-              return pw.Center(
-                child: pw.Column(
-                  crossAxisAlignment: pw.CrossAxisAlignment.center,
-                  children: [
-                    if (logo != null) ...[
-                      pw.SizedBox(
-                        height: 40,
-                        width: 140,
-                        child: pw.Image(logo, fit: pw.BoxFit.contain),
-                      ),
-                      pw.SizedBox(height: 6),
-                    ],
-                    if (showBillFrom && bizName.isNotEmpty) ...[
-                      pw.Text(
-                        _cleanText(bizName),
-                        style: pw.TextStyle(
-                          color: brand,
-                          fontSize: 16,
-                          fontWeight: pw.FontWeight.bold,
-                        ),
-                        textAlign: pw.TextAlign.center,
-                      ),
-                      if (bizLegalName.isNotEmpty && bizLegalName != bizName)
-                        pw.Text(_cleanText(bizLegalName), style: const pw.TextStyle(fontSize: 8, color: PdfColors.grey700), textAlign: pw.TextAlign.center),
-                      if (bizAddress.isNotEmpty)
-                        pw.Text(_cleanText(bizAddress), style: const pw.TextStyle(fontSize: 7.5, color: PdfColors.grey700), textAlign: pw.TextAlign.center),
-                      if (bizGstin.isNotEmpty || bizPan.isNotEmpty || bizPhone.isNotEmpty || bizEmail.isNotEmpty)
-                        pw.Text(
-                          [
-                            if (bizGstin.isNotEmpty) 'GSTIN: ${_cleanText(bizGstin)}',
-                            if (bizPan.isNotEmpty) 'PAN: ${_cleanText(bizPan)}',
-                            if (bizPhone.isNotEmpty) 'Ph: ${_cleanText(bizPhone)}',
-                            if (bizEmail.isNotEmpty) 'Email: ${_cleanText(bizEmail)}',
-                          ].join('  |  '),
-                          style: const pw.TextStyle(fontSize: 7.5, color: PdfColors.grey800),
-                          textAlign: pw.TextAlign.center,
-                        ),
-                      pw.SizedBox(height: 6),
-                    ],
-                    pw.Text(
-                      _cleanText(title),
-                      style: pw.TextStyle(
-                        color: brand,
-                        fontSize: 18,
-                        fontWeight: pw.FontWeight.bold,
-                      ),
-                      textAlign: pw.TextAlign.center,
-                    ),
-                    pw.SizedBox(height: 3),
-                    pw.Text(
-                      [
-                        '${_cleanText(invoiceNoLabel)} ${_cleanText(invoice.invoiceNumber)}',
-                        if (show('showIssueDate', fallback: true)) '${_cleanText(dateLabel)}: ${invoice.issueDate}',
-                        if (show('showDueDate', fallback: false)) '${_cleanText(dueDateLabel)}: ${invoice.dueDate}',
-                      ].join('   |   '),
-                      style: pw.TextStyle(fontSize: 8.5, fontWeight: pw.FontWeight.bold),
-                      textAlign: pw.TextAlign.center,
-                    ),
-                    if (show('showStatus', fallback: false))
-                      pw.Text('Status: ${invoice.status}', style: const pw.TextStyle(fontSize: 8, color: PdfColors.grey700)),
-                  ],
-                ),
-              );
-            }
+    pw.TextStyle docStyle({
+      double fontSize = 9.5,
+      bool bold = false,
+      bool italic = false,
+      PdfColor color = const PdfColor.fromInt(0xFF1E293B),
+      double? letterSpacing,
+    }) {
+      final font = bold && italic
+          ? boldItalicFont
+          : (bold ? boldFont : (italic ? italicFont : baseFont));
+      return pw.TextStyle(
+        font: font,
+        fontSize: fontSize * fontScale,
+        fontWeight: bold ? pw.FontWeight.bold : pw.FontWeight.normal,
+        fontStyle: italic ? pw.FontStyle.italic : pw.FontStyle.normal,
+        color: color,
+        letterSpacing: letterSpacing,
+      );
+    }
 
-            if (template?.headerLayout == 'minimal') {
-              return pw.Row(
-                crossAxisAlignment: pw.CrossAxisAlignment.start,
-                children: [
-                  pw.Expanded(
-                    child: pw.Column(
-                      crossAxisAlignment: pw.CrossAxisAlignment.start,
-                      children: [
-                        if (logo != null) ...[
-                          pw.SizedBox(
-                            height: 36,
-                            width: 120,
-                            child: pw.Image(logo, fit: pw.BoxFit.contain),
-                          ),
-                          pw.SizedBox(height: 4),
-                        ],
-                        if (showBillFrom && bizName.isNotEmpty) ...[
-                          pw.Text(
-                            _cleanText(bizName),
-                            style: pw.TextStyle(
-                              color: PdfColors.black,
-                              fontSize: 13,
-                              fontWeight: pw.FontWeight.bold,
-                            ),
-                          ),
-                          if (bizAddress.isNotEmpty)
-                            pw.Text(_cleanText(bizAddress), style: const pw.TextStyle(fontSize: 7.5, color: PdfColors.grey700)),
-                          if (bizPhone.isNotEmpty || bizEmail.isNotEmpty)
-                            pw.Text([if (bizPhone.isNotEmpty) _cleanText(bizPhone), if (bizEmail.isNotEmpty) _cleanText(bizEmail)].join(' | '), style: const pw.TextStyle(fontSize: 7.5, color: PdfColors.grey600)),
-                        ],
-                      ],
-                    ),
-                  ),
-                  pw.Column(
-                    crossAxisAlignment: pw.CrossAxisAlignment.end,
-                    children: [
-                      pw.Text(
-                        _cleanText(title),
-                        style: pw.TextStyle(
-                          color: brand,
-                          fontSize: 16,
-                          fontWeight: pw.FontWeight.bold,
-                        ),
-                      ),
-                      pw.SizedBox(height: 2),
-                      pw.Text('${_cleanText(invoiceNoLabel)} ${_cleanText(invoice.invoiceNumber)}', style: pw.TextStyle(fontWeight: pw.FontWeight.bold, fontSize: 9)),
-                      if (show('showIssueDate', fallback: true))
-                        pw.Text('${_cleanText(dateLabel)}: ${invoice.issueDate}', style: const pw.TextStyle(fontSize: 8)),
-                      if (show('showDueDate', fallback: false))
-                        pw.Text('${_cleanText(dueDateLabel)}: ${invoice.dueDate}', style: pw.TextStyle(fontSize: 8, fontWeight: pw.FontWeight.bold)),
-                    ],
-                  ),
-                ],
-              );
-            }
+    // Currency symbol (Latin-1 safe for built-in PDF fonts)
+    final rawCurrency =
+        localSettings['defaultCurrencySymbol']?.toString().trim().isNotEmpty ==
+                true
+            ? localSettings['defaultCurrencySymbol'].toString().trim()
+            : (localSettings['defaultCurrency']?.toString().trim().isNotEmpty ==
+                    true
+                ? localSettings['defaultCurrency'].toString().trim()
+                : (invoice.currencySymbol.trim().isNotEmpty &&
+                        invoice.currencySymbol.trim() != r'$'
+                    ? invoice.currencySymbol.trim()
+                    : 'INR'));
+    final currencySymbol =
+        (rawCurrency == '₹' || rawCurrency.toUpperCase() == 'INR')
+            ? 'Rs.'
+            : _cleanText(rawCurrency);
 
-            // Modern / Corporate / Smart / Industry (Default side-by-side with brand accents)
-            return pw.Row(
-              crossAxisAlignment: pw.CrossAxisAlignment.start,
-              children: [
-                pw.Expanded(
-                  child: pw.Column(
-                    crossAxisAlignment: pw.CrossAxisAlignment.start,
-                    children: [
-                      if (logo != null) ...[
-                        pw.SizedBox(
-                          height: 40,
-                          width: 140,
-                          child: pw.Image(logo, fit: pw.BoxFit.contain),
-                        ),
-                        pw.SizedBox(height: 6),
-                      ],
-                      if (showBillFrom && bizName.isNotEmpty) ...[
-                        pw.Text(
-                          _cleanText(bizName),
-                          style: pw.TextStyle(
-                            color: PdfColors.black,
-                            fontSize: 14,
-                            fontWeight: pw.FontWeight.bold,
-                          ),
-                        ),
-                        if (bizLegalName.isNotEmpty && bizLegalName != bizName)
-                          pw.Text(_cleanText(bizLegalName), style: const pw.TextStyle(fontSize: 8, color: PdfColors.grey700)),
-                        if (bizAddress.isNotEmpty)
-                          pw.Text(_cleanText(bizAddress), style: const pw.TextStyle(fontSize: 7.5, color: PdfColors.grey700)),
-                        if (bizGstin.isNotEmpty || bizPan.isNotEmpty)
-                          pw.Text([if (bizGstin.isNotEmpty) 'GSTIN: ${_cleanText(bizGstin)}', if (bizPan.isNotEmpty) 'PAN: ${_cleanText(bizPan)}'].join('  |  '), style: pw.TextStyle(fontSize: 7.5, fontWeight: pw.FontWeight.bold)),
-                        if (bizPhone.isNotEmpty || bizEmail.isNotEmpty)
-                          pw.Text([if (bizPhone.isNotEmpty) _cleanText(bizPhone), if (bizEmail.isNotEmpty) _cleanText(bizEmail)].join(' - '), style: const pw.TextStyle(fontSize: 7.5, color: PdfColors.grey700)),
-                      ],
-                    ],
-                  ),
-                ),
-                pw.SizedBox(width: 14),
-                pw.Column(
-                  crossAxisAlignment: pw.CrossAxisAlignment.end,
-                  children: [
-                    pw.Text(
-                      _cleanText(title),
-                      style: pw.TextStyle(
-                        color: brand,
-                        fontSize: 20,
-                        fontWeight: pw.FontWeight.bold,
-                      ),
-                    ),
-                    pw.SizedBox(height: 3),
-                    pw.Text(
-                      '${_cleanText(invoiceNoLabel)}: ${_cleanText(invoice.invoiceNumber)}',
-                      style: pw.TextStyle(fontWeight: pw.FontWeight.bold, fontSize: 10),
-                    ),
-                    if (show('showIssueDate', fallback: true))
-                      pw.Text('${_cleanText(dateLabel)}: ${invoice.issueDate}', style: const pw.TextStyle(fontSize: 8.5)),
-                    if (show('showDueDate', fallback: false))
-                      pw.Text('${_cleanText(dueDateLabel)}: ${invoice.dueDate}', style: pw.TextStyle(fontSize: 8.5, fontWeight: pw.FontWeight.bold)),
-                    if (show('showPoNumber', fallback: false) && invoice.poNumber.isNotEmpty)
-                      pw.Text('PO: ${_cleanText(invoice.poNumber)}', style: const pw.TextStyle(fontSize: 8)),
-                    if (show('showPaymentTerms', fallback: false) && invoice.paymentTerms.isNotEmpty)
-                      pw.Text('Terms: ${_cleanText(invoice.paymentTerms)}', style: const pw.TextStyle(fontSize: 8)),
-                    if (show('showStatus', fallback: false))
-                      pw.Text('Status: ${invoice.status}', style: const pw.TextStyle(fontSize: 8, color: PdfColors.grey700)),
-                    for (final field in customFields('customFields_details'))
-                      if (field['isVisible'] != false && field['label']?.toString().isNotEmpty == true)
-                        pw.Text('${_cleanText(field['label'].toString())}: ${_cleanText(field['value']?.toString() ?? '')}', style: const pw.TextStyle(fontSize: 8)),
-                  ],
-                ),
-              ],
-            );
-          }(),
+    String formatAmount(double val) => '$currencySymbol ${_formatNumber(val)}';
 
-          pw.SizedBox(height: 10),
-          pw.Container(height: 1.5, color: secondary),
-          pw.SizedBox(height: 10),
+    // Business Profile resolution (supports both company* and business* keys)
+    String pickSetting(List<String> keys, String fallback) {
+      for (final k in keys) {
+        final pVal = businessProfile[k]?.toString().trim();
+        if (pVal != null && pVal.isNotEmpty) return _cleanText(pVal);
+        final lVal = localSettings[k]?.toString().trim();
+        if (lVal != null && lVal.isNotEmpty) return _cleanText(lVal);
+      }
+      return _cleanText(fallback);
+    }
 
-          // -------------------------------------------------------------------
-          // BILL TO & SHIPPING
-          // -------------------------------------------------------------------
-          if (showBillTo) ...[
-            pw.Text(
-              _cleanText(billToLabel),
-              style: pw.TextStyle(
-                color: brand,
-                fontSize: 10,
-                fontWeight: pw.FontWeight.bold,
-              ),
-            ),
-            pw.SizedBox(height: 5),
-            pw.Text(
-              _cleanText(invoice.clientName),
-              style: pw.TextStyle(fontWeight: pw.FontWeight.bold),
-            ),
-            if (show('showClientCompany') && invoice.clientCompany.isNotEmpty)
-              pw.Text(_cleanText(invoice.clientCompany)),
-            if (show('showClientEmail') && invoice.clientEmail.isNotEmpty)
-              pw.Text(_cleanText(invoice.clientEmail)),
-            if (show('showClientPhone') && invoice.clientPhone.isNotEmpty)
-              pw.Text(_cleanText(invoice.clientPhone)),
-            if (show('showClientAddress') && invoice.clientAddress.isNotEmpty)
-              pw.Text(_cleanText(invoice.clientAddress)),
-            if (show('showClientTaxId') && invoice.clientTaxId.isNotEmpty)
-              pw.Text('Tax ID: ${_cleanText(invoice.clientTaxId)}'),
-            for (final field in customFields('customFields_billing'))
-              if (field['isVisible'] != false && field['label']?.toString().isNotEmpty == true)
-                pw.Text('${_cleanText(field['label'].toString())}: ${_cleanText(field['value']?.toString() ?? '')}'),
-          ],
-          if (show('showShippingSection', fallback: false) || (template?.showShipping ?? false))
-            ..._shippingWidgets(invoice.shippingDetailsJson),
-          pw.SizedBox(height: 10),
-
-          // RCM STATUTORY BADGE
-          if (invoice.isRcm || localSettings['isRcmApplicable'] == true) ...[
-            pw.Container(
-              padding: const pw.EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-              decoration: pw.BoxDecoration(
-                color: PdfColors.green50,
-                borderRadius: const pw.BorderRadius.all(pw.Radius.circular(4)),
-                border: pw.Border.all(color: PdfColors.green700, width: 0.8),
-              ),
-              child: pw.Text(
-                'Whether tax is payable on Reverse Charge basis: YES (Sec 9(3)/9(4) GST Act - Tax payable by recipient)',
-                style: pw.TextStyle(
-                  color: PdfColors.green900,
-                  fontSize: 8.5,
-                  fontWeight: pw.FontWeight.bold,
-                ),
-              ),
-            ),
-            pw.SizedBox(height: 8),
-          ],
-
-          // -------------------------------------------------------------------
-          // LINE ITEMS TABLE (Branch on template?.tableStyle)
-          // -------------------------------------------------------------------
-          () {
-            final hasQty = show('showItemQty');
-            final hasRate = show('showItemRate');
-            final hasDiscount = show('showItemDiscount', fallback: false);
-            final hasTax = show('showItemTax');
-
-            final pdfHeaders = <String>[
-              _cleanText(itemHeader),
-              if (hasQty) _cleanText(qtyHeader),
-              if (showDuty) _cleanText(dutyHeader),
-              if (hasRate) _cleanText(rateHeader),
-              if (hasDiscount)
-                _cleanText(localSettings['customDiscountHeader']?.toString() ?? 'Discount'),
-              if (hasTax)
-                _cleanText(localSettings['customTaxHeader']?.toString() ?? 'Tax'),
-              for (final col in customCols)
-                _cleanText(col['label']?.toString() ?? ''),
-              _cleanText(amountHeader),
-            ];
-
-            final columnWidths = <int, pw.TableColumnWidth>{};
-            final headerAlignments = <int, pw.Alignment>{};
-            final cellAlignments = <int, pw.Alignment>{};
-
-            var colIdx = 0;
-            columnWidths[colIdx] = const pw.FlexColumnWidth(4.5);
-            headerAlignments[colIdx] = pw.Alignment.centerLeft;
-            cellAlignments[colIdx] = pw.Alignment.centerLeft;
-            colIdx++;
-
-            if (hasQty) {
-              columnWidths[colIdx] = pw.FlexColumnWidth(qtyHeader.length > 8 ? 2.0 : 1.5);
-              headerAlignments[colIdx] = pw.Alignment.centerRight;
-              cellAlignments[colIdx] = pw.Alignment.centerRight;
-              colIdx++;
-            }
-            if (showDuty) {
-              columnWidths[colIdx] = pw.FlexColumnWidth(dutyHeader.length > 10 ? 2.4 : 1.8);
-              headerAlignments[colIdx] = pw.Alignment.centerRight;
-              cellAlignments[colIdx] = pw.Alignment.centerRight;
-              colIdx++;
-            }
-            if (hasRate) {
-              columnWidths[colIdx] = pw.FlexColumnWidth(rateHeader.length > 12 ? 2.8 : 2.0);
-              headerAlignments[colIdx] = pw.Alignment.centerRight;
-              cellAlignments[colIdx] = pw.Alignment.centerRight;
-              colIdx++;
-            }
-            if (hasDiscount) {
-              columnWidths[colIdx] = const pw.FlexColumnWidth(1.8);
-              headerAlignments[colIdx] = pw.Alignment.centerRight;
-              cellAlignments[colIdx] = pw.Alignment.centerRight;
-              colIdx++;
-            }
-            if (hasTax) {
-              columnWidths[colIdx] = const pw.FlexColumnWidth(1.8);
-              headerAlignments[colIdx] = pw.Alignment.centerRight;
-              cellAlignments[colIdx] = pw.Alignment.centerRight;
-              colIdx++;
-            }
-            for (var i = 0; i < customCols.length; i++) {
-              columnWidths[colIdx] = const pw.FlexColumnWidth(1.8);
-              headerAlignments[colIdx] = pw.Alignment.centerRight;
-              cellAlignments[colIdx] = pw.Alignment.centerRight;
-              colIdx++;
-            }
-            columnWidths[colIdx] = const pw.FlexColumnWidth(2.8);
-            headerAlignments[colIdx] = pw.Alignment.centerRight;
-            cellAlignments[colIdx] = pw.Alignment.centerRight;
-
-            final hasLongHeaders = pdfHeaders.any((h) => h.length > 13);
-            final isBoxed = template?.tableStyle == 'boxed' || template?.tableStyle == 'bordered';
-            final isStriped = template?.tableStyle == 'striped';
-            final tableBorder = isBoxed
-                ? pw.TableBorder.all(color: PdfColors.grey400, width: 0.5)
-                : const pw.TableBorder(
-                    bottom: pw.BorderSide(color: PdfColors.grey300, width: 0.5),
-                    horizontalInside: pw.BorderSide(color: PdfColors.grey200, width: 0.5),
-                  );
-
-            return pw.TableHelper.fromTextArray(
-              headers: pdfHeaders,
-              data: invoice.items
-                  .map(
-                    (item) {
-                      final cleanDesc = _cleanText(item.description);
-                      final cleanDetails = _cleanText(item.itemDetails);
-                      final descText = cleanDetails.isNotEmpty ? '$cleanDesc\n$cleanDetails' : cleanDesc;
-
-                      return <String>[
-                        descText,
-                        if (hasQty)
-                          '${_quantity(item.quantity)}'
-                              '${show('showItemUnit') ? ' ${_cleanText(item.unit)}' : ''}',
-                        if (showDuty)
-                          item.dutyCount > 0 ? _quantity(item.dutyCount) : '-',
-                        if (hasRate)
-                          _money(item.unitPrice, currencySymbol),
-                        if (hasDiscount) '${item.discountRate}%',
-                        if (hasTax) '${item.taxRate}%',
-                        for (final col in customCols)
-                          _cleanText(col['value']?.toString() ?? '-'),
-                        _money(item.total, currencySymbol),
-                      ];
-                    },
-                  )
-                  .toList(growable: false),
-              headerStyle: pw.TextStyle(
-                color: PdfColors.white,
-                fontWeight: pw.FontWeight.bold,
-                fontSize: hasLongHeaders ? 8.0 : 8.8,
-              ),
-              headerDecoration: pw.BoxDecoration(color: brand),
-              cellStyle: const pw.TextStyle(fontSize: 8.5),
-              cellPadding:
-                  const pw.EdgeInsets.symmetric(horizontal: 5, vertical: 5),
-              columnWidths: columnWidths,
-              headerAlignments: headerAlignments,
-              cellAlignments: cellAlignments,
-              border: tableBorder,
-              oddRowDecoration: isStriped ? const pw.BoxDecoration(color: PdfColors.grey100) : null,
-            );
-          }(),
-
-          pw.SizedBox(height: 10),
-
-          // -------------------------------------------------------------------
-          // TOTALS SECTION
-          // -------------------------------------------------------------------
-          pw.Align(
-            alignment: pw.Alignment.centerRight,
-            child: pw.SizedBox(
-              width: 240,
-              child: pw.Column(
-                children: [
-                  _line(
-                    _cleanText(localSettings['customSubtotalLabel']?.toString().isNotEmpty == true
-                        ? localSettings['customSubtotalLabel'].toString()
-                        : 'Subtotal'),
-                    _money(invoice.subtotal, currencySymbol),
-                  ),
-                  if (invoice.totalDiscount != 0 && show('showDiscount', fallback: true))
-                    _line(
-                      _cleanText(localSettings['customDiscountLabel']?.toString().isNotEmpty == true
-                          ? localSettings['customDiscountLabel'].toString()
-                          : 'Discount'),
-                      '-${_money(invoice.totalDiscount, currencySymbol)}',
-                    ),
-                  if (template?.showTaxBreakdown != false && show('showTax', fallback: true))
-                    if (invoice.isRcm || localSettings['isRcmApplicable'] == true)
-                      _line('Reverse Charge (RCM)', 'Tax payable by recipient (0.00)')
-                    else
-                      _line(
-                        _cleanText(localSettings['customTaxLabel']?.toString().isNotEmpty == true
-                            ? localSettings['customTaxLabel'].toString()
-                            : '${invoice.taxLabel} (${invoice.taxRate}%)'),
-                        _money(invoice.taxAmount, currencySymbol),
-                      ),
-                  if (invoice.shippingFee != 0 || show('showShippingFee', fallback: false))
-                    _line(
-                      _cleanText(localSettings['customShippingLabel']?.toString().isNotEmpty == true
-                          ? localSettings['customShippingLabel'].toString()
-                          : 'Shipping'),
-                      _money(invoice.shippingFee, currencySymbol),
-                    ),
-                  if (invoice.additionalCharges != 0 || show('showAdditionalCharges', fallback: false))
-                    _line(
-                      _cleanText(localSettings['customAdjustmentsLabel']?.toString().isNotEmpty == true
-                          ? localSettings['customAdjustmentsLabel'].toString()
-                          : 'Additional charges'),
-                      _money(invoice.additionalCharges, currencySymbol),
-                    ),
-                  if (invoice.roundOff != 0 || show('showRoundOff', fallback: false))
-                    _line(
-                      _cleanText(localSettings['customRoundOffLabel']?.toString().isNotEmpty == true
-                          ? localSettings['customRoundOffLabel'].toString()
-                          : 'Round off'),
-                      _money(invoice.roundOff, currencySymbol),
-                    ),
-                  for (final adj in customFields('customFields_adjustments'))
-                    if (adj['isVisible'] != false && adj['label']?.toString().isNotEmpty == true)
-                      _line(
-                        _cleanText(adj['label'] as String),
-                        adj['value'] != null && adj['value'].toString().isNotEmpty
-                            ? '$currencySymbol${_cleanText(adj['value'].toString())}'
-                            : '-',
-                      ),
-                  pw.Divider(color: brand),
-                  _line(
-                    _cleanText(localSettings['customTotalLabel']?.toString().isNotEmpty == true
-                        ? localSettings['customTotalLabel'].toString()
-                        : 'Total'),
-                    _money(invoice.total, currencySymbol),
-                    bold: true,
-                  ),
-                  if (show('showAmountPaid', fallback: true))
-                    _line(
-                      _cleanText(localSettings['customAmountPaidLabel']?.toString().isNotEmpty == true
-                          ? localSettings['customAmountPaidLabel'].toString()
-                          : 'Paid'),
-                      _money(invoice.amountPaid, currencySymbol),
-                    ),
-                  if (show('showBalanceDue', fallback: true))
-                    _line(
-                      _cleanText(localSettings['customBalanceDueLabel']?.toString().isNotEmpty == true
-                          ? localSettings['customBalanceDueLabel'].toString()
-                          : 'Balance due'),
-                      _money(invoice.balanceDue, currencySymbol),
-                      bold: true,
-                    ),
-                ],
-              ),
-            ),
-          ),
-
-          // -------------------------------------------------------------------
-          // ROW: BANK & PAYMENT DETAILS + QR CODE (LEFT) & SIGNATURE / STAMP (RIGHT)
-          // -------------------------------------------------------------------
-          pw.SizedBox(height: 16),
-          pw.Row(
-            crossAxisAlignment: pw.CrossAxisAlignment.start,
-            children: [
-              // LEFT HALF: Bank Details & QR Code (Scan to Pay)
-              pw.Expanded(
-                flex: 6,
-                child: (showBank &&
-                        (bankName.isNotEmpty ||
-                            accountNumber.isNotEmpty ||
-                            upiId.isNotEmpty ||
-                            paymentLink.isNotEmpty))
-                    ? pw.Container(
-                        padding: const pw.EdgeInsets.all(9),
-                        decoration: pw.BoxDecoration(
-                          border: pw.Border.all(color: PdfColors.grey300),
-                          borderRadius: const pw.BorderRadius.all(pw.Radius.circular(6)),
-                          color: PdfColors.grey50,
-                        ),
-                        child: pw.Row(
-                          crossAxisAlignment: pw.CrossAxisAlignment.start,
-                          children: [
-                            pw.Expanded(
-                              child: pw.Column(
-                                crossAxisAlignment: pw.CrossAxisAlignment.start,
-                                children: [
-                                  pw.Text(
-                                    'BANK & PAYMENT DETAILS',
-                                    style: pw.TextStyle(
-                                      fontSize: 8.5,
-                                      fontWeight: pw.FontWeight.bold,
-                                      color: brand,
-                                    ),
-                                  ),
-                                  pw.SizedBox(height: 4),
-                                  if (bankName.isNotEmpty)
-                                    pw.Text('Bank: ${_cleanText(bankName)}', style: const pw.TextStyle(fontSize: 8)),
-                                  if (accountHolder.isNotEmpty)
-                                    pw.Text('A/C Name: ${_cleanText(accountHolder)}', style: const pw.TextStyle(fontSize: 8)),
-                                  if (accountNumber.isNotEmpty)
-                                    pw.Text('A/C No: ${_cleanText(accountNumber)}', style: pw.TextStyle(fontSize: 8, fontWeight: pw.FontWeight.bold)),
-                                  if (ifscCode.isNotEmpty)
-                                    pw.Text('IFSC / SWIFT: ${_cleanText(ifscCode)}', style: const pw.TextStyle(fontSize: 8)),
-                                  if (upiId.isNotEmpty)
-                                    pw.Text('UPI ID: ${_cleanText(upiId)}', style: pw.TextStyle(fontSize: 8, fontWeight: pw.FontWeight.bold, color: PdfColors.green800)),
-                                  if (paymentLink.isNotEmpty)
-                                    pw.Text('Pay Link: ${_cleanText(paymentLink)}', style: const pw.TextStyle(fontSize: 7.5, color: PdfColors.blue700)),
-                                ],
-                              ),
-                            ),
-                            if (shouldShowQr) ...[
-                              pw.SizedBox(width: 8),
-                              pw.Column(
-                                children: [
-                                  if (hasCustomQr)
-                                    pw.Container(
-                                      width: 62,
-                                      height: 62,
-                                      child: pw.Image(customQrImage, fit: pw.BoxFit.contain),
-                                    )
-                                  else if (qrPayload.isNotEmpty)
-                                    pw.BarcodeWidget(
-                                      barcode: pw.Barcode.qrCode(),
-                                      data: qrPayload,
-                                      width: 62,
-                                      height: 62,
-                                      drawText: false,
-                                    ),
-                                  pw.SizedBox(height: 2),
-                                  pw.Text(
-                                    'SCAN TO PAY',
-                                    style: pw.TextStyle(fontSize: 6.5, fontWeight: pw.FontWeight.bold),
-                                  ),
-                                ],
-                              ),
-                            ],
-                          ],
-                        ),
-                      )
-                    : pw.SizedBox.shrink(),
-              ),
-
-              pw.SizedBox(width: 16),
-
-              // RIGHT HALF: SIGNATURE & STAMP BLOCK (Ample space)
-              pw.Expanded(
-                flex: 5,
-                child: ((show('showSignature') && (template?.showSignature ?? true)) || show('showStamp'))
-                    ? pw.Column(
-                        crossAxisAlignment: pw.CrossAxisAlignment.end,
-                        children: [
-                          pw.Row(
-                            mainAxisAlignment: pw.MainAxisAlignment.end,
-                            crossAxisAlignment: pw.CrossAxisAlignment.end,
-                            children: [
-                              if (stamp != null)
-                                pw.Container(
-                                  width: 85,
-                                  height: 85,
-                                  child: pw.Image(stamp, fit: pw.BoxFit.contain),
-                                ),
-                              if (stamp != null) pw.SizedBox(width: 8),
-                              pw.Column(
-                                crossAxisAlignment: pw.CrossAxisAlignment.center,
-                                children: [
-                                  pw.Container(
-                                    width: 130,
-                                    height: 48,
-                                    child: signature != null
-                                        ? pw.Image(signature, fit: pw.BoxFit.contain)
-                                        : pw.SizedBox.shrink(),
-                                  ),
-                                  pw.Container(width: 130, height: 0.8, color: PdfColors.grey500),
-                                  pw.SizedBox(height: 3),
-                                  pw.Text(
-                                    _cleanText(localSettings['signeeTitle']?.toString().trim().isNotEmpty == true
-                                        ? localSettings['signeeTitle'].toString()
-                                        : 'Authorized Signatory'),
-                                    style: pw.TextStyle(fontSize: 8, fontWeight: pw.FontWeight.bold),
-                                  ),
-                                  if (localSettings['signeeName']?.toString().trim().isNotEmpty == true)
-                                    pw.Text(
-                                      _cleanText(localSettings['signeeName'].toString()),
-                                      style: const pw.TextStyle(fontSize: 7.5, color: PdfColors.grey700),
-                                    ),
-                                ],
-                              ),
-                            ],
-                          ),
-                        ],
-                      )
-                    : pw.SizedBox.shrink(),
-              ),
-            ],
-          ),
-
-          // -------------------------------------------------------------------
-          // FULL WIDTH (TOTAL DOWN): Notes, Terms & Conditions, Payment Instructions
-          // -------------------------------------------------------------------
-          if (show('showNotes') &&
-              (template?.showNotes ?? true) &&
-              invoice.notes.isNotEmpty) ...[
-            pw.SizedBox(height: 14),
-            pw.Text(
-              _cleanText(localSettings['customNotesLabel']?.toString().trim().isNotEmpty == true
-                  ? localSettings['customNotesLabel'].toString()
-                  : 'Notes'),
-              style: pw.TextStyle(fontWeight: pw.FontWeight.bold, fontSize: 8.5),
-            ),
-            pw.SizedBox(height: 2),
-            pw.Text(_cleanText(invoice.notes), style: const pw.TextStyle(fontSize: 8, color: PdfColors.grey800)),
-          ],
-          if (show('showTerms') &&
-              (template?.showTerms ?? true) &&
-              invoice.terms.isNotEmpty) ...[
-            pw.SizedBox(height: 8),
-            pw.Text(
-              _cleanText(localSettings['customTermsLabel']?.toString().trim().isNotEmpty == true
-                  ? localSettings['customTermsLabel'].toString()
-                  : 'Terms and conditions'),
-              style: pw.TextStyle(fontWeight: pw.FontWeight.bold, fontSize: 8.5),
-            ),
-            pw.SizedBox(height: 2),
-            pw.Text(_cleanText(invoice.terms), style: const pw.TextStyle(fontSize: 8, color: PdfColors.grey800)),
-          ],
-          if (show('showPaymentInstructions') &&
-              template?.showPaymentInstructions != false &&
-              invoice.paymentInstructions.isNotEmpty) ...[
-            pw.SizedBox(height: 8),
-            pw.Text(
-              'Payment instructions',
-              style: pw.TextStyle(fontWeight: pw.FontWeight.bold, fontSize: 8.5),
-            ),
-            pw.SizedBox(height: 2),
-            pw.Text(_cleanText(invoice.paymentInstructions), style: const pw.TextStyle(fontSize: 8, color: PdfColors.grey800)),
-          ],
-          for (final foot in customFields('customFields_footer'))
-            if (foot['isVisible'] != false && foot['label']?.toString().isNotEmpty == true) ...[
-              pw.SizedBox(height: 8),
-              pw.Text(
-                _cleanText(foot['label'].toString().toUpperCase()),
-                style: pw.TextStyle(
-                  color: brand,
-                  fontSize: 8.5,
-                  fontWeight: pw.FontWeight.bold,
-                ),
-              ),
-              if (foot['value']?.toString().isNotEmpty == true)
-                pw.Text(_cleanText(foot['value'].toString()), style: const pw.TextStyle(fontSize: 8)),
-            ],
-          if (template?.footer.isNotEmpty == true) ...[
-            pw.SizedBox(height: 20),
-            pw.Divider(color: PdfColors.grey400),
-            pw.Text(
-              _cleanText(template!.footer),
-              textAlign: pw.TextAlign.center,
-              style: const pw.TextStyle(fontSize: 8, color: PdfColors.grey700),
-            ),
-          ],
-        ],
-      ),
+    final companyLegalName = pickSetting(
+      ['companyName', 'businessName', 'legalName'],
+      findField(brandingSection, 'f_biz_name')?.defaultValue.trim().isNotEmpty ==
+              true
+          ? findField(brandingSection, 'f_biz_name')!.defaultValue.trim()
+          : 'Northstar Security Services Ltd.',
     );
-    return document.save();
-  }
 
-  static pw.Widget _line(String label, String value, {bool bold = false}) =>
-      pw.Padding(
-        padding: const pw.EdgeInsets.symmetric(vertical: 3),
+    final words = companyLegalName.split(RegExp(r'\s+'));
+    final brandHeadline = words.isNotEmpty
+        ? words.first
+        : (activePreset == 'security_agency' ? 'NORTHSTAR' : 'ENTERPRISE');
+    final brandSubtitle = words.length > 1
+        ? words
+            .sublist(1)
+            .join(' ')
+            .replaceAll(
+              RegExp(r'\b(Pvt\.?|Ltd\.?|LLP|Inc\.?)\b', caseSensitive: false),
+              '',
+            )
+            .trim()
+        : (activePreset == 'security_agency'
+            ? 'SECURITY SERVICES'
+            : 'SOLUTIONS & SERVICES');
+
+    final companyTagline = pickSetting(
+      ['tagline', 'companyTagline', 'businessTagline'],
+      findField(brandingSection, 'f_biz_tagline')
+                  ?.defaultValue
+                  .trim()
+                  .isNotEmpty ==
+              true
+          ? findField(brandingSection, 'f_biz_tagline')!.defaultValue.trim()
+          : 'Safe People  |  Secure Tomorrow',
+    );
+
+    final companyAddress = pickSetting(
+      ['companyAddress', 'address', 'businessAddress'],
+      '#12, 3rd Floor, Green Park, Bengaluru,\nKarnataka - 560076',
+    );
+
+    final companyGstin = pickSetting(
+      ['taxId', 'gstin', 'companyGstin', 'businessGstin'],
+      findField(brandingSection, 'f_biz_gstin')
+                  ?.defaultValue
+                  .trim()
+                  .isNotEmpty ==
+              true
+          ? findField(brandingSection, 'f_biz_gstin')!.defaultValue.trim()
+          : '29ABCDE1234F1Z5',
+    );
+
+    final companyPan = pickSetting(
+      ['panNumber', 'companyPan', 'businessPan'],
+      findField(brandingSection, 'f_biz_pan')?.defaultValue.trim().isNotEmpty ==
+              true
+          ? findField(brandingSection, 'f_biz_pan')!.defaultValue.trim()
+          : (companyGstin.length >= 12
+              ? companyGstin.substring(2, 12)
+              : 'ABCDE1234F'),
+    );
+
+    final companyPhone = pickSetting(
+      ['companyPhone', 'phone', 'businessPhone'],
+      '+91 98765 43210',
+    );
+
+    final companyEmail = pickSetting(
+      ['companyEmail', 'email', 'businessEmail'],
+      'info@northstarsecurity.in',
+    );
+
+    // Client details
+    final clientDisplayName = _cleanText(
+      invoice.clientCompany.trim().isNotEmpty
+          ? invoice.clientCompany.trim()
+          : (invoice.clientName.trim().isNotEmpty
+              ? invoice.clientName.trim()
+              : 'ABC Industries Pvt. Ltd.'),
+    );
+    final clientContactPerson = _cleanText(
+      (invoice.clientCompany.trim().isNotEmpty &&
+              invoice.clientName.trim().isNotEmpty &&
+              invoice.clientName.trim() != invoice.clientCompany.trim())
+          ? invoice.clientName.trim()
+          : (findField(clientSection, 'f_cli_contact')?.defaultValue.trim() ??
+              ''),
+    );
+    final clientAddr = _cleanText(
+      invoice.clientAddress.trim().isNotEmpty
+          ? invoice.clientAddress.trim()
+          : '101, Business Tower, MG Road,\nBengaluru, Karnataka - 560001',
+    );
+    final clientGstin = _cleanText(
+      invoice.clientTaxId.trim().isNotEmpty
+          ? invoice.clientTaxId.trim()
+          : '29AABCA1234B1Z2',
+    );
+    final clientPhone = _cleanText(
+      invoice.clientPhone.trim().isNotEmpty
+          ? invoice.clientPhone.trim()
+          : '+91 98800 11223',
+    );
+
+    // Service Location & Billing Period
+    Map<String, dynamic> shippingMap = const {};
+    if (invoice.shippingDetailsJson.trim().isNotEmpty &&
+        invoice.shippingDetailsJson.trim() != '{}') {
+      try {
+        final decoded = jsonDecode(invoice.shippingDetailsJson);
+        if (decoded is Map<String, dynamic>) shippingMap = decoded;
+      } catch (_) {}
+    }
+
+    final serviceLocation = _cleanText(
+      (shippingMap['shippingAddress']?.toString().trim().isNotEmpty == true)
+          ? shippingMap['shippingAddress']!.toString().trim()
+          : ((shippingMap['deliveryAddress']?.toString().trim().isNotEmpty ==
+                  true)
+              ? shippingMap['deliveryAddress']!.toString().trim()
+              : (findField(servicesSection, 'f_srv_loc')
+                          ?.defaultValue
+                          .trim()
+                          .isNotEmpty ==
+                      true
+                  ? findField(servicesSection, 'f_srv_loc')!.defaultValue.trim()
+                  : (invoice.clientAddress.trim().isNotEmpty
+                      ? invoice.clientAddress.trim()
+                      : 'Tech Park, Whitefield\nBengaluru, Karnataka - 560066'))),
+    );
+
+    final billingPeriod = _cleanText(
+      (findField(servicesSection, 'f_srv_period')
+                  ?.defaultValue
+                  .trim()
+                  .isNotEmpty ==
+              true)
+          ? findField(servicesSection, 'f_srv_period')!.defaultValue.trim()
+          : '${invoice.issueDate.isNotEmpty ? invoice.issueDate : '01 Apr 2025'} - ${invoice.dueDate.isNotEmpty ? invoice.dueDate : '30 Apr 2025'}',
+    );
+
+    // Tax & Totals
+    final gstBreakdown = GstTaxCalculator.calculate(
+      taxableAmount: invoice.taxableAmount,
+      taxRate: invoice.taxRate,
+      taxLabel: invoice.taxLabel,
+      taxType: invoice.taxType,
+      isRcm: invoice.isRcm,
+      supplierPlaceOfSupply: companyAddress,
+      clientPlaceOfSupply: invoice.clientAddress,
+    );
+
+    // Bank & UPI QR
+    final bankName = pickSetting(
+      ['bankName'],
+      findField(bankSection, 'f_bnk_name')?.defaultValue.trim().isNotEmpty ==
+              true
+          ? findField(bankSection, 'f_bnk_name')!.defaultValue.trim()
+          : 'HDFC Bank',
+    );
+    final bankAccount = pickSetting(
+      ['accountNumber'],
+      findField(bankSection, 'f_bnk_ac')?.defaultValue.trim().isNotEmpty == true
+          ? findField(bankSection, 'f_bnk_ac')!.defaultValue.trim()
+          : '50200012345678',
+    );
+    final bankIfsc = pickSetting(
+      ['ifscCode'],
+      findField(bankSection, 'f_bnk_ifsc')?.defaultValue.trim().isNotEmpty ==
+              true
+          ? findField(bankSection, 'f_bnk_ifsc')!.defaultValue.trim()
+          : 'HDFC0001234',
+    );
+    final bankUpi = pickSetting(
+      ['upiId'],
+      findField(bankSection, 'f_bnk_upi')?.defaultValue.trim().isNotEmpty ==
+              true
+          ? findField(bankSection, 'f_bnk_upi')!.defaultValue.trim()
+          : 'northstar@hdfcbank',
+    );
+    final qrPayload =
+        'upi://pay?pa=$bankUpi&pn=${Uri.encodeComponent(companyLegalName)}&am=${(invoice.balanceDue > 0 ? invoice.balanceDue : invoice.total).toStringAsFixed(2)}&cu=INR&tn=${Uri.encodeComponent("Invoice ${invoice.invoiceNumber}")}';
+
+    // Terms & Signatory
+    final termsLines = <String>[];
+    if (invoice.terms.trim().isNotEmpty) {
+      termsLines.addAll(
+        invoice.terms
+            .split('\n')
+            .map((l) => _cleanText(l))
+            .where((l) => l.isNotEmpty),
+      );
+    }
+    if (invoice.notes.trim().isNotEmpty) {
+      termsLines.addAll(
+        invoice.notes
+            .split('\n')
+            .map((l) => _cleanText(l))
+            .where((l) => l.isNotEmpty),
+      );
+    }
+    if (termsLines.isEmpty) {
+      final defaultTrm =
+          findField(termsSection, 'f_trm_lines')?.defaultValue.trim() ?? '';
+      if (defaultTrm.isNotEmpty) {
+        termsLines.addAll(
+          defaultTrm
+              .split('\n')
+              .map((l) => _cleanText(l))
+              .where((l) => l.isNotEmpty),
+        );
+      } else {
+        termsLines.addAll(const [
+          '1. Payment due within 15 days from the date of invoice.',
+          '2. Late payment attracts 18% annual interest.',
+          '3. Security personnel are deployed as per the agreed schedule.',
+          '4. Any dispute must be reported within 7 days of service completion.',
+        ]);
+      }
+    }
+
+    final signeeTitle = pickSetting(
+      ['signeeTitle'],
+      findField(termsSection, 'f_trm_title')?.defaultValue.trim().isNotEmpty ==
+              true
+          ? findField(termsSection, 'f_trm_title')!.defaultValue.trim()
+          : 'Authorized Signatory',
+    );
+
+    final logoImage = _memoryImage(localSettings['invoiceLogo']);
+    final stampImage = _memoryImage(localSettings['invoiceStamp']);
+    final signatureImage = _memoryImage(localSettings['invoiceSignature']);
+
+    // Line items table columns & rows
+    final String defaultCol0;
+    final String defaultCol1;
+    final String defaultCol2;
+    final String defaultCol3;
+    final String defaultCol4;
+
+    if (activePreset == 'gst_service') {
+      defaultCol0 = 'Service Description & Scope';
+      defaultCol1 = 'SAC Code';
+      defaultCol2 = 'Qty / Hrs';
+      defaultCol3 = 'Rate ($currencySymbol)';
+      defaultCol4 = 'Amount ($currencySymbol)';
+    } else if (activePreset == 'consulting') {
+      defaultCol0 = 'Scope & Deliverables';
+      defaultCol1 = 'Lead Consultant';
+      defaultCol2 = 'Hours / Days';
+      defaultCol3 = 'Rate ($currencySymbol)';
+      defaultCol4 = 'Amount ($currencySymbol)';
+    } else if (activePreset == 'retail') {
+      defaultCol0 = 'Item Description';
+      defaultCol1 = 'SKU / HSN';
+      defaultCol2 = 'Qty';
+      defaultCol3 = 'MRP ($currencySymbol)';
+      defaultCol4 = 'Net Total ($currencySymbol)';
+    } else {
+      defaultCol0 = 'Particulars';
+      defaultCol1 = 'Guards';
+      defaultCol2 = 'Duty Days';
+      defaultCol3 = 'Rate ($currencySymbol)';
+      defaultCol4 = 'Amount ($currencySymbol)';
+    }
+
+    final allColumns = <({
+      String fieldId,
+      String label,
+      int flex,
+      pw.TextAlign align,
+    })>[
+      (
+        fieldId: 'f_col_particulars',
+        label: columnLabel(servicesSection, 'f_col_particulars', defaultCol0),
+        flex: 5,
+        align: pw.TextAlign.left,
+      ),
+      (
+        fieldId: 'f_col_guards',
+        label: columnLabel(servicesSection, 'f_col_guards', defaultCol1),
+        flex: 2,
+        align: pw.TextAlign.center,
+      ),
+      (
+        fieldId: 'f_col_duty',
+        label: columnLabel(servicesSection, 'f_col_duty', defaultCol2),
+        flex: 2,
+        align: pw.TextAlign.center,
+      ),
+      (
+        fieldId: 'f_col_rate',
+        label: columnLabel(servicesSection, 'f_col_rate', defaultCol3),
+        flex: 3,
+        align: pw.TextAlign.right,
+      ),
+      (
+        fieldId: 'f_col_amount',
+        label: columnLabel(servicesSection, 'f_col_amount', defaultCol4),
+        flex: 3,
+        align: pw.TextAlign.right,
+      ),
+    ];
+
+    final allRows = <List<String>>[];
+    if (invoice.items.isNotEmpty) {
+      for (final item in invoice.items) {
+        final desc = item.itemDetails.trim().isNotEmpty
+            ? '${_cleanText(item.description)}\n${_cleanText(item.itemDetails)}'
+            : _cleanText(item.description);
+        final qtyStr = item.quantity % 1 == 0
+            ? item.quantity.toInt().toString()
+            : item.quantity.toStringAsFixed(2);
+        final dutyStr = item.dutyCount > 0
+            ? (item.dutyCount % 1 == 0
+                ? item.dutyCount.toInt().toString()
+                : item.dutyCount.toStringAsFixed(1))
+            : (item.standardDutyDays > 0
+                ? item.standardDutyDays.toInt().toString()
+                : '26');
+        final rateStr = _formatNumber(item.unitPrice);
+        final amtStr = _formatNumber(item.total);
+        allRows.add([desc, qtyStr, dutyStr, rateStr, amtStr]);
+      }
+    } else {
+      allRows.add([
+        'Security Guard (12-hour shift)',
+        '4',
+        '26',
+        '2,150.00',
+        '2,23,600.00',
+      ]);
+    }
+
+    final visibleIndices = <int>[];
+    for (int i = 0; i < allColumns.length; i++) {
+      if (isFieldVisible(servicesSection, allColumns[i].fieldId)) {
+        visibleIndices.add(i);
+      }
+    }
+    if (visibleIndices.isEmpty) visibleIndices.add(0);
+
+    final columns = [for (final idx in visibleIndices) allColumns[idx]];
+    final rows = [
+      for (final row in allRows)
+        [for (final idx in visibleIndices) row[idx]],
+    ];
+
+    pw.TableRow metaRow(String label, String value) {
+      return pw.TableRow(
+        children: [
+          pw.Padding(
+            padding: const pw.EdgeInsets.symmetric(vertical: 1.5, horizontal: 4),
+            child: pw.Text(
+              _cleanText(label),
+              style: docStyle(
+                fontSize: 9,
+                color: const PdfColor.fromInt(0xFF64748B),
+              ),
+            ),
+          ),
+          pw.Padding(
+            padding: const pw.EdgeInsets.symmetric(vertical: 1.5),
+            child: pw.Text(
+              ':',
+              style: docStyle(
+                fontSize: 9,
+                color: const PdfColor.fromInt(0xFF64748B),
+              ),
+            ),
+          ),
+          pw.Padding(
+            padding: const pw.EdgeInsets.symmetric(vertical: 1.5, horizontal: 4),
+            child: pw.Text(
+              _cleanText(value),
+              style: docStyle(
+                fontSize: 9,
+                bold: true,
+                color: const PdfColor.fromInt(0xFF1E293B),
+              ),
+            ),
+          ),
+        ],
+      );
+    }
+
+    pw.Widget summaryRow(String label, String value, {bool isBold = false}) {
+      return pw.Padding(
+        padding: const pw.EdgeInsets.symmetric(vertical: 2),
         child: pw.Row(
+          mainAxisAlignment: pw.MainAxisAlignment.spaceBetween,
           children: [
-            pw.Expanded(
-              child: pw.Text(
-                label,
-                style: pw.TextStyle(
-                  fontWeight: bold ? pw.FontWeight.bold : pw.FontWeight.normal,
-                ),
+            pw.Text(
+              _cleanText(label),
+              style: docStyle(
+                fontSize: 9.5,
+                bold: isBold,
+                color: const PdfColor.fromInt(0xFF64748B),
               ),
             ),
             pw.Text(
-              value,
-              style: pw.TextStyle(
-                fontWeight: bold ? pw.FontWeight.bold : pw.FontWeight.normal,
+              _cleanText(value),
+              style: docStyle(
+                fontSize: 9.5,
+                bold: true,
+                color: const PdfColor.fromInt(0xFF1E293B),
               ),
             ),
           ],
         ),
       );
-
-  static String _quantity(double quantity) =>
-      quantity == quantity.roundToDouble()
-          ? quantity.toStringAsFixed(0)
-          : quantity.toString();
-
-  static String _money(double amount, String symbol) {
-    final cleanSym = (symbol == '₹' || symbol.contains('₹') || symbol.toUpperCase() == 'INR')
-        ? 'Rs. '
-        : symbol;
-    return '$cleanSym${amount.toStringAsFixed(2)}';
-  }
-
-  static pw.MemoryImage? _memoryImage(Object? value) {
-    final encoded = value?.toString() ?? '';
-    if (encoded.isEmpty) return null;
-    return pw.MemoryImage(base64Decode(encoded));
-  }
-
-  static List<pw.Widget> _shippingWidgets(String json) {
-    if (json.trim().isEmpty || json.trim() == '{}') return const [];
-    final decoded = jsonDecode(json);
-    if (decoded is! Map<String, dynamic>) {
-      throw const FormatException('Invoice shipping details are invalid.');
     }
-    if (decoded['isEnabled'] != true) return const [];
-    const fields = <String, String>{
-      'shippingAddress': 'Shipping address',
-      'deliveryAddress': 'Delivery address',
-      'shippingMethod': 'Shipping method',
-      'courier': 'Carrier',
-      'trackingNumber': 'Tracking',
-      'expectedDelivery': 'Expected delivery',
-    };
-    return [
-      pw.SizedBox(height: 8),
-      pw.Text(
-        _cleanText(decoded['sectionTitle']?.toString().trim().isNotEmpty == true
-            ? decoded['sectionTitle'].toString()
-            : 'Shipping details'),
-        style: pw.TextStyle(fontWeight: pw.FontWeight.bold),
-      ),
-      for (final entry in fields.entries)
-        if (decoded[entry.key]?.toString().trim().isNotEmpty == true)
-          pw.Text('${entry.value}: ${_cleanText(decoded[entry.key]?.toString())}'),
-    ];
-  }
 
-  static int _parseColor(String value) {
-    final normalized = value.replaceFirst('#', '');
-    final parsed = int.tryParse(normalized, radix: 16);
-    if (parsed == null) return const Color(0xFF1E3A8A).toARGB32();
-    return normalized.length == 6 ? 0xFF000000 | parsed : parsed;
+    final letterheadConfig = CompanyLetterheadConfig.fromSettings(
+      localSettings: localSettings,
+      profile: businessProfile,
+      fallbackCompanyName: companyLegalName,
+      fallbackAddress: companyAddress.replaceAll('\n', ', '),
+      fallbackPhone: companyPhone,
+      fallbackEmail: companyEmail,
+      fallbackGstin: companyGstin,
+      fallbackPan: companyPan,
+      fallbackLogoBase64: localSettings['invoiceLogo']?.toString(),
+    );
+
+    final document = pw.Document(
+      title: 'Invoice ${invoice.invoiceNumber}',
+      author: companyLegalName,
+      subject: '$documentTitle ${invoice.invoiceNumber}',
+    );
+
+    final pageTheme = pw.PageTheme(
+      pageFormat: PdfPageFormat.a4,
+      margin: pw.EdgeInsets.all(pageMarginPt),
+      buildBackground: watermark != 'None'
+          ? (pw.Context ctx) => pw.FullPage(
+                ignoreMargins: true,
+                child: pw.Center(
+                  child: pw.Transform.rotate(
+                    angle: -0.35,
+                    child: pw.Text(
+                      _cleanText(watermark),
+                      style: docStyle(
+                        fontSize: 52,
+                        bold: true,
+                        color: const PdfColor(0.06, 0.09, 0.16, 0.06),
+                        letterSpacing: 6,
+                      ),
+                    ),
+                  ),
+                ),
+              )
+          : null,
+    );
+
+    document.addPage(
+      pw.MultiPage(
+        pageTheme: pageTheme,
+        footer: (pw.Context ctx) => letterheadConfig.isLetterheadActive
+            ? CompanyLetterheadPdf.buildPdfFooter(
+                config: letterheadConfig,
+                overridePrimary: primaryColor,
+                scale: fontScale,
+                pageLabel: 'Page ${ctx.pageNumber} of ${ctx.pagesCount}',
+              )
+            : pw.Column(
+                children: [
+                  pw.Divider(
+                    height: 1,
+                    thickness: 0.7,
+                    color: const PdfColor.fromInt(0xFFE2E8F0),
+                  ),
+                  pw.SizedBox(height: 6),
+                  pw.Row(
+                    mainAxisAlignment: pw.MainAxisAlignment.spaceBetween,
+                    children: [
+                      pw.Text(
+                        'Thank you for your business!',
+                        style: docStyle(
+                          fontSize: 8.5,
+                          italic: true,
+                          color: const PdfColor.fromInt(0xFF64748B),
+                        ),
+                      ),
+                      pw.Text(
+                        'Page ${ctx.pageNumber} of ${ctx.pagesCount}',
+                        style: docStyle(
+                          fontSize: 8,
+                          color: const PdfColor.fromInt(0xFF94A3B8),
+                        ),
+                      ),
+                    ],
+                  ),
+                ],
+              ),
+        build: (pw.Context context) => [
+          // A. Header (Company Letterhead Banner or Classic Business Branding)
+          if (brandingSection.enabled) ...[
+            if (letterheadConfig.isLetterheadActive)
+              CompanyLetterheadPdf.buildPdfHeader(
+                config: letterheadConfig,
+                overridePrimary: primaryColor,
+                scale: fontScale,
+                showGstBadges: isFieldVisible(brandingSection, 'f_biz_gstin') ||
+                    isFieldVisible(brandingSection, 'f_biz_pan'),
+              )
+            else ...[
+              pw.Row(
+                crossAxisAlignment: pw.CrossAxisAlignment.start,
+                mainAxisAlignment: pw.MainAxisAlignment.spaceBetween,
+                children: [
+                  pw.Expanded(
+                    flex: 6,
+                    child: pw.Row(
+                      crossAxisAlignment: pw.CrossAxisAlignment.center,
+                      children: [
+                        if (isFieldVisible(brandingSection, 'f_biz_logo')) ...[
+                          if (logoImage != null)
+                            pw.Container(
+                              width: 44 * fontScale,
+                              height: 48 * fontScale,
+                              child: pw.Image(logoImage, fit: pw.BoxFit.contain),
+                            )
+                          else
+                            pw.Container(
+                              width: 40 * fontScale,
+                              height: 44 * fontScale,
+                              decoration: pw.BoxDecoration(
+                                color: primaryColor,
+                                borderRadius: pw.BorderRadius.circular(5),
+                              ),
+                              alignment: pw.Alignment.center,
+                              child: pw.Text(
+                                brandHeadline.isNotEmpty
+                                    ? brandHeadline.substring(0, 1).toUpperCase()
+                                    : 'N',
+                                style: docStyle(
+                                  fontSize: 18,
+                                  bold: true,
+                                  color: PdfColors.white,
+                                ),
+                              ),
+                            ),
+                          pw.SizedBox(width: 10),
+                        ],
+                        pw.Expanded(
+                          child: pw.Column(
+                            crossAxisAlignment: pw.CrossAxisAlignment.start,
+                            children: [
+                              if (isFieldVisible(brandingSection, 'f_biz_name'))
+                                pw.Text(
+                                  uppercaseHeadings
+                                      ? brandHeadline.toUpperCase()
+                                      : brandHeadline,
+                                  style: docStyle(
+                                    fontSize: 17,
+                                    bold: true,
+                                    color: primaryColor,
+                                    letterSpacing: 0.6,
+                                  ),
+                                ),
+                              if (brandSubtitle.isNotEmpty)
+                                pw.Text(
+                                  uppercaseHeadings
+                                      ? brandSubtitle.toUpperCase()
+                                      : brandSubtitle,
+                                  style: docStyle(
+                                    fontSize: 10,
+                                    bold: true,
+                                    color: primaryColor,
+                                    letterSpacing: 1.2,
+                                  ),
+                                ),
+                              if (isFieldVisible(brandingSection, 'f_biz_tagline')) ...[
+                                pw.SizedBox(height: 2),
+                                pw.Text(
+                                  companyTagline,
+                                  style: docStyle(
+                                    fontSize: 8.5,
+                                    italic: true,
+                                    color: const PdfColor.fromInt(0xFF64748B),
+                                  ),
+                                ),
+                              ],
+                            ],
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                  pw.SizedBox(width: 14),
+                  pw.Expanded(
+                    flex: 5,
+                    child: pw.Column(
+                      crossAxisAlignment: pw.CrossAxisAlignment.end,
+                      children: [
+                        if (isFieldVisible(brandingSection, 'f_biz_name'))
+                          pw.Text(
+                            companyLegalName,
+                            textAlign: pw.TextAlign.right,
+                            style: docStyle(
+                              fontSize: 10,
+                              bold: true,
+                              color: const PdfColor.fromInt(0xFF1E293B),
+                            ),
+                          ),
+                        pw.SizedBox(height: 1),
+                        if (isFieldVisible(brandingSection, 'f_biz_addr'))
+                          for (final line in companyAddress.split('\n'))
+                            if (line.trim().isNotEmpty)
+                              pw.Text(
+                                line.trim(),
+                                textAlign: pw.TextAlign.right,
+                                style: docStyle(
+                                  fontSize: 8.5,
+                                  color: const PdfColor.fromInt(0xFF64748B),
+                                ),
+                              ),
+                        if (isFieldVisible(brandingSection, 'f_biz_gstin') &&
+                            companyGstin.isNotEmpty)
+                          pw.Text(
+                            'GSTIN: $companyGstin',
+                            textAlign: pw.TextAlign.right,
+                            style: docStyle(
+                              fontSize: 8.5,
+                              color: const PdfColor.fromInt(0xFF64748B),
+                            ),
+                          ),
+                        if (isFieldVisible(brandingSection, 'f_biz_pan') &&
+                            companyPan.isNotEmpty)
+                          pw.Text(
+                            'PAN: $companyPan',
+                            textAlign: pw.TextAlign.right,
+                            style: docStyle(
+                              fontSize: 8.5,
+                              color: const PdfColor.fromInt(0xFF64748B),
+                            ),
+                          ),
+                        if (companyPhone.isNotEmpty)
+                          pw.Text(
+                            'Tel: $companyPhone',
+                            textAlign: pw.TextAlign.right,
+                            style: docStyle(
+                              fontSize: 8.5,
+                              color: const PdfColor.fromInt(0xFF64748B),
+                            ),
+                          ),
+                        if (companyEmail.isNotEmpty)
+                          pw.Text(
+                            companyEmail,
+                            textAlign: pw.TextAlign.right,
+                            style: docStyle(
+                              fontSize: 8.5,
+                              color: const PdfColor.fromInt(0xFF64748B),
+                            ),
+                          ),
+                        for (final cf in customVisibleFields(
+                          brandingSection,
+                          const {
+                            'f_biz_logo',
+                            'f_biz_name',
+                            'f_biz_tagline',
+                            'f_biz_addr',
+                            'f_biz_gstin',
+                            'f_biz_pan',
+                          },
+                        ))
+                          pw.Text(
+                            '${_cleanText(cf.label)}: ${_cleanText(cf.defaultValue.isNotEmpty ? cf.defaultValue : '-')}',
+                            textAlign: pw.TextAlign.right,
+                            style: docStyle(
+                              fontSize: 8.5,
+                              color: const PdfColor.fromInt(0xFF64748B),
+                            ),
+                          ),
+                      ],
+                    ),
+                  ),
+                ],
+              ),
+              pw.SizedBox(height: 12),
+              pw.Divider(height: 1, thickness: 1.5, color: primaryColor),
+              pw.SizedBox(height: 14),
+            ],
+          ],
+
+          // B. Document Title & Details
+          if (identitySection.enabled) ...[
+            pw.Row(
+              crossAxisAlignment: pw.CrossAxisAlignment.start,
+              mainAxisAlignment: pw.MainAxisAlignment.spaceBetween,
+              children: [
+                pw.Expanded(
+                  child: pw.Text(
+                    uppercaseHeadings
+                        ? documentTitle.toUpperCase()
+                        : documentTitle,
+                    style: docStyle(
+                      fontSize: 19,
+                      bold: true,
+                      color: const PdfColor.fromInt(0xFF0F172A),
+                    ),
+                  ),
+                ),
+                pw.SizedBox(width: 14),
+                pw.Table(
+                  defaultColumnWidth: const pw.IntrinsicColumnWidth(),
+                  children: [
+                    if (isFieldVisible(identitySection, 'f_doc_number'))
+                      metaRow(
+                        'Invoice No.',
+                        invoice.invoiceNumber.isNotEmpty
+                            ? invoice.invoiceNumber
+                            : 'INV-2025-0148',
+                      ),
+                    if (isFieldVisible(identitySection, 'f_doc_issue'))
+                      metaRow(
+                        'Issue Date',
+                        invoice.issueDate.isNotEmpty
+                            ? invoice.issueDate
+                            : '15 Apr 2025',
+                      ),
+                    if (isFieldVisible(identitySection, 'f_doc_due'))
+                      metaRow(
+                        'Due Date',
+                        invoice.dueDate.isNotEmpty
+                            ? invoice.dueDate
+                            : '30 Apr 2025',
+                      ),
+                    if (isFieldVisible(identitySection, 'f_doc_po') &&
+                        (invoice.poNumber.trim().isNotEmpty ||
+                            findField(identitySection, 'f_doc_po')
+                                    ?.defaultValue
+                                    .trim()
+                                    .isNotEmpty ==
+                                true))
+                      metaRow(
+                        'PO No.',
+                        invoice.poNumber.trim().isNotEmpty
+                            ? invoice.poNumber.trim()
+                            : findField(identitySection, 'f_doc_po')!
+                                .defaultValue
+                                .trim(),
+                      ),
+                    for (final cf in customVisibleFields(
+                      identitySection,
+                      const {
+                        'f_doc_number',
+                        'f_doc_issue',
+                        'f_doc_due',
+                        'f_doc_po',
+                      },
+                    ))
+                      metaRow(
+                        cf.label,
+                        cf.defaultValue.isNotEmpty ? cf.defaultValue : '-',
+                      ),
+                  ],
+                ),
+              ],
+            ),
+            pw.SizedBox(height: 14),
+          ],
+
+          // C. Bill To & Service Location Boxes
+          if (clientSection.enabled) ...[
+            pw.Row(
+              crossAxisAlignment: pw.CrossAxisAlignment.start,
+              children: [
+                pw.Expanded(
+                  flex: 5,
+                  child: pw.Container(
+                    padding: const pw.EdgeInsets.all(10),
+                    decoration: pw.BoxDecoration(
+                      color: const PdfColor.fromInt(0xFFF8FAFC),
+                      borderRadius: pw.BorderRadius.circular(5),
+                      border: pw.Border.all(
+                        color: const PdfColor.fromInt(0xFFE2E8F0),
+                      ),
+                    ),
+                    child: pw.Column(
+                      crossAxisAlignment: pw.CrossAxisAlignment.start,
+                      children: [
+                        pw.Text(
+                          uppercaseHeadings ? 'BILL TO' : 'Bill To',
+                          style: docStyle(
+                            fontSize: 9.5,
+                            bold: true,
+                            color: const PdfColor.fromInt(0xFF475569),
+                          ),
+                        ),
+                        pw.SizedBox(height: 3),
+                        if (isFieldVisible(clientSection, 'f_cli_name'))
+                          pw.Text(
+                            clientDisplayName,
+                            style: docStyle(
+                              fontSize: 10.5,
+                              bold: true,
+                              color: const PdfColor.fromInt(0xFF0F172A),
+                            ),
+                          ),
+                        pw.SizedBox(height: 2),
+                        if (isFieldVisible(clientSection, 'f_cli_addr'))
+                          for (final line in clientAddr.split('\n'))
+                            if (line.trim().isNotEmpty)
+                              pw.Text(
+                                line.trim(),
+                                style: docStyle(
+                                  fontSize: 9,
+                                  color: const PdfColor.fromInt(0xFF475569),
+                                ),
+                              ),
+                        pw.SizedBox(height: 2),
+                        if (isFieldVisible(clientSection, 'f_cli_gstin') &&
+                            clientGstin.isNotEmpty)
+                          pw.Text(
+                            'GSTIN: $clientGstin',
+                            style: docStyle(
+                              fontSize: 9,
+                              color: const PdfColor.fromInt(0xFF475569),
+                            ),
+                          ),
+                        if (isFieldVisible(clientSection, 'f_cli_contact') &&
+                            clientContactPerson.isNotEmpty)
+                          pw.Text(
+                            'Contact: $clientContactPerson',
+                            style: docStyle(
+                              fontSize: 9,
+                              color: const PdfColor.fromInt(0xFF475569),
+                            ),
+                          ),
+                        if (isFieldVisible(clientSection, 'f_cli_phone') &&
+                            clientPhone.isNotEmpty)
+                          pw.Text(
+                            'Phone: $clientPhone',
+                            style: docStyle(
+                              fontSize: 9,
+                              color: const PdfColor.fromInt(0xFF475569),
+                            ),
+                          ),
+                        for (final cf in customVisibleFields(
+                          clientSection,
+                          const {
+                            'f_cli_name',
+                            'f_cli_addr',
+                            'f_cli_gstin',
+                            'f_cli_contact',
+                            'f_cli_phone',
+                          },
+                        ))
+                          pw.Text(
+                            '${_cleanText(cf.label)}: ${_cleanText(cf.defaultValue.isNotEmpty ? cf.defaultValue : '-')}',
+                            style: docStyle(
+                              fontSize: 9,
+                              color: const PdfColor.fromInt(0xFF475569),
+                            ),
+                          ),
+                      ],
+                    ),
+                  ),
+                ),
+                if (isFieldVisible(servicesSection, 'f_srv_loc') ||
+                    isFieldVisible(servicesSection, 'f_srv_period')) ...[
+                  pw.SizedBox(width: 12),
+                  pw.Expanded(
+                    flex: 5,
+                    child: pw.Container(
+                      padding: const pw.EdgeInsets.all(10),
+                      decoration: pw.BoxDecoration(
+                        color: const PdfColor.fromInt(0xFFF8FAFC),
+                        borderRadius: pw.BorderRadius.circular(5),
+                        border: pw.Border.all(
+                          color: const PdfColor.fromInt(0xFFE2E8F0),
+                        ),
+                      ),
+                      child: pw.Column(
+                        crossAxisAlignment: pw.CrossAxisAlignment.start,
+                        children: [
+                          if (isFieldVisible(servicesSection, 'f_srv_loc')) ...[
+                            pw.Text(
+                              uppercaseHeadings
+                                  ? 'SERVICE LOCATION'
+                                  : 'Service Location',
+                              style: docStyle(
+                                fontSize: 9,
+                                color: const PdfColor.fromInt(0xFF64748B),
+                              ),
+                            ),
+                            pw.SizedBox(height: 2),
+                            ...() {
+                              final locLines = serviceLocation
+                                  .split('\n')
+                                  .map((e) => e.trim())
+                                  .where((e) => e.isNotEmpty)
+                                  .toList();
+                              return [
+                                if (locLines.isNotEmpty)
+                                  pw.Text(
+                                    locLines.first,
+                                    style: docStyle(
+                                      fontSize: 9.5,
+                                      bold: true,
+                                      color: const PdfColor.fromInt(0xFF1E293B),
+                                    ),
+                                  ),
+                                for (final sub in locLines.skip(1))
+                                  pw.Text(
+                                    sub,
+                                    style: docStyle(
+                                      fontSize: 9,
+                                      color: const PdfColor.fromInt(0xFF475569),
+                                    ),
+                                  ),
+                              ];
+                            }(),
+                            if (isFieldVisible(servicesSection, 'f_srv_period'))
+                              pw.SizedBox(height: 6),
+                          ],
+                          if (isFieldVisible(servicesSection, 'f_srv_period')) ...[
+                            pw.Text(
+                              uppercaseHeadings
+                                  ? 'BILLING PERIOD'
+                                  : 'Billing Period',
+                              style: docStyle(
+                                fontSize: 9,
+                                color: const PdfColor.fromInt(0xFF64748B),
+                              ),
+                            ),
+                            pw.SizedBox(height: 2),
+                            pw.Text(
+                              billingPeriod,
+                              style: docStyle(
+                                fontSize: 9.5,
+                                bold: true,
+                                color: const PdfColor.fromInt(0xFF1E293B),
+                              ),
+                            ),
+                            pw.Text(
+                              '(${_cleanText(invoice.paymentTerms.isNotEmpty ? invoice.paymentTerms : 'Monthly Billing')})',
+                              style: docStyle(
+                                fontSize: 8.5,
+                                color: const PdfColor.fromInt(0xFF64748B),
+                              ),
+                            ),
+                          ],
+                        ],
+                      ),
+                    ),
+                  ),
+                ],
+              ],
+            ),
+            pw.SizedBox(height: 14),
+          ],
+
+          // D. Line Items & Duty Table
+          if (servicesSection.enabled) ...[
+            pw.Container(
+              decoration: pw.BoxDecoration(
+                borderRadius: pw.BorderRadius.circular(4),
+                border: pw.Border.all(
+                  color: const PdfColor.fromInt(0xFFCBD5E1),
+                ),
+              ),
+              child: pw.Column(
+                children: [
+                  // Header Row
+                  pw.Container(
+                    color: primaryColor,
+                    child: pw.Row(
+                      children: [
+                        for (int c = 0; c < columns.length; c++)
+                          pw.Expanded(
+                            flex: columns[c].flex,
+                            child: pw.Container(
+                              padding: const pw.EdgeInsets.symmetric(
+                                horizontal: 8,
+                                vertical: 7,
+                              ),
+                              decoration: pw.BoxDecoration(
+                                border: isBoxed && c < columns.length - 1
+                                    ? const pw.Border(
+                                        right: pw.BorderSide(
+                                          color: PdfColor(1, 1, 1, 0.25),
+                                          width: 0.8,
+                                        ),
+                                      )
+                                    : null,
+                              ),
+                              child: pw.Text(
+                                uppercaseHeadings
+                                    ? columns[c].label.toUpperCase()
+                                    : columns[c].label,
+                                textAlign: columns[c].align,
+                                style: docStyle(
+                                  fontSize: 9,
+                                  bold: true,
+                                  color: tableHeaderTextColor,
+                                ),
+                              ),
+                            ),
+                          ),
+                      ],
+                    ),
+                  ),
+
+                  // Body Rows
+                  for (int r = 0; r < rows.length; r++) ...[
+                    if (r > 0 && !isBoxed)
+                      pw.Divider(
+                        height: 1,
+                        thickness: 0.7,
+                        color: const PdfColor.fromInt(0xFFE2E8F0),
+                      ),
+                    pw.Container(
+                      color: isStriped && r.isOdd
+                          ? const PdfColor.fromInt(0xFFF8FAFC)
+                          : PdfColors.white,
+                      decoration: isBoxed && r < rows.length - 1
+                          ? const pw.BoxDecoration(
+                              border: pw.Border(
+                                bottom: pw.BorderSide(
+                                  color: PdfColor.fromInt(0xFFCBD5E1),
+                                  width: 0.8,
+                                ),
+                              ),
+                            )
+                          : null,
+                      child: pw.Row(
+                        crossAxisAlignment: pw.CrossAxisAlignment.start,
+                        children: [
+                          for (int c = 0; c < rows[r].length; c++)
+                            pw.Expanded(
+                              flex: columns[c].flex,
+                              child: pw.Container(
+                                padding: const pw.EdgeInsets.symmetric(
+                                  horizontal: 8,
+                                  vertical: 6,
+                                ),
+                                decoration: pw.BoxDecoration(
+                                  border: isBoxed && c < rows[r].length - 1
+                                      ? const pw.Border(
+                                          right: pw.BorderSide(
+                                            color: PdfColor.fromInt(0xFFCBD5E1),
+                                            width: 0.8,
+                                          ),
+                                        )
+                                      : null,
+                                ),
+                                child: pw.Text(
+                                  rows[r][c],
+                                  textAlign: columns[c].align,
+                                  style: docStyle(
+                                    fontSize: 9,
+                                    bold: c == 0 || c == rows[r].length - 1,
+                                    color: c == rows[r].length - 1
+                                        ? const PdfColor.fromInt(0xFF0F172A)
+                                        : (c == 0
+                                            ? const PdfColor.fromInt(0xFF1E293B)
+                                            : const PdfColor.fromInt(0xFF475569)),
+                                  ),
+                                ),
+                              ),
+                            ),
+                        ],
+                      ),
+                    ),
+                  ],
+                ],
+              ),
+            ),
+            pw.SizedBox(height: 14),
+          ],
+
+          // E. Financial Summary & Totals Box
+          if (taxTotalsSection.enabled) ...[
+            pw.Row(
+              crossAxisAlignment: pw.CrossAxisAlignment.start,
+              mainAxisAlignment: pw.MainAxisAlignment.spaceBetween,
+              children: [
+                pw.Expanded(
+                  flex: 5,
+                  child: pw.Padding(
+                    padding: const pw.EdgeInsets.only(right: 14, top: 4),
+                    child: pw.Column(
+                      crossAxisAlignment: pw.CrossAxisAlignment.start,
+                      children: [
+                        pw.Text(
+                          uppercaseHeadings
+                              ? 'AMOUNT IN WORDS'
+                              : 'Amount in Words',
+                          style: docStyle(
+                            fontSize: 8.5,
+                            bold: true,
+                            color: const PdfColor.fromInt(0xFF64748B),
+                          ),
+                        ),
+                        pw.SizedBox(height: 3),
+                        pw.Text(
+                          _cleanText(
+                            AmountToWords.convert(
+                              invoice.total,
+                              currency: invoice.currencyCode,
+                            ),
+                          ),
+                          style: docStyle(
+                            fontSize: 9,
+                            bold: true,
+                            italic: true,
+                            color: const PdfColor.fromInt(0xFF1E293B),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+                pw.Container(
+                  width: 235,
+                  child: pw.Column(
+                    children: [
+                      if (isFieldVisible(taxTotalsSection, 'f_tot_sub'))
+                        summaryRow('Subtotal', formatAmount(invoice.subtotal)),
+                      if (isFieldVisible(taxTotalsSection, 'f_tot_disc'))
+                        summaryRow(
+                          'Discount',
+                          '(-) ${formatAmount(invoice.totalDiscount)}',
+                        ),
+                      if (isFieldVisible(taxTotalsSection, 'f_tot_taxable'))
+                        summaryRow(
+                          'Taxable Amount',
+                          formatAmount(invoice.taxableAmount),
+                          isBold: true,
+                        ),
+                      if (!invoice.isRcm && invoice.taxRate > 0) ...[
+                        if (!gstBreakdown.isInterState) ...[
+                          if (isFieldVisible(taxTotalsSection, 'f_tot_cgst'))
+                            summaryRow(
+                              'CGST (${(invoice.taxRate / 2).toStringAsFixed(invoice.taxRate % 2 == 0 ? 0 : 1)}%)',
+                              formatAmount(invoice.taxAmount / 2),
+                            ),
+                          if (isFieldVisible(taxTotalsSection, 'f_tot_sgst'))
+                            summaryRow(
+                              'SGST (${(invoice.taxRate / 2).toStringAsFixed(invoice.taxRate % 2 == 0 ? 0 : 1)}%)',
+                              formatAmount(invoice.taxAmount / 2),
+                            ),
+                        ] else ...[
+                          if (isFieldVisible(taxTotalsSection, 'f_tot_igst',
+                                  fallback: true) ||
+                              isFieldVisible(taxTotalsSection, 'f_tot_cgst'))
+                            summaryRow(
+                              'IGST (${invoice.taxRate.toStringAsFixed(invoice.taxRate % 1 == 0 ? 0 : 1)}%)',
+                              formatAmount(invoice.taxAmount),
+                            ),
+                        ],
+                      ],
+                      if (invoice.shippingFee > 0)
+                        summaryRow(
+                          'Shipping & Handling',
+                          formatAmount(invoice.shippingFee),
+                        ),
+                      if (invoice.additionalCharges > 0)
+                        summaryRow(
+                          'Additional Charges',
+                          formatAmount(invoice.additionalCharges),
+                        ),
+                      if (invoice.roundOff != 0)
+                        summaryRow(
+                          'Round Off',
+                          formatAmount(invoice.roundOff),
+                        ),
+                      if (isFieldVisible(taxTotalsSection, 'f_tot_grand')) ...[
+                        pw.SizedBox(height: 5),
+                        pw.Container(
+                          padding: const pw.EdgeInsets.symmetric(
+                            horizontal: 8,
+                            vertical: 6,
+                          ),
+                          decoration: pw.BoxDecoration(
+                            color: _tintColor(primaryColor, 0.12),
+                            borderRadius: pw.BorderRadius.circular(4),
+                            border: pw.Border.all(
+                              color: _tintColor(primaryColor, 0.35),
+                            ),
+                          ),
+                          child: pw.Row(
+                            mainAxisAlignment:
+                                pw.MainAxisAlignment.spaceBetween,
+                            children: [
+                              pw.Text(
+                                uppercaseHeadings
+                                    ? 'GRAND TOTAL'
+                                    : 'Grand Total',
+                                style: docStyle(
+                                  fontSize: 10.5,
+                                  bold: true,
+                                  color: primaryColor,
+                                ),
+                              ),
+                              pw.Text(
+                                formatAmount(invoice.total),
+                                style: docStyle(
+                                  fontSize: 10.5,
+                                  bold: true,
+                                  color: primaryColor,
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                      ],
+                      if (invoice.amountPaid > 0) ...[
+                        pw.SizedBox(height: 3),
+                        summaryRow(
+                          'Amount Paid',
+                          '(-) ${formatAmount(invoice.amountPaid)}',
+                        ),
+                        summaryRow(
+                          'Balance Due',
+                          formatAmount(invoice.balanceDue),
+                          isBold: true,
+                        ),
+                      ],
+                    ],
+                  ),
+                ),
+              ],
+            ),
+            pw.SizedBox(height: 14),
+          ],
+
+          // F. Payment Details & UPI QR Code
+          if (bankSection.enabled) ...[
+            pw.Container(
+              padding: const pw.EdgeInsets.all(10),
+              decoration: pw.BoxDecoration(
+                color: const PdfColor.fromInt(0xFFF8FAFC),
+                borderRadius: pw.BorderRadius.circular(5),
+                border: pw.Border.all(
+                  color: const PdfColor.fromInt(0xFFE2E8F0),
+                ),
+              ),
+              child: pw.Row(
+                children: [
+                  pw.Expanded(
+                    child: pw.Column(
+                      crossAxisAlignment: pw.CrossAxisAlignment.start,
+                      children: [
+                        pw.Text(
+                          uppercaseHeadings
+                              ? 'PAYMENT DETAILS'
+                              : 'Payment Details',
+                          style: docStyle(
+                            fontSize: 10,
+                            bold: true,
+                            color: const PdfColor.fromInt(0xFF0F172A),
+                          ),
+                        ),
+                        pw.SizedBox(height: 3),
+                        if (isFieldVisible(bankSection, 'f_bnk_name'))
+                          pw.Text(
+                            'Bank Name : $bankName',
+                            style: docStyle(
+                              fontSize: 9,
+                              color: const PdfColor.fromInt(0xFF475569),
+                            ),
+                          ),
+                        if (isFieldVisible(bankSection, 'f_bnk_ac'))
+                          pw.Text(
+                            'A/C No.      : $bankAccount',
+                            style: docStyle(
+                              fontSize: 9,
+                              color: const PdfColor.fromInt(0xFF475569),
+                            ),
+                          ),
+                        if (isFieldVisible(bankSection, 'f_bnk_ifsc'))
+                          pw.Text(
+                            'IFSC           : $bankIfsc',
+                            style: docStyle(
+                              fontSize: 9,
+                              color: const PdfColor.fromInt(0xFF475569),
+                            ),
+                          ),
+                        if (isFieldVisible(bankSection, 'f_bnk_upi'))
+                          pw.Text(
+                            'UPI             : $bankUpi',
+                            style: docStyle(
+                              fontSize: 9,
+                              color: const PdfColor.fromInt(0xFF475569),
+                            ),
+                          ),
+                        if (invoice.paymentInstructions.trim().isNotEmpty) ...[
+                          pw.SizedBox(height: 2),
+                          pw.Text(
+                            _cleanText(invoice.paymentInstructions),
+                            style: docStyle(
+                              fontSize: 8.5,
+                              color: const PdfColor.fromInt(0xFF64748B),
+                            ),
+                          ),
+                        ],
+                      ],
+                    ),
+                  ),
+                  if (showQrCode && isFieldVisible(bankSection, 'f_bnk_qr'))
+                    pw.Column(
+                      children: [
+                        pw.Container(
+                          width: 50 * fontScale,
+                          height: 50 * fontScale,
+                          padding: const pw.EdgeInsets.all(4),
+                          decoration: pw.BoxDecoration(
+                            color: PdfColors.white,
+                            borderRadius: pw.BorderRadius.circular(4),
+                            border: pw.Border.all(
+                              color: const PdfColor.fromInt(0xFFCBD5E1),
+                            ),
+                          ),
+                          child: pw.BarcodeWidget(
+                            barcode: pw.Barcode.qrCode(),
+                            data: qrPayload,
+                            drawText: false,
+                          ),
+                        ),
+                        pw.SizedBox(height: 2),
+                        pw.Text(
+                          'Scan to Pay',
+                          style: docStyle(
+                            fontSize: 7.5,
+                            color: const PdfColor.fromInt(0xFF64748B),
+                          ),
+                        ),
+                      ],
+                    ),
+                ],
+              ),
+            ),
+            pw.SizedBox(height: 14),
+          ],
+
+          // G. Terms & Conditions and Signature
+          if (termsSection.enabled) ...[
+            pw.Row(
+              crossAxisAlignment: pw.CrossAxisAlignment.start,
+              children: [
+                pw.Expanded(
+                  flex: 6,
+                  child: pw.Column(
+                    crossAxisAlignment: pw.CrossAxisAlignment.start,
+                    children: [
+                      pw.Text(
+                        uppercaseHeadings
+                            ? 'TERMS & CONDITIONS'
+                            : 'Terms & Conditions',
+                        style: docStyle(
+                          fontSize: 9.5,
+                          bold: true,
+                          color: const PdfColor.fromInt(0xFF0F172A),
+                        ),
+                      ),
+                      pw.SizedBox(height: 3),
+                      if (isFieldVisible(termsSection, 'f_trm_lines'))
+                        for (int i = 0; i < termsLines.length; i++)
+                          pw.Padding(
+                            padding: const pw.EdgeInsets.only(bottom: 1.5),
+                            child: pw.Text(
+                              RegExp(r'^\d+\.').hasMatch(termsLines[i])
+                                  ? termsLines[i]
+                                  : '${i + 1}. ${termsLines[i]}',
+                              style: docStyle(
+                                fontSize: 8,
+                                color: const PdfColor.fromInt(0xFF475569),
+                              ),
+                            ),
+                          ),
+                    ],
+                  ),
+                ),
+                pw.SizedBox(width: 12),
+                pw.Expanded(
+                  flex: 4,
+                  child: pw.Column(
+                    crossAxisAlignment: pw.CrossAxisAlignment.end,
+                    children: [
+                      if (isFieldVisible(termsSection, 'f_trm_company'))
+                        pw.Text(
+                          'For $companyLegalName',
+                          textAlign: pw.TextAlign.right,
+                          style: docStyle(
+                            fontSize: 9,
+                            bold: true,
+                            color: const PdfColor.fromInt(0xFF1E293B),
+                          ),
+                        ),
+                      pw.SizedBox(height: 6),
+                      pw.Row(
+                        mainAxisSize: pw.MainAxisSize.min,
+                        crossAxisAlignment: pw.CrossAxisAlignment.end,
+                        children: [
+                          if (stampImage != null)
+                            pw.Container(
+                              width: 34 * fontScale,
+                              height: 34 * fontScale,
+                              margin: const pw.EdgeInsets.only(right: 6),
+                              child: pw.Image(
+                                stampImage,
+                                fit: pw.BoxFit.contain,
+                              ),
+                            ),
+                          if (signatureImage != null)
+                            pw.Container(
+                              height: 30 * fontScale,
+                              width: 90 * fontScale,
+                              child: pw.Image(
+                                signatureImage,
+                                fit: pw.BoxFit.contain,
+                              ),
+                            )
+                          else
+                            pw.SizedBox(height: 24 * fontScale),
+                        ],
+                      ),
+                      pw.SizedBox(height: 2),
+                      pw.Container(
+                        width: 105,
+                        height: 0.8,
+                        color: const PdfColor.fromInt(0xFFCBD5E1),
+                      ),
+                      pw.SizedBox(height: 3),
+                      if (isFieldVisible(termsSection, 'f_trm_title'))
+                        pw.Text(
+                          signeeTitle,
+                          textAlign: pw.TextAlign.right,
+                          style: docStyle(
+                            fontSize: 8.5,
+                            color: const PdfColor.fromInt(0xFF64748B),
+                          ),
+                        ),
+                      if (isFieldVisible(termsSection, 'f_trm_auto_stamp'))
+                        pw.Text(
+                          '(This is a system generated invoice)',
+                          textAlign: pw.TextAlign.right,
+                          style: docStyle(
+                            fontSize: 7,
+                            color: const PdfColor.fromInt(0xFF94A3B8),
+                          ),
+                        ),
+                    ],
+                  ),
+                ),
+              ],
+            ),
+            pw.SizedBox(height: 16),
+          ],
+
+          // H. Custom Sections added by user in Template Studio
+          for (final customSec in sections.where(
+            (s) => !const {
+              'sec_branding',
+              'sec_identity',
+              'sec_client',
+              'sec_services',
+              'sec_tax_totals',
+              'sec_bank',
+              'sec_terms',
+            }.contains(s.id),
+          ))
+            if (customSec.enabled &&
+                customSec.fields.any((f) => f.isVisible)) ...[
+              pw.Container(
+                padding: const pw.EdgeInsets.all(10),
+                margin: const pw.EdgeInsets.only(bottom: 12),
+                decoration: pw.BoxDecoration(
+                  color: const PdfColor.fromInt(0xFFF8FAFC),
+                  borderRadius: pw.BorderRadius.circular(5),
+                  border: pw.Border.all(
+                    color: const PdfColor.fromInt(0xFFCBD5E1),
+                  ),
+                ),
+                child: pw.Column(
+                  crossAxisAlignment: pw.CrossAxisAlignment.start,
+                  children: [
+                    pw.Text(
+                      _cleanText(
+                        uppercaseHeadings
+                            ? customSec.title.toUpperCase()
+                            : customSec.title,
+                      ),
+                      style: docStyle(
+                        fontSize: 9.5,
+                        bold: true,
+                        color: const PdfColor.fromInt(0xFF0F172A),
+                      ),
+                    ),
+                    if (customSec.subtitle.isNotEmpty) ...[
+                      pw.SizedBox(height: 2),
+                      pw.Text(
+                        _cleanText(customSec.subtitle),
+                        style: docStyle(
+                          fontSize: 8.5,
+                          color: const PdfColor.fromInt(0xFF64748B),
+                        ),
+                      ),
+                    ],
+                    pw.SizedBox(height: 6),
+                    pw.Wrap(
+                      spacing: 14,
+                      runSpacing: 4,
+                      children: customSec.fields
+                          .where((f) => f.isVisible)
+                          .map((f) {
+                        return pw.Row(
+                          mainAxisSize: pw.MainAxisSize.min,
+                          children: [
+                            pw.Text(
+                              '${_cleanText(f.label)}: ',
+                              style: docStyle(
+                                fontSize: 8.5,
+                                bold: true,
+                                color: const PdfColor.fromInt(0xFF475569),
+                              ),
+                            ),
+                            pw.Text(
+                              _cleanText(
+                                f.defaultValue.isNotEmpty
+                                    ? f.defaultValue
+                                    : '-',
+                              ),
+                              style: docStyle(
+                                fontSize: 8.5,
+                                color: const PdfColor.fromInt(0xFF1E293B),
+                              ),
+                            ),
+                          ],
+                        );
+                      }).toList(),
+                    ),
+                  ],
+                ),
+              ),
+            ],
+        ],
+      ),
+    );
+
+    return document.save();
   }
 }

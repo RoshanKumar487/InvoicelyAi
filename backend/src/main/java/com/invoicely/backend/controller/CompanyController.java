@@ -1,15 +1,12 @@
 package com.invoicely.backend.controller;
 
-import com.invoicely.backend.dto.ApiResponse;
-import com.invoicely.backend.dto.CompanyJoinRequestDto;
-import com.invoicely.backend.dto.CompanySummaryDto;
-import com.invoicely.backend.dto.JoinRequestActionRequest;
-import com.invoicely.backend.dto.UserSummaryDto;
+import com.invoicely.backend.dto.*;
 import com.invoicely.backend.security.UserPrincipal;
 import com.invoicely.backend.service.CompanyService;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import jakarta.validation.Valid;
+import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
@@ -19,7 +16,7 @@ import java.util.List;
 
 @RestController
 @RequestMapping("/api/v1/companies")
-@Tag(name = "Companies & Roles", description = "Multi-tenant company management, employee tracking, and join-request approvals")
+@Tag(name = "Companies & Workspaces", description = "Multi-tenant company setup, workspace switching, and member role management")
 public class CompanyController {
 
     private final CompanyService companyService;
@@ -33,6 +30,32 @@ public class CompanyController {
     public ResponseEntity<ApiResponse<CompanySummaryDto>> getMyCompany(@AuthenticationPrincipal UserPrincipal principal) {
         CompanySummaryDto company = companyService.getMyCompany(principal);
         return ResponseEntity.ok(ApiResponse.ok(company));
+    }
+
+    @PutMapping("/my-company")
+    @PreAuthorize("hasAnyRole('ADMIN', 'DEVELOPER')")
+    @Operation(summary = "Update current company workspace profile & branding settings (Admin / Developer)")
+    public ResponseEntity<ApiResponse<CompanySummaryDto>> updateMyCompany(
+            @Valid @RequestBody UpdateCompanyRequest request,
+            @AuthenticationPrincipal UserPrincipal principal) {
+        CompanySummaryDto updated = companyService.updateMyCompany(request, principal);
+        return ResponseEntity.ok(ApiResponse.ok("Company profile updated successfully", updated));
+    }
+
+    @GetMapping("/my-companies")
+    @Operation(summary = "List all company workspaces accessible to the authenticated user for multi-company switching")
+    public ResponseEntity<ApiResponse<List<CompanySummaryDto>>> getMyCompanies(@AuthenticationPrincipal UserPrincipal principal) {
+        List<CompanySummaryDto> companies = companyService.getMyCompanies(principal);
+        return ResponseEntity.ok(ApiResponse.ok(companies));
+    }
+
+    @PostMapping
+    @Operation(summary = "Create an additional company workspace under the authenticated account")
+    public ResponseEntity<ApiResponse<AuthResponse>> createCompanyWorkspace(
+            @Valid @RequestBody CreateWorkspaceRequest request,
+            @AuthenticationPrincipal UserPrincipal principal) {
+        AuthResponse response = companyService.createCompanyWorkspace(request, principal);
+        return new ResponseEntity<>(ApiResponse.ok("Company workspace created successfully", response), HttpStatus.CREATED);
     }
 
     @GetMapping("/join-requests")
@@ -73,6 +96,17 @@ public class CompanyController {
             @AuthenticationPrincipal UserPrincipal principal) {
         UserSummaryDto updated = companyService.updateEmployeePermissions(id, request.getPermissions(), principal);
         return ResponseEntity.ok(ApiResponse.ok("Employee tool access updated successfully", updated));
+    }
+
+    @PutMapping("/employees/{id}/role")
+    @PreAuthorize("hasAnyRole('ADMIN', 'DEVELOPER')")
+    @Operation(summary = "Update employee role (Promote to Admin / Staff) and feature permissions (Admin / Developer)")
+    public ResponseEntity<ApiResponse<UserSummaryDto>> updateEmployeeRole(
+            @PathVariable Long id,
+            @RequestBody com.invoicely.backend.dto.UpdateEmployeeRoleRequest request,
+            @AuthenticationPrincipal UserPrincipal principal) {
+        UserSummaryDto updated = companyService.updateEmployeeRole(id, request.getRole(), request.getPermissions(), principal);
+        return ResponseEntity.ok(ApiResponse.ok("Employee role updated successfully", updated));
     }
 
     @GetMapping("/all")

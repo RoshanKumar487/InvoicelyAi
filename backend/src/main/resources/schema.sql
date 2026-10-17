@@ -305,3 +305,92 @@ CREATE INDEX IF NOT EXISTS idx_user_notif_recipient ON user_notifications(recipi
 CREATE INDEX IF NOT EXISTS idx_notif_audit_notif_id ON notification_audit_logs(notification_id, created_at);
 CREATE INDEX IF NOT EXISTS idx_notif_audit_company ON notification_audit_logs(company_id, created_at);
 CREATE INDEX IF NOT EXISTS idx_notif_audit_status ON notification_audit_logs(status);
+
+-- ===================================================================
+-- 9. Workforce & Employee Directory Management Table
+-- ===================================================================
+CREATE TABLE IF NOT EXISTS employees (
+    id BIGSERIAL PRIMARY KEY,
+    company_id BIGINT REFERENCES companies(id) ON DELETE CASCADE,
+    employee_code VARCHAR(50) DEFAULT '',
+    full_name VARCHAR(255) NOT NULL,
+    aadhaar_number VARCHAR(30) DEFAULT '',
+    aadhaar_front_uri TEXT DEFAULT '',
+    aadhaar_back_uri TEXT DEFAULT '',
+    photo_uri TEXT DEFAULT '',
+    dob VARCHAR(30) DEFAULT '',
+    gender VARCHAR(20) DEFAULT 'Male',
+    phone VARCHAR(50) DEFAULT '',
+    email VARCHAR(120) DEFAULT '',
+    designation VARCHAR(100) DEFAULT 'Security Guard',
+    department VARCHAR(100) DEFAULT 'Security',
+    address TEXT DEFAULT '',
+    city VARCHAR(100) DEFAULT '',
+    state VARCHAR(100) DEFAULT '',
+    pincode VARCHAR(20) DEFAULT '',
+    father_or_husband_name VARCHAR(150) DEFAULT '',
+    emergency_contact_name VARCHAR(150) DEFAULT '',
+    emergency_contact_phone VARCHAR(50) DEFAULT '',
+    blood_group VARCHAR(10) DEFAULT '',
+    marital_status VARCHAR(30) DEFAULT 'Single',
+    qualification VARCHAR(100) DEFAULT '',
+    joining_date VARCHAR(30) DEFAULT '',
+    monthly_salary NUMERIC(12, 2) DEFAULT 0.00,
+    bank_name VARCHAR(100) DEFAULT '',
+    bank_account_number VARCHAR(50) DEFAULT '',
+    ifsc_code VARCHAR(30) DEFAULT '',
+    status VARCHAR(30) DEFAULT 'ACTIVE',
+    notes TEXT DEFAULT '',
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+CREATE INDEX IF NOT EXISTS idx_employees_company ON employees(company_id);
+CREATE INDEX IF NOT EXISTS idx_employees_code ON employees(employee_code);
+CREATE INDEX IF NOT EXISTS idx_employees_status ON employees(status);
+CREATE INDEX IF NOT EXISTS idx_employees_dept ON employees(department);
+
+-- ===================================================================
+-- 10. Unified Company Activity & Security Audit Logs Table
+-- ===================================================================
+CREATE TABLE IF NOT EXISTS company_audit_logs (
+    id BIGSERIAL PRIMARY KEY,
+    company_id BIGINT REFERENCES companies(id) ON DELETE CASCADE,
+    user_id BIGINT REFERENCES users(id) ON DELETE SET NULL,
+    user_name VARCHAR(255) DEFAULT '',
+    user_role VARCHAR(50) DEFAULT 'STAFF',
+    module VARCHAR(50) NOT NULL,
+    action VARCHAR(50) NOT NULL,
+    entity_id VARCHAR(100) DEFAULT '',
+    title VARCHAR(255) NOT NULL,
+    description TEXT DEFAULT '',
+    metadata_json TEXT DEFAULT '{}',
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+CREATE INDEX IF NOT EXISTS idx_audit_logs_company ON company_audit_logs(company_id, created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_audit_logs_user ON company_audit_logs(company_id, user_id);
+CREATE INDEX IF NOT EXISTS idx_audit_logs_module ON company_audit_logs(company_id, module);
+CREATE INDEX IF NOT EXISTS idx_audit_logs_action ON company_audit_logs(action);
+
+-- ===================================================================
+-- 11. Custom Invoice Templates Studio Table (Multi-Tenant, Versioned)
+-- ===================================================================
+CREATE TABLE IF NOT EXISTS invoice_templates (
+    id BIGSERIAL PRIMARY KEY,
+    company_id BIGINT REFERENCES companies(id) ON DELETE CASCADE,
+    template_name VARCHAR(255) NOT NULL,
+    industry_preset VARCHAR(100) DEFAULT 'security_agency',
+    status VARCHAR(50) DEFAULT 'DRAFT',
+    version INT DEFAULT 1,
+    is_default BOOLEAN DEFAULT FALSE,
+    configuration_json JSONB DEFAULT '{}'::jsonb,
+    created_by_user_id BIGINT REFERENCES users(id) ON DELETE SET NULL,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+CREATE INDEX IF NOT EXISTS idx_invoice_templates_company ON invoice_templates(company_id);
+CREATE INDEX IF NOT EXISTS idx_invoice_templates_status ON invoice_templates(company_id, status);
+CREATE INDEX IF NOT EXISTS idx_invoice_templates_preset ON invoice_templates(company_id, industry_preset);
+

@@ -1,9 +1,11 @@
+import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:printing/printing.dart';
 import 'package:share_plus/share_plus.dart';
 
 import '../../../core/api/api_exception.dart';
+import '../../../core/storage/local_preferences.dart';
 import '../../../shared/widgets/signature_pad_dialog.dart';
 import '../../../shared/widgets/whatsapp_icon.dart';
 import '../../settings/data/settings_repository.dart';
@@ -12,10 +14,10 @@ import '../data/invoice.dart';
 import '../data/invoice_docx_export.dart';
 import '../data/invoice_pdf_export.dart';
 import '../data/invoice_repository.dart';
+import 'widgets/invoice_live_customize_sheet.dart';
 import 'widgets/invoice_preview_a4_paper.dart';
 import 'widgets/invoice_preview_widgets.dart';
 import 'widgets/invoice_share_dialog.dart';
-import 'widgets/invoice_template_picker_modal.dart';
 import '../../notifications/data/notification_repository.dart';
 
 class InvoicePreviewScreen extends StatefulWidget {
@@ -46,50 +48,109 @@ class InvoicePreviewScreen extends StatefulWidget {
   State<InvoicePreviewScreen> createState() => _InvoicePreviewScreenState();
 }
 
-class _InvoicePreviewScreenState extends State<InvoicePreviewScreen>
-    with SingleTickerProviderStateMixin {
+class _InvoicePreviewScreenState extends State<InvoicePreviewScreen> {
   late Invoice _invoice = widget.invoice;
   late Map<String, Object?> _localSettings =
       Map<String, Object?>.from(widget.localSettings);
   Map<String, dynamic> _profile = <String, dynamic>{};
-  final TransformationController _zoomController = TransformationController();
+  final ScrollController _verticalScrollController = ScrollController();
+  final ScrollController _horizontalScrollController = ScrollController();
+  late final LocalPreferences _studioPreferences =
+      LocalPreferences(scope: 'template_studio');
   String? _selectedTemplateId;
   double _zoomScale = 1.0;
+  double _basePinchScale = 1.0;
   bool _busy = false;
-
-  AnimationController? _animController;
-  Animation<Matrix4>? _zoomAnimation;
 
   @override
   void initState() {
     super.initState();
     _loadProfile();
-    _animController = AnimationController(
-      vsync: this,
-      duration: const Duration(milliseconds: 240),
-    )..addListener(() {
-        if (_zoomAnimation != null) {
-          _zoomController.value = _zoomAnimation!.value;
-          setState(() {
-            _zoomScale = _zoomController.value.getMaxScaleOnAxis();
-          });
-        }
-      });
+    _loadStudioPreferences();
   }
 
   @override
   void didUpdateWidget(covariant InvoicePreviewScreen oldWidget) {
     super.didUpdateWidget(oldWidget);
     if (oldWidget.localSettings != widget.localSettings) {
-      _localSettings = Map<String, Object?>.from(widget.localSettings);
+      _localSettings = <String, Object?>{
+        ..._localSettings,
+        ...widget.localSettings,
+      };
     }
   }
 
   @override
   void dispose() {
-    _animController?.dispose();
-    _zoomController.dispose();
+    _verticalScrollController.dispose();
+    _horizontalScrollController.dispose();
     super.dispose();
+  }
+
+  Future<void> _loadStudioPreferences() async {
+    try {
+      final updated = Map<String, Object?>.from(_localSettings);
+      bool changed = false;
+
+      Future<void> readIfMissingOrAlways(String prefKey, String mapKey, {bool alwaysPreferSaved = false}) async {
+        final val = await _studioPreferences.readString(prefKey);
+        if (val != null && val.isNotEmpty) {
+          if (alwaysPreferSaved || updated[mapKey] == null || updated[mapKey].toString().isEmpty) {
+            updated[mapKey] = val;
+            changed = true;
+          }
+        }
+      }
+
+      await readIfMissingOrAlways('sections_cache', 'studio_sections_json', alwaysPreferSaved: true);
+      await readIfMissingOrAlways('studio_preset', 'studio_preset');
+      await readIfMissingOrAlways('studio_template_name', 'studio_template_name');
+      await readIfMissingOrAlways('company_default_template_id', 'company_default_template_id');
+      await readIfMissingOrAlways('preferredTemplateId', 'preferredTemplateId');
+      await readIfMissingOrAlways('studio_primary_color', 'studio_primary_color');
+      await readIfMissingOrAlways('studio_table_header_text_color', 'studio_table_header_text_color');
+      await readIfMissingOrAlways('studio_font_family', 'studio_font_family');
+      await readIfMissingOrAlways('studio_font_scale', 'studio_font_scale');
+      await readIfMissingOrAlways('studio_table_border', 'studio_table_border');
+      await readIfMissingOrAlways('studio_doc_title', 'customTitle');
+      await readIfMissingOrAlways('studio_watermark', 'studio_watermark');
+      await readIfMissingOrAlways('studio_page_margin', 'studio_page_margin');
+      await readIfMissingOrAlways('invoiceLogo', 'invoiceLogo');
+      await readIfMissingOrAlways('invoiceStamp', 'invoiceStamp');
+      await readIfMissingOrAlways('invoiceSignature', 'invoiceSignature');
+      await readIfMissingOrAlways('signeeName', 'signeeName');
+      await readIfMissingOrAlways('signeeTitle', 'signeeTitle');
+      await readIfMissingOrAlways('letterhead_style_id', 'letterhead_style_id', alwaysPreferSaved: true);
+      await readIfMissingOrAlways('letterhead_company_name', 'letterhead_company_name', alwaysPreferSaved: true);
+      await readIfMissingOrAlways('letterhead_tagline', 'letterhead_tagline', alwaysPreferSaved: true);
+      await readIfMissingOrAlways('letterhead_phone', 'letterhead_phone', alwaysPreferSaved: true);
+      await readIfMissingOrAlways('letterhead_email', 'letterhead_email', alwaysPreferSaved: true);
+      await readIfMissingOrAlways('letterhead_website', 'letterhead_website', alwaysPreferSaved: true);
+      await readIfMissingOrAlways('letterhead_address', 'letterhead_address', alwaysPreferSaved: true);
+      await readIfMissingOrAlways('letterhead_gstin', 'letterhead_gstin', alwaysPreferSaved: true);
+      await readIfMissingOrAlways('letterhead_pan', 'letterhead_pan', alwaysPreferSaved: true);
+      await readIfMissingOrAlways('letterhead_cin', 'letterhead_cin', alwaysPreferSaved: true);
+
+      final savedLhEnabled = await _studioPreferences.readString('letterhead_enabled');
+      if (savedLhEnabled != null) {
+        updated['letterhead_enabled'] = savedLhEnabled == 'true';
+        changed = true;
+      }
+      final savedUppercase = await _studioPreferences.readString('studio_uppercase_headings');
+      if (savedUppercase != null && updated['studio_uppercase_headings'] == null) {
+        updated['studio_uppercase_headings'] = savedUppercase == 'true';
+        changed = true;
+      }
+      final savedShowQr = await _studioPreferences.readString('studio_show_qr');
+      if (savedShowQr != null && updated['showQrCode'] == null) {
+        updated['showQrCode'] = savedShowQr == 'true';
+        changed = true;
+      }
+
+      if (changed && mounted) {
+        setState(() => _localSettings = updated);
+      }
+    } catch (_) {}
   }
 
   static const double a4PaperWidth = 760.0;
@@ -98,71 +159,39 @@ class _InvoicePreviewScreenState extends State<InvoicePreviewScreen>
   double _lastViewportWidth = 0.0;
 
   void _initFitZoom(double viewportWidth) {
-    if (_initialFitScale != null && (_lastViewportWidth - viewportWidth).abs() < 2.0) {
+    if (_initialFitScale != null &&
+        (_lastViewportWidth - viewportWidth).abs() < 2.0) {
       return;
     }
     _lastViewportWidth = viewportWidth;
-    final fit = ((viewportWidth - 24) / a4PaperWidth).clamp(0.25, 1.2);
+    final fit = ((viewportWidth - 32) / a4PaperWidth).clamp(0.35, 1.05);
     _initialFitScale = fit;
-    final tx = (viewportWidth - a4PaperWidth * fit) / 2;
-    final targetMatrix = Matrix4.identity()
-      ..translate(tx, 16.0)
-      ..scale(fit, fit);
-    _zoomController.value = targetMatrix;
     _zoomScale = fit;
   }
 
-  void _animateToMatrix(Matrix4 targetMatrix, double targetScale) {
-    if (_animController != null) {
-      _zoomAnimation = Matrix4Tween(
-        begin: _zoomController.value,
-        end: targetMatrix,
-      ).animate(
-        CurvedAnimation(parent: _animController!, curve: Curves.easeOutCubic),
-      );
-      _animController!.forward(from: 0);
-    } else {
-      _zoomController.value = targetMatrix;
-      setState(() => _zoomScale = targetScale);
-    }
-  }
-
   void _zoomToFit(double viewportWidth) {
-    final fit = ((viewportWidth - 24) / a4PaperWidth).clamp(0.25, 1.2);
-    final tx = (viewportWidth - a4PaperWidth * fit) / 2;
-    final targetMatrix = Matrix4.identity()
-      ..translate(tx, 16.0)
-      ..scale(fit, fit);
-    _animateToMatrix(targetMatrix, fit);
+    final fit = ((viewportWidth - 32) / a4PaperWidth).clamp(0.35, 1.05);
+    setState(() => _zoomScale = fit);
   }
 
   void _zoomToActual(double viewportWidth) {
-    const actual = 1.0;
-    final tx = ((viewportWidth - a4PaperWidth) / 2).clamp(-380.0, 16.0);
-    final targetMatrix = Matrix4.identity()
-      ..translate(tx, 16.0)
-      ..scale(actual, actual);
-    _animateToMatrix(targetMatrix, actual);
+    setState(() => _zoomScale = 1.0);
   }
 
   void _setZoomStep(double delta, double viewportWidth) {
-    final newScale = (_zoomScale + delta).clamp(0.25, 3.5);
-    final tx = (viewportWidth - a4PaperWidth * newScale) / 2;
-    final targetMatrix = Matrix4.identity()
-      ..translate(tx.clamp(-400.0, 24.0), 16.0)
-      ..scale(newScale, newScale);
-    _animateToMatrix(targetMatrix, newScale);
+    setState(() {
+      _zoomScale = (_zoomScale + delta).clamp(0.35, 2.5);
+    });
   }
 
   void _handleDoubleTap(double viewportWidth) {
-    final fit = ((viewportWidth - 24) / a4PaperWidth).clamp(0.25, 1.2);
-    if ((_zoomScale - fit).abs() < 0.12) {
+    final fit = ((viewportWidth - 32) / a4PaperWidth).clamp(0.35, 1.05);
+    if ((_zoomScale - fit).abs() < 0.08) {
       _zoomToActual(viewportWidth);
     } else {
       _zoomToFit(viewportWidth);
     }
   }
-
 
   Future<void> _loadProfile() async {
     try {
@@ -174,30 +203,70 @@ class _InvoicePreviewScreenState extends State<InvoicePreviewScreen>
     } catch (_) {}
   }
 
+  static String _mapPresetAlias(String id) {
+    return switch (id) {
+      'security_agency' => 'security_modern',
+      'security_gst' => 'security_modern',
+      'security-service' => 'security_modern',
+      'consulting' => 'consulting_standard',
+      'retail' => 'retail_standard',
+      'modern' => 'modern_minimal',
+      'gst_service' => 'gst_tax_invoice',
+      _ => id,
+    };
+  }
+
   TemplateConfig? get _template {
-    // If user explicitly switched via popup menu, find that preset
+    // 1. If user explicitly selected in the current preview session
     if (_selectedTemplateId != null) {
-      for (final preset in templatePresets) {
-        if (preset.id == _selectedTemplateId) return preset;
-      }
       if (widget.preferredTemplate?.id == _selectedTemplateId) {
         return widget.preferredTemplate;
       }
-    }
-
-    // Otherwise, prefer the user's customized preferredTemplate
-    if (widget.preferredTemplate != null) {
-      if (_invoice.templateId.isEmpty ||
-          _invoice.templateId == widget.preferredTemplate!.id) {
-        return widget.preferredTemplate;
+      for (final preset in templatePresets) {
+        if (preset.id == _selectedTemplateId) return preset;
+      }
+      final aliasId = _mapPresetAlias(_selectedTemplateId!);
+      for (final preset in templatePresets) {
+        if (preset.id == aliasId) return preset;
       }
     }
 
-    final selectedId = _invoice.templateId;
-    for (final preset in templatePresets) {
-      if (preset.id == selectedId) return preset;
+    // 2. Company Default / Preferred Template from localSettings
+    final prefId = _localSettings['preferredTemplateId']?.toString() ??
+        _localSettings['company_default_template_id']?.toString() ??
+        _localSettings['templateId']?.toString() ??
+        _localSettings['studio_preset']?.toString();
+    if (prefId != null && prefId.isNotEmpty) {
+      if (widget.preferredTemplate?.id == prefId) {
+        return widget.preferredTemplate;
+      }
+      for (final preset in templatePresets) {
+        if (preset.id == prefId) return preset;
+      }
+      final aliasId = _mapPresetAlias(prefId);
+      for (final preset in templatePresets) {
+        if (preset.id == aliasId) return preset;
+      }
     }
-    return widget.preferredTemplate ?? templatePresets.first;
+
+    // 3. User's customized preferredTemplate passed from AppShell
+    if (widget.preferredTemplate != null) {
+      return widget.preferredTemplate;
+    }
+
+    // 4. Fallback to invoice-level templateId if set
+    final selectedId = _invoice.templateId;
+    if (selectedId.isNotEmpty) {
+      for (final preset in templatePresets) {
+        if (preset.id == selectedId) return preset;
+      }
+      final aliasId = _mapPresetAlias(selectedId);
+      for (final preset in templatePresets) {
+        if (preset.id == aliasId) return preset;
+      }
+    }
+
+    return templatePresets.first;
   }
 
   String get _activeCurrencySymbol {
@@ -347,15 +416,19 @@ class _InvoicePreviewScreenState extends State<InvoicePreviewScreen>
   String get _safeFileName =>
       _invoice.invoiceNumber.replaceAll(RegExp(r'[^A-Za-z0-9_-]'), '_');
 
+  Future<Uint8List> _generatePdfBytes() async {
+    return InvoicePdfExport.build(
+      _effectiveInvoice,
+      template: _template,
+      localSettings: _localSettings,
+      businessProfile: _profile,
+    );
+  }
+
   Future<void> _printPdf() async {
     setState(() => _busy = true);
     try {
-      final bytes = await InvoicePdfExport.build(
-        _effectiveInvoice,
-        template: _template,
-        localSettings: _localSettings,
-        businessProfile: _profile,
-      );
+      final bytes = await _generatePdfBytes();
       await Printing.layoutPdf(
         name: 'Invoice_$_safeFileName.pdf',
         onLayout: (_) async => bytes,
@@ -370,12 +443,7 @@ class _InvoicePreviewScreenState extends State<InvoicePreviewScreen>
   Future<void> _downloadOrSharePdf() async {
     setState(() => _busy = true);
     try {
-      final bytes = await InvoicePdfExport.build(
-        _effectiveInvoice,
-        template: _template,
-        localSettings: _localSettings,
-        businessProfile: _profile,
-      );
+      final bytes = await _generatePdfBytes();
       final pdfName = 'Invoice_$_safeFileName.pdf';
       await Printing.sharePdf(
         bytes: bytes,
@@ -599,18 +667,35 @@ class _InvoicePreviewScreenState extends State<InvoicePreviewScreen>
       context: context,
       isScrollControlled: true,
       backgroundColor: Colors.transparent,
-      builder: (ctx) => TemplatePickerModal(
-        selectedId: _template?.id,
+      builder: (ctx) => InvoiceLiveCustomizeSheet(
+        selectedTemplateId: _template?.id,
+        localSettings: _localSettings,
+        studioPreferences: _studioPreferences,
         activeBusinessCategory: _activeBusinessCategory,
+        onOpenDocuHubSigner: _openDocuHubSigner,
+        onSettingsChanged: (updated) {
+          if (mounted) {
+            setState(() => _localSettings = updated);
+          }
+          widget.onSaveLocalSettings?.call(updated);
+        },
         onSelectTemplate: (preset) {
+          final updated = Map<String, Object?>.from(_localSettings)
+            ..['preferredTemplateId'] = preset.id
+            ..['studio_primary_color'] = preset.color
+            ..['customTitle'] = preset.title;
           setState(() {
+            _localSettings = updated;
             _selectedTemplateId = preset.id;
             _invoice = _invoice.copyWith(templateId: preset.id);
           });
+          widget.onSaveLocalSettings?.call(updated);
         },
-        onSetDefault: (preset) async {
+        onSetDefaultTemplate: (preset) async {
           final updated = Map<String, Object?>.from(_localSettings)
             ..['preferredTemplateId'] = preset.id
+            ..['company_default_template_id'] = preset.id
+            ..['studio_primary_color'] = preset.color
             ..['customTitle'] = preset.title
             ..['customItemHeader'] = preset.itemHeader
             ..['customQtyHeader'] = preset.quantityHeader
@@ -618,13 +703,16 @@ class _InvoicePreviewScreenState extends State<InvoicePreviewScreen>
             ..['customAmountHeader'] = preset.amountHeader
             ..['customDutyHeader'] = preset.dutyHeader
             ..['showItemDuty'] = preset.showDuty;
+          await _studioPreferences.writeString('preferredTemplateId', preset.id);
+          await _studioPreferences.writeString('company_default_template_id', preset.id);
           await widget.onSaveLocalSettings?.call(updated);
           if (mounted) {
             setState(() {
               _localSettings = updated;
               _selectedTemplateId = preset.id;
+              _invoice = _invoice.copyWith(templateId: preset.id);
             });
-            _showMessage('✓ Template "${preset.name}" set as default!');
+            _showMessage('✓ Template "${preset.name}" set as company default!');
           }
         },
       ),
@@ -683,7 +771,7 @@ class _InvoicePreviewScreenState extends State<InvoicePreviewScreen>
                   children: [
                     Flexible(
                       child: Text(
-                        template?.name ?? 'Standard Template',
+                        template?.name ?? 'Customize Design & Sections',
                         style: TextStyle(
                           fontSize: 11,
                           fontWeight: FontWeight.w600,
@@ -706,14 +794,15 @@ class _InvoicePreviewScreenState extends State<InvoicePreviewScreen>
           ),
         ),
         actions: [
-          // 1. SWITCH TEMPLATE (Palette button opening category-wise template studio sheet)
+
+          // 1. LIVE CUSTOMIZE DESIGN & SECTIONS STUDIO
           _buildPillButton(
-            tooltip: 'Switch Template Style & Category',
+            tooltip: 'Customize Design, Sections, Colors & Columns',
             backgroundColor:
                 isDark ? const Color(0xFF334155) : const Color(0xFFF1F5F9),
             child: IconButton(
               icon: Icon(
-                Icons.palette_outlined,
+                Icons.tune_rounded,
                 size: 18,
                 color: isDark ? Colors.white : const Color(0xFF0F172A),
               ),
@@ -751,7 +840,22 @@ class _InvoicePreviewScreenState extends State<InvoicePreviewScreen>
             ),
           ),
 
-          // 4. EDIT INVOICE (Pill button)
+          // 4. EXPORT WORD DOCX (Indigo/Green pill)
+          _buildPillButton(
+            tooltip: 'Export Word (.docx)',
+            backgroundColor:
+                isDark ? const Color(0xFF065F46) : const Color(0xFFD1FAE5),
+            child: IconButton(
+              icon: Icon(
+                Icons.description_rounded,
+                size: 18,
+                color: isDark ? const Color(0xFF6EE7B7) : const Color(0xFF059669),
+              ),
+              onPressed: _busy ? null : _shareDocx,
+            ),
+          ),
+
+          // 5. EDIT INVOICE (Pill button)
           _buildPillButton(
             tooltip: 'Edit Invoice',
             backgroundColor:
@@ -904,139 +1008,233 @@ class _InvoicePreviewScreenState extends State<InvoicePreviewScreen>
         builder: (context, constraints) {
           final viewportWidth = constraints.maxWidth;
           _initFitZoom(viewportWidth);
+          final scaledPaperWidth = (a4PaperWidth * _zoomScale).clamp(240.0, 2200.0);
 
           return Stack(
             children: [
-              // FULL PAGE ZOOMABLE CANVAS (EXACT A4 PROPORTIONS)
-              GestureDetector(
-                onDoubleTap: () => _handleDoubleTap(viewportWidth),
-                child: InteractiveViewer(
-                  transformationController: _zoomController,
-                  minScale: 0.25,
-                  maxScale: 3.5,
-                  boundaryMargin: const EdgeInsets.symmetric(horizontal: 160, vertical: 200),
-                  constrained: false,
-                  clipBehavior: Clip.none,
-                  onInteractionUpdate: (_) {
-                    final currentScale = _zoomController.value.getMaxScaleOnAxis();
-                    if ((currentScale - _zoomScale).abs() > 0.02) {
-                      setState(() => _zoomScale = currentScale);
+              // FULL PAGE SMOOTH SCROLLABLE & ZOOMABLE A4 WORKSPACE (MOUSE + TOUCH + TRACKPAD)
+              Listener(
+                onPointerSignal: (pointerSignal) {
+                  if (pointerSignal is PointerScrollEvent) {
+                    if (HardwareKeyboard.instance.isControlPressed ||
+                        HardwareKeyboard.instance.isMetaPressed) {
+                      // Ctrl + Mouse Wheel = Smooth Zoom In / Out
+                      final delta = pointerSignal.scrollDelta.dy < 0 ? 0.08 : -0.08;
+                      _setZoomStep(delta, viewportWidth);
+                    } else if (HardwareKeyboard.instance.isShiftPressed &&
+                        _horizontalScrollController.hasClients) {
+                      // Shift + Mouse Wheel = Smooth Horizontal Scroll
+                      final target = (_horizontalScrollController.offset +
+                              pointerSignal.scrollDelta.dy)
+                          .clamp(
+                        0.0,
+                        _horizontalScrollController.position.maxScrollExtent,
+                      );
+                      _horizontalScrollController.jumpTo(target);
+                    }
+                  }
+                },
+                child: GestureDetector(
+                  onDoubleTap: () => _handleDoubleTap(viewportWidth),
+                  onScaleStart: (details) {
+                    _basePinchScale = _zoomScale;
+                  },
+                  onScaleUpdate: (details) {
+                    if (details.pointerCount >= 2 &&
+                        (details.scale - 1.0).abs() > 0.01) {
+                      setState(() {
+                        _zoomScale = (_basePinchScale * details.scale)
+                            .clamp(0.35, 2.5);
+                      });
                     }
                   },
-                  child: SizedBox(
-                    width: a4PaperWidth,
-                    child: Column(
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        // Quotation / Estimate conversion banner (Kotlin style)
-                        if (isEstimate) ...[
-                          Container(
-                            margin: const EdgeInsets.only(bottom: 16),
-                            padding: const EdgeInsets.symmetric(
-                              horizontal: 16,
-                              vertical: 12,
+                  child: ScrollConfiguration(
+                    behavior: ScrollConfiguration.of(context).copyWith(
+                      dragDevices: const {
+                        PointerDeviceKind.touch,
+                        PointerDeviceKind.mouse,
+                        PointerDeviceKind.trackpad,
+                        PointerDeviceKind.stylus,
+                      },
+                    ),
+                    child: Scrollbar(
+                      controller: _verticalScrollController,
+                      thumbVisibility: true,
+                      child: SingleChildScrollView(
+                        controller: _verticalScrollController,
+                        physics: const BouncingScrollPhysics(
+                          parent: AlwaysScrollableScrollPhysics(),
+                        ),
+                        padding: EdgeInsets.symmetric(
+                          vertical: isMobile ? 16 : 24,
+                        ),
+                        child: SingleChildScrollView(
+                          controller: _horizontalScrollController,
+                          scrollDirection: Axis.horizontal,
+                          physics: const BouncingScrollPhysics(),
+                          child: ConstrainedBox(
+                            constraints: BoxConstraints(
+                              minWidth: viewportWidth,
                             ),
-                            decoration: BoxDecoration(
-                              color: const Color(0xFF064E3B),
-                              borderRadius: BorderRadius.circular(12),
-                              border: Border.all(
-                                color: const Color(0xFF059669),
-                                width: 1.2,
-                              ),
-                            ),
-                            child: Row(
-                              children: [
-                                Expanded(
-                                  child: Column(
-                                    crossAxisAlignment: CrossAxisAlignment.start,
-                                    children: [
-                                      Row(
+                            child: Center(
+                              child: Padding(
+                                padding: const EdgeInsets.symmetric(
+                                  horizontal: 12,
+                                ),
+                                child: SizedBox(
+                                  width: scaledPaperWidth,
+                                  child: FittedBox(
+                                    fit: BoxFit.fitWidth,
+                                    alignment: Alignment.topCenter,
+                                    child: SizedBox(
+                                      width: a4PaperWidth,
+                                      child: Column(
+                                        mainAxisSize: MainAxisSize.min,
                                         children: [
-                                          const Text(
-                                            '📑 Quotation / Estimate',
-                                            style: TextStyle(
-                                              fontWeight: FontWeight.bold,
-                                              fontSize: 14,
-                                              color: Colors.white,
-                                            ),
-                                          ),
-                                          const SizedBox(width: 8),
-                                          Container(
-                                            padding: const EdgeInsets.symmetric(
-                                              horizontal: 6,
-                                              vertical: 2,
-                                            ),
-                                            decoration: BoxDecoration(
-                                              color: const Color(0xFF10B981),
-                                              borderRadius: BorderRadius.circular(4),
-                                            ),
-                                            child: const Text(
-                                              'ESTIMATE',
-                                              style: TextStyle(
-                                                fontSize: 9,
-                                                fontWeight: FontWeight.bold,
-                                                color: Colors.white,
+                                          // Quotation / Estimate conversion banner
+                                          if (isEstimate) ...[
+                                            Container(
+                                              margin: const EdgeInsets.only(
+                                                bottom: 16,
+                                              ),
+                                              padding: const EdgeInsets.symmetric(
+                                                horizontal: 16,
+                                                vertical: 12,
+                                              ),
+                                              decoration: BoxDecoration(
+                                                color: const Color(0xFF064E3B),
+                                                borderRadius:
+                                                    BorderRadius.circular(12),
+                                                border: Border.all(
+                                                  color: const Color(0xFF059669),
+                                                  width: 1.2,
+                                                ),
+                                              ),
+                                              child: Row(
+                                                children: [
+                                                  Expanded(
+                                                    child: Column(
+                                                      crossAxisAlignment:
+                                                          CrossAxisAlignment.start,
+                                                      children: [
+                                                        Row(
+                                                          children: [
+                                                            const Text(
+                                                              '📑 Quotation / Estimate',
+                                                              style: TextStyle(
+                                                                fontWeight:
+                                                                    FontWeight.bold,
+                                                                fontSize: 14,
+                                                                color: Colors.white,
+                                                              ),
+                                                            ),
+                                                            const SizedBox(width: 8),
+                                                            Container(
+                                                              padding:
+                                                                  const EdgeInsets
+                                                                      .symmetric(
+                                                                horizontal: 6,
+                                                                vertical: 2,
+                                                              ),
+                                                              decoration:
+                                                                  BoxDecoration(
+                                                                color: const Color(
+                                                                  0xFF10B981,
+                                                                ),
+                                                                borderRadius:
+                                                                    BorderRadius
+                                                                        .circular(4),
+                                                              ),
+                                                              child: const Text(
+                                                                'ESTIMATE',
+                                                                style: TextStyle(
+                                                                  fontSize: 9,
+                                                                  fontWeight:
+                                                                      FontWeight.bold,
+                                                                  color: Colors.white,
+                                                                ),
+                                                              ),
+                                                            ),
+                                                          ],
+                                                        ),
+                                                        const SizedBox(height: 2),
+                                                        const Text(
+                                                          'Ready to finalize this estimate into a bill?',
+                                                          style: TextStyle(
+                                                            fontSize: 12,
+                                                            color: Color(0xFFA7F3D0),
+                                                          ),
+                                                        ),
+                                                      ],
+                                                    ),
+                                                  ),
+                                                  FilledButton(
+                                                    onPressed: _busy
+                                                        ? null
+                                                        : _convertEstimateToInvoice,
+                                                    style: FilledButton.styleFrom(
+                                                      backgroundColor:
+                                                          const Color(0xFF10B981),
+                                                      shape:
+                                                          RoundedRectangleBorder(
+                                                        borderRadius:
+                                                            BorderRadius.circular(
+                                                          8,
+                                                        ),
+                                                      ),
+                                                      padding: const EdgeInsets
+                                                          .symmetric(
+                                                        horizontal: 14,
+                                                        vertical: 8,
+                                                      ),
+                                                    ),
+                                                    child: const Text(
+                                                      'Convert to Tax Invoice',
+                                                      style: TextStyle(
+                                                        fontSize: 12,
+                                                        fontWeight: FontWeight.bold,
+                                                      ),
+                                                    ),
+                                                  ),
+                                                ],
                                               ),
                                             ),
+                                          ],
+
+                                          // A4 PAPER DOCUMENT CARD (DESIGNED IN TEMPLATE STUDIO)
+                                          _buildA4Paper(
+                                            invoice: invoice,
+                                            template: template,
+                                            templateColor: templateColor,
+                                            isMobile: isMobile,
                                           ),
+
+                                          const SizedBox(
+                                            height: 96,
+                                          ), // bottom clearance for zoom bar
                                         ],
                                       ),
-                                      const SizedBox(height: 2),
-                                      const Text(
-                                        'Ready to finalize this estimate into a bill?',
-                                        style: TextStyle(
-                                          fontSize: 12,
-                                          color: Color(0xFFA7F3D0),
-                                        ),
-                                      ),
-                                    ],
-                                  ),
-                                ),
-                                FilledButton(
-                                  onPressed: _busy ? null : _convertEstimateToInvoice,
-                                  style: FilledButton.styleFrom(
-                                    backgroundColor: const Color(0xFF10B981),
-                                    shape: RoundedRectangleBorder(
-                                      borderRadius: BorderRadius.circular(8),
-                                    ),
-                                    padding: const EdgeInsets.symmetric(
-                                      horizontal: 14,
-                                      vertical: 8,
-                                    ),
-                                  ),
-                                  child: const Text(
-                                    'Convert to Tax Invoice',
-                                    style: TextStyle(
-                                      fontSize: 12,
-                                      fontWeight: FontWeight.bold,
                                     ),
                                   ),
                                 ),
-                              ],
+                              ),
                             ),
                           ),
-                        ],
-
-                        // A4 PAPER DOCUMENT CARD (EXACT PDF PRINT SIZE)
-                        _buildA4Paper(
-                          invoice: invoice,
-                          template: template,
-                          templateColor: templateColor,
-                          isMobile: isMobile,
                         ),
-
-                        const SizedBox(height: 140), // generous bottom clearance
-                      ],
+                      ),
                     ),
                   ),
                 ),
               ),
 
-              // FLOATING QUICK ZOOM THUMB CONTROLLER
+              // FLOATING QUICK ZOOM THUMB CONTROLLER (RESPONSIVE ON MOBILE & DESKTOP)
               Positioned(
+                left: isMobile ? 16 : null,
                 right: 16,
                 bottom: 16,
-                child: Material(
+                child: Align(
+                  alignment: isMobile ? Alignment.bottomCenter : Alignment.bottomRight,
+                  child: Material(
                   color: isDark
                       ? const Color(0xEE1E293B)
                       : Colors.white.withAlpha(245),
@@ -1103,8 +1301,9 @@ class _InvoicePreviewScreenState extends State<InvoicePreviewScreen>
                   ),
                 ),
               ),
-            ],
-          );
+            ),
+          ],
+        );
         },
       ),
     );

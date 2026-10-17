@@ -2,9 +2,12 @@ import 'dart:convert';
 
 import 'package:flutter/material.dart';
 import 'package:image_picker/image_picker.dart';
+import 'package:url_launcher/url_launcher.dart';
 
 import '../../../core/api/api_exception.dart';
+import '../../../shared/utils/table_export_helper.dart';
 import '../../../shared/widgets/app_card.dart';
+import '../../../shared/widgets/enterprise_data_view.dart';
 import '../../../shared/widgets/offline_cache_banner.dart';
 import '../../../theme/app_theme.dart';
 import '../data/expense.dart';
@@ -53,11 +56,14 @@ class _ExpensesScreenState extends State<ExpensesScreen> {
   final ImagePicker _imagePicker = ImagePicker();
   List<Expense> _expenses = const [];
   String _selectedCategory = 'All';
+  String _statusFilter = 'All';
   bool _isLoading = true;
   bool _usingCachedData = false;
   bool _isScanningReceipt = false;
   String? _error;
   int _loadRequest = 0;
+  DateTimeRange? _dateRange;
+  final Set<String> _selectedIds = {};
 
   @override
   void initState() {
@@ -104,16 +110,88 @@ class _ExpensesScreenState extends State<ExpensesScreen> {
 
   List<Expense> get _visibleExpenses {
     final query = _searchController.text.trim().toLowerCase();
-    if (query.isEmpty) return _expenses;
-    return _expenses
-        .where(
-          (expense) =>
-              expense.title.toLowerCase().contains(query) ||
-              expense.vendor.toLowerCase().contains(query) ||
-              expense.category.toLowerCase().contains(query),
-        )
-        .toList(growable: false);
+    return _expenses.where((expense) {
+      if (_statusFilter == 'Paid' && expense.isDue) return false;
+      if (_statusFilter == 'Due' && !expense.isDue) return false;
+      if (_statusFilter == 'TaxDeductible' && !expense.taxDeductible) return false;
+
+      if (_dateRange != null) {
+        final d = DateTime.tryParse(expense.date);
+        if (d != null) {
+          if (d.isBefore(_dateRange!.start) ||
+              d.isAfter(_dateRange!.end.add(const Duration(days: 1)))) {
+            return false;
+          }
+        }
+      }
+
+      if (query.isNotEmpty) {
+        return expense.title.toLowerCase().contains(query) ||
+            expense.vendor.toLowerCase().contains(query) ||
+            expense.category.toLowerCase().contains(query);
+      }
+      return true;
+    }).toList(growable: false);
   }
+
+  Future<void> _sendEmailAlert(Expense expense) async {
+    final subject = Uri.encodeComponent('Payment Due Alert: ${expense.title}');
+    final body = Uri.encodeComponent(
+      'Dear Accounts / Vendor,\n\nThis is a notification regarding the pending expense liability for "${expense.title}".\nAmount: ${expense.currencySymbol}${expense.amount.toStringAsFixed(2)}\nDue Date: ${expense.dueDate.isNotEmpty ? expense.dueDate : "Immediate"}\nVendor: ${expense.vendor}\n\nPlease arrange settlement.\n\nThank you,\nFinance Department',
+    );
+    final uri = Uri.parse('mailto:?subject=$subject&body=$body');
+    try {
+      await launchUrl(uri);
+    } catch (_) {
+      if (mounted) _showMessage('Opening email client for ${expense.title}...');
+    }
+  }
+
+  Future<void> _sendWhatsAppAlert(Expense expense) async {
+    final text = Uri.encodeComponent(
+      'Hello, notification regarding pending expense payment for "${expense.title}" of amount ${expense.currencySymbol}${expense.amount.toStringAsFixed(2)} due on ${expense.dueDate.isNotEmpty ? expense.dueDate : "immediate"}. Please arrange settlement.',
+    );
+    final uri = Uri.parse('https://wa.me/?text=$text');
+    try {
+      await launchUrl(uri, mode: LaunchMode.externalApplication);
+    } catch (_) {
+      if (mounted) _showMessage('Could not open WhatsApp.');
+    }
+  }
+
+  Future<void> _updateExpenseStatus(Expense expense, String newStatus) async {
+    try {
+      final updated = Expense(
+        id: expense.id,
+        companyId: expense.companyId,
+        createdByUserId: expense.createdByUserId,
+        createdByUserName: expense.createdByUserName,
+        title: expense.title,
+        category: expense.category,
+        amount: expense.amount,
+        currency: expense.currency,
+        currencySymbol: expense.currencySymbol,
+        date: expense.date,
+        vendor: expense.vendor,
+        paymentMethod: expense.paymentMethod,
+        taxDeductible: expense.taxDeductible,
+        taxAmount: expense.taxAmount,
+        receiptImageUri: expense.receiptImageUri,
+        notes: expense.notes,
+        status: newStatus,
+        dueDate: expense.dueDate,
+      );
+      await widget.repository.update(updated);
+      if (mounted) {
+        _showMessage('Expense status updated to $newStatus!');
+        await _loadExpenses(showProgress: false);
+      }
+    } catch (e) {
+      if (mounted) _showMessage('Could not update status: $e');
+    }
+  }
+
+  Future<void> _markExpensePaid(Expense expense) => _updateExpenseStatus(expense, 'Paid');
 
   Future<void> _createExpense() async {
     final expense = await showDialog<Expense>(
@@ -188,14 +266,15 @@ class _ExpensesScreenState extends State<ExpensesScreen> {
       if (bytes.isEmpty) {
         throw const FormatException('The selected image is empty.');
       }
+      final encoded = base64Encode(bytes);
+      final dataUri = 'data:$mimeType;base64,$encoded';
       Expense scannedDraft;
       try {
         final ocr = await ReceiptOcrScanner.scan(imagePath: image.path);
-        scannedDraft = ocr.toExpenseDraft(receiptImageUri: image.path);
+        scannedDraft = ocr.toExpenseDraft(receiptImageUri: dataUri);
       } catch (_) {
         // Fall back to server AI scanning if on-device ML kit is unavailable
         try {
-          final encoded = base64Encode(bytes);
           if (encoded.length <= 8000000) {
             final draft = await widget.repository.scanReceipt(
               imageBase64: encoded,
@@ -216,7 +295,7 @@ class _ExpensesScreenState extends State<ExpensesScreen> {
               paymentMethod: draft.paymentMethod,
               taxDeductible: draft.taxDeductible,
               taxAmount: draft.taxAmount,
-              receiptImageUri: image.path,
+              receiptImageUri: dataUri,
               notes: draft.notes,
             );
           } else {
@@ -225,7 +304,7 @@ class _ExpensesScreenState extends State<ExpensesScreen> {
               currency: 'INR',
               currencySymbol: '₹',
               date: _dateFor(DateTime.now()),
-              receiptImageUri: image.path,
+              receiptImageUri: dataUri,
             );
           }
         } catch (_) {
@@ -234,7 +313,7 @@ class _ExpensesScreenState extends State<ExpensesScreen> {
             currency: 'INR',
             currencySymbol: '₹',
             date: _dateFor(DateTime.now()),
-            receiptImageUri: image.path,
+            receiptImageUri: dataUri,
           );
         }
       }
@@ -375,63 +454,15 @@ class _ExpensesScreenState extends State<ExpensesScreen> {
         icon: const Icon(Icons.add),
         label: const Text('Add expense'),
       ),
-      body: Center(
-        child: ConstrainedBox(
-          constraints: const BoxConstraints(maxWidth: 1050),
-          child: RefreshIndicator(
+      body: LayoutBuilder(
+        builder: (context, constraints) {
+          final horizontalPadding = constraints.maxWidth > 900 ? 24.0 : 16.0;
+          return RefreshIndicator(
             onRefresh: _loadExpenses,
             child: ListView(
-              padding: const EdgeInsets.fromLTRB(20, 8, 20, 100),
+              padding: EdgeInsets.fromLTRB(horizontalPadding, 8, horizontalPadding, 100),
               children: [
                 if (_usingCachedData) const OfflineCacheBanner(),
-                Text(
-                  'Record business spending and keep tax details organized.',
-                  style: Theme.of(context).textTheme.bodyLarge?.copyWith(
-                        color: AppColors.muted,
-                      ),
-                ),
-                const SizedBox(height: 18),
-                TextField(
-                  controller: _searchController,
-                  onChanged: (_) => setState(() {}),
-                  decoration: InputDecoration(
-                    hintText: 'Search title, vendor or category',
-                    prefixIcon: const Icon(Icons.search),
-                    suffixIcon: _searchController.text.isEmpty
-                        ? null
-                        : IconButton(
-                            tooltip: 'Clear search',
-                            onPressed: () {
-                              _searchController.clear();
-                              setState(() {});
-                            },
-                            icon: const Icon(Icons.close),
-                          ),
-                  ),
-                ),
-                const SizedBox(height: 12),
-                SingleChildScrollView(
-                  scrollDirection: Axis.horizontal,
-                  child: Row(
-                    children: [
-                      for (final category in _categories) ...[
-                        Padding(
-                          padding: const EdgeInsets.only(right: 8),
-                          child: ChoiceChip(
-                            label: Text(category),
-                            selected: category == _selectedCategory,
-                            onSelected: (selected) {
-                              if (!selected) return;
-                              setState(() => _selectedCategory = category);
-                              _loadExpenses();
-                            },
-                          ),
-                        ),
-                      ],
-                    ],
-                  ),
-                ),
-                const SizedBox(height: 14),
                 if (_error != null) ...[
                   _ErrorPanel(message: _error!, onRetry: _loadExpenses),
                   const SizedBox(height: 14),
@@ -441,53 +472,359 @@ class _ExpensesScreenState extends State<ExpensesScreen> {
                     padding: EdgeInsets.all(48),
                     child: Center(child: CircularProgressIndicator()),
                   )
-                else if (visibleExpenses.isEmpty && _error == null)
-                  _EmptyPanel(
-                    hasFilter: _searchController.text.trim().isNotEmpty ||
-                        _selectedCategory != 'All',
-                    onAdd: _createExpense,
-                    onReset: () {
-                      _searchController.clear();
-                      setState(() => _selectedCategory = 'All');
+                else
+                  EnterpriseDataView<Expense>(
+                    items: visibleExpenses,
+                    headerTitle: 'Expense Ledger',
+                    metrics: _buildMetrics(_expenses),
+                    dateRange: _dateRange,
+                    onDateRangeChanged: (range) => setState(() => _dateRange = range),
+                    onDownloadReport: () => _downloadExpensesReport(visibleExpenses),
+                    searchController: _searchController,
+                    searchHint: 'Search title, vendor or category...',
+                    filterChips: _categories,
+                    selectedFilterChip: _selectedCategory,
+                    onFilterChipSelected: (cat) {
+                      setState(() => _selectedCategory = cat);
                       _loadExpenses();
                     },
-                  )
-                else ...[
-                  Row(
-                    children: [
-                      Text(
-                        '${visibleExpenses.length} ${visibleExpenses.length == 1 ? 'expense' : 'expenses'}',
-                        style: Theme.of(context)
-                            .textTheme
-                            .titleMedium
-                            ?.copyWith(fontWeight: FontWeight.w700),
-                      ),
-                      const Spacer(),
-                      if (_isLoading)
-                        const SizedBox(
-                          width: 18,
-                          height: 18,
-                          child: CircularProgressIndicator(strokeWidth: 2),
+                    idGetter: (exp) => exp.id?.toString() ?? exp.title,
+                    selectedIds: _selectedIds,
+                    onToggleSelect: (id) => setState(() {
+                      if (_selectedIds.contains(id)) {
+                        _selectedIds.remove(id);
+                      } else {
+                        _selectedIds.add(id);
+                      }
+                    }),
+                    onSelectAll: (ids) => setState(() => _selectedIds.addAll(ids)),
+                    onDeselectAll: () => setState(() => _selectedIds.clear()),
+                    onRowTap: (exp) => _editExpense(exp),
+                    batchActions: [
+                      FilledButton.icon(
+                        style: FilledButton.styleFrom(
+                          backgroundColor: Colors.white,
+                          foregroundColor: const Color(0xFF16A34A),
+                          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
                         ),
+                        icon: const Icon(Icons.check_circle, size: 15),
+                        label: const Text('Mark Paid', style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold)),
+                        onPressed: _batchMarkPaid,
+                      ),
+                      const SizedBox(width: 8),
+                      IconButton(
+                        icon: const Icon(Icons.file_download_outlined, color: Colors.white, size: 18),
+                        tooltip: 'Export Selected',
+                        onPressed: () {
+                          final selected = _expenses.where((e) => _selectedIds.contains(e.id?.toString()) || _selectedIds.contains(e.title)).toList();
+                          _downloadExpensesReport(selected);
+                        },
+                      ),
+                      const SizedBox(width: 8),
+                      IconButton(
+                        icon: const Icon(Icons.delete_outline, color: Colors.white, size: 18),
+                        tooltip: 'Delete Selected',
+                        onPressed: _batchDeleteExpenses,
+                      ),
                     ],
-                  ),
-                  const SizedBox(height: 12),
-                  for (final expense in visibleExpenses) ...[
-                    _ExpenseCard(
+                    groupBy: (exp) => exp.category.isNotEmpty ? exp.category : 'General',
+                    groupLabelBuilder: (cat, items) {
+                      final total = items.fold<double>(0.0, (acc, e) => acc + e.amount);
+                      return '$cat (${items.length} ${items.length == 1 ? "expense" : "expenses"} · $_companyCurrencySymbol${total.toStringAsFixed(2)})';
+                    },
+                    emptyWidget: _EmptyPanel(
+                      hasFilter: _searchController.text.trim().isNotEmpty ||
+                          _selectedCategory != 'All' ||
+                          _statusFilter != 'All',
+                      onAdd: _createExpense,
+                      onReset: () {
+                        _searchController.clear();
+                        setState(() {
+                          _selectedCategory = 'All';
+                          _statusFilter = 'All';
+                        });
+                        _loadExpenses();
+                      },
+                    ),
+                    cardBuilder: (context, expense) => _ExpenseCard(
                       expense: expense,
                       currencySymbol: _companyCurrencySymbol,
                       onEdit: () => _editExpense(expense),
                       onDelete: () => _deleteExpense(expense),
+                      onSendEmail: () => _sendEmailAlert(expense),
+                      onSendWhatsApp: () => _sendWhatsAppAlert(expense),
+                      onMarkPaid: () => _markExpensePaid(expense),
                     ),
-                    const SizedBox(height: 12),
-                  ],
-                ],
+                    columns: _expenseTableColumns(),
+                  ),
+              ],
+            ),
+          );
+        },
+      ),
+    );
+  }
+
+  List<EnterpriseMetricCardItem> _buildMetrics(List<Expense> allExpenses) {
+    final totalAmount = allExpenses.fold<double>(0.0, (acc, e) => acc + e.amount);
+    final paidExpenses = allExpenses.where((e) => !e.isDue).toList();
+    final paidAmount = paidExpenses.fold<double>(0.0, (acc, e) => acc + e.amount);
+    final dueExpenses = allExpenses.where((e) => e.isDue).toList();
+    final dueAmount = dueExpenses.fold<double>(0.0, (acc, e) => acc + e.amount);
+    final taxDeductibleExpenses = allExpenses.where((e) => e.taxDeductible).toList();
+    final taxAmount = taxDeductibleExpenses.fold<double>(0.0, (acc, e) => acc + e.amount);
+
+    return [
+      EnterpriseMetricCardItem(
+        label: 'Total Expenses',
+        value: '$_companyCurrencySymbol${totalAmount.toStringAsFixed(0)}',
+        count: '${allExpenses.length} entries',
+        icon: Icons.account_balance_wallet_rounded,
+        color: const Color(0xFF1E3A8A),
+        filterKey: 'All',
+        isSelected: _statusFilter == 'All',
+        onTap: () => setState(() => _statusFilter = 'All'),
+      ),
+      EnterpriseMetricCardItem(
+        label: 'Paid / Settled',
+        value: '$_companyCurrencySymbol${paidAmount.toStringAsFixed(0)}',
+        count: '${paidExpenses.length} paid',
+        icon: Icons.check_circle_outline,
+        color: const Color(0xFF047857),
+        filterKey: 'Paid',
+        isSelected: _statusFilter == 'Paid',
+        onTap: () => setState(() => _statusFilter = _statusFilter == 'Paid' ? 'All' : 'Paid'),
+      ),
+      EnterpriseMetricCardItem(
+        label: 'Pending / Due',
+        value: '$_companyCurrencySymbol${dueAmount.toStringAsFixed(0)}',
+        count: '${dueExpenses.length} unpaid',
+        icon: Icons.pending_actions_rounded,
+        color: const Color(0xFFD97706),
+        filterKey: 'Due',
+        isSelected: _statusFilter == 'Due',
+        onTap: () => setState(() => _statusFilter = _statusFilter == 'Due' ? 'All' : 'Due'),
+      ),
+      EnterpriseMetricCardItem(
+        label: 'Tax Deductible',
+        value: '$_companyCurrencySymbol${taxAmount.toStringAsFixed(0)}',
+        count: '${taxDeductibleExpenses.length} eligible',
+        icon: Icons.receipt_long_rounded,
+        color: const Color(0xFF7C3AED),
+        filterKey: 'TaxDeductible',
+        isSelected: _statusFilter == 'TaxDeductible',
+        onTap: () => setState(() => _statusFilter = _statusFilter == 'TaxDeductible' ? 'All' : 'TaxDeductible'),
+      ),
+    ];
+  }
+
+  void _downloadExpensesReport(List<Expense> list) {
+    TableExportHelper.showExportMenu(
+      context: context,
+      title: 'Expenses Ledger',
+      headers: ['Title', 'Vendor', 'Category', 'Date', 'Amount', 'Payment Method', 'Tax Deductible', 'Status'],
+      rows: list.map((e) => [
+        e.title,
+        e.vendor,
+        e.category,
+        e.date,
+        '${e.currencySymbol}${e.amount.toStringAsFixed(2)}',
+        e.paymentMethod,
+        e.taxDeductible ? 'Yes' : 'No',
+        e.isDue ? 'Due' : 'Paid',
+      ]).toList(),
+    );
+  }
+
+  Future<void> _batchMarkPaid() async {
+    final count = _selectedIds.length;
+    for (final exp in _expenses) {
+      final idStr = exp.id?.toString() ?? exp.title;
+      if (_selectedIds.contains(idStr) && exp.isDue) {
+        await _markExpensePaid(exp);
+      }
+    }
+    setState(() => _selectedIds.clear());
+    _showMessage('Marked $count expenses as Paid');
+  }
+
+  Future<void> _batchDeleteExpenses() async {
+    final count = _selectedIds.length;
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Delete selected expenses?'),
+        content: Text('Delete $count selected expenses permanently?'),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('Cancel')),
+          FilledButton(
+            onPressed: () => Navigator.pop(ctx, true),
+            style: FilledButton.styleFrom(backgroundColor: Colors.red),
+            child: const Text('Delete'),
+          ),
+        ],
+      ),
+    );
+    if (confirmed != true) return;
+    for (final exp in _expenses) {
+      final idStr = exp.id?.toString() ?? exp.title;
+      if (_selectedIds.contains(idStr) && exp.id != null) {
+        await widget.repository.delete(exp.id!);
+      }
+    }
+    setState(() => _selectedIds.clear());
+    _showMessage('Deleted $count expenses');
+    await _loadExpenses();
+  }
+
+  List<EnterpriseTableColumn<Expense>> _expenseTableColumns() {
+    return [
+      EnterpriseTableColumn<Expense>(
+        title: 'Date',
+        width: 110,
+        sortKey: (exp) => exp.date,
+        cellBuilder: (ctx, exp) => Text(exp.date, style: const TextStyle(fontSize: 12)),
+      ),
+      EnterpriseTableColumn<Expense>(
+        title: 'Title / Vendor',
+        width: 190,
+        sortKey: (exp) => exp.title.toLowerCase(),
+        cellBuilder: (ctx, exp) => Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            Text(exp.title, style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 13)),
+            if (exp.vendor.isNotEmpty)
+              Text(exp.vendor, style: const TextStyle(fontSize: 11, color: AppColors.muted)),
+          ],
+        ),
+      ),
+      EnterpriseTableColumn<Expense>(
+        title: 'Category',
+        width: 140,
+        sortKey: (exp) => exp.category.toLowerCase(),
+        cellBuilder: (ctx, exp) => Container(
+          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+          decoration: BoxDecoration(
+            color: const Color(0xFFF1F5F9),
+            borderRadius: BorderRadius.circular(6),
+          ),
+          child: Text(exp.category, style: const TextStyle(fontSize: 11, fontWeight: FontWeight.w600)),
+        ),
+      ),
+      EnterpriseTableColumn<Expense>(
+        title: 'Amount',
+        width: 120,
+        alignRight: true,
+        sortKey: (exp) => exp.amount,
+        cellBuilder: (ctx, exp) => Text(
+          '${exp.currencySymbol}${exp.amount.toStringAsFixed(2)}',
+          style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 13),
+        ),
+      ),
+      EnterpriseTableColumn<Expense>(
+        title: 'Payment Method',
+        width: 130,
+        sortKey: (exp) => exp.paymentMethod.toLowerCase(),
+        cellBuilder: (ctx, exp) => Text(
+          exp.paymentMethod.isNotEmpty ? exp.paymentMethod : '—',
+          style: const TextStyle(fontSize: 12),
+        ),
+      ),
+      EnterpriseTableColumn<Expense>(
+        title: 'Status',
+        width: 120,
+        sortKey: (exp) => exp.status,
+        cellBuilder: (ctx, exp) => EnterpriseStatusDropdown(
+          currentStatus: exp.status.isNotEmpty ? exp.status : (exp.isDue ? 'Due' : 'Paid'),
+          options: const ['Paid', 'Due', 'Pending'],
+          onChanged: (newStatus) => _updateExpenseStatus(exp, newStatus),
+        ),
+      ),
+      EnterpriseTableColumn<Expense>(
+        title: 'Actions',
+        width: 165,
+        cellBuilder: (ctx, exp) => Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            if (exp.receiptImageUri != null && exp.receiptImageUri!.startsWith('data:'))
+              IconButton(
+                tooltip: 'View Uploaded Bill',
+                icon: const Icon(Icons.receipt_long_rounded, size: 18, color: Color(0xFF2563EB)),
+                onPressed: () => _previewBill(exp),
+              ),
+            if (exp.isDue)
+              IconButton(
+                tooltip: 'Mark as Paid',
+                icon: const Icon(Icons.check_circle_outline, size: 18, color: Color(0xFF16A34A)),
+                onPressed: () => _markExpensePaid(exp),
+              ),
+            IconButton(
+              tooltip: 'Edit',
+              icon: const Icon(Icons.edit_outlined, size: 18),
+              onPressed: () => _editExpense(exp),
+            ),
+            IconButton(
+              tooltip: 'Delete',
+              icon: const Icon(Icons.delete_outline, size: 18, color: Colors.red),
+              onPressed: () => _deleteExpense(exp),
+            ),
+          ],
+        ),
+      ),
+    ];
+  }
+
+  void _previewBill(Expense exp) {
+    final uri = exp.receiptImageUri ?? '';
+    if (!uri.startsWith('data:')) return;
+    final commaIdx = uri.indexOf(',');
+    if (commaIdx == -1) return;
+    try {
+      final bytes = base64Decode(uri.substring(commaIdx + 1));
+      showDialog<void>(
+        context: context,
+        builder: (ctx) => Dialog(
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+          clipBehavior: Clip.antiAlias,
+          child: ConstrainedBox(
+            constraints: const BoxConstraints(maxWidth: 680, maxHeight: 740),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+                  color: const Color(0xFF0F172A),
+                  child: Row(
+                    children: [
+                      const Icon(Icons.receipt_long_rounded, color: Colors.white, size: 18),
+                      const SizedBox(width: 8),
+                      Expanded(
+                        child: Text(
+                          'Expense Bill: ${exp.title}',
+                          style: const TextStyle(color: Colors.white, fontWeight: FontWeight.w700),
+                        ),
+                      ),
+                      IconButton(
+                        onPressed: () => Navigator.pop(ctx),
+                        icon: const Icon(Icons.close, color: Colors.white, size: 20),
+                      ),
+                    ],
+                  ),
+                ),
+                Flexible(
+                  child: InteractiveViewer(
+                    minScale: 0.5,
+                    maxScale: 4.0,
+                    child: Image.memory(bytes, fit: BoxFit.contain),
+                  ),
+                ),
               ],
             ),
           ),
         ),
-      ),
-    );
+      );
+    } catch (_) {}
   }
 
 }
@@ -497,12 +834,18 @@ class _ExpenseCard extends StatelessWidget {
     required this.expense,
     required this.onEdit,
     required this.onDelete,
+    this.onSendEmail,
+    this.onSendWhatsApp,
+    this.onMarkPaid,
     this.currencySymbol = '₹',
   });
 
   final Expense expense;
   final VoidCallback onEdit;
   final VoidCallback onDelete;
+  final VoidCallback? onSendEmail;
+  final VoidCallback? onSendWhatsApp;
+  final VoidCallback? onMarkPaid;
   final String currencySymbol;
 
   @override
@@ -511,31 +854,58 @@ class _ExpenseCard extends StatelessWidget {
     final displaySymbol = (expense.currencySymbol == r'$' || expense.currency == 'USD')
         ? (currencySymbol.isNotEmpty ? currencySymbol : '₹')
         : (expense.currencySymbol.isNotEmpty ? expense.currencySymbol : currencySymbol);
+    final isDue = expense.isDue;
+    final isPaid = expense.status.toUpperCase() == 'PAID';
+
     return AppCard(
       padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 14),
       child: LayoutBuilder(
         builder: (context, constraints) {
-          final compact = constraints.maxWidth < 520;
+          final compact = constraints.maxWidth < 540;
           return Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
               Row(
+                crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   CircleAvatar(
-                    backgroundColor: theme.colorScheme.secondaryContainer,
-                    foregroundColor: theme.colorScheme.onSecondaryContainer,
-                    child: const Icon(Icons.receipt_long_outlined),
+                    backgroundColor: isDue
+                        ? Colors.red.shade50
+                        : (isPaid
+                            ? Colors.green.shade50
+                            : theme.colorScheme.secondaryContainer),
+                    foregroundColor: isDue
+                        ? Colors.red.shade700
+                        : (isPaid
+                            ? Colors.green.shade700
+                            : theme.colorScheme.onSecondaryContainer),
+                    child: Icon(
+                      isDue
+                          ? Icons.warning_amber_rounded
+                          : (isPaid
+                              ? Icons.check_circle_outline
+                              : Icons.receipt_long_outlined),
+                    ),
                   ),
                   const SizedBox(width: 12),
                   Expanded(
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
-                        Text(
-                          expense.title,
-                          style: theme.textTheme.titleMedium
-                              ?.copyWith(fontWeight: FontWeight.w700),
+                        Row(
+                          children: [
+                            Flexible(
+                              child: Text(
+                                expense.title,
+                                style: theme.textTheme.titleMedium
+                                    ?.copyWith(fontWeight: FontWeight.w700),
+                              ),
+                            ),
+                            const SizedBox(width: 8),
+                            _buildStatusBadge(theme, isPaid, isDue),
+                          ],
                         ),
+                        const SizedBox(height: 2),
                         Text(
                           expense.vendor.isEmpty
                               ? expense.category
@@ -546,21 +916,56 @@ class _ExpenseCard extends StatelessWidget {
                       ],
                     ),
                   ),
-                  Text(
-                    '$displaySymbol${expense.amount.toStringAsFixed(2)}',
-                    style: theme.textTheme.titleMedium
-                        ?.copyWith(fontWeight: FontWeight.w800),
+                  Column(
+                    crossAxisAlignment: CrossAxisAlignment.end,
+                    children: [
+                      Text(
+                        '$displaySymbol${expense.amount.toStringAsFixed(2)}',
+                        style: theme.textTheme.titleMedium
+                            ?.copyWith(fontWeight: FontWeight.w800),
+                      ),
+                      if (expense.dueDate.isNotEmpty)
+                        Text(
+                          'Due: ${expense.dueDate}',
+                          style: theme.textTheme.bodySmall?.copyWith(
+                            color: isDue ? Colors.red.shade700 : AppColors.muted,
+                            fontWeight: isDue ? FontWeight.w600 : FontWeight.normal,
+                          ),
+                        ),
+                    ],
                   ),
-                  if (!compact)
+                  if (!compact) ...[
+                    const SizedBox(width: 4),
                     PopupMenuButton<String>(
                       tooltip: 'Expense actions',
-                      onSelected: (action) =>
-                          action == 'edit' ? onEdit() : onDelete(),
-                      itemBuilder: (context) => const [
-                        PopupMenuItem(value: 'edit', child: Text('Edit')),
-                        PopupMenuItem(value: 'delete', child: Text('Delete')),
+                      onSelected: (action) {
+                        switch (action) {
+                          case 'edit':
+                            onEdit();
+                          case 'delete':
+                            onDelete();
+                          case 'paid':
+                            onMarkPaid?.call();
+                          case 'email':
+                            onSendEmail?.call();
+                          case 'whatsapp':
+                            onSendWhatsApp?.call();
+                        }
+                      },
+                      itemBuilder: (context) => [
+                        const PopupMenuItem(value: 'edit', child: Text('Edit')),
+                        if (!isPaid) ...[
+                          const PopupMenuItem(
+                              value: 'paid', child: Text('Mark as Paid')),
+                          const PopupMenuItem(
+                              value: 'email', child: Text('Send Email Alert')),
+                          const PopupMenuItem(
+                              value: 'whatsapp', child: Text('Send WhatsApp Alert')),
+                        ],
+                        const PopupMenuItem(value: 'delete', child: Text('Delete')),
                       ],
                     ),
+                  ],
                 ],
               ),
               const SizedBox(height: 12),
@@ -597,19 +1002,115 @@ class _ExpenseCard extends StatelessWidget {
                 const SizedBox(height: 8),
                 Text(expense.notes, style: theme.textTheme.bodyMedium),
               ],
+              if (isDue && !isPaid) ...[
+                const SizedBox(height: 10),
+                Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                  decoration: BoxDecoration(
+                    color: Colors.amber.shade50,
+                    borderRadius: BorderRadius.circular(8),
+                    border: Border.all(color: Colors.amber.shade200),
+                  ),
+                  child: Row(
+                    children: [
+                      Icon(Icons.alarm_on, size: 16, color: Colors.amber.shade900),
+                      const SizedBox(width: 6),
+                      Expanded(
+                        child: Text(
+                          'Payment due! Send instant reminder:',
+                          style: theme.textTheme.bodySmall?.copyWith(
+                            color: Colors.amber.shade900,
+                            fontWeight: FontWeight.w600,
+                          ),
+                        ),
+                      ),
+                      if (onSendWhatsApp != null)
+                        InkWell(
+                          onTap: onSendWhatsApp,
+                          borderRadius: BorderRadius.circular(4),
+                          child: Padding(
+                            padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                            child: Row(
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                const Icon(Icons.chat_bubble_outline,
+                                    size: 14, color: Colors.green),
+                                const SizedBox(width: 4),
+                                Text(
+                                  'WhatsApp',
+                                  style: theme.textTheme.bodySmall?.copyWith(
+                                    color: Colors.green.shade800,
+                                    fontWeight: FontWeight.w700,
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ),
+                        ),
+                      const SizedBox(width: 6),
+                      if (onSendEmail != null)
+                        InkWell(
+                          onTap: onSendEmail,
+                          borderRadius: BorderRadius.circular(4),
+                          child: Padding(
+                            padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                            child: Row(
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                const Icon(Icons.mail_outline,
+                                    size: 14, color: Colors.blue),
+                                const SizedBox(width: 4),
+                                Text(
+                                  'Email',
+                                  style: theme.textTheme.bodySmall?.copyWith(
+                                    color: Colors.blue.shade800,
+                                    fontWeight: FontWeight.w700,
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ),
+                        ),
+                      const SizedBox(width: 6),
+                      if (onMarkPaid != null)
+                        InkWell(
+                          onTap: onMarkPaid,
+                          borderRadius: BorderRadius.circular(4),
+                          child: Padding(
+                            padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                            child: Text(
+                              'Mark Paid',
+                              style: theme.textTheme.bodySmall?.copyWith(
+                                color: Colors.grey.shade800,
+                                fontWeight: FontWeight.w700,
+                              ),
+                            ),
+                          ),
+                        ),
+                    ],
+                  ),
+                ),
+              ],
               if (compact) ...[
-                const Divider(height: 24),
-                Row(
-                  mainAxisAlignment: MainAxisAlignment.end,
+                const Divider(height: 20),
+                Wrap(
+                  spacing: 8,
+                  alignment: WrapAlignment.end,
                   children: [
+                    if (!isPaid && onMarkPaid != null)
+                      TextButton.icon(
+                        onPressed: onMarkPaid,
+                        icon: const Icon(Icons.check, size: 16),
+                        label: const Text('Mark Paid'),
+                      ),
                     TextButton.icon(
                       onPressed: onEdit,
-                      icon: const Icon(Icons.edit_outlined),
+                      icon: const Icon(Icons.edit_outlined, size: 16),
                       label: const Text('Edit'),
                     ),
                     TextButton.icon(
                       onPressed: onDelete,
-                      icon: const Icon(Icons.delete_outline),
+                      icon: const Icon(Icons.delete_outline, size: 16),
                       label: const Text('Delete'),
                     ),
                   ],
@@ -618,6 +1119,40 @@ class _ExpenseCard extends StatelessWidget {
             ],
           );
         },
+      ),
+    );
+  }
+
+  Widget _buildStatusBadge(ThemeData theme, bool isPaid, bool isDue) {
+    Color bg = Colors.grey.shade100;
+    Color fg = Colors.grey.shade700;
+    String label = expense.status.toUpperCase();
+    if (label.isEmpty) label = 'PENDING';
+
+    if (isPaid) {
+      bg = Colors.green.shade50;
+      fg = Colors.green.shade700;
+      label = 'PAID';
+    } else if (isDue) {
+      bg = Colors.red.shade50;
+      fg = Colors.red.shade700;
+      label = 'DUE';
+    }
+
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+      decoration: BoxDecoration(
+        color: bg,
+        borderRadius: BorderRadius.circular(4),
+      ),
+      child: Text(
+        label,
+        style: TextStyle(
+          color: fg,
+          fontSize: 10,
+          fontWeight: FontWeight.w800,
+          letterSpacing: 0.5,
+        ),
       ),
     );
   }

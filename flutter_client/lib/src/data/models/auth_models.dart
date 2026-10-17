@@ -24,6 +24,7 @@ class AuthSession {
 
 class UserSummary {
   const UserSummary({
+    this.id,
     required this.fullName,
     required this.email,
     required this.role,
@@ -33,6 +34,7 @@ class UserSummary {
     this.permissions = 'INVOICES,EXPENSES,CLIENTS,REPORTS',
   });
 
+  final int? id;
   final String fullName;
   final String email;
   final String role;
@@ -42,6 +44,7 @@ class UserSummary {
   final String permissions;
 
   factory UserSummary.fromJson(Map<String, dynamic> json) => UserSummary(
+        id: (json['id'] as num?)?.toInt(),
         fullName: json['fullName'] as String? ?? '',
         email: json['email'] as String? ?? '',
         role: json['role'] as String? ?? 'EMPLOYEE',
@@ -62,11 +65,29 @@ class CompanySummary {
     required this.name,
     this.id,
     this.code,
+    this.role = 'ADMIN',
+    this.activeWorkspace = false,
+    this.details,
+    this.gstin,
+    this.location,
+    this.email,
+    this.phone,
+    this.website,
+    this.signatureStampUrl,
   });
 
   final int? id;
   final String name;
   final String? code;
+  final String role;
+  final bool activeWorkspace;
+  final String? details;
+  final String? gstin;
+  final String? location;
+  final String? email;
+  final String? phone;
+  final String? website;
+  final String? signatureStampUrl;
 
   factory CompanySummary.fromJson(Map<String, dynamic> json) =>
       CompanySummary(
@@ -75,5 +96,14 @@ class CompanySummary {
             as String? ??
             '',
         code: json['companyCode'] as String?,
+        role: json['role'] as String? ?? 'ADMIN',
+        activeWorkspace: json['activeWorkspace'] as bool? ?? false,
+        details: json['details'] as String?,
+        gstin: json['gstin'] as String?,
+        location: json['location'] as String?,
+        email: json['email'] as String?,
+        phone: json['phone'] as String?,
+        website: json['website'] as String?,
+        signatureStampUrl: json['signatureStampUrl'] as String?,
       );
 }
