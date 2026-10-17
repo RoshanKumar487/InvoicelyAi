@@ -21,9 +21,7 @@ const Color _kUserBubble = Color(0xFFF5EAE7);
 const Color _kTextDark = Color(0xFF261A1D);
 const Color _kTextMuted = Color(0xFF78716C);
 const Color _kCardBorder = Color(0xFFEBE4DA);
-const Color _kGreenIcon = Color(0xFF16A34A);
-const Color _kAmberIcon = Color(0xFFD97706);
-const Color _kBlueIcon = Color(0xFF2563EB);
+const Color _kGreen = Color(0xFF16A34A);
 
 class AiChatScreen extends StatefulWidget {
   const AiChatScreen({
@@ -916,11 +914,8 @@ class _MessageBubble extends StatelessWidget {
       );
     }
 
-    // AI message: header + dynamic smart cards + insights + actions
+    // AI message: header + actual formatted response + actions
     final response = entry.chatResponse;
-    final summaryCards = response?.summaryCards ?? [];
-    final insight = response?.insightCard;
-    final recordCards = response?.recordCards ?? [];
     final pendingId = response?.pendingCommandId;
     final draft = entry.invoiceDraft;
 
@@ -974,64 +969,22 @@ class _MessageBubble extends StatelessWidget {
                 ),
               ],
             ),
-            const SizedBox(height: 12),
-
-            // 1. Dynamic Summary Cards (2x2 Grid)
-            if (summaryCards.isNotEmpty) ...[
-              _buildSummaryCardsGrid(context, summaryCards),
-              const SizedBox(height: 12),
+            // 1. Actual Formatted AI Response
+            if (entry.text.isNotEmpty) ...[
+              _FormattedAiMessage(text: entry.text),
+              const SizedBox(height: 10),
             ],
 
-            // 2. "Needs your attention" Alert / Insight Card
-            if (insight != null) ...[
-              _buildInsightCard(context, insight),
-              const SizedBox(height: 12),
-            ],
-
-            // 3. Record Cards (if invoices / records were requested)
-            if (recordCards.isNotEmpty) ...[
-              _buildRecordCards(context, recordCards),
-              const SizedBox(height: 12),
-            ],
-
-            // 4. Action Confirmation Card (if pending action)
+            // 2. Action Confirmation Card (if pending action)
             if (pendingId != null) ...[
               _buildPendingAction(context, pendingId),
-              const SizedBox(height: 12),
+              const SizedBox(height: 10),
             ],
 
-            // 5. Invoice Draft Card (if invoice draft mode)
+            // 3. Invoice Draft Card (if invoice draft mode)
             if (draft != null) ...[
               _InvoiceDraftCard(response: draft),
-              const SizedBox(height: 12),
-            ],
-
-            // 6. Conversational explanation / Text Answer card
-            if (entry.text.isNotEmpty && summaryCards.isEmpty && recordCards.isEmpty && draft == null) ...[
-              Container(
-                decoration: BoxDecoration(
-                  color: Colors.white,
-                  borderRadius: BorderRadius.circular(14),
-                  border: Border.all(color: _kCardBorder),
-                  boxShadow: [
-                    BoxShadow(
-                      color: Colors.black.withValues(alpha: 0.02),
-                      blurRadius: 6,
-                      offset: const Offset(0, 2),
-                    ),
-                  ],
-                ),
-                padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
-                child: SelectableText(
-                  entry.text,
-                  style: const TextStyle(
-                    fontSize: 14.5,
-                    height: 1.45,
-                    color: _kTextDark,
-                  ),
-                ),
-              ),
-              const SizedBox(height: 8),
+              const SizedBox(height: 10),
             ],
 
             // Grounded sources tags & Action buttons (Copy & Speak)
@@ -1096,238 +1049,6 @@ class _MessageBubble extends StatelessWidget {
     );
   }
 
-  // 2x2 Grid of Pure White Summary Cards
-  Widget _buildSummaryCardsGrid(BuildContext context, List<SummaryCardDto> cards) {
-    return LayoutBuilder(
-      builder: (context, constraints) {
-        final cardWidth = (constraints.maxWidth - 12) / 2;
-        return Wrap(
-          spacing: 12,
-          runSpacing: 12,
-          children: [
-            for (final card in cards)
-              Container(
-                width: cardWidth,
-                padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 14),
-                decoration: BoxDecoration(
-                  color: Colors.white,
-                  borderRadius: BorderRadius.circular(14),
-                  border: Border.all(color: _kCardBorder, width: 1),
-                  boxShadow: [
-                    BoxShadow(
-                      color: Colors.black.withValues(alpha: 0.02),
-                      blurRadius: 4,
-                      offset: const Offset(0, 1),
-                    ),
-                  ],
-                ),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Icon(
-                      _getCardIcon(card.icon),
-                      size: 20,
-                      color: _getCardColor(card.color),
-                    ),
-                    const SizedBox(height: 10),
-                    Text(
-                      card.value,
-                      style: const TextStyle(
-                        fontSize: 22,
-                        fontWeight: FontWeight.bold,
-                        color: _kTextDark,
-                        letterSpacing: -0.5,
-                      ),
-                    ),
-                    const SizedBox(height: 2),
-                    Text(
-                      card.title,
-                      style: const TextStyle(
-                        fontSize: 12,
-                        color: _kTextMuted,
-                        fontWeight: FontWeight.w500,
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-          ],
-        );
-      },
-    );
-  }
-
-  // Pure White "Needs your attention" Alert Card with Classical Burgundy CTA
-  Widget _buildInsightCard(BuildContext context, InsightCardDto insight) {
-    return Container(
-      width: double.infinity,
-      padding: const EdgeInsets.all(16),
-      decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(14),
-        border: Border.all(color: _kCardBorder, width: 1),
-        boxShadow: [
-          BoxShadow(
-            color: Colors.black.withValues(alpha: 0.02),
-            blurRadius: 6,
-            offset: const Offset(0, 2),
-          ),
-        ],
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Row(
-            children: [
-              const Icon(
-                Icons.error_outline_rounded,
-                size: 18,
-                color: _kAmberIcon,
-              ),
-              const SizedBox(width: 8),
-              Text(
-                insight.title,
-                style: const TextStyle(
-                  fontSize: 14.5,
-                  fontWeight: FontWeight.bold,
-                  color: _kTextDark,
-                ),
-              ),
-            ],
-          ),
-          const SizedBox(height: 6),
-          Text(
-            insight.message,
-            style: const TextStyle(
-              fontSize: 13,
-              color: Color(0xFF57534E),
-              height: 1.4,
-            ),
-          ),
-          const SizedBox(height: 12),
-          SizedBox(
-            width: double.infinity,
-            child: FilledButton(
-              onPressed: () {
-                if (onSuggestionTap != null) {
-                  onSuggestionTap!('Show overdue invoices');
-                }
-              },
-              style: FilledButton.styleFrom(
-                backgroundColor: _kBurgundy,
-                foregroundColor: Colors.white,
-                padding: const EdgeInsets.symmetric(vertical: 12),
-                shape: RoundedRectangleBorder(
-                  borderRadius: BorderRadius.circular(10),
-                ),
-                elevation: 0,
-              ),
-              child: Text(
-                insight.actionLabel,
-                style: const TextStyle(
-                  fontSize: 13.5,
-                  fontWeight: FontWeight.w600,
-                  letterSpacing: -0.1,
-                ),
-              ),
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-
-  // Record cards list
-  Widget _buildRecordCards(BuildContext context, List<RecordCardDto> records) {
-    return Column(
-      children: [
-        for (final rec in records)
-          Container(
-            margin: const EdgeInsets.only(bottom: 8),
-            padding: const EdgeInsets.all(14),
-            decoration: BoxDecoration(
-              color: Colors.white,
-              borderRadius: BorderRadius.circular(12),
-              border: Border.all(color: _kCardBorder),
-            ),
-            child: Row(
-              children: [
-                Container(
-                  padding: const EdgeInsets.all(8),
-                  decoration: BoxDecoration(
-                    color: _kCreamPill,
-                    borderRadius: BorderRadius.circular(8),
-                  ),
-                  child: const Icon(
-                    Icons.receipt_outlined,
-                    size: 18,
-                    color: _kBurgundy,
-                  ),
-                ),
-                const SizedBox(width: 12),
-                Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text(
-                        rec.title,
-                        style: const TextStyle(
-                          fontSize: 14,
-                          fontWeight: FontWeight.bold,
-                          color: _kTextDark,
-                        ),
-                      ),
-                      Text(
-                        rec.subtitle,
-                        style: const TextStyle(fontSize: 12, color: _kTextMuted),
-                      ),
-                    ],
-                  ),
-                ),
-                Column(
-                  crossAxisAlignment: CrossAxisAlignment.end,
-                  children: [
-                    Text(
-                      rec.amount,
-                      style: const TextStyle(
-                        fontSize: 14,
-                        fontWeight: FontWeight.bold,
-                        color: _kTextDark,
-                      ),
-                    ),
-                    const SizedBox(height: 2),
-                    Container(
-                      padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
-                      decoration: BoxDecoration(
-                        color: rec.status.toLowerCase() == 'paid'
-                            ? const Color(0xFFDCFCE7)
-                            : (rec.status.toLowerCase() == 'overdue'
-                                ? const Color(0xFFFEF3C7)
-                                : const Color(0xFFDBEAFE)),
-                        borderRadius: BorderRadius.circular(6),
-                      ),
-                      child: Text(
-                        rec.status,
-                        style: TextStyle(
-                          fontSize: 11,
-                          fontWeight: FontWeight.w600,
-                          color: rec.status.toLowerCase() == 'paid'
-                              ? const Color(0xFF15803D)
-                              : (rec.status.toLowerCase() == 'overdue'
-                                  ? const Color(0xFFB45309)
-                                  : const Color(0xFF1D4ED8)),
-                        ),
-                      ),
-                    ),
-                  ],
-                ),
-              ],
-            ),
-          ),
-      ],
-    );
-  }
-
   // Pending action draft confirmation
   Widget _buildPendingAction(BuildContext context, String commandId) {
     return Container(
@@ -1348,14 +1069,14 @@ class _MessageBubble extends StatelessWidget {
           confirmedCommands.contains(commandId)
               ? const Row(
                   children: [
-                    Icon(Icons.check_circle, color: _kGreenIcon, size: 18),
+                    Icon(Icons.check_circle, color: _kGreen, size: 18),
                     SizedBox(width: 8),
                     Text(
                       'Action Confirmed & Executed',
                       style: TextStyle(
                         fontSize: 13,
                         fontWeight: FontWeight.bold,
-                        color: _kGreenIcon,
+                        color: _kGreen,
                       ),
                     ),
                   ],
@@ -1387,23 +1108,210 @@ class _MessageBubble extends StatelessWidget {
       ),
     );
   }
+}
 
-  static IconData _getCardIcon(String icon) {
-    return switch (icon.toLowerCase()) {
-      'wallet' => Icons.account_balance_wallet_outlined,
-      'clock' => Icons.access_time_rounded,
-      'users' => Icons.people_outline_rounded,
-      _ => Icons.description_outlined,
-    };
+class _FormattedAiMessage extends StatelessWidget {
+  const _FormattedAiMessage({required this.text});
+
+  final String text;
+
+  @override
+  Widget build(BuildContext context) {
+    final lines = text.trim().split('\n');
+    final widgets = <Widget>[];
+
+    for (int i = 0; i < lines.length; i++) {
+      final line = lines[i].trim();
+      if (line.isEmpty) {
+        widgets.add(const SizedBox(height: 6));
+        continue;
+      }
+
+      // Headers: ###, ##, #
+      if (line.startsWith('### ')) {
+        widgets.add(Padding(
+          padding: const EdgeInsets.only(top: 8, bottom: 4),
+          child: Text(
+            line.substring(4).trim(),
+            style: const TextStyle(
+              fontSize: 15,
+              fontWeight: FontWeight.bold,
+              color: _kTextDark,
+            ),
+          ),
+        ));
+      } else if (line.startsWith('## ')) {
+        widgets.add(Padding(
+          padding: const EdgeInsets.only(top: 10, bottom: 4),
+          child: Text(
+            line.substring(3).trim(),
+            style: const TextStyle(
+              fontSize: 16,
+              fontWeight: FontWeight.bold,
+              color: _kTextDark,
+            ),
+          ),
+        ));
+      } else if (line.startsWith('# ')) {
+        widgets.add(Padding(
+          padding: const EdgeInsets.only(top: 12, bottom: 4),
+          child: Text(
+            line.substring(2).trim(),
+            style: const TextStyle(
+              fontSize: 17,
+              fontWeight: FontWeight.bold,
+              color: _kTextDark,
+            ),
+          ),
+        ));
+      }
+      // Bullet points: •, -, *
+      else if (line.startsWith('• ') || line.startsWith('- ') || line.startsWith('* ')) {
+        final bulletText = line.substring(2).trim();
+        widgets.add(Padding(
+          padding: const EdgeInsets.only(left: 4, top: 3, bottom: 3),
+          child: Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Container(
+                margin: const EdgeInsets.only(top: 7, right: 8),
+                width: 5,
+                height: 5,
+                decoration: const BoxDecoration(
+                  color: _kBurgundy,
+                  shape: BoxShape.circle,
+                ),
+              ),
+              Expanded(
+                child: _buildRichSpans(bulletText),
+              ),
+            ],
+          ),
+        ));
+      }
+      // Numbered items: 1., 2., etc.
+      else if (RegExp(r'^\d+\.\s+').hasMatch(line)) {
+        final match = RegExp(r'^\d+\.\s+').firstMatch(line)!;
+        final numPrefix = line.substring(0, match.end).trim();
+        final bodyText = line.substring(match.end).trim();
+        widgets.add(Padding(
+          padding: const EdgeInsets.only(left: 4, top: 3, bottom: 3),
+          child: Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                '$numPrefix ',
+                style: const TextStyle(
+                  fontWeight: FontWeight.bold,
+                  color: _kBurgundy,
+                  fontSize: 14,
+                ),
+              ),
+              Expanded(
+                child: _buildRichSpans(bodyText),
+              ),
+            ],
+          ),
+        ));
+      }
+      // Regular paragraph line
+      else {
+        widgets.add(Padding(
+          padding: const EdgeInsets.symmetric(vertical: 2),
+          child: _buildRichSpans(line),
+        ));
+      }
+    }
+
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(14),
+        border: Border.all(color: _kCardBorder, width: 1),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withValues(alpha: 0.02),
+            blurRadius: 6,
+            offset: const Offset(0, 2),
+          ),
+        ],
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: widgets,
+      ),
+    );
   }
 
-  static Color _getCardColor(String color) {
-    return switch (color.toLowerCase()) {
-      'green' => _kGreenIcon,
-      'amber' => _kAmberIcon,
-      'blue' => _kBlueIcon,
-      _ => _kBurgundy,
-    };
+  // Parse **bold** and *italic* within text into TextSpans
+  static Widget _buildRichSpans(String text) {
+    final spans = <TextSpan>[];
+    final pattern = RegExp(r'(\*\*.*?\*\*|\*.*?\*|`.*?`)');
+    int lastMatchEnd = 0;
+
+    for (final match in pattern.allMatches(text)) {
+      if (match.start > lastMatchEnd) {
+        spans.add(TextSpan(
+          text: text.substring(lastMatchEnd, match.start),
+          style: const TextStyle(
+            fontSize: 14.2,
+            color: _kTextDark,
+            height: 1.45,
+          ),
+        ));
+      }
+      final matchedText = match.group(0)!;
+      if (matchedText.startsWith('**') && matchedText.endsWith('**')) {
+        spans.add(TextSpan(
+          text: matchedText.substring(2, matchedText.length - 2),
+          style: const TextStyle(
+            fontSize: 14.2,
+            fontWeight: FontWeight.bold,
+            color: _kTextDark,
+            height: 1.45,
+          ),
+        ));
+      } else if (matchedText.startsWith('*') && matchedText.endsWith('*')) {
+        spans.add(TextSpan(
+          text: matchedText.substring(1, matchedText.length - 1),
+          style: const TextStyle(
+            fontSize: 14.2,
+            fontStyle: FontStyle.italic,
+            color: _kTextDark,
+            height: 1.45,
+          ),
+        ));
+      } else if (matchedText.startsWith('`') && matchedText.endsWith('`')) {
+        spans.add(TextSpan(
+          text: matchedText.substring(1, matchedText.length - 1),
+          style: const TextStyle(
+            fontSize: 13.5,
+            fontFamily: 'monospace',
+            backgroundColor: Color(0xFFF3EBE6),
+            color: _kBurgundy,
+            height: 1.45,
+          ),
+        ));
+      }
+      lastMatchEnd = match.end;
+    }
+
+    if (lastMatchEnd < text.length) {
+      spans.add(TextSpan(
+        text: text.substring(lastMatchEnd),
+        style: const TextStyle(
+          fontSize: 14.2,
+          color: _kTextDark,
+          height: 1.45,
+        ),
+      ));
+    }
+
+    return SelectableText.rich(
+      TextSpan(children: spans),
+    );
   }
 }
 
