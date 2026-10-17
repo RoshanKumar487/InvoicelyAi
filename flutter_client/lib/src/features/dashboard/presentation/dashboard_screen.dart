@@ -55,6 +55,417 @@ class DashboardScreen extends StatefulWidget {
   final String? registeredCompanyName;
   final Map<String, Object?> localSettings;
 
+  static void showNotificationsDialog({
+    required BuildContext context,
+    required List<DashboardNotificationItem> notifications,
+    required VoidCallback onMarkAllRead,
+    ValueChanged<DashboardNotificationItem>? onNotificationRead,
+  }) {
+    showDialog<void>(
+      context: context,
+      builder: (ctx) => StatefulBuilder(
+        builder: (ctx, setDialogState) {
+          final unreadCount = notifications.where((n) => !n.isRead).length;
+          return AlertDialog(
+            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+            titlePadding: const EdgeInsets.fromLTRB(20, 18, 16, 12),
+            contentPadding: const EdgeInsets.fromLTRB(16, 0, 16, 12),
+            title: Row(
+              children: [
+                Container(
+                  padding: const EdgeInsets.all(7),
+                  decoration: BoxDecoration(
+                    color: const Color(0xFF0284C7).withValues(alpha: 0.12),
+                    shape: BoxShape.circle,
+                  ),
+                  child: const Icon(Icons.notifications_active_rounded, color: Color(0xFF0284C7), size: 18),
+                ),
+                const SizedBox(width: 10),
+                const Text(
+                  'Notifications',
+                  style: TextStyle(fontSize: 17, fontWeight: FontWeight.w800, color: Color(0xFF0F172A)),
+                ),
+                if (unreadCount > 0) ...[
+                  const SizedBox(width: 8),
+                  Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 2),
+                    decoration: BoxDecoration(
+                      color: const Color(0xFFEF4444).withValues(alpha: 0.12),
+                      borderRadius: BorderRadius.circular(10),
+                    ),
+                    child: Text(
+                      '$unreadCount new',
+                      style: const TextStyle(color: Color(0xFFEF4444), fontSize: 11, fontWeight: FontWeight.w700),
+                    ),
+                  ),
+                ],
+                const Spacer(),
+                if (unreadCount > 0)
+                  TextButton(
+                    onPressed: () {
+                      onMarkAllRead();
+                      setDialogState(() {});
+                    },
+                    child: const Text('Mark all as read', style: TextStyle(fontSize: 12, fontWeight: FontWeight.w600)),
+                  ),
+              ],
+            ),
+            content: SizedBox(
+              width: 440,
+              child: notifications.isEmpty
+                  ? const Padding(
+                      padding: EdgeInsets.all(32),
+                      child: Center(
+                        child: Text('No notifications yet', style: TextStyle(color: Color(0xFF94A3B8))),
+                      ),
+                    )
+                  : ListView.separated(
+                      shrinkWrap: true,
+                      itemCount: notifications.length,
+                      separatorBuilder: (_, __) => const Divider(height: 12, color: Color(0xFFF1F5F9)),
+                      itemBuilder: (ctx, index) {
+                        final notif = notifications[index];
+                        return ListTile(
+                          dense: true,
+                          contentPadding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+                          tileColor: notif.isRead ? Colors.transparent : const Color(0xFFF8FAFC),
+                          leading: Container(
+                            padding: const EdgeInsets.all(8),
+                            decoration: BoxDecoration(
+                              color: notif.color.withValues(alpha: 0.12),
+                              shape: BoxShape.circle,
+                            ),
+                            child: Icon(notif.icon, size: 18, color: notif.color),
+                          ),
+                          title: Row(
+                            children: [
+                              Expanded(
+                                child: Text(
+                                  notif.title,
+                                  style: TextStyle(
+                                    fontSize: 13,
+                                    fontWeight: notif.isRead ? FontWeight.w600 : FontWeight.w800,
+                                    color: const Color(0xFF0F172A),
+                                  ),
+                                ),
+                              ),
+                              Text(
+                                notif.timeAgo,
+                                style: const TextStyle(fontSize: 10, color: Color(0xFF94A3B8)),
+                              ),
+                            ],
+                          ),
+                          subtitle: Padding(
+                            padding: const EdgeInsets.only(top: 3),
+                            child: Text(
+                              notif.message,
+                              style: const TextStyle(fontSize: 12, color: Color(0xFF64748B), height: 1.3),
+                            ),
+                          ),
+                          trailing: notif.isRead
+                              ? null
+                              : Container(
+                                  width: 8,
+                                  height: 8,
+                                  decoration: const BoxDecoration(
+                                    color: Color(0xFF0284C7),
+                                    shape: BoxShape.circle,
+                                  ),
+                                ),
+                          onTap: () {
+                            notif.isRead = true;
+                            onNotificationRead?.call(notif);
+                            setDialogState(() {});
+                          },
+                        );
+                      },
+                    ),
+            ),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.of(ctx).pop(),
+                child: const Text('Close'),
+              ),
+            ],
+          );
+        },
+      ),
+    );
+  }
+
+  static void showUserProfileDialog({
+    required BuildContext context,
+    required AuthSession session,
+    required String userInitial,
+    VoidCallback? onOpenBusinessSettings,
+    required Future<void> Function() onLogout,
+  }) {
+    final user = session.user;
+    final company = session.company;
+    final role = user.role.toUpperCase();
+    final permissions = user.permissions.split(',').where((p) => p.trim().isNotEmpty).toList();
+
+    showDialog<void>(
+      context: context,
+      builder: (dialogCtx) => Dialog(
+        backgroundColor: Colors.transparent,
+        insetPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 24),
+        child: Container(
+          width: 420,
+          padding: const EdgeInsets.all(22),
+          decoration: AppTheme.neuCardDecoration(radius: 28),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              // Header with Avatar and Close Button
+              Row(
+                children: [
+                  Container(
+                    width: 52,
+                    height: 52,
+                    decoration: AppTheme.neuOrbDecoration(
+                      active: true,
+                      activeColor: const Color(0xFF2B3548),
+                    ),
+                    child: Center(
+                      child: Text(
+                        userInitial,
+                        style: const TextStyle(
+                          color: Colors.white,
+                          fontSize: 22,
+                          fontWeight: FontWeight.w900,
+                        ),
+                      ),
+                    ),
+                  ),
+                  const SizedBox(width: 14),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          user.fullName.trim().isNotEmpty ? user.fullName.trim() : 'Roshan Kumar',
+                          style: const TextStyle(
+                            fontSize: 17,
+                            fontWeight: FontWeight.w800,
+                            color: Color(0xFF0F172A),
+                          ),
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                        ),
+                        const SizedBox(height: 2),
+                        Container(
+                          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+                          decoration: BoxDecoration(
+                            color: const Color(0xFF2B3548),
+                            borderRadius: BorderRadius.circular(8),
+                          ),
+                          child: Text(
+                            role,
+                            style: const TextStyle(
+                              fontSize: 10.5,
+                              fontWeight: FontWeight.w800,
+                              color: Colors.white,
+                              letterSpacing: 0.5,
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                  InkWell(
+                    onTap: () => Navigator.of(dialogCtx).pop(),
+                    borderRadius: BorderRadius.circular(16),
+                    child: Container(
+                      width: 32,
+                      height: 32,
+                      decoration: AppTheme.neuOrbDecoration(),
+                      child: const Icon(Icons.close_rounded, size: 17, color: Color(0xFF64748B)),
+                    ),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 18),
+
+              // Profile Details Card
+              Container(
+                padding: const EdgeInsets.all(14),
+                decoration: BoxDecoration(
+                  color: const Color(0xFFF8FAFC),
+                  borderRadius: BorderRadius.circular(16),
+                  border: Border.all(color: const Color(0xFFE2E8F0)),
+                ),
+                child: Column(
+                  children: [
+                    _buildStaticProfileInfoRow(
+                      icon: Icons.alternate_email_rounded,
+                      label: 'Email',
+                      value: user.email,
+                    ),
+                    const Divider(height: 16, color: Color(0xFFE2E8F0)),
+                    _buildStaticProfileInfoRow(
+                      icon: Icons.badge_outlined,
+                      label: 'Account Role',
+                      value: role,
+                    ),
+                    if (company != null) ...[
+                      const Divider(height: 16, color: Color(0xFFE2E8F0)),
+                      _buildStaticProfileInfoRow(
+                        icon: Icons.apartment_rounded,
+                        label: 'Company',
+                        value: company.name,
+                      ),
+                      if (company.code != null && company.code!.isNotEmpty) ...[
+                        const Divider(height: 16, color: Color(0xFFE2E8F0)),
+                        _buildStaticProfileInfoRow(
+                          icon: Icons.tag_rounded,
+                          label: 'Organization Code',
+                          value: company.code!,
+                        ),
+                      ],
+                    ],
+                  ],
+                ),
+              ),
+
+              if (permissions.isNotEmpty) ...[
+                const SizedBox(height: 16),
+                const Text(
+                  'Access & Permissions',
+                  style: TextStyle(
+                    fontSize: 12,
+                    fontWeight: FontWeight.w700,
+                    color: Color(0xFF475569),
+                  ),
+                ),
+                const SizedBox(height: 8),
+                Wrap(
+                  spacing: 6,
+                  runSpacing: 6,
+                  children: [
+                    for (final perm in permissions)
+                      Container(
+                        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                        decoration: BoxDecoration(
+                          color: const Color(0xFFE2E8F0),
+                          borderRadius: BorderRadius.circular(8),
+                        ),
+                        child: Text(
+                          perm,
+                          style: const TextStyle(
+                            fontSize: 11,
+                            fontWeight: FontWeight.w600,
+                            color: Color(0xFF334155),
+                          ),
+                        ),
+                      ),
+                  ],
+                ),
+              ],
+
+              const SizedBox(height: 20),
+
+              // Actions: Redirection to Business Settings and Logout
+              Row(
+                children: [
+                  if (onOpenBusinessSettings != null)
+                    Expanded(
+                      child: InkWell(
+                        onTap: () {
+                          Navigator.of(dialogCtx).pop();
+                          onOpenBusinessSettings();
+                        },
+                        borderRadius: BorderRadius.circular(16),
+                        child: Container(
+                          padding: const EdgeInsets.symmetric(vertical: 11),
+                          decoration: AppTheme.neuPillDecoration(radius: 16),
+                          child: const Row(
+                            mainAxisAlignment: MainAxisAlignment.center,
+                            children: [
+                              Icon(Icons.settings_outlined, size: 16, color: Color(0xFF1E293B)),
+                              SizedBox(width: 7),
+                              Text(
+                                'Business Settings',
+                                style: TextStyle(
+                                  fontSize: 12.5,
+                                  fontWeight: FontWeight.w800,
+                                  color: Color(0xFF1E293B),
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                      ),
+                    ),
+                  if (onOpenBusinessSettings != null) const SizedBox(width: 10),
+                  Expanded(
+                    child: InkWell(
+                      onTap: () async {
+                        Navigator.of(dialogCtx).pop();
+                        await onLogout();
+                      },
+                      borderRadius: BorderRadius.circular(16),
+                      child: Container(
+                        padding: const EdgeInsets.symmetric(vertical: 11),
+                        decoration: AppTheme.neuPillDecoration(
+                          radius: 16,
+                          active: true,
+                          activeColor: const Color(0xFFDC2626),
+                        ),
+                        child: const Row(
+                          mainAxisAlignment: MainAxisAlignment.center,
+                          children: [
+                            Icon(Icons.logout_rounded, size: 16, color: Colors.white),
+                            SizedBox(width: 7),
+                            Text(
+                              'Logout',
+                              style: TextStyle(
+                                fontSize: 12.5,
+                                fontWeight: FontWeight.w800,
+                                color: Colors.white,
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  static Widget _buildStaticProfileInfoRow({
+    required IconData icon,
+    required String label,
+    required String value,
+  }) {
+    return Row(
+      children: [
+        Icon(icon, size: 16, color: const Color(0xFF64748B)),
+        const SizedBox(width: 10),
+        Text(
+          label,
+          style: const TextStyle(fontSize: 11.5, fontWeight: FontWeight.w600, color: Color(0xFF64748B)),
+        ),
+        const Spacer(),
+        Flexible(
+          child: Text(
+            value,
+            style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w700, color: Color(0xFF0F172A)),
+            overflow: TextOverflow.ellipsis,
+          ),
+        ),
+      ],
+    );
+  }
+
   @override
   State<DashboardScreen> createState() => _DashboardScreenState();
 }
@@ -153,137 +564,11 @@ class _DashboardScreenState extends State<DashboardScreen> {
   }
 
   void _showNotificationsDialog() {
-    showDialog<void>(
+    DashboardScreen.showNotificationsDialog(
       context: context,
-      builder: (ctx) => StatefulBuilder(
-        builder: (ctx, setDialogState) {
-          final unreadCount = _notifications.where((n) => !n.isRead).length;
-          return AlertDialog(
-            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-            titlePadding: const EdgeInsets.fromLTRB(20, 18, 16, 12),
-            contentPadding: const EdgeInsets.fromLTRB(16, 0, 16, 12),
-            title: Row(
-              children: [
-                Container(
-                  padding: const EdgeInsets.all(7),
-                  decoration: BoxDecoration(
-                    color: const Color(0xFF0284C7).withValues(alpha: 0.12),
-                    shape: BoxShape.circle,
-                  ),
-                  child: const Icon(Icons.notifications_active_rounded, color: Color(0xFF0284C7), size: 18),
-                ),
-                const SizedBox(width: 10),
-                const Text(
-                  'Notifications',
-                  style: TextStyle(fontSize: 17, fontWeight: FontWeight.w800, color: Color(0xFF0F172A)),
-                ),
-                if (unreadCount > 0) ...[
-                  const SizedBox(width: 8),
-                  Container(
-                    padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 2),
-                    decoration: BoxDecoration(
-                      color: const Color(0xFFEF4444).withValues(alpha: 0.12),
-                      borderRadius: BorderRadius.circular(10),
-                    ),
-                    child: Text(
-                      '$unreadCount new',
-                      style: const TextStyle(color: Color(0xFFEF4444), fontSize: 11, fontWeight: FontWeight.w700),
-                    ),
-                  ),
-                ],
-                const Spacer(),
-                if (unreadCount > 0)
-                  TextButton(
-                    onPressed: () {
-                      _markAllNotificationsAsRead();
-                      setDialogState(() {});
-                    },
-                    child: const Text('Mark all as read', style: TextStyle(fontSize: 12, fontWeight: FontWeight.w600)),
-                  ),
-              ],
-            ),
-            content: SizedBox(
-              width: 440,
-              child: _notifications.isEmpty
-                  ? const Padding(
-                      padding: EdgeInsets.all(32),
-                      child: Center(
-                        child: Text('No notifications yet', style: TextStyle(color: Color(0xFF94A3B8))),
-                      ),
-                    )
-                  : ListView.separated(
-                      shrinkWrap: true,
-                      itemCount: _notifications.length,
-                      separatorBuilder: (_, __) => const Divider(height: 12, color: Color(0xFFF1F5F9)),
-                      itemBuilder: (ctx, index) {
-                        final notif = _notifications[index];
-                        return ListTile(
-                          dense: true,
-                          contentPadding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-                          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
-                          tileColor: notif.isRead ? Colors.transparent : const Color(0xFFF8FAFC),
-                          leading: Container(
-                            padding: const EdgeInsets.all(8),
-                            decoration: BoxDecoration(
-                              color: notif.color.withValues(alpha: 0.12),
-                              shape: BoxShape.circle,
-                            ),
-                            child: Icon(notif.icon, size: 18, color: notif.color),
-                          ),
-                          title: Row(
-                            children: [
-                              Expanded(
-                                child: Text(
-                                  notif.title,
-                                  style: TextStyle(
-                                    fontSize: 13,
-                                    fontWeight: notif.isRead ? FontWeight.w600 : FontWeight.w800,
-                                    color: const Color(0xFF0F172A),
-                                  ),
-                                ),
-                              ),
-                              Text(
-                                notif.timeAgo,
-                                style: const TextStyle(fontSize: 10, color: Color(0xFF94A3B8)),
-                              ),
-                            ],
-                          ),
-                          subtitle: Padding(
-                            padding: const EdgeInsets.only(top: 3),
-                            child: Text(
-                              notif.message,
-                              style: const TextStyle(fontSize: 12, color: Color(0xFF64748B), height: 1.3),
-                            ),
-                          ),
-                          trailing: notif.isRead
-                              ? null
-                              : Container(
-                                  width: 8,
-                                  height: 8,
-                                  decoration: const BoxDecoration(
-                                    color: Color(0xFF0284C7),
-                                    shape: BoxShape.circle,
-                                  ),
-                                ),
-                          onTap: () {
-                            setState(() {
-                              notif.isRead = true;
-                            });
-                            setDialogState(() {});
-                          },
-                        );
-                      },
-                    ),
-            ),
-            actions: [
-              TextButton(
-                onPressed: () => Navigator.of(ctx).pop(),
-                child: const Text('Close'),
-              ),
-            ],
-          );
-        },
-      ),
+      notifications: _notifications,
+      onMarkAllRead: _markAllNotificationsAsRead,
+      onNotificationRead: (_) => setState(() {}),
     );
   }
 

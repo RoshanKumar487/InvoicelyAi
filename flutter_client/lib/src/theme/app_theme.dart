@@ -51,26 +51,26 @@ class AppTheme {
       boxShadow: selected
           ? [
               BoxShadow(
-                color: activeAccent.withValues(alpha: 0.20),
-                offset: const Offset(4, 4),
-                blurRadius: 12,
+                color: activeAccent.withValues(alpha: 0.10),
+                offset: const Offset(1, 2),
+                blurRadius: 5,
               ),
               const BoxShadow(
-                color: AppColors.neuShadowLight,
-                offset: Offset(-4, -4),
-                blurRadius: 10,
+                color: Color(0x80FFFFFF),
+                offset: Offset(-1, -1),
+                blurRadius: 4,
               ),
             ]
           : const [
               BoxShadow(
-                color: AppColors.neuShadowDark,
-                offset: Offset(6, 6),
-                blurRadius: 14,
+                color: Color(0x2EC2C9D6), // Ultra-soft subtle modern shadow
+                offset: Offset(2, 2.5),
+                blurRadius: 5,
               ),
               BoxShadow(
-                color: AppColors.neuShadowLight,
-                offset: Offset(-6, -6),
-                blurRadius: 14,
+                color: Color(0x99FFFFFF),
+                offset: Offset(-1.5, -1.5),
+                blurRadius: 4,
               ),
             ],
     );
@@ -93,14 +93,14 @@ class AppTheme {
         border: Border.all(color: Colors.white.withValues(alpha: 0.18), width: 1.1),
         boxShadow: [
           BoxShadow(
-            color: Colors.black.withValues(alpha: 0.35),
-            offset: const Offset(3, 4),
-            blurRadius: 10,
+            color: Colors.black.withValues(alpha: 0.12),
+            offset: const Offset(1, 2),
+            blurRadius: 4,
           ),
           const BoxShadow(
-            color: AppColors.neuShadowLight,
-            offset: Offset(-2, -2),
-            blurRadius: 6,
+            color: Color(0x40FFFFFF),
+            offset: Offset(-1, -1),
+            blurRadius: 2,
           ),
         ],
       );
@@ -111,14 +111,14 @@ class AppTheme {
       border: Border.all(color: Colors.white.withValues(alpha: 0.88), width: 1.1),
       boxShadow: const [
         BoxShadow(
-          color: AppColors.neuShadowDark,
-          offset: Offset(5, 5),
-          blurRadius: 11,
+          color: Color(0x2EC2C9D6),
+          offset: Offset(1.5, 2),
+          blurRadius: 4,
         ),
         BoxShadow(
-          color: AppColors.neuShadowLight,
-          offset: Offset(-5, -5),
-          blurRadius: 11,
+          color: Color(0x99FFFFFF),
+          offset: Offset(-1.5, -1.5),
+          blurRadius: 4,
         ),
       ],
     );
@@ -150,26 +150,26 @@ class AppTheme {
       boxShadow: isSelected
           ? [
               BoxShadow(
-                color: Colors.black.withValues(alpha: 0.35),
-                offset: const Offset(3, 4),
-                blurRadius: 8,
+                color: Colors.black.withValues(alpha: 0.12),
+                offset: const Offset(1, 2),
+                blurRadius: 4,
               ),
               const BoxShadow(
-                color: AppColors.neuShadowLight,
-                offset: Offset(-2, -2),
-                blurRadius: 5,
+                color: Color(0x40FFFFFF),
+                offset: Offset(-1, -1),
+                blurRadius: 2,
               ),
             ]
           : const [
               BoxShadow(
-                color: AppColors.neuShadowDark,
-                offset: Offset(4, 4),
-                blurRadius: 9,
+                color: Color(0x2EC2C9D6),
+                offset: Offset(1.5, 1.5),
+                blurRadius: 3.5,
               ),
               BoxShadow(
-                color: AppColors.neuShadowLight,
-                offset: Offset(-4, -4),
-                blurRadius: 9,
+                color: Color(0x99FFFFFF),
+                offset: Offset(-1.5, -1.5),
+                blurRadius: 3.5,
               ),
             ],
     );
