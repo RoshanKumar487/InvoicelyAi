@@ -27,3 +27,9 @@ services:
         value: invoicely_dev_secret_2026
       - key: SPRING_PROFILES_ACTIVE
         value: prod
+      - key: GEMINI_API_KEY
+        sync: false
+      - key: OPENAI_API_KEY
+        sync: false
+      - key: AI_PROVIDER
+        value: auto

@@ -62,6 +62,9 @@ public class AiAssistantService {
     private final ObjectMapper objectMapper;
     private final String apiKey;
     private final String model;
+    private final String openAiApiKey;
+    private final String openAiModel;
+    private final String provider;
 
     public AiAssistantService(
             InvoiceRepository invoiceRepository,
@@ -76,7 +79,13 @@ public class AiAssistantService {
             RestClient.Builder restClientBuilder,
             ObjectMapper objectMapper,
             @Value("${app.ai.gemini.api-key:}") String apiKey,
-            @Value("${app.ai.gemini.model:gemini-2.0-flash}") String model) {
+            @Value("${app.ai.gemini.model:gemini-2.0-flash}") String model,
+            @Value("${app.ai.openai.api-key:}") String openAiApiKey,
+            @Value("${app.ai.openai.model:gpt-4o-mini}") String openAiModel,
+            @Value("${app.ai.provider:auto}") String provider) {
+        this.openAiApiKey = openAiApiKey == null ? "" : openAiApiKey.trim();
+        this.openAiModel = openAiModel;
+        this.provider = provider == null ? "auto" : provider.trim().toLowerCase(Locale.ROOT);
         this.invoiceRepository = invoiceRepository;
         this.expenseRepository = expenseRepository;
         this.clientRepository = clientRepository;
@@ -97,9 +106,9 @@ public class AiAssistantService {
             throw new ResponseStatusException(HttpStatus.FORBIDDEN,
                     "AI chat requires a signed-in company user and does not support global developer data.");
         }
-        if (apiKey == null || apiKey.isBlank()) {
+        if (!useOpenAi() && (apiKey == null || apiKey.isBlank())) {
             throw new ResponseStatusException(HttpStatus.SERVICE_UNAVAILABLE,
-                    "AI chat is not configured. Set GEMINI_API_KEY on the backend.");
+                    "AI chat is not configured. Set OPENAI_API_KEY or GEMINI_API_KEY on the backend.");
         }
 
         Long companyId = principal.getCompanyId();
@@ -194,9 +203,9 @@ public class AiAssistantService {
         requireCompanyUser(principal);
         Set<String> permissions = getPermissions(principal);
         requirePermission(permissions, "INVOICES");
-        if (apiKey == null || apiKey.isBlank()) {
+        if (!useOpenAi() && (apiKey == null || apiKey.isBlank())) {
             throw new ResponseStatusException(HttpStatus.SERVICE_UNAVAILABLE,
-                    "AI invoice drafting is not configured. Set GEMINI_API_KEY on the backend.");
+                    "AI invoice drafting is not configured. Set OPENAI_API_KEY or GEMINI_API_KEY on the backend.");
         }
         List<Client> clients = clientRepository.findTop12ByCompanyIdOrderByCreatedAtDesc(principal.getCompanyId());
         String clientContext = "Saved clients available for invoice drafts:\n" + clients.stream()
@@ -837,6 +846,9 @@ public class AiAssistantService {
 
                 """ + context;
 
+        if (useOpenAi()) {
+            return callOpenAi(instructions, message);
+        }
         Map<String, Object> payload = Map.of(
                 "systemInstruction", Map.of("parts", List.of(Map.of("text", instructions))),
                 "contents", List.of(Map.of("role", "user", "parts", List.of(Map.of("text", message)))),
@@ -876,6 +888,54 @@ public class AiAssistantService {
                     "The AI provider is temporarily unavailable. Please try again.");
         } catch (Exception ex) {
             LOGGER.warn("Gemini returned an invalid structured response.");
+            throw new ResponseStatusException(HttpStatus.BAD_GATEWAY,
+                    "The AI provider returned an invalid response. Please try again.");
+        }
+    }
+
+    private boolean useOpenAi() {
+        if (openAiApiKey.isBlank()) return false;
+        if ("gemini".equals(provider)) return false;
+        if ("openai".equals(provider)) return true;
+        return apiKey == null || apiKey.isBlank();
+    }
+
+    private JsonNode callOpenAi(String instructions, String message) {
+        Map<String, Object> payload = Map.of(
+                "model", openAiModel,
+                "temperature", 0.1,
+                "max_tokens", 1000,
+                "response_format", Map.of("type", "json_object"),
+                "messages", List.of(
+                        Map.of("role", "system", "content", instructions),
+                        Map.of("role", "user", "content", message)));
+        try {
+            JsonNode response = restClient.post()
+                    .uri("https://api.openai.com/v1/chat/completions")
+                    .header("Authorization", "Bearer " + openAiApiKey)
+                    .body(payload)
+                    .retrieve()
+                    .body(JsonNode.class);
+            JsonNode text = response == null ? null
+                    : response.path("choices").path(0).path("message").path("content");
+            if (text == null || !text.isTextual() || text.asText().isBlank()) {
+                throw new ResponseStatusException(HttpStatus.BAD_GATEWAY,
+                        "The AI provider returned an empty answer. Please try again.");
+            }
+            JsonNode parsed = objectMapper.readTree(text.asText());
+            if (!parsed.isObject() || !parsed.path("type").isTextual()) {
+                throw new ResponseStatusException(HttpStatus.BAD_GATEWAY,
+                        "The AI provider returned an invalid response. Please try again.");
+            }
+            return parsed;
+        } catch (ResponseStatusException ex) {
+            throw ex;
+        } catch (RuntimeException ex) {
+            LOGGER.warn("OpenAI request failed: {}", ex.getMessage());
+            throw new ResponseStatusException(HttpStatus.BAD_GATEWAY,
+                    "The AI provider is temporarily unavailable. Check the OpenAI key and quota.");
+        } catch (Exception ex) {
+            LOGGER.warn("OpenAI returned an invalid structured response.");
             throw new ResponseStatusException(HttpStatus.BAD_GATEWAY,
                     "The AI provider returned an invalid response. Please try again.");
         }

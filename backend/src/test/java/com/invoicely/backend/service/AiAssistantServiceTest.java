@@ -92,7 +92,8 @@ class AiAssistantServiceTest {
     private AiAssistantService service(String apiKey) {
         return new AiAssistantService(invoiceRepository, expenseRepository, clientRepository,
                 pendingRepository, invoiceService, expenseService, clientService,
-                knowledgeService, businessProfileService, RestClient.builder(), new ObjectMapper(), apiKey, "gemini-2.0-flash");
+                knowledgeService, businessProfileService, RestClient.builder(), new ObjectMapper(), apiKey, "gemini-2.0-flash",
+                "", "gpt-4o-mini", "auto");
     }
 
     private UserPrincipal principal(Role role, Long companyId, String permissions) {
