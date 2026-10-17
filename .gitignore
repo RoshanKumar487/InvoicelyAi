@@ -30,3 +30,5 @@ scratch/
 **/android/local.properties
 **/android/key.properties
 **/android/.gradle/
+
+backend/config/

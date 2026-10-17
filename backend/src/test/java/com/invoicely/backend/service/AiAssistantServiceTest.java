@@ -93,7 +93,7 @@ class AiAssistantServiceTest {
         return new AiAssistantService(invoiceRepository, expenseRepository, clientRepository,
                 pendingRepository, invoiceService, expenseService, clientService,
                 knowledgeService, businessProfileService, RestClient.builder(), new ObjectMapper(), apiKey, "gemini-2.0-flash",
-                "", "gpt-4o-mini", "auto");
+                "", "gpt-4o-mini", "auto", "https://api.openai.com/v1");
     }
 
     private UserPrincipal principal(Role role, Long companyId, String permissions) {

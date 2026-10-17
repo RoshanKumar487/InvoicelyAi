@@ -64,6 +64,7 @@ public class AiAssistantService {
     private final String model;
     private final String openAiApiKey;
     private final String openAiModel;
+    private final String openAiBaseUrl;
     private final String provider;
 
     public AiAssistantService(
@@ -82,7 +83,10 @@ public class AiAssistantService {
             @Value("${app.ai.gemini.model:gemini-2.0-flash}") String model,
             @Value("${app.ai.openai.api-key:}") String openAiApiKey,
             @Value("${app.ai.openai.model:gpt-4o-mini}") String openAiModel,
-            @Value("${app.ai.provider:auto}") String provider) {
+            @Value("${app.ai.provider:auto}") String provider,
+            @Value("${app.ai.openai.base-url:https://api.openai.com/v1}") String openAiBaseUrl) {
+        this.openAiBaseUrl = openAiBaseUrl == null ? "https://api.openai.com/v1"
+                : openAiBaseUrl.trim().replaceAll("/+$", "");
         this.openAiApiKey = openAiApiKey == null ? "" : openAiApiKey.trim();
         this.openAiModel = openAiModel;
         this.provider = provider == null ? "auto" : provider.trim().toLowerCase(Locale.ROOT);
@@ -901,17 +905,22 @@ public class AiAssistantService {
     }
 
     private JsonNode callOpenAi(String instructions, String message) {
-        Map<String, Object> payload = Map.of(
-                "model", openAiModel,
-                "temperature", 0.1,
-                "max_tokens", 1000,
-                "response_format", Map.of("type", "json_object"),
-                "messages", List.of(
-                        Map.of("role", "system", "content", instructions),
-                        Map.of("role", "user", "content", message)));
+        boolean reasoningModel = openAiModel.contains("gpt-5") || openAiModel.matches(".*(^|/)o\\d.*");
+        Map<String, Object> payload = new java.util.HashMap<>();
+        payload.put("model", openAiModel);
+        payload.put("response_format", Map.of("type", "json_object"));
+        payload.put("messages", List.of(
+                Map.of("role", "system", "content", instructions),
+                Map.of("role", "user", "content", message)));
+        if (reasoningModel) {
+            payload.put("max_completion_tokens", 4000);
+        } else {
+            payload.put("temperature", 0.1);
+            payload.put("max_tokens", 1000);
+        }
         try {
             JsonNode response = restClient.post()
-                    .uri("https://api.openai.com/v1/chat/completions")
+                    .uri(openAiBaseUrl + "/chat/completions")
                     .header("Authorization", "Bearer " + openAiApiKey)
                     .body(payload)
                     .retrieve()
