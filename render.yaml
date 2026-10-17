@@ -32,4 +32,8 @@ services:
       - key: OPENAI_API_KEY
         sync: false
       - key: AI_PROVIDER
-        value: auto
+        value: openai
+      - key: OPENAI_BASE_URL
+        value: https://integrate.api.nvidia.com/v1
+      - key: OPENAI_MODEL
+        value: openai/gpt-oss-20b
