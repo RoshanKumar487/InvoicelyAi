@@ -57,6 +57,11 @@ Widget buildSettingsPresetsCard(BuildContext context, ValueChanged<String> onApp
           runSpacing: 8,
           children: [
             ActionChip(
+              avatar: const Icon(Icons.shield_outlined, size: 16),
+              label: const Text('🛡️ Security Agency & Guards'),
+              onPressed: () => onApplyPreset('security'),
+            ),
+            ActionChip(
               avatar: const Icon(Icons.receipt_long, size: 16),
               label: const Text('Indian GST Bill'),
               onPressed: () => onApplyPreset('gst'),
@@ -225,11 +230,127 @@ class InvoiceSettingsDetailsTab extends StatelessWidget {
 
         const SizedBox(height: 14),
 
+        AppCard(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                'Billing & Shipping Section Labels',
+                style: Theme.of(context).textTheme.titleMedium,
+              ),
+              const SizedBox(height: 4),
+              const Text(
+                'Toggle recipient info, customize section headers, and enable/disable separate dispatch & shipping details.',
+                style: TextStyle(fontSize: 12, color: Color(0xFF64748B)),
+              ),
+              const SizedBox(height: 14),
+
+              fieldTileBuilder(
+                title: 'Bill To Section Header',
+                description: 'Section heading above customer address',
+                toggleKey: 'showBillTo',
+                defaultToggle: true,
+                labelKey: 'customBillToLabel',
+                fallbackLabel: 'BILLED TO',
+                hint: 'e.g. Invoiced To, Customer Details',
+              ),
+              const Divider(height: 24),
+
+              fieldTileBuilder(
+                title: 'Ship To / Delivery Section',
+                description: 'Separate shipping recipient details (Default: Hidden)',
+                toggleKey: 'showShippingSection',
+                defaultToggle: false,
+                labelKey: 'customShipToLabel',
+                fallbackLabel: 'DISPATCH & SUPPLY DETAILS',
+                hint: 'e.g. Shipped To, Delivery Address',
+              ),
+              const Divider(height: 24),
+
+              fieldTileBuilder(
+                title: 'Client / Customer Name',
+                description: 'Primary customer name line',
+                toggleKey: 'showClientName',
+                defaultToggle: true,
+                labelKey: 'customClientNameLabel',
+                fallbackLabel: 'Client Name',
+                hint: 'e.g. Customer Name, M/s',
+              ),
+              const Divider(height: 24),
+
+              fieldTileBuilder(
+                title: 'Company Name',
+                description: 'Customer company or legal entity',
+                toggleKey: 'showClientCompany',
+                defaultToggle: true,
+                labelKey: 'customClientCompanyLabel',
+                fallbackLabel: 'Company Name',
+                hint: 'e.g. Business Name',
+              ),
+              const Divider(height: 24),
+
+              fieldTileBuilder(
+                title: 'Email Address',
+                description: 'Billing email line',
+                toggleKey: 'showClientEmail',
+                defaultToggle: true,
+                labelKey: 'customClientEmailLabel',
+                fallbackLabel: 'Email',
+                hint: 'e.g. Billing Email',
+              ),
+              const Divider(height: 24),
+
+              fieldTileBuilder(
+                title: 'Phone Number',
+                description: 'Contact phone line',
+                toggleKey: 'showClientPhone',
+                defaultToggle: true,
+                labelKey: 'customClientPhoneLabel',
+                fallbackLabel: 'Phone',
+                hint: 'e.g. Mobile, Contact',
+              ),
+              const Divider(height: 24),
+
+              fieldTileBuilder(
+                title: 'Billing Address',
+                description: 'Street, city, postal code',
+                toggleKey: 'showClientAddress',
+                defaultToggle: true,
+                labelKey: 'customClientAddressLabel',
+                fallbackLabel: 'Billing Address',
+                hint: 'e.g. Address',
+              ),
+              const Divider(height: 24),
+
+              fieldTileBuilder(
+                title: 'Tax ID / GSTIN',
+                description: 'Customer tax registration',
+                toggleKey: 'showClientTaxId',
+                defaultToggle: true,
+                labelKey: 'customClientTaxIdLabel',
+                fallbackLabel: 'GSTIN / Tax ID',
+                hint: 'e.g. GSTIN, VAT No., Tax ID',
+              ),
+            ],
+          ),
+        ),
+
+        const SizedBox(height: 14),
+
         customFieldsCardBuilder(
           key: 'customFields_details',
           title: 'Invoice Details',
           itemType: 'Field',
           hintText: 'e.g. Order ID, Project Name, Delivery Challan #, Sales Rep',
+        ),
+
+        const SizedBox(height: 14),
+
+        customFieldsCardBuilder(
+          key: 'customFields_billing',
+          title: 'Bills & Client',
+          itemType: 'Field',
+          hintText: 'e.g. PAN Number, Place of Supply, Customer Code, State Code',
         ),
 
         const SizedBox(height: 24),

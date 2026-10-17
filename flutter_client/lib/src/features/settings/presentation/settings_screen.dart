@@ -73,42 +73,92 @@ class _SettingsScreenState extends State<SettingsScreen> {
         _profile = profile;
         _loading = false;
       });
-      // Synchronize company currency and business details with local settings
-      final cur = profile['defaultCurrency']?.toString();
-      if (cur != null && cur.isNotEmpty) {
-        final updated = Map<String, Object?>.from(_localSettings)
-          ..['defaultCurrency'] = cur
-          ..['defaultCurrencySymbol'] =
-              profile['defaultCurrencySymbol']?.toString() ??
-                  _currencySymbols[cur] ??
-                  '₹'
-          ..['defaultCurrencyFormat'] =
-              profile['defaultCurrencyFormat']?.toString() ?? 'before';
-        if (profile['companyName'] != null) {
-          updated['businessName'] = profile['companyName'];
-        }
-        if (profile['address'] != null) {
-          updated['businessAddress'] = profile['address'];
-        }
-        if (profile['gstin'] != null) {
-          updated['businessGstin'] = profile['gstin'];
-        }
-        if (profile['upiId'] != null) {
-          updated['upiId'] = profile['upiId'];
-        }
-        if (profile['bankName'] != null) {
-          updated['bankName'] = profile['bankName'];
-        }
-        if (profile['accountNumber'] != null) {
-          updated['accountNumber'] = profile['accountNumber'];
-        }
-        if (profile['ifscCode'] != null) {
-          updated['ifscCode'] = profile['ifscCode'];
-        }
-        _localSettings = updated;
-        widget.onSaveLocalSettings?.call(updated);
-        widget.localPreferences?.writeMap('invoice_settings', updated);
+      // Synchronize company currency, branding assets, and business details with local settings
+      final cur = profile['defaultCurrency']?.toString() ?? 'INR';
+      final updated = Map<String, Object?>.from(_localSettings);
+      if (cur.isNotEmpty) {
+        updated['defaultCurrency'] = cur;
+        updated['defaultCurrencySymbol'] =
+            profile['defaultCurrencySymbol']?.toString() ??
+                _currencySymbols[cur] ??
+                '₹';
+        updated['defaultCurrencyFormat'] =
+            profile['defaultCurrencyFormat']?.toString() ?? 'before';
       }
+      final rawBizName = (profile['businessName']?.toString().trim().isNotEmpty == true
+              ? profile['businessName'].toString().trim()
+              : (profile['companyName']?.toString().trim().isNotEmpty == true
+                  ? profile['companyName'].toString().trim()
+                  : profile['legalName']?.toString().trim())) ??
+          '';
+      if (rawBizName.isNotEmpty &&
+          rawBizName.toLowerCase() != 'apex nova dynamics') {
+        updated['businessName'] = rawBizName;
+        updated['companyName'] = rawBizName;
+        _profile['businessName'] = rawBizName;
+        _profile['companyName'] = rawBizName;
+        final curLh = updated['letterhead_company_name']?.toString().trim().toLowerCase() ?? '';
+        if (curLh.isEmpty ||
+            curLh == 'northstar security services pvt. ltd.' ||
+            curLh == 'northstar security services ltd.') {
+          updated['letterhead_company_name'] = rawBizName;
+        }
+      }
+      if (profile['address']?.toString().trim().isNotEmpty == true) {
+        updated['businessAddress'] = profile['address'];
+      }
+      if (profile['gstin']?.toString().trim().isNotEmpty == true) {
+        updated['businessGstin'] = profile['gstin'];
+      }
+      if (profile['panNumber']?.toString().trim().isNotEmpty == true) {
+        updated['businessPan'] = profile['panNumber'];
+      }
+      if (profile['phone']?.toString().trim().isNotEmpty == true) {
+        updated['businessPhone'] = profile['phone'];
+      }
+      if (profile['email']?.toString().trim().isNotEmpty == true) {
+        updated['businessEmail'] = profile['email'];
+      }
+      if (profile['website']?.toString().trim().isNotEmpty == true) {
+        updated['businessWebsite'] = profile['website'];
+      }
+      if (profile['upiId']?.toString().trim().isNotEmpty == true) {
+        updated['upiId'] = profile['upiId'];
+      }
+      if (profile['bankName']?.toString().trim().isNotEmpty == true) {
+        updated['bankName'] = profile['bankName'];
+      }
+      if (profile['accountNumber']?.toString().trim().isNotEmpty == true) {
+        updated['accountNumber'] = profile['accountNumber'];
+      }
+      if (profile['accountHolder']?.toString().trim().isNotEmpty == true) {
+        updated['accountHolder'] = profile['accountHolder'];
+      }
+      if (profile['ifscCode']?.toString().trim().isNotEmpty == true) {
+        updated['ifscCode'] = profile['ifscCode'];
+      }
+      if (profile['signeeName']?.toString().trim().isNotEmpty == true) {
+        updated['signeeName'] = profile['signeeName'];
+      }
+      if (profile['signeeTitle']?.toString().trim().isNotEmpty == true) {
+        updated['signeeTitle'] = profile['signeeTitle'];
+      }
+      // Sync organization-scoped branding files from server profile
+      if (profile['logoUrl']?.toString().trim().isNotEmpty == true) {
+        updated['invoiceLogo'] = profile['logoUrl'];
+      }
+      if (profile['stampUrl']?.toString().trim().isNotEmpty == true) {
+        updated['invoiceStamp'] = profile['stampUrl'];
+      }
+      if (profile['signatureUrl']?.toString().trim().isNotEmpty == true) {
+        updated['invoiceSignature'] = profile['signatureUrl'];
+      }
+      if (profile['qrCodeUrl']?.toString().trim().isNotEmpty == true) {
+        updated['invoiceQrCode'] = profile['qrCodeUrl'];
+      }
+      _localSettings = updated;
+      widget.onSaveLocalSettings?.call(updated);
+      widget.localPreferences?.writeMap('invoice_settings', updated);
     } on ApiException catch (error) {
       if (!mounted) return;
       setState(() {
@@ -140,24 +190,57 @@ class _SettingsScreenState extends State<SettingsScreen> {
       _profile['defaultCurrencyFormat'] = currencyFormat;
 
       // Sync companyName and businessName
-      if (_profile['businessName'] != null) {
-        _profile['companyName'] = _profile['businessName'];
+      final resolvedBizName = (_profile['businessName']?.toString().trim().isNotEmpty == true
+              ? _profile['businessName'].toString().trim()
+              : (_profile['companyName']?.toString().trim().isNotEmpty == true
+                  ? _profile['companyName'].toString().trim()
+                  : _localSettings['businessName']?.toString().trim())) ??
+          '';
+      if (resolvedBizName.isNotEmpty) {
+        _profile['businessName'] = resolvedBizName;
+        _profile['companyName'] = resolvedBizName;
+        _profile['legalName'] = _profile['legalName']?.toString().trim().isNotEmpty == true
+            ? _profile['legalName']
+            : resolvedBizName;
       }
 
+      // Attach organization branding assets (logo, stamp, signature, qr) to server profile
+      _profile['logoUrl'] = _localSettings['invoiceLogo']?.toString() ?? '';
+      _profile['stampUrl'] = _localSettings['invoiceStamp']?.toString() ?? '';
+      _profile['signatureUrl'] = _localSettings['invoiceSignature']?.toString() ?? '';
+      _profile['qrCodeUrl'] = _localSettings['invoiceQrCode']?.toString() ?? '';
+
       final result = await _repository.saveProfile(_profile);
+
+      // Also sync backend Company entity (preserving organization code) so Team Management & Header show the updated name
+      if (resolvedBizName.isNotEmpty) {
+        try {
+          await widget.apiClient.putJson('api/v1/companies/my-company', {
+            'companyName': resolvedBizName,
+            if (_profile['gstin'] != null) 'gstin': _profile['gstin'],
+            if (_profile['address'] != null) 'location': _profile['address'],
+            if (_profile['email'] != null) 'email': _profile['email'],
+            if (_profile['phone'] != null) 'phone': _profile['phone'],
+            if (_profile['website'] != null) 'website': _profile['website'],
+            if (_localSettings['invoiceStamp'] != null)
+              'signatureStampUrl': _localSettings['invoiceStamp'],
+          });
+        } catch (_) {}
+      }
+
+      final finalBizName = result['businessName']?.toString().trim().isNotEmpty == true
+          ? result['businessName'].toString().trim()
+          : (result['companyName']?.toString().trim().isNotEmpty == true
+              ? result['companyName'].toString().trim()
+              : resolvedBizName);
 
       final updatedLocal = Map<String, Object?>.from(_localSettings)
         ..['defaultCurrency'] = currency
         ..['defaultCurrencySymbol'] = currencySymbol
         ..['defaultCurrencyFormat'] = currencyFormat
-        ..['businessName'] = result['companyName'] ??
-            _profile['companyName'] ??
-            _localSettings['businessName'] ??
-            ''
-        ..['companyName'] = result['companyName'] ??
-            _profile['companyName'] ??
-            _localSettings['businessName'] ??
-            ''
+        ..['businessName'] = finalBizName
+        ..['companyName'] = finalBizName
+        ..['letterhead_company_name'] = finalBizName
         ..['businessAddress'] = result['address'] ??
             _profile['address'] ??
             _localSettings['businessAddress'] ??
@@ -239,7 +322,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
           backgroundColor: Color(0xFF047857),
-          content: Text('✓ All business profile, bank & branding settings saved!'),
+          content: Text('✓ All business profile, bank & organization branding settings saved!'),
         ),
       );
     } on ApiException catch (error) {
@@ -249,6 +332,16 @@ class _SettingsScreenState extends State<SettingsScreen> {
     } finally {
       if (mounted) setState(() => _saving = false);
     }
+  }
+
+  Future<void> _syncBrandingAssetsToServer() async {
+    try {
+      _profile['logoUrl'] = _localSettings['invoiceLogo']?.toString() ?? '';
+      _profile['stampUrl'] = _localSettings['invoiceStamp']?.toString() ?? '';
+      _profile['signatureUrl'] = _localSettings['invoiceSignature']?.toString() ?? '';
+      _profile['qrCodeUrl'] = _localSettings['invoiceQrCode']?.toString() ?? '';
+      await _repository.saveProfile(_profile);
+    } catch (_) {}
   }
 
   Future<void> _pickBrandImage(String key, String label) async {
@@ -261,9 +354,19 @@ class _SettingsScreenState extends State<SettingsScreen> {
       if (image == null) return;
       final bytes = await image.readAsBytes();
       if (!mounted) return;
-      setState(() => _localSettings[key] = base64Encode(bytes));
+      final b64 = base64Encode(bytes);
+      setState(() => _localSettings[key] = b64);
       widget.onSaveLocalSettings?.call(Map<String, Object?>.from(_localSettings));
-      widget.localPreferences?.writeMap('invoice_settings', _localSettings);
+      await widget.localPreferences?.writeMap('invoice_settings', _localSettings);
+      await _syncBrandingAssetsToServer();
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            backgroundColor: const Color(0xFF047857),
+            content: Text('✓ $label uploaded & saved for your organization!'),
+          ),
+        );
+      }
     } catch (error) {
       if (mounted) _showError('Could not select $label: $error');
     }
@@ -290,7 +393,8 @@ class _SettingsScreenState extends State<SettingsScreen> {
         }
       });
       widget.onSaveLocalSettings?.call(Map<String, Object?>.from(_localSettings));
-      widget.localPreferences?.writeMap('invoice_settings', _localSettings);
+      await widget.localPreferences?.writeMap('invoice_settings', _localSettings);
+      await _syncBrandingAssetsToServer();
     }
   }
 
@@ -298,6 +402,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
     setState(() => _localSettings.remove(key));
     widget.onSaveLocalSettings?.call(Map<String, Object?>.from(_localSettings));
     widget.localPreferences?.writeMap('invoice_settings', _localSettings);
+    _syncBrandingAssetsToServer();
   }
 
   void _showError(String message) {

@@ -5,7 +5,9 @@ import java.math.BigDecimal;
 import java.time.OffsetDateTime;
 
 @Entity
-@Table(name = "business_profile")
+@Table(name = "business_profile", indexes = {
+    @Index(name = "idx_business_profile_company_id", columnList = "company_id")
+})
 public class BusinessProfile {
 
     @Id
@@ -64,10 +66,10 @@ public class BusinessProfile {
     private String paymentLink = "";
 
     @Column(name = "default_currency")
-    private String defaultCurrency = "USD";
+    private String defaultCurrency = "INR";
 
     @Column(name = "default_currency_symbol")
-    private String defaultCurrencySymbol = "$";
+    private String defaultCurrencySymbol = "₹";
 
     @Column(name = "default_currency_format")
     private String defaultCurrencyFormat = "before";
@@ -95,6 +97,24 @@ public class BusinessProfile {
 
     @Column(name = "brand_color_hex")
     private String brandColorHex = "#1E3A8A";
+
+    @Column(name = "logo_url", columnDefinition = "TEXT")
+    private String logoUrl = "";
+
+    @Column(name = "stamp_url", columnDefinition = "TEXT")
+    private String stampUrl = "";
+
+    @Column(name = "signature_url", columnDefinition = "TEXT")
+    private String signatureUrl = "";
+
+    @Column(name = "qr_code_url", columnDefinition = "TEXT")
+    private String qrCodeUrl = "";
+
+    @Column(name = "letterhead_json", columnDefinition = "TEXT")
+    private String letterheadJson = "";
+
+    @Column(name = "invoice_settings_json", columnDefinition = "TEXT")
+    private String invoiceSettingsJson = "";
 
     @Column(name = "updated_at")
     private OffsetDateTime updatedAt = OffsetDateTime.now();
@@ -191,6 +211,24 @@ public class BusinessProfile {
 
     public String getBrandColorHex() { return brandColorHex; }
     public void setBrandColorHex(String brandColorHex) { this.brandColorHex = brandColorHex; }
+
+    public String getLogoUrl() { return logoUrl; }
+    public void setLogoUrl(String logoUrl) { this.logoUrl = logoUrl; }
+
+    public String getStampUrl() { return stampUrl; }
+    public void setStampUrl(String stampUrl) { this.stampUrl = stampUrl; }
+
+    public String getSignatureUrl() { return signatureUrl; }
+    public void setSignatureUrl(String signatureUrl) { this.signatureUrl = signatureUrl; }
+
+    public String getQrCodeUrl() { return qrCodeUrl; }
+    public void setQrCodeUrl(String qrCodeUrl) { this.qrCodeUrl = qrCodeUrl; }
+
+    public String getLetterheadJson() { return letterheadJson; }
+    public void setLetterheadJson(String letterheadJson) { this.letterheadJson = letterheadJson; }
+
+    public String getInvoiceSettingsJson() { return invoiceSettingsJson; }
+    public void setInvoiceSettingsJson(String invoiceSettingsJson) { this.invoiceSettingsJson = invoiceSettingsJson; }
 
     public OffsetDateTime getUpdatedAt() { return updatedAt; }
     public void setUpdatedAt(OffsetDateTime updatedAt) { this.updatedAt = updatedAt; }

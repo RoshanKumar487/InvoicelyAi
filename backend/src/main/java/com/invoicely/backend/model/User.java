@@ -5,7 +5,10 @@ import jakarta.persistence.*;
 import java.time.OffsetDateTime;
 
 @Entity
-@Table(name = "users")
+@Table(name = "users", indexes = {
+    @Index(name = "idx_users_company_id", columnList = "company_id"),
+    @Index(name = "idx_users_email", columnList = "email")
+})
 public class User {
 
     @Id

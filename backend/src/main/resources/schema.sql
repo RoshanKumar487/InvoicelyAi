@@ -372,3 +372,25 @@ CREATE INDEX IF NOT EXISTS idx_audit_logs_company ON company_audit_logs(company_
 CREATE INDEX IF NOT EXISTS idx_audit_logs_user ON company_audit_logs(company_id, user_id);
 CREATE INDEX IF NOT EXISTS idx_audit_logs_module ON company_audit_logs(company_id, module);
 CREATE INDEX IF NOT EXISTS idx_audit_logs_action ON company_audit_logs(action);
+
+-- ===================================================================
+-- 11. Custom Invoice Templates Studio Table (Multi-Tenant, Versioned)
+-- ===================================================================
+CREATE TABLE IF NOT EXISTS invoice_templates (
+    id BIGSERIAL PRIMARY KEY,
+    company_id BIGINT REFERENCES companies(id) ON DELETE CASCADE,
+    template_name VARCHAR(255) NOT NULL,
+    industry_preset VARCHAR(100) DEFAULT 'security_agency',
+    status VARCHAR(50) DEFAULT 'DRAFT',
+    version INT DEFAULT 1,
+    is_default BOOLEAN DEFAULT FALSE,
+    configuration_json JSONB DEFAULT '{}'::jsonb,
+    created_by_user_id BIGINT REFERENCES users(id) ON DELETE SET NULL,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+CREATE INDEX IF NOT EXISTS idx_invoice_templates_company ON invoice_templates(company_id);
+CREATE INDEX IF NOT EXISTS idx_invoice_templates_status ON invoice_templates(company_id, status);
+CREATE INDEX IF NOT EXISTS idx_invoice_templates_preset ON invoice_templates(company_id, industry_preset);
+

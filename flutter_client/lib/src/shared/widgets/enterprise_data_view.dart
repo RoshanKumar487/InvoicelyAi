@@ -1,21 +1,151 @@
 import 'dart:math';
 import 'package:flutter/material.dart';
 
+import '../../theme/app_theme.dart';
 import 'app_card.dart';
 
-/// Column definition for [EnterpriseDataView] table view.
+/// Interactive KPI summary card item matching Invoices design
+class EnterpriseMetricCardItem {
+  const EnterpriseMetricCardItem({
+    required this.label,
+    required this.value,
+    required this.icon,
+    required this.color,
+    this.filterKey,
+    this.count,
+    this.isSelected = false,
+    this.onTap,
+  });
+
+  final String label;
+  final String value;
+  final IconData icon;
+  final Color color;
+  final String? filterKey;
+  final String? count;
+  final bool isSelected;
+  final VoidCallback? onTap;
+}
+
+/// Unified 4-KPI metrics strip with Neumorphic sculpted card styling and interactive filter-on-click
+class EnterpriseMetricsStrip extends StatelessWidget {
+  const EnterpriseMetricsStrip({
+    required this.metrics,
+    super.key,
+  });
+
+  final List<EnterpriseMetricCardItem> metrics;
+
+  @override
+  Widget build(BuildContext context) {
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        final isWide = constraints.maxWidth > 700;
+        final cardWidth = isWide
+            ? (constraints.maxWidth - (metrics.length - 1) * 14) / metrics.length
+            : (constraints.maxWidth - 14) / 2;
+
+        return Wrap(
+          spacing: 14,
+          runSpacing: 14,
+          children: metrics.map((m) {
+            return SizedBox(
+              width: cardWidth,
+              child: Material(
+                color: Colors.transparent,
+                child: InkWell(
+                  onTap: m.onTap,
+                  borderRadius: BorderRadius.circular(20),
+                  child: AnimatedContainer(
+                    duration: const Duration(milliseconds: 180),
+                    padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 13),
+                    decoration: AppTheme.neuCardDecoration(
+                      radius: 20,
+                      selected: m.isSelected,
+                      accentColor: m.color,
+                    ),
+                    child: Row(
+                      children: [
+                        Container(
+                          width: 40,
+                          height: 40,
+                          decoration: AppTheme.neuOrbDecoration(
+                            active: m.isSelected,
+                            activeColor: m.color,
+                            shape: BoxShape.rectangle,
+                            radius: 13,
+                          ),
+                          child: Icon(
+                            m.icon,
+                            color: m.isSelected ? Colors.white : m.color,
+                            size: 20,
+                          ),
+                        ),
+                        const SizedBox(width: 12),
+                        Expanded(
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            mainAxisAlignment: MainAxisAlignment.center,
+                            children: [
+                              Text(
+                                m.value,
+                                style: const TextStyle(
+                                  fontSize: 15.5,
+                                  fontWeight: FontWeight.w800,
+                                  color: Color(0xFF1E293B),
+                                ),
+                                overflow: TextOverflow.ellipsis,
+                              ),
+                              const SizedBox(height: 2),
+                              Text(
+                                m.label,
+                                style: const TextStyle(
+                                  fontSize: 11.5,
+                                  fontWeight: FontWeight.w600,
+                                  color: Color(0xFF64748B),
+                                ),
+                                overflow: TextOverflow.ellipsis,
+                              ),
+                            ],
+                          ),
+                        ),
+                        if (m.isSelected)
+                          Container(
+                            padding: const EdgeInsets.all(4),
+                            decoration: BoxDecoration(
+                              color: m.color,
+                              shape: BoxShape.circle,
+                            ),
+                            child: const Icon(Icons.check, size: 10, color: Colors.white),
+                          ),
+                      ],
+                    ),
+                  ),
+                ),
+              ),
+            );
+          }).toList(),
+        );
+      },
+    );
+  }
+}
+
+/// Column definition for [EnterpriseDataView] table view with sorting support.
 class EnterpriseTableColumn<T> {
   const EnterpriseTableColumn({
     required this.title,
     required this.cellBuilder,
     this.width = 150,
     this.alignRight = false,
+    this.sortKey,
   });
 
   final String title;
   final Widget Function(BuildContext context, T item) cellBuilder;
   final double width;
   final bool alignRight;
+  final Comparable<dynamic>? Function(T item)? sortKey;
 }
 
 /// Generic, highly reusable enterprise data view supporting:
@@ -23,6 +153,8 @@ class EnterpriseTableColumn<T> {
 /// 2. **Adaptive Defaults**: Defaults to `Cards` on mobile (< 700px) and `Table` on desktop/tablet (>= 700px), with user mode override.
 /// 3. Search & Filter Bar with horizontal choice chips.
 /// 4. Multi-item selection & pagination footer.
+/// 5. Column sorting (ascending/descending toggle with indicator).
+/// 6. Directory toolbar with Date Range picker & Download Report icons.
 class EnterpriseDataView<T> extends StatefulWidget {
   const EnterpriseDataView({
     required this.items,
@@ -35,6 +167,8 @@ class EnterpriseDataView<T> extends StatefulWidget {
     this.onToggleSelect,
     this.onSelectAll,
     this.onDeselectAll,
+    this.batchActions,
+    this.onRowTap,
     this.searchHint = 'Search records...',
     this.searchController,
     this.onSearchChanged,
@@ -46,7 +180,12 @@ class EnterpriseDataView<T> extends StatefulWidget {
     this.filterWidget,
     this.topTrailing,
     this.headerTitle,
+    this.metrics,
     this.metricsStrip,
+    this.dateRange,
+    this.onDateRangeChanged,
+    this.onDownloadReport,
+    this.directoryActions,
     this.emptyWidget,
     this.emptyMessage = 'No records found matching current criteria.',
     this.pageSize = 20,
@@ -64,6 +203,8 @@ class EnterpriseDataView<T> extends StatefulWidget {
   final ValueChanged<String>? onToggleSelect;
   final ValueChanged<List<String>>? onSelectAll;
   final VoidCallback? onDeselectAll;
+  final List<Widget>? batchActions;
+  final ValueChanged<T>? onRowTap;
 
   final String searchHint;
   final TextEditingController? searchController;
@@ -78,7 +219,13 @@ class EnterpriseDataView<T> extends StatefulWidget {
 
   final Widget? topTrailing;
   final String? headerTitle;
+  final List<EnterpriseMetricCardItem>? metrics;
   final Widget? metricsStrip;
+  final DateTimeRange? dateRange;
+  final ValueChanged<DateTimeRange?>? onDateRangeChanged;
+  final VoidCallback? onDownloadReport;
+  final List<Widget>? directoryActions;
+
   final Widget? emptyWidget;
   final String emptyMessage;
   final int pageSize;
@@ -96,6 +243,9 @@ class _EnterpriseDataViewState<T> extends State<EnterpriseDataView<T>> {
   late int _pageSize;
   int _currentPage = 0;
   final Map<String, bool> _expandedGroups = {};
+
+  int? _sortColumnIndex;
+  bool _sortAscending = true;
 
   @override
   void initState() {
@@ -123,10 +273,27 @@ class _EnterpriseDataViewState<T> extends State<EnterpriseDataView<T>> {
 
   List<T> get _filteredItems {
     final query = _searchController.text.trim().toLowerCase();
-    if (query.isEmpty || widget.searchFilter == null) {
-      return widget.items;
+    var list = widget.items;
+    if (query.isNotEmpty && widget.searchFilter != null) {
+      list = list.where((item) => widget.searchFilter!(item, query)).toList();
     }
-    return widget.items.where((item) => widget.searchFilter!(item, query)).toList();
+    if (_sortColumnIndex != null &&
+        _sortColumnIndex! >= 0 &&
+        _sortColumnIndex! < widget.columns.length) {
+      final col = widget.columns[_sortColumnIndex!];
+      if (col.sortKey != null) {
+        list = List<T>.from(list)..sort((a, b) {
+          final aVal = col.sortKey!(a);
+          final bVal = col.sortKey!(b);
+          if (aVal == null && bVal == null) return 0;
+          if (aVal == null) return _sortAscending ? -1 : 1;
+          if (bVal == null) return _sortAscending ? 1 : -1;
+          final cmp = aVal.compareTo(bVal);
+          return _sortAscending ? cmp : -cmp;
+        });
+      }
+    }
+    return list;
   }
 
   void _toggleGroup(String key) {
@@ -194,7 +361,10 @@ class _EnterpriseDataViewState<T> extends State<EnterpriseDataView<T>> {
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
         // Optional top metrics strip
-        if (widget.metricsStrip != null) ...[
+        if (widget.metrics != null && widget.metricsStrip == null) ...[
+          EnterpriseMetricsStrip(metrics: widget.metrics!),
+          const SizedBox(height: 14),
+        ] else if (widget.metricsStrip != null) ...[
           widget.metricsStrip!,
           const SizedBox(height: 14),
         ],
@@ -343,6 +513,19 @@ class _EnterpriseDataViewState<T> extends State<EnterpriseDataView<T>> {
     );
   }
 
+  Future<void> _openFilterDialog() async {
+    await showDialog<void>(
+      context: context,
+      builder: (ctx) => EnterpriseFilterDialog(
+        currentRange: widget.dateRange,
+        onApplyDateRange: (range) => widget.onDateRangeChanged?.call(range),
+        statusOptions: widget.filterChips,
+        selectedStatus: widget.selectedFilterChip,
+        onStatusSelected: (status) => widget.onFilterChipSelected?.call(status),
+      ),
+    );
+  }
+
   Widget _buildControlsBar({
     required String activeMode,
     required int totalCount,
@@ -353,12 +536,8 @@ class _EnterpriseDataViewState<T> extends State<EnterpriseDataView<T>> {
     final isCompact = screenWidth < 500;
 
     return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
-      decoration: BoxDecoration(
-        color: const Color(0xFFF8FAFC),
-        borderRadius: BorderRadius.circular(10),
-        border: Border.all(color: const Color(0xFFE2E8F0)),
-      ),
+      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+      decoration: AppTheme.neuCardDecoration(radius: 18),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
@@ -370,27 +549,81 @@ class _EnterpriseDataViewState<T> extends State<EnterpriseDataView<T>> {
                   child: Text(
                     widget.headerTitle!,
                     style: const TextStyle(
-                      fontSize: 14,
+                      fontSize: 14.5,
                       fontWeight: FontWeight.w800,
-                      color: Color(0xFF0F172A),
+                      color: Color(0xFF1E293B),
                     ),
                     maxLines: 1,
                     overflow: TextOverflow.ellipsis,
                   ),
                 ),
                 const SizedBox(width: 8),
-                Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
-                  decoration: BoxDecoration(
-                    color: const Color(0xFFE2E8F0),
-                    borderRadius: BorderRadius.circular(12),
+                if (widget.dateRange != null) ...[
+                  Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                    decoration: BoxDecoration(
+                      color: const Color(0xFFE0F2FE),
+                      borderRadius: BorderRadius.circular(12),
+                      border: Border.all(color: const Color(0xFFBAE6FD)),
+                    ),
+                    child: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        const Icon(Icons.date_range_rounded, size: 12, color: Color(0xFF0284C7)),
+                        const SizedBox(width: 4),
+                        Text(
+                          '${widget.dateRange!.start.toIso8601String().substring(0, 10)} - ${widget.dateRange!.end.toIso8601String().substring(0, 10)}',
+                          style: const TextStyle(fontSize: 11, fontWeight: FontWeight.bold, color: Color(0xFF0369A1)),
+                        ),
+                        const SizedBox(width: 4),
+                        InkWell(
+                          onTap: () => widget.onDateRangeChanged?.call(null),
+                          child: const Icon(Icons.close_rounded, size: 12, color: Color(0xFF0284C7)),
+                        ),
+                      ],
+                    ),
                   ),
+                  const SizedBox(width: 6),
+                ],
+                if (widget.onDateRangeChanged != null || (widget.filterChips != null && widget.filterChips!.isNotEmpty)) ...[
+                  IconButton(
+                    icon: Icon(
+                      (widget.dateRange != null || (widget.selectedFilterChip != null && widget.selectedFilterChip != 'All'))
+                          ? Icons.filter_alt_rounded
+                          : Icons.filter_alt_outlined,
+                      size: 18,
+                      color: (widget.dateRange != null || (widget.selectedFilterChip != null && widget.selectedFilterChip != 'All'))
+                          ? const Color(0xFF0284C7)
+                          : const Color(0xFF64748B),
+                    ),
+                    tooltip: 'Filter records',
+                    visualDensity: VisualDensity.compact,
+                    onPressed: _openFilterDialog,
+                  ),
+                  const SizedBox(width: 2),
+                ],
+                if (widget.onDownloadReport != null) ...[
+                  IconButton(
+                    icon: const Icon(Icons.file_download_outlined, size: 18, color: Color(0xFF0284C7)),
+                    tooltip: 'Download report',
+                    visualDensity: VisualDensity.compact,
+                    onPressed: widget.onDownloadReport,
+                  ),
+                  const SizedBox(width: 2),
+                ],
+                if (widget.directoryActions != null) ...[
+                  ...widget.directoryActions!,
+                  const SizedBox(width: 2),
+                ],
+                Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                  decoration: AppTheme.neuRecessedDecoration(radius: 12),
                   child: Text(
                     '$totalCount ${totalCount == 1 ? 'record' : 'records'}',
                     style: const TextStyle(
                       fontSize: 11,
                       color: Color(0xFF475569),
-                      fontWeight: FontWeight.w600,
+                      fontWeight: FontWeight.w700,
                     ),
                   ),
                 ),
@@ -408,11 +641,8 @@ class _EnterpriseDataViewState<T> extends State<EnterpriseDataView<T>> {
             children: [
               // 3-way Segmented Mode Switcher
               Container(
-                decoration: BoxDecoration(
-                  color: const Color(0xFFE2E8F0),
-                  borderRadius: BorderRadius.circular(8),
-                ),
-                padding: const EdgeInsets.all(2),
+                decoration: AppTheme.neuRecessedDecoration(radius: 12),
+                padding: const EdgeInsets.all(3),
                 child: Row(
                   mainAxisSize: MainAxisSize.min,
                   children: [
@@ -473,11 +703,30 @@ class _EnterpriseDataViewState<T> extends State<EnterpriseDataView<T>> {
                   ],
                 ),
 
-              // If no headerTitle, show count here
+              // If no headerTitle, show count & action icons here
               if (widget.headerTitle == null)
-                Text(
-                  '$totalCount ${totalCount == 1 ? 'record' : 'records'}',
-                  style: const TextStyle(fontSize: 12, color: Color(0xFF64748B), fontWeight: FontWeight.w600),
+                Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    if (widget.onDateRangeChanged != null)
+                      IconButton(
+                        icon: const Icon(Icons.filter_alt_outlined, size: 18, color: Color(0xFF64748B)),
+                        tooltip: 'Filter date range',
+                        visualDensity: VisualDensity.compact,
+                        onPressed: _openFilterDialog,
+                      ),
+                    if (widget.onDownloadReport != null)
+                      IconButton(
+                        icon: const Icon(Icons.file_download_outlined, size: 18, color: Color(0xFF0284C7)),
+                        tooltip: 'Download report',
+                        visualDensity: VisualDensity.compact,
+                        onPressed: widget.onDownloadReport,
+                      ),
+                    Text(
+                      '$totalCount ${totalCount == 1 ? 'record' : 'records'}',
+                      style: const TextStyle(fontSize: 12, color: Color(0xFF64748B), fontWeight: FontWeight.w600),
+                    ),
+                  ],
                 ),
             ],
           ),
@@ -495,26 +744,39 @@ class _EnterpriseDataViewState<T> extends State<EnterpriseDataView<T>> {
   }) {
     return InkWell(
       onTap: onTap,
-      borderRadius: BorderRadius.circular(6),
-      child: Container(
+      borderRadius: BorderRadius.circular(9),
+      child: AnimatedContainer(
+        duration: const Duration(milliseconds: 160),
         padding: EdgeInsets.symmetric(
-          horizontal: isCompact ? 8 : 10,
+          horizontal: isCompact ? 9 : 11,
           vertical: isCompact ? 5 : 6,
         ),
-        decoration: BoxDecoration(
-          color: selected ? Colors.white : Colors.transparent,
-          borderRadius: BorderRadius.circular(6),
-          boxShadow: selected
-              ? const [BoxShadow(color: Color(0x10000000), blurRadius: 2, offset: Offset(0, 1))]
-              : null,
-        ),
+        decoration: selected
+            ? BoxDecoration(
+                color: AppColors.neuSurface,
+                borderRadius: BorderRadius.circular(9),
+                border: Border.all(color: Colors.white.withValues(alpha: 0.9)),
+                boxShadow: const [
+                  BoxShadow(
+                    color: AppColors.neuShadowDark,
+                    offset: Offset(2, 2),
+                    blurRadius: 5,
+                  ),
+                  BoxShadow(
+                    color: AppColors.neuShadowLight,
+                    offset: Offset(-2, -2),
+                    blurRadius: 5,
+                  ),
+                ],
+              )
+            : const BoxDecoration(color: Colors.transparent),
         child: Row(
           mainAxisSize: MainAxisSize.min,
           children: [
             Icon(
               icon,
               size: isCompact ? 13 : 15,
-              color: selected ? const Color(0xFF0284C7) : const Color(0xFF64748B),
+              color: selected ? const Color(0xFF2563EB) : const Color(0xFF64748B),
             ),
             SizedBox(width: isCompact ? 4 : 5),
             Text(
@@ -522,7 +784,7 @@ class _EnterpriseDataViewState<T> extends State<EnterpriseDataView<T>> {
               style: TextStyle(
                 fontSize: isCompact ? 11 : 12,
                 fontWeight: selected ? FontWeight.w700 : FontWeight.w600,
-                color: selected ? const Color(0xFF0F172A) : const Color(0xFF64748B),
+                color: selected ? const Color(0xFF1E293B) : const Color(0xFF64748B),
               ),
             ),
           ],
@@ -546,6 +808,10 @@ class _EnterpriseDataViewState<T> extends State<EnterpriseDataView<T>> {
             '${widget.selectedIds!.length} of $totalCount selected',
             style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 13),
           ),
+          if (widget.batchActions != null && widget.batchActions!.isNotEmpty) ...[
+            const SizedBox(width: 16),
+            ...widget.batchActions!,
+          ],
           const Spacer(),
           TextButton(
             onPressed: widget.onDeselectAll,
@@ -657,7 +923,7 @@ class _EnterpriseDataViewState<T> extends State<EnterpriseDataView<T>> {
     );
   }
 
-  // 3. Table View (Classical alternating row zebra enterprise table)
+  // 3. Table View (Classical alternating row zebra enterprise table with column sorting)
   Widget _buildTableView(
     List<T> items,
     bool allPageSelected,
@@ -670,6 +936,10 @@ class _EnterpriseDataViewState<T> extends State<EnterpriseDataView<T>> {
       padding: EdgeInsets.zero,
       child: LayoutBuilder(
         builder: (context, constraints) {
+          final sortedColIdx = _sortColumnIndex == null
+              ? null
+              : (hasSelection ? _sortColumnIndex! + 1 : _sortColumnIndex!);
+
           return SizedBox(
             width: double.infinity,
             child: SingleChildScrollView(
@@ -677,6 +947,9 @@ class _EnterpriseDataViewState<T> extends State<EnterpriseDataView<T>> {
               child: ConstrainedBox(
                 constraints: BoxConstraints(minWidth: constraints.maxWidth),
                 child: DataTable(
+                  showCheckboxColumn: false,
+                  sortColumnIndex: sortedColIdx,
+                  sortAscending: _sortAscending,
                   headingRowColor: WidgetStateProperty.all(const Color(0xFFF8FAFC)),
                   columnSpacing: 20,
                   horizontalMargin: 16,
@@ -695,13 +968,24 @@ class _EnterpriseDataViewState<T> extends State<EnterpriseDataView<T>> {
                           },
                         ),
                       ),
-                    for (final col in widget.columns)
+                    for (var i = 0; i < widget.columns.length; i++)
                       DataColumn(
                         label: Text(
-                          col.title,
+                          widget.columns[i].title,
                           style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 12),
                         ),
-                        numeric: col.alignRight,
+                        numeric: widget.columns[i].alignRight,
+                        tooltip: widget.columns[i].sortKey != null
+                            ? 'Sort by ${widget.columns[i].title}'
+                            : null,
+                        onSort: widget.columns[i].sortKey == null
+                            ? null
+                            : (columnIndex, ascending) {
+                                setState(() {
+                                  _sortColumnIndex = i;
+                                  _sortAscending = ascending;
+                                });
+                              },
                       ),
                   ],
                   rows: items.asMap().entries.map((entry) {
@@ -712,13 +996,16 @@ class _EnterpriseDataViewState<T> extends State<EnterpriseDataView<T>> {
                     final isSelected = hasSelection && widget.selectedIds!.contains(id);
 
                     return DataRow(
-                      color: WidgetStateProperty.all(
-                        isSelected
-                            ? const Color(0xFFF0F9FF)
-                            : isEven
-                                ? Colors.transparent
-                                : const Color(0xFFFBFDFF),
-                      ),
+                      color: WidgetStateProperty.resolveWith((states) {
+                        if (isSelected) return const Color(0xFFF0F9FF);
+                        if (states.contains(WidgetState.hovered)) return const Color(0xFFF1F5F9);
+                        return isEven ? Colors.transparent : const Color(0xFFFBFDFF);
+                      }),
+                      onSelectChanged: widget.onRowTap != null
+                          ? (_) => widget.onRowTap!(item)
+                          : (hasSelection
+                              ? (_) => widget.onToggleSelect?.call(id)
+                              : null),
                       cells: [
                         if (hasSelection)
                           DataCell(
@@ -729,7 +1016,12 @@ class _EnterpriseDataViewState<T> extends State<EnterpriseDataView<T>> {
                           ),
                         for (final col in widget.columns)
                           DataCell(
-                            col.cellBuilder(context, item),
+                            col.alignRight
+                                ? Align(
+                                    alignment: Alignment.centerRight,
+                                    child: col.cellBuilder(context, item),
+                                  )
+                                : col.cellBuilder(context, item),
                           ),
                       ],
                     );
@@ -882,6 +1174,526 @@ class _EnterpriseDataViewState<T> extends State<EnterpriseDataView<T>> {
               ),
             ],
           ),
+        ),
+      ),
+    );
+  }
+}
+
+/// Interactive status badge that opens an inline dropdown to change status on the fly.
+class EnterpriseStatusDropdown extends StatelessWidget {
+  const EnterpriseStatusDropdown({
+    required this.currentStatus,
+    required this.options,
+    required this.onChanged,
+    this.statusColors,
+    super.key,
+  });
+
+  final String currentStatus;
+  final List<String> options;
+  final ValueChanged<String> onChanged;
+  final Map<String, ({Color color, Color bg})>? statusColors;
+
+  static ({Color color, Color bg}) defaultColors(String status) {
+    final s = status.toUpperCase().trim();
+    if (s == 'PAID' || s == 'ACTIVE' || s == 'SETTLED') {
+      return (color: const Color(0xFF16A34A), bg: const Color(0xFFDCFCE7));
+    }
+    if (s == 'PENDING' || s == 'DRAFT' || s == 'ON_LEAVE' || s == 'ON LEAVE' || s == 'NET 30') {
+      return (color: const Color(0xFFD97706), bg: const Color(0xFFFEF3C7));
+    }
+    if (s == 'OVERDUE' || s == 'INACTIVE' || s == 'REJECTED' || s == 'CANCELLED') {
+      return (color: const Color(0xFFDC2626), bg: const Color(0xFFFEE2E2));
+    }
+    if (s == 'SENT' || s == 'TAX DEDUCTIBLE' || s == 'CORPORATE' || s == 'ON_HOLD' || s == 'ON HOLD' || s == 'IMMEDIATE') {
+      return (color: const Color(0xFF0284C7), bg: const Color(0xFFE0F2FE));
+    }
+    return (color: const Color(0xFF64748B), bg: const Color(0xFFF1F5F9));
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final colors = statusColors?[currentStatus] ?? defaultColors(currentStatus);
+
+    return Theme(
+      data: Theme.of(context).copyWith(
+        hoverColor: Colors.transparent,
+      ),
+      child: PopupMenuButton<String>(
+        tooltip: 'Click to change status',
+        offset: const Offset(0, 26),
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(10),
+          side: const BorderSide(color: Color(0xFFE2E8F0)),
+        ),
+        color: Colors.white,
+        elevation: 6,
+        onSelected: onChanged,
+        itemBuilder: (ctx) {
+          return options.map((opt) {
+            final optColors = statusColors?[opt] ?? defaultColors(opt);
+            final isCurrent = opt.toLowerCase().trim() == currentStatus.toLowerCase().trim();
+            return PopupMenuItem<String>(
+              value: opt,
+              height: 36,
+              child: Row(
+                children: [
+                  Container(
+                    width: 8,
+                    height: 8,
+                    decoration: BoxDecoration(
+                      color: optColors.color,
+                      shape: BoxShape.circle,
+                    ),
+                  ),
+                  const SizedBox(width: 8),
+                  Text(
+                    opt,
+                    style: TextStyle(
+                      fontSize: 12,
+                      fontWeight: isCurrent ? FontWeight.bold : FontWeight.w500,
+                      color: isCurrent ? const Color(0xFF0F172A) : const Color(0xFF475569),
+                    ),
+                  ),
+                  if (isCurrent) ...[
+                    const Spacer(),
+                    Icon(Icons.check, size: 14, color: optColors.color),
+                  ],
+                ],
+              ),
+            );
+          }).toList();
+        },
+        child: Container(
+          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+          decoration: BoxDecoration(
+            color: colors.bg,
+            borderRadius: BorderRadius.circular(12),
+            border: Border.all(color: colors.color.withValues(alpha: 0.3)),
+          ),
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Container(
+                width: 6,
+                height: 6,
+                decoration: BoxDecoration(
+                  color: colors.color,
+                  shape: BoxShape.circle,
+                ),
+              ),
+              const SizedBox(width: 6),
+              Text(
+                currentStatus,
+                style: TextStyle(
+                  fontSize: 11,
+                  fontWeight: FontWeight.w700,
+                  color: colors.color,
+                ),
+              ),
+              const SizedBox(width: 2),
+              Icon(Icons.arrow_drop_down, size: 14, color: colors.color),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+/// Compact enterprise filter dialog with presets (Today, Week, Month, Year, All Time),
+/// custom date calendar range, and status options.
+class EnterpriseFilterDialog extends StatefulWidget {
+  const EnterpriseFilterDialog({
+    this.currentRange,
+    this.onApplyDateRange,
+    this.statusOptions,
+    this.selectedStatus,
+    this.onStatusSelected,
+    super.key,
+  });
+
+  final DateTimeRange? currentRange;
+  final ValueChanged<DateTimeRange?>? onApplyDateRange;
+  final List<String>? statusOptions;
+  final String? selectedStatus;
+  final ValueChanged<String>? onStatusSelected;
+
+  @override
+  State<EnterpriseFilterDialog> createState() => _EnterpriseFilterDialogState();
+}
+
+class _EnterpriseFilterDialogState extends State<EnterpriseFilterDialog> {
+  DateTimeRange? _range;
+  String? _selectedStatus;
+  String _activePreset = '';
+
+  @override
+  void initState() {
+    super.initState();
+    _range = widget.currentRange;
+    _selectedStatus = widget.selectedStatus;
+  }
+
+  void _applyPreset(String preset) {
+    final now = DateTime.now();
+    setState(() {
+      _activePreset = preset;
+      switch (preset) {
+        case 'Today':
+          _range = DateTimeRange(
+            start: DateTime(now.year, now.month, now.day),
+            end: DateTime(now.year, now.month, now.day, 23, 59, 59),
+          );
+          break;
+        case 'This Week':
+          final startOfWeek = now.subtract(Duration(days: now.weekday - 1));
+          _range = DateTimeRange(
+            start: DateTime(startOfWeek.year, startOfWeek.month, startOfWeek.day),
+            end: DateTime(now.year, now.month, now.day, 23, 59, 59),
+          );
+          break;
+        case 'This Month':
+          _range = DateTimeRange(
+            start: DateTime(now.year, now.month, 1),
+            end: DateTime(now.year, now.month + 1, 0, 23, 59, 59),
+          );
+          break;
+        case 'This Year':
+          _range = DateTimeRange(
+            start: DateTime(now.year, 1, 1),
+            end: DateTime(now.year, 12, 31, 23, 59, 59),
+          );
+          break;
+        case 'All Time':
+          _range = null;
+          break;
+      }
+    });
+  }
+
+  Future<void> _pickCustomDate({required bool isStart}) async {
+    final initial = isStart
+        ? (_range?.start ?? DateTime.now())
+        : (_range?.end ?? DateTime.now());
+    final picked = await showDatePicker(
+      context: context,
+      initialDate: initial,
+      firstDate: DateTime(2020),
+      lastDate: DateTime(2035),
+    );
+    if (picked == null) return;
+    setState(() {
+      _activePreset = 'Custom';
+      if (isStart) {
+        final end = _range?.end ?? picked.add(const Duration(days: 30));
+        _range = DateTimeRange(
+          start: picked,
+          end: end.isBefore(picked) ? picked : end,
+        );
+      } else {
+        final start = _range?.start ?? picked.subtract(const Duration(days: 30));
+        _range = DateTimeRange(
+          start: start.isAfter(picked) ? picked : start,
+          end: picked,
+        );
+      }
+    });
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    String dateFormat(DateTime dt) => dt.toIso8601String().substring(0, 10);
+
+    return Dialog(
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+      insetPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 24),
+      child: ConstrainedBox(
+        constraints: const BoxConstraints(maxWidth: 420),
+        child: Padding(
+          padding: const EdgeInsets.all(20),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              // Header
+              Row(
+                children: [
+                  Container(
+                    padding: const EdgeInsets.all(8),
+                    decoration: BoxDecoration(
+                      color: const Color(0xFF0284C7).withValues(alpha: 0.1),
+                      borderRadius: BorderRadius.circular(8),
+                    ),
+                    child: const Icon(Icons.tune_rounded, color: Color(0xFF0284C7), size: 20),
+                  ),
+                  const SizedBox(width: 12),
+                  const Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          'Filter Records',
+                          style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16),
+                        ),
+                        Text(
+                          'Quick date presets and status options',
+                          style: TextStyle(fontSize: 12, color: Color(0xFF64748B)),
+                        ),
+                      ],
+                    ),
+                  ),
+                  IconButton(
+                    icon: const Icon(Icons.close_rounded, size: 20),
+                    onPressed: () => Navigator.pop(context),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 16),
+              const Divider(height: 1),
+              const SizedBox(height: 16),
+
+              // Date Range Presets
+              const Text(
+                'DATE RANGE PRESETS',
+                style: TextStyle(fontSize: 11, fontWeight: FontWeight.bold, color: Color(0xFF64748B), letterSpacing: 0.5),
+              ),
+              const SizedBox(height: 8),
+              Wrap(
+                spacing: 8,
+                runSpacing: 8,
+                children: [
+                  _PresetChip(
+                    label: 'Today',
+                    icon: Icons.today_rounded,
+                    isSelected: _activePreset == 'Today',
+                    onTap: () => _applyPreset('Today'),
+                  ),
+                  _PresetChip(
+                    label: 'This Week',
+                    icon: Icons.view_week_outlined,
+                    isSelected: _activePreset == 'This Week',
+                    onTap: () => _applyPreset('This Week'),
+                  ),
+                  _PresetChip(
+                    label: 'This Month',
+                    icon: Icons.calendar_month_outlined,
+                    isSelected: _activePreset == 'This Month',
+                    onTap: () => _applyPreset('This Month'),
+                  ),
+                  _PresetChip(
+                    label: 'This Year',
+                    icon: Icons.date_range_outlined,
+                    isSelected: _activePreset == 'This Year',
+                    onTap: () => _applyPreset('This Year'),
+                  ),
+                  _PresetChip(
+                    label: 'All Time',
+                    icon: Icons.all_inclusive_rounded,
+                    isSelected: _activePreset == 'All Time' || (_range == null && _activePreset.isEmpty),
+                    onTap: () => _applyPreset('All Time'),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 16),
+
+              // Custom Range Date Pickers
+              const Text(
+                'CUSTOM CALENDAR RANGE',
+                style: TextStyle(fontSize: 11, fontWeight: FontWeight.bold, color: Color(0xFF64748B), letterSpacing: 0.5),
+              ),
+              const SizedBox(height: 8),
+              Row(
+                children: [
+                  Expanded(
+                    child: InkWell(
+                      onTap: () => _pickCustomDate(isStart: true),
+                      borderRadius: BorderRadius.circular(8),
+                      child: Container(
+                        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+                        decoration: BoxDecoration(
+                          border: Border.all(color: const Color(0xFFCBD5E1)),
+                          borderRadius: BorderRadius.circular(8),
+                          color: const Color(0xFFF8FAFC),
+                        ),
+                        child: Row(
+                          children: [
+                            const Icon(Icons.calendar_today_outlined, size: 14, color: Color(0xFF0284C7)),
+                            const SizedBox(width: 8),
+                            Expanded(
+                              child: Text(
+                                _range != null ? dateFormat(_range!.start) : 'Start date',
+                                style: TextStyle(
+                                  fontSize: 12,
+                                  fontWeight: _range != null ? FontWeight.bold : FontWeight.normal,
+                                  color: _range != null ? const Color(0xFF0F172A) : const Color(0xFF94A3B8),
+                                ),
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ),
+                  ),
+                  const Padding(
+                    padding: EdgeInsets.symmetric(horizontal: 8),
+                    child: Text('to', style: TextStyle(color: Color(0xFF94A3B8), fontSize: 12)),
+                  ),
+                  Expanded(
+                    child: InkWell(
+                      onTap: () => _pickCustomDate(isStart: false),
+                      borderRadius: BorderRadius.circular(8),
+                      child: Container(
+                        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+                        decoration: BoxDecoration(
+                          border: Border.all(color: const Color(0xFFCBD5E1)),
+                          borderRadius: BorderRadius.circular(8),
+                          color: const Color(0xFFF8FAFC),
+                        ),
+                        child: Row(
+                          children: [
+                            const Icon(Icons.calendar_today_outlined, size: 14, color: Color(0xFF0284C7)),
+                            const SizedBox(width: 8),
+                            Expanded(
+                              child: Text(
+                                _range != null ? dateFormat(_range!.end) : 'End date',
+                                style: TextStyle(
+                                  fontSize: 12,
+                                  fontWeight: _range != null ? FontWeight.bold : FontWeight.normal,
+                                  color: _range != null ? const Color(0xFF0F172A) : const Color(0xFF94A3B8),
+                                ),
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+
+              // Status Options
+              if (widget.statusOptions != null && widget.statusOptions!.isNotEmpty) ...[
+                const SizedBox(height: 16),
+                const Text(
+                  'STATUS FILTER',
+                  style: TextStyle(fontSize: 11, fontWeight: FontWeight.bold, color: Color(0xFF64748B), letterSpacing: 0.5),
+                ),
+                const SizedBox(height: 8),
+                Wrap(
+                  spacing: 6,
+                  runSpacing: 6,
+                  children: widget.statusOptions!.map((status) {
+                    final cleanStatus = status.split(' ').first;
+                    final isSelected = (_selectedStatus ?? 'All').toLowerCase().startsWith(cleanStatus.toLowerCase());
+                    return ChoiceChip(
+                      label: Text(status, style: const TextStyle(fontSize: 12)),
+                      selected: isSelected,
+                      onSelected: (_) {
+                        setState(() => _selectedStatus = cleanStatus);
+                      },
+                      selectedColor: const Color(0xFF0284C7).withValues(alpha: 0.15),
+                      labelStyle: TextStyle(
+                        fontWeight: isSelected ? FontWeight.bold : FontWeight.normal,
+                        color: isSelected ? const Color(0xFF0284C7) : const Color(0xFF475569),
+                      ),
+                      side: BorderSide(
+                        color: isSelected ? const Color(0xFF0284C7) : const Color(0xFFE2E8F0),
+                      ),
+                    );
+                  }).toList(),
+                ),
+              ],
+
+              const SizedBox(height: 20),
+              const Divider(height: 1),
+              const SizedBox(height: 16),
+
+              // Actions
+              Row(
+                mainAxisAlignment: MainAxisAlignment.end,
+                children: [
+                  OutlinedButton(
+                    onPressed: () {
+                      setState(() {
+                        _range = null;
+                        _selectedStatus = 'All';
+                        _activePreset = 'All Time';
+                      });
+                      widget.onApplyDateRange?.call(null);
+                      widget.onStatusSelected?.call('All');
+                      Navigator.pop(context);
+                    },
+                    child: const Text('Reset All'),
+                  ),
+                  const SizedBox(width: 10),
+                  FilledButton(
+                    onPressed: () {
+                      widget.onApplyDateRange?.call(_range);
+                      if (_selectedStatus != null) {
+                        widget.onStatusSelected?.call(_selectedStatus!);
+                      }
+                      Navigator.pop(context);
+                    },
+                    child: const Text('Apply Filters'),
+                  ),
+                ],
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _PresetChip extends StatelessWidget {
+  const _PresetChip({
+    required this.label,
+    required this.icon,
+    required this.isSelected,
+    required this.onTap,
+  });
+
+  final String label;
+  final IconData icon;
+  final bool isSelected;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    return InkWell(
+      onTap: onTap,
+      borderRadius: BorderRadius.circular(8),
+      child: AnimatedContainer(
+        duration: const Duration(milliseconds: 150),
+        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+        decoration: BoxDecoration(
+          color: isSelected ? const Color(0xFF0284C7) : Colors.white,
+          borderRadius: BorderRadius.circular(8),
+          border: Border.all(
+            color: isSelected ? const Color(0xFF0284C7) : const Color(0xFFCBD5E1),
+          ),
+        ),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Icon(
+              icon,
+              size: 14,
+              color: isSelected ? Colors.white : const Color(0xFF64748B),
+            ),
+            const SizedBox(width: 6),
+            Text(
+              label,
+              style: TextStyle(
+                fontSize: 12,
+                fontWeight: isSelected ? FontWeight.bold : FontWeight.w500,
+                color: isSelected ? Colors.white : const Color(0xFF334155),
+              ),
+            ),
+          ],
         ),
       ),
     );

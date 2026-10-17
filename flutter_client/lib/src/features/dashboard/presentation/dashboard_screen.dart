@@ -12,6 +12,13 @@ import '../../invoices/data/invoice.dart';
 import '../data/dashboard_repository.dart';
 import '../data/dashboard_statistics.dart';
 import '../data/developer_overview.dart';
+import '../../clients/data/client.dart';
+
+import '../../clients/data/clients_repository.dart';
+import '../../employees/data/employee.dart';
+import '../../employees/data/employee_repository.dart';
+import '../../expenses/data/expense.dart';
+import '../../expenses/data/expenses_repository.dart';
 import 'widgets/dashboard_analytics_cards.dart';
 
 class DashboardScreen extends StatefulWidget {
@@ -25,6 +32,7 @@ class DashboardScreen extends StatefulWidget {
     required this.onViewExpenses,
     required this.onOpenAiChat,
     required this.onOpenTemplates,
+    this.onOpenPayroll,
     this.onOpenAuditLogs,
     this.registeredCompanyName,
     this.localSettings = const {},
@@ -40,6 +48,7 @@ class DashboardScreen extends StatefulWidget {
   final VoidCallback onViewExpenses;
   final VoidCallback onOpenAiChat;
   final VoidCallback onOpenTemplates;
+  final VoidCallback? onOpenPayroll;
   final VoidCallback? onOpenAuditLogs;
   final String? registeredCompanyName;
   final Map<String, Object?> localSettings;
@@ -48,9 +57,32 @@ class DashboardScreen extends StatefulWidget {
   State<DashboardScreen> createState() => _DashboardScreenState();
 }
 
+class DashboardNotificationItem {
+  DashboardNotificationItem({
+    required this.id,
+    required this.title,
+    required this.message,
+    required this.timeAgo,
+    required this.icon,
+    required this.color,
+    this.isRead = false,
+  });
+
+  final String id;
+  final String title;
+  final String message;
+  final String timeAgo;
+  final IconData icon;
+  final Color color;
+  bool isRead;
+}
+
 class _DashboardScreenState extends State<DashboardScreen> {
   DashboardStatistics? _statistics;
   List<Invoice>? _invoices;
+  List<Expense>? _expenses;
+  List<Client>? _clients;
+  List<Employee>? _employees;
   DeveloperOverview? _developerOverview;
   int? _selectedCompanyId;
   int _loadGeneration = 0;
@@ -61,6 +93,380 @@ class _DashboardScreenState extends State<DashboardScreen> {
   String? _backendBusinessName;
   List<AuditLog> _recentAuditLogs = [];
   StreamSubscription<AuditLog>? _auditSubscription;
+
+  final TextEditingController _searchController = TextEditingController();
+  String _searchQuery = '';
+  String _selectedDateFilter = 'FY 2025-26';
+  bool _hasUserSelectedDateFilter = false;
+  DateTimeRange? _customDateRange;
+
+  final List<DashboardNotificationItem> _notifications = [
+    DashboardNotificationItem(
+      id: '1',
+      title: 'Payment Received',
+      message: 'Payment of ₹45,200 received for Invoice #INV-2025-001 from Acme Security',
+      timeAgo: '12m ago',
+      icon: Icons.check_circle_outline_rounded,
+      color: const Color(0xFF10B981),
+      isRead: false,
+    ),
+    DashboardNotificationItem(
+      id: '2',
+      title: 'Invoice Overdue Notice',
+      message: 'Invoice #INV-2025-004 is overdue by 3 days (₹18,500)',
+      timeAgo: '2h ago',
+      icon: Icons.warning_amber_rounded,
+      color: const Color(0xFFEF4444),
+      isRead: false,
+    ),
+    DashboardNotificationItem(
+      id: '3',
+      title: 'New Client Onboarded',
+      message: 'Metro Guard Logistics profile has been verified and activated',
+      timeAgo: 'Yesterday',
+      icon: Icons.person_add_alt_1_rounded,
+      color: const Color(0xFF0284C7),
+      isRead: false,
+    ),
+    DashboardNotificationItem(
+      id: '4',
+      title: 'Tax & GST Summary Ready',
+      message: 'Monthly GST summary for March 2025 is ready for review',
+      timeAgo: '2d ago',
+      icon: Icons.receipt_long_rounded,
+      color: const Color(0xFF8B5CF6),
+      isRead: true,
+    ),
+  ];
+
+  int get _unreadNotificationCount =>
+      _notifications.where((n) => !n.isRead).length;
+
+  void _markAllNotificationsAsRead() {
+    setState(() {
+      for (final n in _notifications) {
+        n.isRead = true;
+      }
+    });
+  }
+
+  void _showNotificationsDialog() {
+    showDialog<void>(
+      context: context,
+      builder: (ctx) => StatefulBuilder(
+        builder: (ctx, setDialogState) {
+          final unreadCount = _notifications.where((n) => !n.isRead).length;
+          return AlertDialog(
+            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+            titlePadding: const EdgeInsets.fromLTRB(20, 18, 16, 12),
+            contentPadding: const EdgeInsets.fromLTRB(16, 0, 16, 12),
+            title: Row(
+              children: [
+                Container(
+                  padding: const EdgeInsets.all(7),
+                  decoration: BoxDecoration(
+                    color: const Color(0xFF0284C7).withValues(alpha: 0.12),
+                    shape: BoxShape.circle,
+                  ),
+                  child: const Icon(Icons.notifications_active_rounded, color: Color(0xFF0284C7), size: 18),
+                ),
+                const SizedBox(width: 10),
+                const Text(
+                  'Notifications',
+                  style: TextStyle(fontSize: 17, fontWeight: FontWeight.w800, color: Color(0xFF0F172A)),
+                ),
+                if (unreadCount > 0) ...[
+                  const SizedBox(width: 8),
+                  Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 2),
+                    decoration: BoxDecoration(
+                      color: const Color(0xFFEF4444).withValues(alpha: 0.12),
+                      borderRadius: BorderRadius.circular(10),
+                    ),
+                    child: Text(
+                      '$unreadCount new',
+                      style: const TextStyle(color: Color(0xFFEF4444), fontSize: 11, fontWeight: FontWeight.w700),
+                    ),
+                  ),
+                ],
+                const Spacer(),
+                if (unreadCount > 0)
+                  TextButton(
+                    onPressed: () {
+                      _markAllNotificationsAsRead();
+                      setDialogState(() {});
+                    },
+                    child: const Text('Mark all as read', style: TextStyle(fontSize: 12, fontWeight: FontWeight.w600)),
+                  ),
+              ],
+            ),
+            content: SizedBox(
+              width: 440,
+              child: _notifications.isEmpty
+                  ? const Padding(
+                      padding: EdgeInsets.all(32),
+                      child: Center(
+                        child: Text('No notifications yet', style: TextStyle(color: Color(0xFF94A3B8))),
+                      ),
+                    )
+                  : ListView.separated(
+                      shrinkWrap: true,
+                      itemCount: _notifications.length,
+                      separatorBuilder: (_, __) => const Divider(height: 12, color: Color(0xFFF1F5F9)),
+                      itemBuilder: (ctx, index) {
+                        final notif = _notifications[index];
+                        return ListTile(
+                          dense: true,
+                          contentPadding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+                          tileColor: notif.isRead ? Colors.transparent : const Color(0xFFF8FAFC),
+                          leading: Container(
+                            padding: const EdgeInsets.all(8),
+                            decoration: BoxDecoration(
+                              color: notif.color.withValues(alpha: 0.12),
+                              shape: BoxShape.circle,
+                            ),
+                            child: Icon(notif.icon, size: 18, color: notif.color),
+                          ),
+                          title: Row(
+                            children: [
+                              Expanded(
+                                child: Text(
+                                  notif.title,
+                                  style: TextStyle(
+                                    fontSize: 13,
+                                    fontWeight: notif.isRead ? FontWeight.w600 : FontWeight.w800,
+                                    color: const Color(0xFF0F172A),
+                                  ),
+                                ),
+                              ),
+                              Text(
+                                notif.timeAgo,
+                                style: const TextStyle(fontSize: 10, color: Color(0xFF94A3B8)),
+                              ),
+                            ],
+                          ),
+                          subtitle: Padding(
+                            padding: const EdgeInsets.only(top: 3),
+                            child: Text(
+                              notif.message,
+                              style: const TextStyle(fontSize: 12, color: Color(0xFF64748B), height: 1.3),
+                            ),
+                          ),
+                          trailing: notif.isRead
+                              ? null
+                              : Container(
+                                  width: 8,
+                                  height: 8,
+                                  decoration: const BoxDecoration(
+                                    color: Color(0xFF0284C7),
+                                    shape: BoxShape.circle,
+                                  ),
+                                ),
+                          onTap: () {
+                            setState(() {
+                              notif.isRead = true;
+                            });
+                            setDialogState(() {});
+                          },
+                        );
+                      },
+                    ),
+            ),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.of(ctx).pop(),
+                child: const Text('Close'),
+              ),
+            ],
+          );
+        },
+      ),
+    );
+  }
+
+  DateTime? _parseInvoiceDate(Invoice inv) {
+    if (inv.issueDate.isNotEmpty) {
+      try {
+        final parsed = DateTime.tryParse(inv.issueDate);
+        if (parsed != null) return parsed;
+      } catch (_) {}
+    }
+    if (inv.createdAt != null && inv.createdAt! > 0) {
+      return DateTime.fromMillisecondsSinceEpoch(
+        inv.createdAt! > 100000000000 ? inv.createdAt! : inv.createdAt! * 1000,
+      );
+    }
+    return null;
+  }
+
+  DateTime? _parseExpenseDate(Expense exp) {
+    if (exp.date.isNotEmpty) {
+      try {
+        final parsed = DateTime.tryParse(exp.date);
+        if (parsed != null) return parsed;
+      } catch (_) {}
+    }
+    return null;
+  }
+
+  (DateTime?, DateTime?) _getDateRangeForFilter(String filter) {
+    final now = DateTime.now();
+    switch (filter) {
+      case 'FY 2025-26':
+        return (DateTime(2025, 4, 1), DateTime(2026, 3, 31, 23, 59, 59));
+      case 'FY 2024-25':
+        return (DateTime(2024, 4, 1), DateTime(2025, 3, 31, 23, 59, 59));
+      case 'FY 2023-24':
+        return (DateTime(2023, 4, 1), DateTime(2024, 3, 31, 23, 59, 59));
+      case 'Apr 15, 2025 - May 15, 2025':
+        return (DateTime(2025, 4, 15), DateTime(2025, 5, 15, 23, 59, 59));
+      case 'This Month':
+        return (
+          DateTime(now.year, now.month, 1),
+          DateTime(now.year, now.month + 1, 0, 23, 59, 59),
+        );
+      case 'Last 30 Days':
+        return (
+          now.subtract(const Duration(days: 30)),
+          now,
+        );
+      case 'All Dates':
+        return (null, null);
+      default:
+        if (_customDateRange != null) {
+          return (
+            _customDateRange!.start,
+            DateTime(
+              _customDateRange!.end.year,
+              _customDateRange!.end.month,
+              _customDateRange!.end.day,
+              23,
+              59,
+              59,
+            ),
+          );
+        }
+        return (null, null);
+    }
+  }
+
+  List<Invoice>? get _filteredInvoices {
+    if (_invoices == null) return null;
+    var list = _invoices!;
+    final (start, end) = _getDateRangeForFilter(_selectedDateFilter);
+    if (start != null && end != null) {
+      final dateFiltered = list.where((inv) {
+        final d = _parseInvoiceDate(inv);
+        if (d == null) return false;
+        return !d.isBefore(start) && !d.isAfter(end);
+      }).toList();
+      if (dateFiltered.isNotEmpty || _hasUserSelectedDateFilter) {
+        list = dateFiltered;
+      }
+    }
+    if (_searchQuery.trim().isNotEmpty) {
+      final q = _searchQuery.toLowerCase().trim();
+      list = list.where((inv) {
+        return inv.invoiceNumber.toLowerCase().contains(q) ||
+            inv.clientName.toLowerCase().contains(q) ||
+            inv.status.toLowerCase().contains(q);
+      }).toList();
+    }
+    return list;
+  }
+
+  List<Expense>? get _filteredExpenses {
+    if (_expenses == null) return null;
+    final (start, end) = _getDateRangeForFilter(_selectedDateFilter);
+    if (start == null || end == null) return _expenses;
+    final filtered = _expenses!.where((exp) {
+      final d = _parseExpenseDate(exp);
+      if (d == null) return false;
+      return !d.isBefore(start) && !d.isAfter(end);
+    }).toList();
+    if (filtered.isNotEmpty || _hasUserSelectedDateFilter) {
+      return filtered;
+    }
+    return _expenses;
+  }
+
+  DashboardStatistics get _effectiveStatistics {
+    if (_statistics == null) {
+      return const DashboardStatistics(
+        totalInvoices: 0,
+        paidInvoices: 0,
+        overdueInvoices: 0,
+        draftInvoices: 0,
+        totalRevenue: 0,
+        totalExpenses: 0,
+        totalClients: 0,
+      );
+    }
+    final invs = _filteredInvoices;
+    final exps = _filteredExpenses;
+    if (invs == null) return _statistics!;
+
+    if (_hasUserSelectedDateFilter || _searchQuery.isNotEmpty) {
+      final totalInv = invs.length;
+      final paidInv = invs.where((i) => i.status.toUpperCase() == 'PAID').length;
+      final overdueInv = invs.where((i) => i.status.toUpperCase() == 'OVERDUE').length;
+      final draftInv = invs.where((i) => i.status.toUpperCase() == 'DRAFT').length;
+      final totalRev = invs.where((i) => i.status.toUpperCase() == 'PAID').fold<double>(0.0, (s, i) => s + i.total);
+      final totalExp = (exps ?? _expenses ?? []).fold<double>(0.0, (s, e) => s + e.amount);
+      final totalCli = invs
+          .map((i) => i.clientName.trim().isNotEmpty
+              ? i.clientName.trim()
+              : (i.clientId?.toString() ?? ''))
+          .where((c) => c.isNotEmpty)
+          .toSet()
+          .length;
+
+      return DashboardStatistics(
+        totalInvoices: totalInv,
+        paidInvoices: paidInv,
+        overdueInvoices: overdueInv,
+        draftInvoices: draftInv,
+        totalRevenue: totalRev,
+        totalExpenses: totalExp,
+        totalClients: totalCli,
+      );
+    }
+
+    return _statistics!;
+  }
+
+  Future<void> _onDateFilterChanged(String filter) async {
+    if (filter == 'Custom Date Range...') {
+      final picked = await showDateRangePicker(
+        context: context,
+        firstDate: DateTime(2020),
+        lastDate: DateTime(2030),
+        initialDateRange: _customDateRange ??
+            DateTimeRange(
+              start: DateTime.now().subtract(const Duration(days: 30)),
+              end: DateTime.now(),
+            ),
+      );
+      if (picked != null) {
+        setState(() {
+          _hasUserSelectedDateFilter = true;
+          _customDateRange = picked;
+          _selectedDateFilter = '${_formatDate(picked.start)} - ${_formatDate(picked.end)}';
+        });
+      }
+      return;
+    }
+    setState(() {
+      _hasUserSelectedDateFilter = true;
+      _selectedDateFilter = filter;
+    });
+  }
+
+  String _formatDate(DateTime dt) {
+    const months = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+    return '${months[dt.month - 1]} ${dt.day}, ${dt.year}';
+  }
 
   bool get _isDeveloper =>
       widget.session.user.role.toUpperCase() == 'DEVELOPER';
@@ -78,6 +484,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
   @override
   void dispose() {
     _auditSubscription?.cancel();
+    _searchController.dispose();
     super.dispose();
   }
 
@@ -133,6 +540,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
         }
       } catch (_) {}
 
+      // Fetch Invoices
       if (widget.session.user.hasPermission('INVOICES')) {
         try {
           final invoices = await widget.repository.loadInvoices();
@@ -154,6 +562,32 @@ class _DashboardScreenState extends State<DashboardScreen> {
           _invoices = null;
           _invoiceLoadError = null;
         });
+      }
+
+      // Fetch Expenses
+      try {
+        final expenses = await ExpensesRepository(apiClient: widget.repository.apiClient).list();
+        if (mounted && generation == _loadGeneration) {
+          setState(() => _expenses = expenses);
+        }
+      } catch (_) {}
+
+      // Fetch Clients
+      try {
+        final clients = await ClientsRepository(apiClient: widget.repository.apiClient).list();
+        if (mounted && generation == _loadGeneration) {
+          setState(() => _clients = clients);
+        }
+      } catch (_) {}
+
+      // Fetch Employees (for Admin only)
+      if (widget.session.user.role.toUpperCase() != 'EMPLOYEE') {
+        try {
+          final employees = await EmployeeRepository(apiClient: widget.repository.apiClient).list();
+          if (mounted && generation == _loadGeneration) {
+            setState(() => _employees = employees);
+          }
+        } catch (_) {}
       }
     } on ApiException catch (error) {
       if (mounted && generation == _loadGeneration) {
@@ -186,6 +620,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
       _ => 'Your business performance',
     };
     return Scaffold(
+      backgroundColor: AppColors.background,
       body: SafeArea(
         bottom: false,
         child: LayoutBuilder(
@@ -194,32 +629,49 @@ class _DashboardScreenState extends State<DashboardScreen> {
             return RefreshIndicator(
               onRefresh: _loadStatistics,
               child: ListView(
-                padding: EdgeInsets.fromLTRB(sidePadding, 12, sidePadding, 28),
+                padding: EdgeInsets.fromLTRB(sidePadding, 14, sidePadding, 28),
                 children: [
                   _DashboardHeader(
-                    name: _isDeveloper ? 'Platform overview' : registeredName,
-                    subtitle: subtitle,
+                    companyName: _isDeveloper ? 'Platform overview' : registeredName,
+                    selectedFilter: _selectedDateFilter,
+                    onFilterChanged: _onDateFilterChanged,
+                    userInitial: widget.session.user.fullName.trim().isNotEmpty
+                        ? widget.session.user.fullName.trim()[0].toUpperCase()
+                        : 'R',
+                    onMenuTap: null,
+                    unreadNotificationCount: _unreadNotificationCount,
+                    onOpenNotifications: _showNotificationsDialog,
+                    searchController: _searchController,
+                    onSearchChanged: (val) => setState(() => _searchQuery = val),
                     onRefresh: _isLoading ? null : _loadStatistics,
-                    onCreateInvoice: widget.onCreateInvoice,
-                    canOpenInvoices:
-                        widget.session.user.hasPermission('INVOICES'),
                   ),
-                  const SizedBox(height: 16),
+                  const SizedBox(height: 20),
+                  _DashboardWelcomeRow(
+                    userName: widget.session.user.fullName.trim().isNotEmpty
+                        ? widget.session.user.fullName.trim()
+                        : 'Roshan Kumar',
+                    subtitle: subtitle,
+                    onCreateInvoice: widget.session.user.hasPermission('INVOICES')
+                        ? widget.onCreateInvoice
+                        : null,
+                  ),
+                  const SizedBox(height: 18),
                   if (!_isDeveloper)
                     _AssistantBanner(onTap: widget.onOpenAiChat),
                   if (_usingCachedData) ...[
                     const SizedBox(height: 12),
                     const OfflineCacheBanner(),
                   ],
-                  const SizedBox(height: 12),
+                  const SizedBox(height: 18),
                   _DashboardShortcuts(
                     user: widget.session.user,
                     onViewInvoices: () => widget.onViewInvoices('All'),
                     onViewExpenses: widget.onViewExpenses,
                     onViewClients: widget.onViewClients,
                     onOpenTemplates: widget.onOpenTemplates,
+                    onOpenPayroll: widget.onOpenPayroll,
                   ),
-                  const SizedBox(height: 16),
+                  const SizedBox(height: 20),
                   if (_developerOverview != null) ...[
                     _DeveloperOverviewPanel(
                       overview: _developerOverview!,
@@ -252,11 +704,21 @@ class _DashboardScreenState extends State<DashboardScreen> {
                     )
                   else if (_statistics != null)
                     DashboardAnalytics(
-                      statistics: _statistics!,
+                      statistics: _effectiveStatistics,
                       role: role,
-                      invoices: _invoices,
+                      invoices: _filteredInvoices,
+                      expenses: _filteredExpenses,
+                      clients: _clients,
+                      employees: _employees,
                       onViewInvoices: widget.onViewInvoices,
                       onViewExpenses: widget.onViewExpenses,
+                      onViewClients: widget.onViewClients,
+                      onOpenPayroll: widget.onOpenPayroll,
+                      onCreateInvoice: widget.onCreateInvoice,
+                      onAddExpense: widget.onViewExpenses,
+                      onAddClient: widget.onViewClients,
+                      onAddEmployee: widget.onOpenPayroll,
+                      selectedDateFilter: _selectedDateFilter,
                     ),
                   if (_recentAuditLogs.isNotEmpty)
                     _RecentAuditLogsSection(
@@ -275,78 +737,413 @@ class _DashboardScreenState extends State<DashboardScreen> {
 
 class _DashboardHeader extends StatelessWidget {
   const _DashboardHeader({
-    required this.name,
-    required this.subtitle,
-    required this.onRefresh,
-    required this.onCreateInvoice,
-    required this.canOpenInvoices,
+    required this.companyName,
+    required this.selectedFilter,
+    required this.onFilterChanged,
+    required this.userInitial,
+    required this.onMenuTap,
+    required this.unreadNotificationCount,
+    required this.onOpenNotifications,
+    required this.searchController,
+    required this.onSearchChanged,
+    this.onRefresh,
   });
 
-  final String name;
-  final String subtitle;
+  final String companyName;
+  final String selectedFilter;
+  final ValueChanged<String> onFilterChanged;
+  final String userInitial;
+  final VoidCallback? onMenuTap;
+  final int unreadNotificationCount;
+  final VoidCallback onOpenNotifications;
+  final TextEditingController searchController;
+  final ValueChanged<String> onSearchChanged;
   final VoidCallback? onRefresh;
-  final VoidCallback onCreateInvoice;
-  final bool canOpenInvoices;
 
   @override
-  Widget build(BuildContext context) => Row(
-        children: [
-          Container(
-            width: 42,
-            height: 42,
-            decoration: BoxDecoration(
-              color: AppColors.primary,
-              borderRadius: BorderRadius.circular(13),
+  Widget build(BuildContext context) {
+    final isDesktop = MediaQuery.of(context).size.width > 850;
+
+    return Container(
+      padding: EdgeInsets.symmetric(
+        horizontal: isDesktop ? 18 : 14,
+        vertical: isDesktop ? 12 : 12,
+      ),
+      decoration: AppTheme.neuCardDecoration(radius: 26),
+      child: isDesktop
+          ? Row(
+              children: [
+                _buildCompanyTopNavBadge(isDesktop: true),
+                const Spacer(),
+                _buildSearchField(width: 240),
+                const SizedBox(width: 12),
+                _buildFilterDropdown(context),
+                const SizedBox(width: 10),
+                _buildNeuIconButton(
+                  tooltip: 'Sync dashboard',
+                  icon: Icons.refresh_rounded,
+                  onTap: onRefresh,
+                ),
+                const SizedBox(width: 10),
+                _buildNotificationButton(),
+                const SizedBox(width: 10),
+                _buildUserAvatar(),
+              ],
+            )
+          : Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                Row(
+                  children: [
+                    Expanded(child: _buildCompanyTopNavBadge(isDesktop: false)),
+                    const SizedBox(width: 8),
+                    _buildNeuIconButton(
+                      tooltip: 'Sync dashboard',
+                      icon: Icons.refresh_rounded,
+                      onTap: onRefresh,
+                    ),
+                    const SizedBox(width: 8),
+                    _buildNotificationButton(),
+                    const SizedBox(width: 8),
+                    _buildUserAvatar(),
+                  ],
+                ),
+                const SizedBox(height: 12),
+                Row(
+                  children: [
+                    Expanded(child: _buildSearchField()),
+                    const SizedBox(width: 10),
+                    _buildFilterDropdown(context),
+                  ],
+                ),
+              ],
             ),
-            child: const Icon(
-              Icons.receipt_long_rounded,
-              color: Colors.white,
-              size: 23,
+    );
+  }
+
+  Widget _buildCompanyTopNavBadge({required bool isDesktop}) {
+    return Row(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        if (isDesktop) ...[
+          const Text(
+            'Dashboard',
+            style: TextStyle(
+              fontSize: 15.5,
+              fontWeight: FontWeight.w800,
+              color: Color(0xFF1E293B),
+              letterSpacing: -0.3,
             ),
           ),
-          const SizedBox(width: 10),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
+          const Padding(
+            padding: EdgeInsets.symmetric(horizontal: 12),
+            child: SizedBox(
+              height: 18,
+              child: VerticalDivider(width: 1, color: Color(0xFFCBD5E1)),
+            ),
+          ),
+        ],
+        Flexible(
+          child: Container(
+            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+            decoration: AppTheme.neuPillDecoration(radius: 20),
+            child: Row(
+              mainAxisSize: MainAxisSize.min,
               children: [
-                Text(
-                  name,
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                  style: Theme.of(context).textTheme.titleMedium?.copyWith(
-                        fontWeight: FontWeight.w800,
-                      ),
+                Container(
+                  width: 26,
+                  height: 26,
+                  decoration: AppTheme.neuOrbDecoration(
+                    active: true,
+                    activeColor: const Color(0xFF2B3548),
+                  ),
+                  child: const Icon(
+                    Icons.business_rounded,
+                    size: 13,
+                    color: Colors.white,
+                  ),
                 ),
-                Text(
-                  subtitle,
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                  style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                        color: AppColors.muted,
+                const SizedBox(width: 8),
+                Flexible(
+                  child: ConstrainedBox(
+                    constraints: BoxConstraints(maxWidth: isDesktop ? 280 : 180),
+                    child: Text(
+                      companyName,
+                      overflow: TextOverflow.ellipsis,
+                      style: const TextStyle(
+                        fontSize: 13,
+                        fontWeight: FontWeight.w800,
+                        color: Color(0xFF1E293B),
+                        letterSpacing: -0.2,
                       ),
+                    ),
+                  ),
+                ),
+                const SizedBox(width: 6),
+                Container(
+                  width: 7,
+                  height: 7,
+                  decoration: const BoxDecoration(
+                    color: Color(0xFF10B981),
+                    shape: BoxShape.circle,
+                  ),
                 ),
               ],
             ),
           ),
-          IconButton(
-            tooltip: 'Sync dashboard',
-            onPressed: onRefresh,
-            visualDensity: VisualDensity.compact,
-            constraints: const BoxConstraints.tightFor(width: 38, height: 38),
-            padding: EdgeInsets.zero,
-            icon: const Icon(Icons.cloud_sync_outlined),
-          ),
-          if (canOpenInvoices)
-            IconButton.filled(
-              tooltip: 'Create invoice',
-              onPressed: onCreateInvoice,
-              visualDensity: VisualDensity.compact,
-              constraints: const BoxConstraints.tightFor(width: 38, height: 38),
-              padding: EdgeInsets.zero,
-              icon: const Icon(Icons.add),
+        ),
+      ],
+    );
+  }
+
+  Widget _buildSearchField({double? width}) {
+    return Container(
+      height: 40,
+      width: width,
+      decoration: AppTheme.neuRecessedDecoration(radius: 18),
+      child: TextField(
+        controller: searchController,
+        onChanged: onSearchChanged,
+        style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w600, color: Color(0xFF1E293B)),
+        decoration: const InputDecoration(
+          filled: false,
+          hintText: 'Search invoices, clients...',
+          hintStyle: TextStyle(fontSize: 12, color: Color(0xFF64748B)),
+          prefixIcon: Icon(Icons.search_rounded, size: 18, color: Color(0xFF475569)),
+          border: InputBorder.none,
+          enabledBorder: InputBorder.none,
+          focusedBorder: InputBorder.none,
+          isDense: true,
+          contentPadding: EdgeInsets.symmetric(vertical: 10),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildNeuIconButton({
+    required String tooltip,
+    required IconData icon,
+    required VoidCallback? onTap,
+  }) {
+    return Tooltip(
+      message: tooltip,
+      child: InkWell(
+        onTap: onTap,
+        borderRadius: BorderRadius.circular(20),
+        child: Container(
+          width: 40,
+          height: 40,
+          decoration: AppTheme.neuOrbDecoration(),
+          child: Icon(icon, size: 19, color: const Color(0xFF334155)),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildNotificationButton() {
+    return Stack(
+      clipBehavior: Clip.none,
+      children: [
+        _buildNeuIconButton(
+          tooltip: 'Notifications',
+          icon: Icons.notifications_none_rounded,
+          onTap: onOpenNotifications,
+        ),
+        if (unreadNotificationCount > 0)
+          Positioned(
+            top: 7,
+            right: 7,
+            child: Container(
+              width: 8.5,
+              height: 8.5,
+              decoration: BoxDecoration(
+                color: const Color(0xFFEF4444),
+                shape: BoxShape.circle,
+                border: Border.all(color: Colors.white, width: 1.5),
+              ),
             ),
+          ),
+      ],
+    );
+  }
+
+  Widget _buildUserAvatar() {
+    return Container(
+      width: 40,
+      height: 40,
+      decoration: AppTheme.neuOrbDecoration(
+        active: true,
+        activeColor: const Color(0xFF2B3548),
+      ),
+      child: Center(
+        child: Text(
+          userInitial,
+          style: const TextStyle(
+            color: Colors.white,
+            fontSize: 15,
+            fontWeight: FontWeight.w800,
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildFilterDropdown(BuildContext context) {
+    final options = [
+      'FY 2025-26',
+      'FY 2024-25',
+      'FY 2023-24',
+      'Apr 15, 2025 - May 15, 2025',
+      'This Month',
+      'Last 30 Days',
+      'All Dates',
+      'Custom Date Range...',
+    ];
+
+    return PopupMenuButton<String>(
+      onSelected: onFilterChanged,
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.circular(18),
+        side: BorderSide(color: Colors.white.withValues(alpha: 0.9)),
+      ),
+      color: AppColors.neuSurface,
+      elevation: 6,
+      position: PopupMenuPosition.under,
+      itemBuilder: (context) => options.map((opt) {
+        final isSelected = opt == selectedFilter;
+        return PopupMenuItem<String>(
+          value: opt,
+          child: Row(
+            children: [
+              Icon(
+                isSelected ? Icons.check_circle_rounded : Icons.calendar_today_outlined,
+                size: 15,
+                color: isSelected ? const Color(0xFF2563EB) : const Color(0xFF64748B),
+              ),
+              const SizedBox(width: 8),
+              Expanded(
+                child: Text(
+                  opt,
+                  style: TextStyle(
+                    fontSize: 12.5,
+                    fontWeight: isSelected ? FontWeight.w800 : FontWeight.w600,
+                    color: isSelected ? const Color(0xFF1E293B) : const Color(0xFF475569),
+                  ),
+                ),
+              ),
+            ],
+          ),
+        );
+      }).toList(),
+      child: Container(
+        height: 40,
+        padding: const EdgeInsets.symmetric(horizontal: 13),
+        decoration: AppTheme.neuPillDecoration(radius: 20),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            const Icon(Icons.calendar_today_outlined, size: 13, color: Color(0xFF334155)),
+            const SizedBox(width: 6),
+            ConstrainedBox(
+              constraints: const BoxConstraints(maxWidth: 118),
+              child: Text(
+                selectedFilter,
+                overflow: TextOverflow.ellipsis,
+                style: const TextStyle(
+                  fontSize: 12,
+                  fontWeight: FontWeight.w800,
+                  color: Color(0xFF1E293B),
+                ),
+              ),
+            ),
+            const SizedBox(width: 4),
+            const Icon(Icons.keyboard_arrow_down_rounded, size: 16, color: Color(0xFF64748B)),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _DashboardWelcomeRow extends StatelessWidget {
+  const _DashboardWelcomeRow({
+    required this.userName,
+    required this.subtitle,
+    this.onCreateInvoice,
+  });
+
+  final String userName;
+  final String subtitle;
+  final VoidCallback? onCreateInvoice;
+
+  @override
+  Widget build(BuildContext context) {
+    return Row(
+      crossAxisAlignment: CrossAxisAlignment.center,
+      children: [
+        Expanded(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                'Hello, $userName',
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: const TextStyle(
+                  fontSize: 23,
+                  fontWeight: FontWeight.w900,
+                  color: Color(0xFF1E293B),
+                  letterSpacing: -0.5,
+                ),
+              ),
+              const SizedBox(height: 3),
+              Text(
+                subtitle,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: const TextStyle(
+                  fontSize: 13,
+                  fontWeight: FontWeight.w600,
+                  color: Color(0xFF64748B),
+                ),
+              ),
+            ],
+          ),
+        ),
+        if (onCreateInvoice != null) ...[
+          const SizedBox(width: 10),
+          InkWell(
+            onTap: onCreateInvoice,
+            borderRadius: BorderRadius.circular(24),
+            child: Container(
+              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 11),
+              decoration: AppTheme.neuPillDecoration(
+                radius: 24,
+                active: true,
+                activeColor: const Color(0xFF2B3548),
+              ),
+              child: const Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Icon(Icons.add_circle_outline_rounded, size: 17, color: Colors.white),
+                  SizedBox(width: 7),
+                  Text(
+                    'New Invoice',
+                    style: TextStyle(
+                      color: Colors.white,
+                      fontSize: 13,
+                      fontWeight: FontWeight.w800,
+                      letterSpacing: -0.2,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ),
         ],
-      );
+      ],
+    );
+  }
 }
 
 class _AssistantBanner extends StatelessWidget {
@@ -355,92 +1152,102 @@ class _AssistantBanner extends StatelessWidget {
   final VoidCallback onTap;
 
   @override
-  Widget build(BuildContext context) => Material(
-        color: Colors.transparent,
-        child: InkWell(
-          borderRadius: BorderRadius.circular(22),
-          onTap: onTap,
-          child: Ink(
-            decoration: BoxDecoration(
-              gradient: LinearGradient(
-                colors: [AppColors.primary, AppColors.blue],
-              ),
-              borderRadius: BorderRadius.circular(22),
+  Widget build(BuildContext context) {
+    final isCompact = MediaQuery.sizeOf(context).width < 520;
+    return Container(
+      decoration: AppTheme.neuCardDecoration(radius: 24),
+      padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 16),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.center,
+        children: [
+          Container(
+            width: 48,
+            height: 48,
+            decoration: AppTheme.neuOrbDecoration(),
+            child: const Icon(
+              Icons.auto_awesome_rounded,
+              color: Color(0xFF2B3548),
+              size: 23,
             ),
-            padding: const EdgeInsets.all(17),
-            child: Row(
+          ),
+          const SizedBox(width: 14),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Row(
-                        children: [
-                          Container(
-                            padding: const EdgeInsets.symmetric(
-                              horizontal: 8,
-                              vertical: 4,
-                            ),
-                            decoration: BoxDecoration(
-                              color: Colors.white.withValues(alpha: 0.2),
-                              borderRadius: BorderRadius.circular(8),
-                            ),
-                            child: const Text(
-                              'AI VOICE & CHAT',
-                              style: TextStyle(
-                                color: Colors.white,
-                                fontSize: 9,
-                                fontWeight: FontWeight.w800,
-                              ),
-                            ),
-                          ),
-                          const SizedBox(width: 8),
-                          const Flexible(
-                            child: Text(
-                              'Invoice assistant',
-                              maxLines: 1,
-                              overflow: TextOverflow.ellipsis,
-                              style: TextStyle(
-                                color: Colors.white,
-                                fontSize: 11,
-                                fontWeight: FontWeight.w600,
-                              ),
-                            ),
-                          ),
-                        ],
-                      ),
-                      const SizedBox(height: 9),
-                      const Text(
-                        'Generate invoices via chat',
-                        style: TextStyle(
-                          color: Colors.white,
-                          fontSize: 17,
-                          fontWeight: FontWeight.w800,
-                        ),
-                      ),
-                      const SizedBox(height: 4),
-                      const Text(
-                        'Create invoices, save clients, or ask questions by voice or text.',
-                        style: TextStyle(
-                          color: Color(0xFFE0E7FF),
-                          fontSize: 12,
-                          height: 1.35,
-                        ),
-                      ),
-                    ],
+                const Text(
+                  'AI INVOICE ASSISTANT',
+                  style: TextStyle(
+                    color: Color(0xFF475569),
+                    fontSize: 10,
+                    fontWeight: FontWeight.w800,
+                    letterSpacing: 0.7,
                   ),
                 ),
-                const SizedBox(width: 12),
-                const CircleAvatar(
-                  radius: 23,
-                  backgroundColor: Colors.white,
-                  child: Icon(Icons.auto_awesome, color: AppColors.blue),
+                const SizedBox(height: 3),
+                const Text(
+                  'Generate invoices & insights in seconds',
+                  style: TextStyle(
+                    fontSize: 14.5,
+                    fontWeight: FontWeight.w800,
+                    color: Color(0xFF1E293B),
+                    letterSpacing: -0.3,
+                  ),
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
                 ),
+                if (!isCompact) ...[
+                  const SizedBox(height: 2),
+                  const Text(
+                    'Auto-fill security guard line items, calculate daily wages & GST, and query metrics.',
+                    style: TextStyle(
+                      fontSize: 11.5,
+                      color: Color(0xFF64748B),
+                      height: 1.35,
+                    ),
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                ],
               ],
             ),
           ),
-        ),
-      );
+          const SizedBox(width: 12),
+          InkWell(
+            onTap: onTap,
+            borderRadius: BorderRadius.circular(22),
+            child: Container(
+              padding: EdgeInsets.symmetric(horizontal: isCompact ? 12 : 16, vertical: 10),
+              decoration: AppTheme.neuPillDecoration(
+                radius: 22,
+                active: true,
+                activeColor: const Color(0xFF2B3548),
+              ),
+              child: Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Text(
+                    isCompact ? 'Open AI' : 'Try Assistant',
+                    style: const TextStyle(
+                      color: Colors.white,
+                      fontSize: 12,
+                      fontWeight: FontWeight.w800,
+                    ),
+                  ),
+                  const SizedBox(width: 5),
+                  const Icon(
+                    Icons.arrow_forward_rounded,
+                    color: Colors.white,
+                    size: 14,
+                  ),
+                ],
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
 }
 
 class _DashboardShortcuts extends StatelessWidget {
@@ -450,6 +1257,7 @@ class _DashboardShortcuts extends StatelessWidget {
     required this.onViewExpenses,
     required this.onViewClients,
     required this.onOpenTemplates,
+    this.onOpenPayroll,
   });
 
   final UserSummary user;
@@ -457,95 +1265,160 @@ class _DashboardShortcuts extends StatelessWidget {
   final VoidCallback onViewExpenses;
   final VoidCallback onViewClients;
   final VoidCallback onOpenTemplates;
+  final VoidCallback? onOpenPayroll;
 
   @override
-  Widget build(BuildContext context) => SizedBox(
-        height: 48,
-        child: ListView(
-          scrollDirection: Axis.horizontal,
-          children: [
-            if (user.hasPermission('INVOICES'))
-              _ShortcutChip(
-                label: 'Invoices',
-                icon: Icons.receipt_long,
-                onTap: onViewInvoices,
-              ),
-            if (user.hasPermission('EXPENSES'))
-              _ShortcutChip(
-                label: 'Expenses',
-                icon: Icons.account_balance_wallet_outlined,
-                onTap: onViewExpenses,
-              ),
-            if (user.hasPermission('CLIENTS'))
-              _ShortcutChip(
-                label: 'Clients',
-                icon: Icons.people_outline,
-                onTap: onViewClients,
-              ),
-            if (user.hasPermission('INVOICES'))
-              _ShortcutChip(
-                label: 'Templates',
-                icon: Icons.description_outlined,
-                onTap: onOpenTemplates,
-              ),
-          ],
+  Widget build(BuildContext context) {
+    final items = [
+      if (user.hasPermission('INVOICES'))
+        _ModuleCardData(
+          label: 'Invoices',
+          icon: Icons.receipt_long_rounded,
+          iconBg: const Color(0xFF2B3548),
+          iconColor: const Color(0xFF2B3548),
+          onTap: onViewInvoices,
         ),
-      );
+      if (user.hasPermission('EXPENSES'))
+        _ModuleCardData(
+          label: 'Expenses',
+          icon: Icons.account_balance_wallet_rounded,
+          iconBg: const Color(0xFFEAEEF5),
+          iconColor: const Color(0xFF334155),
+          onTap: onViewExpenses,
+        ),
+      if (onOpenPayroll != null)
+        _ModuleCardData(
+          label: 'Payroll',
+          icon: Icons.groups_rounded,
+          iconBg: const Color(0xFFEAEEF5),
+          iconColor: const Color(0xFF334155),
+          onTap: onOpenPayroll!,
+        ),
+      if (user.hasPermission('CLIENTS'))
+        _ModuleCardData(
+          label: 'Clients',
+          icon: Icons.people_alt_rounded,
+          iconBg: const Color(0xFFEAEEF5),
+          iconColor: const Color(0xFF334155),
+          onTap: onViewClients,
+        ),
+      if (user.hasPermission('INVOICES'))
+        _ModuleCardData(
+          label: 'Templates',
+          icon: Icons.tune_rounded,
+          iconBg: const Color(0xFFEAEEF5),
+          iconColor: const Color(0xFF334155),
+          onTap: onOpenTemplates,
+        ),
+    ];
+
+    return Row(
+      children: [
+        for (int i = 0; i < items.length; i++) ...[
+          Expanded(
+            child: _ClayModuleTile(
+              item: items[i],
+              isHighlighted: i == 0,
+            ),
+          ),
+          if (i < items.length - 1) const SizedBox(width: 10),
+        ],
+      ],
+    );
+  }
 }
 
-class _ShortcutChip extends StatelessWidget {
-  const _ShortcutChip({
+class _ClayModuleTile extends StatefulWidget {
+  const _ClayModuleTile({
+    required this.item,
+    this.isHighlighted = false,
+  });
+
+  final _ModuleCardData item;
+  final bool isHighlighted;
+
+  @override
+  State<_ClayModuleTile> createState() => _ClayModuleTileState();
+}
+
+class _ClayModuleTileState extends State<_ClayModuleTile> {
+  bool _hovered = false;
+
+  @override
+  Widget build(BuildContext context) {
+    final item = widget.item;
+    final activeDark = widget.isHighlighted || _hovered;
+    return MouseRegion(
+      onEnter: (_) => setState(() => _hovered = true),
+      onExit: (_) => setState(() => _hovered = false),
+      cursor: SystemMouseCursors.click,
+      child: GestureDetector(
+        onTap: item.onTap,
+        child: AnimatedContainer(
+          duration: const Duration(milliseconds: 180),
+          curve: Curves.easeOutCubic,
+          transform: _hovered ? Matrix4.translationValues(0, -3, 0) : Matrix4.identity(),
+          padding: const EdgeInsets.symmetric(vertical: 14, horizontal: 6),
+          decoration: activeDark
+              ? AppTheme.neuPillDecoration(
+                  radius: 22,
+                  active: true,
+                  activeColor: const Color(0xFF2B3548),
+                )
+              : AppTheme.neuCardDecoration(radius: 22),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Container(
+                width: 40,
+                height: 40,
+                decoration: activeDark
+                    ? BoxDecoration(
+                        color: Colors.white.withValues(alpha: 0.14),
+                        shape: BoxShape.circle,
+                        border: Border.all(color: Colors.white.withValues(alpha: 0.25)),
+                      )
+                    : AppTheme.neuOrbDecoration(),
+                child: Icon(
+                  item.icon,
+                  color: activeDark ? Colors.white : item.iconColor,
+                  size: 20,
+                ),
+              ),
+              const SizedBox(height: 9),
+              Text(
+                item.label,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: TextStyle(
+                  fontSize: 12,
+                  fontWeight: FontWeight.w800,
+                  color: activeDark ? Colors.white : const Color(0xFF1E293B),
+                  letterSpacing: -0.2,
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _ModuleCardData {
+  const _ModuleCardData({
     required this.label,
     required this.icon,
+    required this.iconBg,
+    required this.iconColor,
     required this.onTap,
   });
 
   final String label;
   final IconData icon;
+  final Color iconBg;
+  final Color iconColor;
   final VoidCallback onTap;
-
-  @override
-  Widget build(BuildContext context) => Padding(
-        padding: const EdgeInsets.only(right: 8),
-        child: Material(
-          color: Theme.of(context).colorScheme.surface,
-          shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(15),
-            side: BorderSide(
-              color: Theme.of(context).colorScheme.outlineVariant,
-            ),
-          ),
-          child: InkWell(
-            borderRadius: BorderRadius.circular(15),
-            onTap: onTap,
-            child: Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 8),
-              child: Row(
-                children: [
-                  CircleAvatar(
-                    radius: 12,
-                    backgroundColor:
-                        Theme.of(context).colorScheme.primaryContainer,
-                    child: Icon(
-                      icon,
-                      size: 13,
-                      color: Theme.of(context).colorScheme.primary,
-                    ),
-                  ),
-                  const SizedBox(width: 5),
-                  Text(
-                    label,
-                    style: const TextStyle(
-                      fontSize: 10,
-                      fontWeight: FontWeight.w700,
-                    ),
-                  ),
-                ],
-              ),
-            ),
-          ),
-        ),
-      );
 }
 
 class _DeveloperOverviewPanel extends StatelessWidget {

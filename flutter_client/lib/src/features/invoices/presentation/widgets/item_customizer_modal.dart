@@ -398,6 +398,61 @@ class _ItemCustomizerModalState extends State<ItemCustomizerModal> {
               onChanged: (val) => setState(() => tempSettings['showItemTax'] = val),
             ),
             const SizedBox(height: 16),
+            const Text(
+              'Daily Wage & Duty Calculation Formula',
+              style: TextStyle(fontWeight: FontWeight.bold, fontSize: 13),
+            ),
+            const SizedBox(height: 8),
+            DropdownButtonFormField<String>(
+              value: const [
+                'monthly_salary_30',
+                'calendar_month',
+                'monthly_salary_26',
+                'per_duty',
+                'flat_monthly',
+              ].contains(tempSettings['itemCalculationFormula']?.toString())
+                  ? tempSettings['itemCalculationFormula']!.toString()
+                  : 'monthly_salary_30',
+              isExpanded: true,
+              decoration: const InputDecoration(
+                labelText: 'Automatic Subtotal Calculation Rule',
+                isDense: true,
+              ),
+              items: const [
+                DropdownMenuItem(
+                  value: 'monthly_salary_30',
+                  child: Text('30-Day Daily Wage: (Rate ÷ 30) × Worked Days × Staff'),
+                ),
+                DropdownMenuItem(
+                  value: 'calendar_month',
+                  child: Text('Calendar Month (28/29/30/31d): (Rate ÷ Month Days) × Worked Days'),
+                ),
+                DropdownMenuItem(
+                  value: 'monthly_salary_26',
+                  child: Text('26-Duty Standard: (Rate ÷ 26) × Worked Duties × Staff'),
+                ),
+                DropdownMenuItem(
+                  value: 'per_duty',
+                  child: Text('Per-Duty Daily Rate: Staff × Worked Duties × Daily Rate'),
+                ),
+                DropdownMenuItem(
+                  value: 'flat_monthly',
+                  child: Text('Flat Monthly Rate: Staff × Monthly Rate'),
+                ),
+              ],
+              onChanged: (val) {
+                if (val == null) return;
+                setState(() {
+                  tempSettings['itemCalculationFormula'] = val;
+                  if (val == 'monthly_salary_30') {
+                    tempSettings['standardDutyDays'] = 30.0;
+                  } else if (val == 'monthly_salary_26') {
+                    tempSettings['standardDutyDays'] = 26.0;
+                  }
+                });
+              },
+            ),
+            const SizedBox(height: 16),
             if (widget.onOpenInvoiceSettings != null)
               OutlinedButton.icon(
                 onPressed: () {

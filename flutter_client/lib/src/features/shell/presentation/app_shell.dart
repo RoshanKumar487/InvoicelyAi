@@ -1,10 +1,12 @@
 import 'dart:async';
+import 'dart:convert';
 
 import 'package:flutter/material.dart';
 
 import '../../../core/api/api_client.dart';
 import '../../../core/storage/local_preferences.dart';
 import '../../../data/models/auth_models.dart';
+import '../../../theme/app_theme.dart';
 import '../../clients/data/clients_repository.dart';
 import '../../clients/presentation/clients_screen.dart';
 import '../../dashboard/data/dashboard_repository.dart';
@@ -15,23 +17,24 @@ import '../../ai/presentation/ai_chat_screen.dart';
 import '../../invoices/invoice_feature.dart';
 import '../../reports/presentation/reports_screen.dart';
 import '../../settings/data/settings_repository.dart';
-import '../../settings/presentation/invoice_settings_screen.dart';
 import '../../settings/presentation/settings_screen.dart';
 import '../../tax/presentation/tax_calculator_screen.dart';
 import '../../team/presentation/team_management_screen.dart';
 import '../../templates/data/template_config.dart';
-import '../../templates/presentation/templates_screen.dart';
+import '../../templates/presentation/invoice_template_studio_screen.dart';
 import '../../employees/presentation/employee_management_screen.dart';
 import '../../settings/presentation/email_scheduler_settings_screen.dart';
 import '../../audit/presentation/audit_logs_screen.dart';
+import '../../payroll/data/payroll_repository.dart';
+import '../../payroll/presentation/payroll_screen.dart';
 import 'placeholder_screen.dart';
 
 enum _Destination {
-  dashboard('Dashboard', Icons.dashboard_outlined),
-  invoices('Invoices', Icons.receipt_long_outlined),
-  aiAgent('AI Agent', Icons.auto_awesome_outlined),
-  expenses('Expenses', Icons.payments_outlined),
-  menu('More', Icons.menu);
+  dashboard('Dashboard', Icons.grid_view_rounded),
+  invoices('Invoices', Icons.receipt_long_rounded),
+  aiAgent('AI Agent', Icons.auto_awesome_rounded),
+  expenses('Expenses', Icons.account_balance_wallet_rounded),
+  menu('More', Icons.tune_rounded);
 
   const _Destination(this.label, this.icon);
 
@@ -84,7 +87,7 @@ class _AppShellState extends State<AppShell> {
           await _localPreferences.readMap('invoice_settings');
       final merged = Map<String, Object?>.from(invoiceSettings);
 
-      // Fetch server business profile to sync currency and business defaults if missing or updated
+      // Fetch server business profile to sync currency, branding assets, and business defaults per organization
       try {
         final profile = await SettingsRepository(apiClient: widget.apiClient).loadProfile();
         if (profile.isNotEmpty) {
@@ -102,20 +105,73 @@ class _AppShellState extends State<AppShell> {
                   : (profile['legalName']?.toString().trim().isNotEmpty == true
                       ? profile['legalName'].toString().trim()
                       : null));
-          if (bName != null && bName.isNotEmpty) {
+          if (bName != null &&
+              bName.isNotEmpty &&
+              bName.toLowerCase() != 'apex nova dynamics' &&
+              bName.toLowerCase() != 'northstar security services pvt. ltd.') {
             merged['businessName'] = bName;
             merged['companyName'] = bName;
           }
-          if (profile['address'] != null) merged['businessAddress'] ??= profile['address'];
-          if (profile['gstin'] != null) merged['businessGstin'] ??= profile['gstin'];
-          if (profile['panNumber'] != null) merged['businessPan'] ??= profile['panNumber'];
-          if (profile['phone'] != null) merged['businessPhone'] ??= profile['phone'];
-          if (profile['email'] != null) merged['businessEmail'] ??= profile['email'];
-          if (profile['upiId'] != null) merged['upiId'] ??= profile['upiId'];
-          if (profile['bankName'] != null) merged['bankName'] ??= profile['bankName'];
-          if (profile['accountNumber'] != null) merged['accountNumber'] ??= profile['accountNumber'];
-          if (profile['accountHolder'] != null) merged['accountHolder'] ??= profile['accountHolder'];
-          if (profile['ifscCode'] != null) merged['ifscCode'] ??= profile['ifscCode'];
+          if (profile['address'] != null) merged['businessAddress'] = profile['address'];
+          if (profile['gstin'] != null) merged['businessGstin'] = profile['gstin'];
+          if (profile['panNumber'] != null) merged['businessPan'] = profile['panNumber'];
+          if (profile['phone'] != null) merged['businessPhone'] = profile['phone'];
+          if (profile['email'] != null) merged['businessEmail'] = profile['email'];
+          if (profile['upiId'] != null) merged['upiId'] = profile['upiId'];
+          if (profile['bankName'] != null) merged['bankName'] = profile['bankName'];
+          if (profile['accountNumber'] != null) merged['accountNumber'] = profile['accountNumber'];
+          if (profile['accountHolder'] != null) merged['accountHolder'] = profile['accountHolder'];
+          if (profile['ifscCode'] != null) merged['ifscCode'] = profile['ifscCode'];
+          for (final assetKey in const ['logoUrl', 'stampUrl', 'signatureUrl', 'qrCodeUrl']) {
+            final val = profile[assetKey]?.toString().trim() ?? '';
+            if (val.isNotEmpty) {
+              merged[assetKey] = val;
+            }
+          }
+        }
+      } catch (_) {}
+
+      // Fetch organization-scoped template settings & section boolean selections from backend
+      try {
+        final tplRes = await widget.apiClient.getJson('api/v1/templates/settings');
+        final tplData = tplRes['data'] is Map<String, dynamic>
+            ? tplRes['data'] as Map<String, dynamic>
+            : tplRes;
+        if (tplData.isNotEmpty) {
+          final settingsStr = tplData['settingsJson']?.toString();
+          if (settingsStr != null && settingsStr.isNotEmpty) {
+            try {
+              final parsedSettings = jsonDecode(settingsStr);
+              if (parsedSettings is Map<String, dynamic>) {
+                merged.addAll(parsedSettings);
+              }
+            } catch (_) {}
+          }
+          final configStr = tplData['configurationJson']?.toString();
+          if (configStr != null && configStr.isNotEmpty) {
+            merged['studio_sections_json'] = configStr;
+          }
+          if (tplData['orgCode'] != null) merged['orgCode'] = tplData['orgCode'];
+          if (tplData['createdBy'] != null) merged['createdBy'] = tplData['createdBy'];
+          if (tplData['updatedBy'] != null) merged['updatedBy'] = tplData['updatedBy'];
+          for (final key in const [
+            'secBrandingEnabled',
+            'secInvoiceDetailsEnabled',
+            'secBillToEnabled',
+            'secShipToEnabled',
+            'secServicesEnabled',
+            'secTaxTotalsEnabled',
+            'secBankPaymentEnabled',
+            'secAdjustmentsEnabled',
+            'secTermsNotesEnabled',
+            'secSignatureEnabled',
+            'letterheadEnabled',
+            'showQrCode',
+          ]) {
+            if (tplData[key] is bool) {
+              merged[key] = tplData[key];
+            }
+          }
         }
       } catch (_) {}
 
@@ -174,61 +230,119 @@ class _AppShellState extends State<AppShell> {
     if (!isWide) {
       final showBottomBar = !_invoiceFullscreen &&
           !(_destination == _Destination.menu && _moreSection != null);
-      return Scaffold(
-        body: page,
-        bottomNavigationBar: showBottomBar
-            ? NavigationBar(
-                selectedIndex: _destination.index,
-                onDestinationSelected: (index) => setState(() {
-                  _destination = _Destination.values[index];
-                  _moreSection = null;
-                  _invoiceFullscreen = false;
-                  if (_destination == _Destination.invoices) {
-                    _invoiceStatusFilter = 'All';
-                  }
-                }),
-                destinations: [
-                  for (final item in _Destination.values)
-                    NavigationDestination(
-                      icon: Icon(item.icon),
-                      label: item.label,
+      return PopScope(
+        canPop: _destination == _Destination.dashboard && _moreSection == null,
+        onPopInvokedWithResult: (didPop, _) {
+          if (didPop) return;
+          if (_moreSection != null) {
+            setState(() => _moreSection = null);
+          } else if (_destination != _Destination.dashboard) {
+            setState(() {
+              _destination = _Destination.dashboard;
+              _moreSection = null;
+            });
+          }
+        },
+        child: Scaffold(
+          backgroundColor: AppColors.background,
+          body: page,
+          bottomNavigationBar: showBottomBar
+              ? Container(
+                  margin: const EdgeInsets.fromLTRB(12, 0, 12, 10),
+                  decoration: AppTheme.neuPillDecoration(radius: 26),
+                  child: ClipRRect(
+                    borderRadius: BorderRadius.circular(26),
+                    child: NavigationBar(
+                      height: 64,
+                      backgroundColor: AppColors.neuSurface,
+                      surfaceTintColor: Colors.transparent,
+                      indicatorColor: const Color(0xFF2B3548),
+                      selectedIndex: _destination.index,
+                      onDestinationSelected: (index) => setState(() {
+                        _destination = _Destination.values[index];
+                        _moreSection = null;
+                        _invoiceFullscreen = false;
+                        if (_destination == _Destination.invoices) {
+                          _invoiceStatusFilter = 'All';
+                        }
+                      }),
+                      destinations: [
+                        for (final item in _Destination.values)
+                          NavigationDestination(
+                            icon: Icon(item.icon, color: const Color(0xFF64748B)),
+                            selectedIcon: Icon(item.icon, color: Colors.white),
+                            label: item.label,
+                          ),
+                      ],
                     ),
-                ],
-              )
-            : null,
+                  ),
+                )
+              : null,
+        ),
       );
     }
 
     return Scaffold(
+      backgroundColor: AppColors.background,
       body: Row(
         children: [
-          NavigationRail(
-            selectedIndex: _destination.index,
-            onDestinationSelected: (index) => setState(() {
-              _destination = _Destination.values[index];
-              _moreSection = null;
-              if (_destination == _Destination.invoices) {
-                _invoiceStatusFilter = 'All';
-              }
-            }),
-            labelType: NavigationRailLabelType.all,
-            leading: const Padding(
-              padding: EdgeInsets.symmetric(vertical: 20),
-              child: Icon(
-                Icons.receipt_long_rounded,
-                size: 32,
-                color: Color(0xFF1E3A8A),
+          Container(
+            margin: const EdgeInsets.fromLTRB(12, 12, 6, 12),
+            decoration: AppTheme.neuCardDecoration(radius: 26),
+            child: ClipRRect(
+              borderRadius: BorderRadius.circular(26),
+              child: NavigationRail(
+                backgroundColor: AppColors.neuSurface,
+                indicatorColor: const Color(0xFF2B3548),
+                selectedIconTheme: const IconThemeData(color: Colors.white, size: 22),
+                unselectedIconTheme: const IconThemeData(color: Color(0xFF64748B), size: 21),
+                selectedLabelTextStyle: const TextStyle(
+                  color: Color(0xFF1E293B),
+                  fontWeight: FontWeight.w800,
+                  fontSize: 11.5,
+                ),
+                unselectedLabelTextStyle: const TextStyle(
+                  color: Color(0xFF64748B),
+                  fontWeight: FontWeight.w600,
+                  fontSize: 11,
+                ),
+                selectedIndex: _destination.index,
+                onDestinationSelected: (index) => setState(() {
+                  _destination = _Destination.values[index];
+                  _moreSection = null;
+                  if (_destination == _Destination.invoices) {
+                    _invoiceStatusFilter = 'All';
+                  }
+                }),
+                labelType: NavigationRailLabelType.all,
+                leading: Padding(
+                  padding: const EdgeInsets.only(top: 14, bottom: 10),
+                  child: Container(
+                    width: 46,
+                    height: 46,
+                    decoration: AppTheme.neuOrbDecoration(
+                      active: true,
+                      activeColor: const Color(0xFF2B3548),
+                      shape: BoxShape.rectangle,
+                      radius: 15,
+                    ),
+                    child: const Icon(
+                      Icons.receipt_long_rounded,
+                      size: 23,
+                      color: Colors.white,
+                    ),
+                  ),
+                ),
+                destinations: [
+                  for (final item in _Destination.values)
+                    NavigationRailDestination(
+                      icon: Icon(item.icon),
+                      label: Text(item.label),
+                    ),
+                ],
               ),
             ),
-            destinations: [
-              for (final item in _Destination.values)
-                NavigationRailDestination(
-                  icon: Icon(item.icon),
-                  label: Text(item.label),
-                ),
-            ],
           ),
-          const VerticalDivider(width: 1),
           Expanded(child: page),
         ],
       ),
@@ -265,7 +379,8 @@ class _AppShellState extends State<AppShell> {
           onOpenAiChat: () => setState(
             () => _destination = _Destination.aiAgent,
           ),
-          onOpenTemplates: () => _openMoreSection('Templates'),
+          onOpenTemplates: () => _openMoreSection('Invoice & Template Studio'),
+          onOpenPayroll: () => _openMoreSection('Payroll & Disbursals'),
           onOpenAuditLogs: () => _openMoreSection('Audit Logs'),
         ),
       _Destination.invoices => InvoiceFeatureScreen(
@@ -300,6 +415,10 @@ class _AppShellState extends State<AppShell> {
     }
     void onBack() => setState(() => _moreSection = null);
     return switch (section) {
+      'Payroll & Disbursals' || 'Payroll' || 'Employee Payroll' => PayrollScreen(
+          repository: PayrollRepository(client: widget.apiClient),
+          onBack: onBack,
+        ),
       'Employee management' => EmployeeManagementScreen(
           apiClient: widget.apiClient,
           companyName: _invoiceLocalSettings['businessName']?.toString() ??
@@ -324,15 +443,23 @@ class _AppShellState extends State<AppShell> {
           session: widget.session,
           onBack: onBack,
         ),
-      'Team management' =>
-        TeamManagementScreen(apiClient: widget.apiClient, onBack: onBack),
-      'Templates' => TemplatesScreen(
+      'Team management' => TeamManagementScreen(
+          apiClient: widget.apiClient,
+          businessProfileName: _invoiceLocalSettings['businessName']?.toString() ??
+              _invoiceLocalSettings['companyName']?.toString(),
+          onBack: onBack,
+        ),
+      'Templates' ||
+      'Invoice settings' ||
+      'Invoice & Template Studio' ||
+      'Invoice & Template Settings' =>
+        InvoiceTemplateStudioScreen(
           apiClient: widget.apiClient,
           initialConfig: _preferredTemplate,
           initialLocalSettings: _invoiceLocalSettings,
           onSaveLocalSettings: _saveInvoiceSettings,
+          onSaveTemplate: _saveTemplate,
           onBack: onBack,
-          onSave: _saveTemplate,
         ),
       'Settings' || 'Business Settings' || 'Business settings' => SettingsScreen(
           apiClient: widget.apiClient,
@@ -342,12 +469,6 @@ class _AppShellState extends State<AppShell> {
             () => _invoiceLocalSettings = Map<String, Object?>.from(settings),
           ),
           onBack: onBack,
-        ),
-      'Invoice settings' => InvoiceSettingsScreen(
-          apiClient: widget.apiClient,
-          initialLocalSettings: _invoiceLocalSettings,
-          onBack: onBack,
-          onSaveLocalSettings: _saveInvoiceSettings,
         ),
       'Tax calculator' => TaxCalculatorScreen(onBack: onBack),
       _ => PlaceholderScreen(
@@ -408,34 +529,80 @@ class _MoreMenu extends StatelessWidget {
         ('Reports', Icons.bar_chart_outlined),
       if (canSeeAuditLogs)
         ('Audit Logs', Icons.history_edu_rounded),
+      if (isAdmin)
+        ('Payroll & Disbursals', Icons.account_balance_wallet_outlined),
       if (isAdmin) ('Employee management', Icons.badge_outlined),
       if (isAdmin) ('Team management', Icons.groups_outlined),
-      if (canSeeInvoices) ('Templates', Icons.dashboard_customize_outlined),
+      if (isAdmin || canSeeInvoices)
+        ('Invoice & Template Studio', Icons.tune_rounded),
       if (isAdmin) ('Business Settings', Icons.settings_outlined),
       if (isAdmin) ('Email & Reminders', Icons.alarm_on_rounded),
-      if (isAdmin) ('Invoice settings', Icons.tune_outlined),
       ('Tax calculator', Icons.calculate_outlined),
     ];
     return Scaffold(
+      backgroundColor: AppColors.background,
       appBar: AppBar(
-        title: const Text('More'),
+        elevation: 0,
+        scrolledUnderElevation: 0,
+        backgroundColor: Colors.transparent,
+        title: const Text(
+          'Workspace & Tools',
+          style: TextStyle(
+            fontSize: 21,
+            fontWeight: FontWeight.w800,
+            color: Color(0xFF1E293B),
+          ),
+        ),
         actions: [
-          IconButton(
-            onPressed: onLogout,
-            tooltip: 'Sign out',
-            icon: const Icon(Icons.logout),
+          Padding(
+            padding: const EdgeInsets.only(right: 12),
+            child: InkWell(
+              onTap: onLogout,
+              borderRadius: BorderRadius.circular(20),
+              child: Container(
+                width: 40,
+                height: 40,
+                decoration: AppTheme.neuOrbDecoration(),
+                child: const Icon(Icons.logout_rounded, color: Color(0xFF1E293B), size: 19),
+              ),
+            ),
           ),
         ],
       ),
       body: ListView(
-        padding: const EdgeInsets.all(20),
+        padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 10),
         children: [
           for (final section in sections)
-            Card(
+            Container(
+              margin: const EdgeInsets.only(bottom: 14),
+              decoration: AppTheme.neuPillDecoration(radius: 26),
               child: ListTile(
-                leading: Icon(section.$2),
-                title: Text(section.$1),
-                trailing: const Icon(Icons.chevron_right),
+                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(26)),
+                contentPadding: const EdgeInsets.symmetric(horizontal: 14, vertical: 4),
+                leading: Container(
+                  width: 40,
+                  height: 40,
+                  decoration: AppTheme.neuOrbDecoration(),
+                  child: Icon(section.$2, color: const Color(0xFF334155), size: 20),
+                ),
+                title: Text(
+                  section.$1,
+                  style: const TextStyle(
+                    fontSize: 14.5,
+                    fontWeight: FontWeight.w700,
+                    color: Color(0xFF1E293B),
+                  ),
+                ),
+                trailing: Container(
+                  width: 32,
+                  height: 32,
+                  decoration: AppTheme.neuOrbDecoration(),
+                  child: const Icon(
+                    Icons.chevron_right_rounded,
+                    color: Color(0xFF475569),
+                    size: 18,
+                  ),
+                ),
                 onTap: () => onSelect(section.$1),
               ),
             ),

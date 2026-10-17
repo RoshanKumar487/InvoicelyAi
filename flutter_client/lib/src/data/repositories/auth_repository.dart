@@ -85,6 +85,17 @@ class AuthRepository {
     return AuthSession.fromJson(data);
   }
 
+
+  Future<AuthSession> createCompanyWorkspace(Map<String, dynamic> payload) async {
+    final data = await _apiClient.postJson('api/v1/companies', payload);
+    return _saveSession(data);
+  }
+
+  Future<List<CompanySummary>> getMyCompanies() async {
+    final list = await _apiClient.getListJson('api/v1/companies/my-companies');
+    return list.map(CompanySummary.fromJson).toList();
+  }
+
   Future<void> logout() => _tokenStorage.clearToken();
 
   Future<bool> checkBackendConnection() async {

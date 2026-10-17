@@ -3,6 +3,7 @@ import 'package:image_picker/image_picker.dart';
 
 import '../../../core/api/api_client.dart';
 import '../../../core/api/api_exception.dart';
+import '../../../shared/utils/table_export_helper.dart';
 import '../../../shared/widgets/app_card.dart';
 import '../../../shared/widgets/enterprise_data_view.dart';
 import '../../../theme/app_theme.dart';
@@ -38,6 +39,8 @@ class _EmployeeManagementScreenState extends State<EmployeeManagementScreen> {
   bool _isLoading = true;
   bool _isScanningAadhaar = false;
   String? _error;
+  DateTimeRange? _dateRange;
+  final Set<String> _selectedIds = {};
 
   String _selectedFilter = 'All';
   // Filters: All, Active, Security, Operations, Accounts, On Leave, Inactive
@@ -70,20 +73,7 @@ class _EmployeeManagementScreenState extends State<EmployeeManagementScreen> {
       _error = null;
     });
     try {
-      String? statusParam;
-      String? deptParam;
-
-      if (_selectedFilter == 'Active') statusParam = 'ACTIVE';
-      if (_selectedFilter == 'Inactive') statusParam = 'INACTIVE';
-      if (_selectedFilter == 'On Leave') statusParam = 'ON_LEAVE';
-      if (_selectedFilter == 'Security') deptParam = 'Security';
-      if (_selectedFilter == 'Operations') deptParam = 'Operations';
-      if (_selectedFilter == 'Accounts') deptParam = 'Accounts';
-
-      final list = await _repository.list(
-        status: statusParam,
-        department: deptParam,
-      );
+      final list = await _repository.list();
       if (!mounted) return;
       setState(() {
         _employees = list;
@@ -118,6 +108,20 @@ class _EmployeeManagementScreenState extends State<EmployeeManagementScreen> {
       }
       if (_selectedFilter == 'Operations' && !emp.department.toLowerCase().contains('operation')) return false;
       if (_selectedFilter == 'Accounts' && !emp.department.toLowerCase().contains('account')) return false;
+
+      if (_dateRange != null) {
+        DateTime? dt;
+        if (emp.joiningDate.isNotEmpty) {
+          dt = DateTime.tryParse(emp.joiningDate);
+        }
+        dt ??= emp.createdAt;
+        if (dt != null) {
+          if (dt.isBefore(_dateRange!.start) ||
+              dt.isAfter(_dateRange!.end.add(const Duration(days: 1)))) {
+            return false;
+          }
+        }
+      }
 
       if (query.isEmpty) return true;
       return emp.fullName.toLowerCase().contains(query) ||
@@ -236,6 +240,20 @@ class _EmployeeManagementScreenState extends State<EmployeeManagementScreen> {
     }
   }
 
+  Future<void> _updateEmployeeStatus(Employee employee, String newStatus) async {
+    final updated = employee.copyWith(status: newStatus);
+    try {
+      await _repository.update(updated);
+      if (!mounted) return;
+      _showSnackBar('✓ Status updated to $newStatus');
+      await _loadEmployees();
+    } on ApiException catch (e) {
+      if (mounted) _showSnackBar(e.message);
+    } catch (e) {
+      if (mounted) _showSnackBar('Update failed: $e');
+    }
+  }
+
   void _previewBiodata(Employee employee) {
     showDialog<void>(
       context: context,
@@ -251,15 +269,123 @@ class _EmployeeManagementScreenState extends State<EmployeeManagementScreen> {
     ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(text)));
   }
 
+  List<EnterpriseMetricCardItem> _buildMetrics() {
+    final totalCount = _employees.length;
+    final activeCount = _employees.where((e) => e.status.toUpperCase() == 'ACTIVE').length;
+    final inactiveCount = _employees.where((e) => e.status.toUpperCase() == 'INACTIVE').length;
+    final onLeaveCount = _employees.where((e) => e.status.toUpperCase() == 'ON_LEAVE').length;
+
+    return [
+      EnterpriseMetricCardItem(
+        label: 'Total Workforce',
+        value: totalCount.toString(),
+        icon: Icons.groups_outlined,
+        color: const Color(0xFF2563EB),
+        filterKey: 'All',
+        isSelected: _selectedFilter == 'All',
+        onTap: () => setState(() => _selectedFilter = 'All'),
+      ),
+      EnterpriseMetricCardItem(
+        label: 'Active on Duty',
+        value: activeCount.toString(),
+        icon: Icons.check_circle_outline,
+        color: const Color(0xFF047857),
+        filterKey: 'Active',
+        isSelected: _selectedFilter == 'Active',
+        onTap: () => setState(
+          () => _selectedFilter = _selectedFilter == 'Active' ? 'All' : 'Active',
+        ),
+      ),
+      EnterpriseMetricCardItem(
+        label: 'Inactive / Exited',
+        value: inactiveCount.toString(),
+        icon: Icons.person_off_outlined,
+        color: const Color(0xFFDC2626),
+        filterKey: 'Inactive',
+        isSelected: _selectedFilter == 'Inactive',
+        onTap: () => setState(
+          () => _selectedFilter = _selectedFilter == 'Inactive' ? 'All' : 'Inactive',
+        ),
+      ),
+      EnterpriseMetricCardItem(
+        label: 'On Leave / Off-Duty',
+        value: onLeaveCount.toString(),
+        icon: Icons.event_busy_outlined,
+        color: const Color(0xFFD97706),
+        filterKey: 'On Leave',
+        isSelected: _selectedFilter == 'On Leave',
+        onTap: () => setState(
+          () => _selectedFilter = _selectedFilter == 'On Leave' ? 'All' : 'On Leave',
+        ),
+      ),
+    ];
+  }
+
+  void _downloadEmployeesReport(List<Employee> list) {
+    TableExportHelper.showExportMenu(
+      context: context,
+      title: 'Employee Workforce',
+      headers: [
+        'Code',
+        'Full Name',
+        'Designation',
+        'Department',
+        'Aadhaar UID',
+        'Mobile',
+        'Salary (₹)',
+        'Status',
+      ],
+      rows: list.map((e) => [
+        e.employeeCode,
+        e.fullName,
+        e.designation,
+        e.department,
+        e.aadhaarNumber,
+        e.phone,
+        e.monthlySalary.toStringAsFixed(2),
+        e.status,
+      ]).toList(),
+    );
+  }
+
+  Future<void> _batchDeleteSelected() async {
+    final count = _selectedIds.length;
+    if (count == 0) return;
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Delete Selected Employees?'),
+        content: Text('Are you sure you want to remove $count selected employees? This cannot be undone.'),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('Cancel')),
+          FilledButton(
+            onPressed: () => Navigator.pop(ctx, true),
+            style: FilledButton.styleFrom(backgroundColor: Colors.red),
+            child: const Text('Delete All'),
+          ),
+        ],
+      ),
+    );
+    if (confirmed != true || !mounted) return;
+
+    int deleted = 0;
+    for (final idStr in _selectedIds.toList()) {
+      final id = int.tryParse(idStr);
+      if (id != null) {
+        try {
+          await _repository.delete(id);
+          deleted++;
+        } catch (_) {}
+      }
+    }
+    setState(() => _selectedIds.clear());
+    _showSnackBar('Removed $deleted employees.');
+    await _loadEmployees();
+  }
+
   @override
   Widget build(BuildContext context) {
     final filtered = _filteredEmployees;
-    final totalCount = _employees.length;
-    final activeCount = _employees.where((e) => e.status.toUpperCase() == 'ACTIVE').length;
-    final securityCount = _employees.where((e) =>
-        e.department.toLowerCase().contains('security') ||
-        e.designation.toLowerCase().contains('guard')).length;
-    final totalPayroll = _employees.fold<double>(0.0, (acc, e) => acc + e.monthlySalary);
 
     return Scaffold(
       appBar: AppBar(
@@ -323,20 +449,58 @@ class _EmployeeManagementScreenState extends State<EmployeeManagementScreen> {
                   EnterpriseDataView<Employee>(
                     items: filtered,
                     headerTitle: 'Workforce Directory',
-                    metricsStrip: _buildMetricsRow(
-                      totalCount: totalCount,
-                      activeCount: activeCount,
-                      securityCount: securityCount,
-                      totalPayroll: totalPayroll,
-                    ),
+                    metrics: _buildMetrics(),
+                    dateRange: _dateRange,
+                    onDateRangeChanged: (range) => setState(() => _dateRange = range),
+                    onDownloadReport: () => _downloadEmployeesReport(filtered),
+                    idGetter: (emp) => emp.id?.toString() ?? emp.employeeCode,
+                    selectedIds: _selectedIds,
+                    onToggleSelect: (id) {
+                      setState(() {
+                        if (_selectedIds.contains(id)) {
+                          _selectedIds.remove(id);
+                        } else {
+                          _selectedIds.add(id);
+                        }
+                      });
+                    },
+                    onSelectAll: (ids) => setState(() => _selectedIds.addAll(ids)),
+                    onDeselectAll: () => setState(() => _selectedIds.clear()),
+                    onRowTap: (emp) => _previewBiodata(emp),
+                    batchActions: [
+                      OutlinedButton.icon(
+                        style: OutlinedButton.styleFrom(
+                          foregroundColor: const Color(0xFF0284C7),
+                          side: const BorderSide(color: Color(0xFF0284C7)),
+                          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                          visualDensity: VisualDensity.compact,
+                        ),
+                        onPressed: () {
+                          final selected = filtered
+                              .where((e) => _selectedIds.contains(e.id?.toString() ?? e.employeeCode))
+                              .toList();
+                          _downloadEmployeesReport(selected);
+                        },
+                        icon: const Icon(Icons.file_download_outlined, size: 14),
+                        label: const Text('Export Selected', style: TextStyle(fontSize: 12)),
+                      ),
+                      OutlinedButton.icon(
+                        style: OutlinedButton.styleFrom(
+                          foregroundColor: Colors.red,
+                          side: const BorderSide(color: Colors.red),
+                          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                          visualDensity: VisualDensity.compact,
+                        ),
+                        onPressed: _batchDeleteSelected,
+                        icon: const Icon(Icons.delete_outline, size: 14),
+                        label: const Text('Delete Selected', style: TextStyle(fontSize: 12)),
+                      ),
+                    ],
                     searchController: _searchController,
                     searchHint: 'Search by employee name, code, UID, phone...',
                     filterChips: _filters,
                     selectedFilterChip: _selectedFilter,
-                    onFilterChipSelected: (filter) {
-                      setState(() => _selectedFilter = filter);
-                      _loadEmployees();
-                    },
+                    onFilterChipSelected: (filter) => setState(() => _selectedFilter = filter),
                     groupBy: (emp) => emp.department.isNotEmpty ? emp.department : 'General',
                     groupLabelBuilder: (dept, items) =>
                         '$dept Department (${items.length} ${items.length == 1 ? "staff" : "staff"})',
@@ -358,94 +522,12 @@ class _EmployeeManagementScreenState extends State<EmployeeManagementScreen> {
     );
   }
 
-  Widget _buildMetricsRow({
-    required int totalCount,
-    required int activeCount,
-    required int securityCount,
-    required double totalPayroll,
-  }) {
-    return LayoutBuilder(
-      builder: (context, constraints) {
-        final isWide = constraints.maxWidth > 700;
-        final cardWidth = isWide ? (constraints.maxWidth - 36) / 4 : (constraints.maxWidth - 12) / 2;
-
-        final items = [
-          _MetricCardData(
-            label: 'Total Workforce',
-            value: totalCount.toString(),
-            icon: Icons.groups_outlined,
-            color: const Color(0xFF1E3A8A),
-          ),
-          _MetricCardData(
-            label: 'Active on Duty',
-            value: activeCount.toString(),
-            icon: Icons.check_circle_outline,
-            color: const Color(0xFF047857),
-          ),
-          _MetricCardData(
-            label: 'Security / Guards',
-            value: securityCount.toString(),
-            icon: Icons.shield_outlined,
-            color: const Color(0xFFD97706),
-          ),
-          _MetricCardData(
-            label: 'Monthly Payroll Est.',
-            value: '₹${totalPayroll.toStringAsFixed(0)}',
-            icon: Icons.account_balance_wallet_outlined,
-            color: const Color(0xFF7C3AED),
-          ),
-        ];
-
-        return Wrap(
-          spacing: 12,
-          runSpacing: 12,
-          children: items.map((item) {
-            return SizedBox(
-              width: cardWidth,
-              child: AppCard(
-                padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
-                child: Row(
-                  children: [
-                    CircleAvatar(
-                      radius: 20,
-                      backgroundColor: item.color.withValues(alpha: 0.12),
-                      foregroundColor: item.color,
-                      child: Icon(item.icon, size: 20),
-                    ),
-                    const SizedBox(width: 10),
-                    Expanded(
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Text(
-                            item.label,
-                            style: const TextStyle(fontSize: 11, color: AppColors.muted),
-                            maxLines: 1,
-                            overflow: TextOverflow.ellipsis,
-                          ),
-                          const SizedBox(height: 2),
-                          Text(
-                            item.value,
-                            style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
-                          ),
-                        ],
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-            );
-          }).toList(),
-        );
-      },
-    );
-  }
-
   List<EnterpriseTableColumn<Employee>> _employeeTableColumns() {
     return [
       EnterpriseTableColumn<Employee>(
         title: 'Code / Name',
         width: 190,
+        sortKey: (emp) => emp.fullName.toLowerCase(),
         cellBuilder: (ctx, emp) => Row(
           mainAxisSize: MainAxisSize.min,
           children: [
@@ -472,6 +554,7 @@ class _EmployeeManagementScreenState extends State<EmployeeManagementScreen> {
       EnterpriseTableColumn<Employee>(
         title: 'Post / Dept',
         width: 160,
+        sortKey: (emp) => emp.designation.toLowerCase(),
         cellBuilder: (ctx, emp) => Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           mainAxisAlignment: MainAxisAlignment.center,
@@ -484,6 +567,7 @@ class _EmployeeManagementScreenState extends State<EmployeeManagementScreen> {
       EnterpriseTableColumn<Employee>(
         title: 'Aadhaar UID',
         width: 140,
+        sortKey: (emp) => emp.aadhaarNumber,
         cellBuilder: (ctx, emp) => Text(
           emp.aadhaarNumber.isNotEmpty ? emp.aadhaarNumber : '—',
           style: const TextStyle(fontSize: 12, fontFamily: 'monospace'),
@@ -492,6 +576,7 @@ class _EmployeeManagementScreenState extends State<EmployeeManagementScreen> {
       EnterpriseTableColumn<Employee>(
         title: 'Mobile / Contact',
         width: 130,
+        sortKey: (emp) => emp.phone,
         cellBuilder: (ctx, emp) => Text(
           emp.phone.isNotEmpty ? emp.phone : '—',
           style: const TextStyle(fontSize: 12),
@@ -501,6 +586,7 @@ class _EmployeeManagementScreenState extends State<EmployeeManagementScreen> {
         title: 'Salary (₹)',
         width: 110,
         alignRight: true,
+        sortKey: (emp) => emp.monthlySalary,
         cellBuilder: (ctx, emp) => Text(
           emp.monthlySalary > 0 ? '₹${emp.monthlySalary.toStringAsFixed(0)}' : '—',
           style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w700),
@@ -508,8 +594,13 @@ class _EmployeeManagementScreenState extends State<EmployeeManagementScreen> {
       ),
       EnterpriseTableColumn<Employee>(
         title: 'Status',
-        width: 110,
-        cellBuilder: (ctx, emp) => _StatusChip(status: emp.status),
+        width: 125,
+        sortKey: (emp) => emp.status,
+        cellBuilder: (ctx, emp) => EnterpriseStatusDropdown(
+          currentStatus: emp.status,
+          options: const ['ACTIVE', 'INACTIVE', 'ON_LEAVE'],
+          onChanged: (newStatus) => _updateEmployeeStatus(emp, newStatus),
+        ),
       ),
       EnterpriseTableColumn<Employee>(
         title: 'Actions',
@@ -852,18 +943,4 @@ class _MetaItem extends StatelessWidget {
       ],
     );
   }
-}
-
-class _MetricCardData {
-  const _MetricCardData({
-    required this.label,
-    required this.value,
-    required this.icon,
-    required this.color,
-  });
-
-  final String label;
-  final String value;
-  final IconData icon;
-  final Color color;
 }

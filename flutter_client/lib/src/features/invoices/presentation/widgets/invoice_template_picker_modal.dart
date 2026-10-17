@@ -61,13 +61,7 @@ class _TemplatePickerModalState extends State<TemplatePickerModal> {
     final theme = Theme.of(context);
     final isDark = theme.brightness == Brightness.dark;
 
-    final domainCat = widget.activeBusinessCategory;
-    final isCategoryLocked = domainCat != null &&
-        domainCat.isNotEmpty &&
-        domainCat != 'All' &&
-        domainCat != 'General';
-
-    final effectiveCategory = isCategoryLocked ? domainCat : _selectedCategory;
+    final effectiveCategory = _selectedCategory;
 
     final filtered = templatePresets.where((TemplateConfig p) {
       final matchCat =
@@ -146,9 +140,8 @@ class _TemplatePickerModalState extends State<TemplatePickerModal> {
           ),
 
           // Category Filter Tabs
-          if (!isCategoryLocked)
-            SingleChildScrollView(
-              scrollDirection: Axis.horizontal,
+          SingleChildScrollView(
+            scrollDirection: Axis.horizontal,
               padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 6),
               child: Row(
                 children: _categories.map((cat) {
@@ -173,34 +166,6 @@ class _TemplatePickerModalState extends State<TemplatePickerModal> {
                     ),
                   );
                 }).toList(),
-              ),
-            )
-          else
-            Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
-              child: Container(
-                padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
-                decoration: BoxDecoration(
-                  color: const Color(0xFF2563EB).withAlpha(18),
-                  borderRadius: BorderRadius.circular(8),
-                  border: Border.all(color: const Color(0xFF2563EB).withAlpha(60)),
-                ),
-                child: Row(
-                  children: [
-                    const Icon(Icons.shield_outlined, size: 16, color: Color(0xFF2563EB)),
-                    const SizedBox(width: 6),
-                    Expanded(
-                      child: Text(
-                        'Showing $domainCat templates (Active Domain in Business Settings)',
-                        style: const TextStyle(
-                          fontSize: 11,
-                          fontWeight: FontWeight.w600,
-                          color: Color(0xFF1D4ED8),
-                        ),
-                      ),
-                    ),
-                  ],
-                ),
               ),
             ),
 
@@ -440,4 +405,5 @@ class _TemplatePickerModalState extends State<TemplatePickerModal> {
       ),
     );
   }
+
 }
