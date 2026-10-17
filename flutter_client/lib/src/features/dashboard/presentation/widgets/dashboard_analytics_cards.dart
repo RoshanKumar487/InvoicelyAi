@@ -886,14 +886,14 @@ class _DashboardAnalyticsState extends State<DashboardAnalytics> {
         duration: const Duration(milliseconds: 160),
         padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
         decoration: selected
-            ? AppTheme.neuPillDecoration(radius: 9, isActive: true, activeColor: AppColors.neuActiveDark)
+            ? AppTheme.neuPillDecoration(radius: 9, isActive: true, activeColor: const Color(0xFFE2E8F0))
             : BoxDecoration(borderRadius: BorderRadius.circular(9)),
         child: Text(
           label,
           style: TextStyle(
             fontSize: 10.5,
             fontWeight: selected ? FontWeight.w800 : FontWeight.w600,
-            color: selected ? Colors.white : const Color(0xFF64748B),
+            color: selected ? const Color(0xFF0F172A) : const Color(0xFF64748B),
           ),
         ),
       ),
@@ -1098,14 +1098,14 @@ class _DashboardAnalyticsState extends State<DashboardAnalytics> {
                     margin: const EdgeInsets.symmetric(horizontal: 2),
                     padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 4),
                     decoration: isSelected
-                        ? AppTheme.neuPillDecoration(radius: 8, isActive: true, activeColor: AppColors.neuActiveDark)
+                        ? AppTheme.neuPillDecoration(radius: 8, isActive: true, activeColor: const Color(0xFFE2E8F0))
                         : null,
                     child: Text(
                       monthName,
                       style: TextStyle(
                         fontSize: 10.5,
                         fontWeight: isSelected ? FontWeight.w800 : FontWeight.w600,
-                        color: isSelected ? Colors.white : const Color(0xFF64748B),
+                        color: isSelected ? const Color(0xFF0F172A) : const Color(0xFF64748B),
                       ),
                     ),
                   ),
@@ -1131,19 +1131,19 @@ class _DashboardAnalyticsState extends State<DashboardAnalytics> {
         duration: const Duration(milliseconds: 160),
         padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
         decoration: selected
-            ? AppTheme.neuPillDecoration(radius: 9, isActive: true, activeColor: AppColors.neuActiveDark)
+            ? AppTheme.neuPillDecoration(radius: 9, isActive: true, activeColor: const Color(0xFFE2E8F0))
             : BoxDecoration(borderRadius: BorderRadius.circular(9)),
         child: Row(
           mainAxisSize: MainAxisSize.min,
           children: [
-            Icon(icon, size: 13, color: selected ? Colors.white : const Color(0xFF64748B)),
+            Icon(icon, size: 13, color: selected ? const Color(0xFF0F172A) : const Color(0xFF64748B)),
             const SizedBox(width: 4),
             Text(
               label,
               style: TextStyle(
                 fontSize: 11,
                 fontWeight: selected ? FontWeight.w800 : FontWeight.w600,
-                color: selected ? Colors.white : const Color(0xFF64748B),
+                color: selected ? const Color(0xFF0F172A) : const Color(0xFF64748B),
               ),
             ),
           ],
@@ -1498,14 +1498,14 @@ class _DashboardAnalyticsState extends State<DashboardAnalytics> {
         decoration: AppTheme.neuPillDecoration(
           radius: 14,
           isActive: selected,
-          activeColor: AppColors.neuActiveDark,
+          activeColor: const Color(0xFFE2E8F0),
         ),
         child: Text(
           status,
           style: TextStyle(
             fontSize: 11,
             fontWeight: selected ? FontWeight.w800 : FontWeight.w700,
-            color: selected ? Colors.white : const Color(0xFF475569),
+            color: selected ? const Color(0xFF0F172A) : const Color(0xFF475569),
           ),
         ),
       ),

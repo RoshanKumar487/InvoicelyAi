@@ -58,6 +58,8 @@ class _ReportsScreenState extends State<ReportsScreen> {
   List<Map<String, dynamic>> _clients = [];
 
   final Set<String> _selectedIds = {};
+  Invoice? _inlineEditingInvoice;
+  Invoice? _inlinePreviewInvoice;
 
   @override
   void initState() {
@@ -828,20 +830,10 @@ class _ReportsScreenState extends State<ReportsScreen> {
     if (type == 'INVOICE') {
       try {
         final invoice = Invoice.fromJson(row);
-        Navigator.push<void>(
-          context,
-          MaterialPageRoute(
-            builder: (ctx) => InvoiceEditorScreen(
-              repository: _invoiceRepository,
-              invoice: invoice,
-              onCancel: () => Navigator.pop(ctx),
-              onSaved: (saved) {
-                Navigator.pop(ctx);
-                _load();
-              },
-            ),
-          ),
-        );
+        setState(() {
+          _inlineEditingInvoice = invoice;
+          _inlinePreviewInvoice = null;
+        });
       } catch (e) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(content: Text('Could not open invoice editor: $e')),
@@ -1027,24 +1019,10 @@ class _ReportsScreenState extends State<ReportsScreen> {
     if (type == 'INVOICE') {
       try {
         final invoice = Invoice.fromJson(row);
-        Navigator.push<void>(
-          context,
-          MaterialPageRoute(
-            builder: (ctx) => InvoicePreviewScreen(
-              invoice: invoice,
-              repository: _invoiceRepository,
-              onBack: () => Navigator.pop(ctx),
-              onEdit: (inv) {
-                Navigator.pop(ctx);
-                _handleEditRow(inv.toJson());
-              },
-              onDeleted: () {
-                Navigator.pop(ctx);
-                _load();
-              },
-            ),
-          ),
-        );
+        setState(() {
+          _inlinePreviewInvoice = invoice;
+          _inlineEditingInvoice = null;
+        });
       } catch (e) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(content: Text('Could not open invoice preview: $e')),
@@ -1147,6 +1125,36 @@ class _ReportsScreenState extends State<ReportsScreen> {
 
   @override
   Widget build(BuildContext context) {
+    if (_inlineEditingInvoice != null) {
+      return InvoiceEditorScreen(
+        repository: _invoiceRepository,
+        invoice: _inlineEditingInvoice,
+        onCancel: () => setState(() => _inlineEditingInvoice = null),
+        onSaved: (saved) {
+          setState(() => _inlineEditingInvoice = null);
+          _load();
+        },
+      );
+    }
+
+    if (_inlinePreviewInvoice != null) {
+      return InvoicePreviewScreen(
+        invoice: _inlinePreviewInvoice!,
+        repository: _invoiceRepository,
+        onBack: () => setState(() => _inlinePreviewInvoice = null),
+        onEdit: (inv) {
+          setState(() {
+            _inlinePreviewInvoice = null;
+            _inlineEditingInvoice = inv;
+          });
+        },
+        onDeleted: () {
+          setState(() => _inlinePreviewInvoice = null);
+          _load();
+        },
+      );
+    }
+
     final filtered = _filteredRows;
 
     return Scaffold(

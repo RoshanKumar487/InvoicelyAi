@@ -3,7 +3,6 @@ import 'package:flutter/material.dart';
 
 import '../../../core/api/api_exception.dart';
 import '../../../data/models/auth_models.dart';
-import '../../../shared/widgets/app_card.dart';
 import '../../../shared/widgets/offline_cache_banner.dart';
 import '../../../theme/app_theme.dart';
 import '../../audit/data/audit_log.dart';
@@ -20,6 +19,11 @@ import '../../employees/data/employee_repository.dart';
 import '../../expenses/data/expense.dart';
 import '../../expenses/data/expenses_repository.dart';
 import 'widgets/dashboard_analytics_cards.dart';
+import 'widgets/dashboard_developer_panel.dart';
+import 'widgets/dashboard_module_shortcuts.dart';
+import 'widgets/dashboard_recent_audit_logs.dart';
+import 'widgets/dashboard_top_header.dart';
+import 'widgets/user_profile_dialog.dart';
 
 class DashboardScreen extends StatefulWidget {
   const DashboardScreen({
@@ -34,6 +38,7 @@ class DashboardScreen extends StatefulWidget {
     required this.onOpenTemplates,
     this.onOpenPayroll,
     this.onOpenAuditLogs,
+    this.onOpenBusinessSettings,
     this.registeredCompanyName,
     this.localSettings = const {},
     super.key,
@@ -50,8 +55,163 @@ class DashboardScreen extends StatefulWidget {
   final VoidCallback onOpenTemplates;
   final VoidCallback? onOpenPayroll;
   final VoidCallback? onOpenAuditLogs;
+  final VoidCallback? onOpenBusinessSettings;
   final String? registeredCompanyName;
   final Map<String, Object?> localSettings;
+
+  static void showNotificationsDialog({
+    required BuildContext context,
+    required List<DashboardNotificationItem> notifications,
+    required VoidCallback onMarkAllRead,
+    ValueChanged<DashboardNotificationItem>? onNotificationRead,
+  }) {
+    showDialog<void>(
+      context: context,
+      builder: (ctx) => StatefulBuilder(
+        builder: (ctx, setDialogState) {
+          final unreadCount = notifications.where((n) => !n.isRead).length;
+          return AlertDialog(
+            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+            titlePadding: const EdgeInsets.fromLTRB(20, 18, 16, 12),
+            contentPadding: const EdgeInsets.fromLTRB(16, 0, 16, 12),
+            title: Row(
+              children: [
+                Container(
+                  padding: const EdgeInsets.all(7),
+                  decoration: BoxDecoration(
+                    color: const Color(0xFF0284C7).withValues(alpha: 0.12),
+                    shape: BoxShape.circle,
+                  ),
+                  child: const Icon(Icons.notifications_active_rounded, color: Color(0xFF0284C7), size: 18),
+                ),
+                const SizedBox(width: 10),
+                const Text(
+                  'Notifications',
+                  style: TextStyle(fontSize: 17, fontWeight: FontWeight.w800, color: Color(0xFF0F172A)),
+                ),
+                if (unreadCount > 0) ...[
+                  const SizedBox(width: 8),
+                  Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 2),
+                    decoration: BoxDecoration(
+                      color: const Color(0xFFEF4444).withValues(alpha: 0.12),
+                      borderRadius: BorderRadius.circular(10),
+                    ),
+                    child: Text(
+                      '$unreadCount new',
+                      style: const TextStyle(color: Color(0xFFEF4444), fontSize: 11, fontWeight: FontWeight.w700),
+                    ),
+                  ),
+                ],
+                const Spacer(),
+                if (unreadCount > 0)
+                  TextButton(
+                    onPressed: () {
+                      onMarkAllRead();
+                      setDialogState(() {});
+                    },
+                    child: const Text('Mark all as read', style: TextStyle(fontSize: 12, fontWeight: FontWeight.w600)),
+                  ),
+              ],
+            ),
+            content: SizedBox(
+              width: 440,
+              child: notifications.isEmpty
+                  ? const Padding(
+                      padding: EdgeInsets.all(32),
+                      child: Center(
+                        child: Text('No notifications yet', style: TextStyle(color: Color(0xFF94A3B8))),
+                      ),
+                    )
+                  : ListView.separated(
+                      shrinkWrap: true,
+                      itemCount: notifications.length,
+                      separatorBuilder: (_, __) => const Divider(height: 12, color: Color(0xFFF1F5F9)),
+                      itemBuilder: (ctx, index) {
+                        final notif = notifications[index];
+                        return ListTile(
+                          dense: true,
+                          contentPadding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+                          tileColor: notif.isRead ? Colors.transparent : const Color(0xFFF8FAFC),
+                          leading: Container(
+                            padding: const EdgeInsets.all(8),
+                            decoration: BoxDecoration(
+                              color: notif.color.withValues(alpha: 0.12),
+                              shape: BoxShape.circle,
+                            ),
+                            child: Icon(notif.icon, size: 18, color: notif.color),
+                          ),
+                          title: Row(
+                            children: [
+                              Expanded(
+                                child: Text(
+                                  notif.title,
+                                  style: TextStyle(
+                                    fontSize: 13,
+                                    fontWeight: notif.isRead ? FontWeight.w600 : FontWeight.w800,
+                                    color: const Color(0xFF0F172A),
+                                  ),
+                                ),
+                              ),
+                              Text(
+                                notif.timeAgo,
+                                style: const TextStyle(fontSize: 10, color: Color(0xFF94A3B8)),
+                              ),
+                            ],
+                          ),
+                          subtitle: Padding(
+                            padding: const EdgeInsets.only(top: 3),
+                            child: Text(
+                              notif.message,
+                              style: const TextStyle(fontSize: 12, color: Color(0xFF64748B), height: 1.3),
+                            ),
+                          ),
+                          trailing: notif.isRead
+                              ? null
+                              : Container(
+                                  width: 8,
+                                  height: 8,
+                                  decoration: const BoxDecoration(
+                                    color: Color(0xFF0284C7),
+                                    shape: BoxShape.circle,
+                                  ),
+                                ),
+                          onTap: () {
+                            notif.isRead = true;
+                            onNotificationRead?.call(notif);
+                            setDialogState(() {});
+                          },
+                        );
+                      },
+                    ),
+            ),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.of(ctx).pop(),
+                child: const Text('Close'),
+              ),
+            ],
+          );
+        },
+      ),
+    );
+  }
+
+  static void showUserProfileDialog({
+    required BuildContext context,
+    required AuthSession session,
+    required String userInitial,
+    VoidCallback? onOpenBusinessSettings,
+    required Future<void> Function() onLogout,
+  }) {
+    UserProfileDialog.show(
+      context,
+      session: session,
+      onOpenBusinessSettings: onOpenBusinessSettings,
+      onLogout: onLogout,
+    );
+  }
 
   @override
   State<DashboardScreen> createState() => _DashboardScreenState();
@@ -104,7 +264,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
     DashboardNotificationItem(
       id: '1',
       title: 'Payment Received',
-      message: 'Payment of ₹45,200 received for Invoice #INV-2025-001 from Acme Security',
+      message: 'Payment of â‚¹45,200 received for Invoice #INV-2025-001 from Acme Security',
       timeAgo: '12m ago',
       icon: Icons.check_circle_outline_rounded,
       color: const Color(0xFF10B981),
@@ -113,7 +273,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
     DashboardNotificationItem(
       id: '2',
       title: 'Invoice Overdue Notice',
-      message: 'Invoice #INV-2025-004 is overdue by 3 days (₹18,500)',
+      message: 'Invoice #INV-2025-004 is overdue by 3 days (â‚¹18,500)',
       timeAgo: '2h ago',
       icon: Icons.warning_amber_rounded,
       color: const Color(0xFFEF4444),
@@ -151,137 +311,11 @@ class _DashboardScreenState extends State<DashboardScreen> {
   }
 
   void _showNotificationsDialog() {
-    showDialog<void>(
+    DashboardScreen.showNotificationsDialog(
       context: context,
-      builder: (ctx) => StatefulBuilder(
-        builder: (ctx, setDialogState) {
-          final unreadCount = _notifications.where((n) => !n.isRead).length;
-          return AlertDialog(
-            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-            titlePadding: const EdgeInsets.fromLTRB(20, 18, 16, 12),
-            contentPadding: const EdgeInsets.fromLTRB(16, 0, 16, 12),
-            title: Row(
-              children: [
-                Container(
-                  padding: const EdgeInsets.all(7),
-                  decoration: BoxDecoration(
-                    color: const Color(0xFF0284C7).withValues(alpha: 0.12),
-                    shape: BoxShape.circle,
-                  ),
-                  child: const Icon(Icons.notifications_active_rounded, color: Color(0xFF0284C7), size: 18),
-                ),
-                const SizedBox(width: 10),
-                const Text(
-                  'Notifications',
-                  style: TextStyle(fontSize: 17, fontWeight: FontWeight.w800, color: Color(0xFF0F172A)),
-                ),
-                if (unreadCount > 0) ...[
-                  const SizedBox(width: 8),
-                  Container(
-                    padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 2),
-                    decoration: BoxDecoration(
-                      color: const Color(0xFFEF4444).withValues(alpha: 0.12),
-                      borderRadius: BorderRadius.circular(10),
-                    ),
-                    child: Text(
-                      '$unreadCount new',
-                      style: const TextStyle(color: Color(0xFFEF4444), fontSize: 11, fontWeight: FontWeight.w700),
-                    ),
-                  ),
-                ],
-                const Spacer(),
-                if (unreadCount > 0)
-                  TextButton(
-                    onPressed: () {
-                      _markAllNotificationsAsRead();
-                      setDialogState(() {});
-                    },
-                    child: const Text('Mark all as read', style: TextStyle(fontSize: 12, fontWeight: FontWeight.w600)),
-                  ),
-              ],
-            ),
-            content: SizedBox(
-              width: 440,
-              child: _notifications.isEmpty
-                  ? const Padding(
-                      padding: EdgeInsets.all(32),
-                      child: Center(
-                        child: Text('No notifications yet', style: TextStyle(color: Color(0xFF94A3B8))),
-                      ),
-                    )
-                  : ListView.separated(
-                      shrinkWrap: true,
-                      itemCount: _notifications.length,
-                      separatorBuilder: (_, __) => const Divider(height: 12, color: Color(0xFFF1F5F9)),
-                      itemBuilder: (ctx, index) {
-                        final notif = _notifications[index];
-                        return ListTile(
-                          dense: true,
-                          contentPadding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-                          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
-                          tileColor: notif.isRead ? Colors.transparent : const Color(0xFFF8FAFC),
-                          leading: Container(
-                            padding: const EdgeInsets.all(8),
-                            decoration: BoxDecoration(
-                              color: notif.color.withValues(alpha: 0.12),
-                              shape: BoxShape.circle,
-                            ),
-                            child: Icon(notif.icon, size: 18, color: notif.color),
-                          ),
-                          title: Row(
-                            children: [
-                              Expanded(
-                                child: Text(
-                                  notif.title,
-                                  style: TextStyle(
-                                    fontSize: 13,
-                                    fontWeight: notif.isRead ? FontWeight.w600 : FontWeight.w800,
-                                    color: const Color(0xFF0F172A),
-                                  ),
-                                ),
-                              ),
-                              Text(
-                                notif.timeAgo,
-                                style: const TextStyle(fontSize: 10, color: Color(0xFF94A3B8)),
-                              ),
-                            ],
-                          ),
-                          subtitle: Padding(
-                            padding: const EdgeInsets.only(top: 3),
-                            child: Text(
-                              notif.message,
-                              style: const TextStyle(fontSize: 12, color: Color(0xFF64748B), height: 1.3),
-                            ),
-                          ),
-                          trailing: notif.isRead
-                              ? null
-                              : Container(
-                                  width: 8,
-                                  height: 8,
-                                  decoration: const BoxDecoration(
-                                    color: Color(0xFF0284C7),
-                                    shape: BoxShape.circle,
-                                  ),
-                                ),
-                          onTap: () {
-                            setState(() {
-                              notif.isRead = true;
-                            });
-                            setDialogState(() {});
-                          },
-                        );
-                      },
-                    ),
-            ),
-            actions: [
-              TextButton(
-                onPressed: () => Navigator.of(ctx).pop(),
-                child: const Text('Close'),
-              ),
-            ],
-          );
-        },
-      ),
+      notifications: _notifications,
+      onMarkAllRead: _markAllNotificationsAsRead,
+      onNotificationRead: (_) => setState(() {}),
     );
   }
 
@@ -631,7 +665,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
               child: ListView(
                 padding: EdgeInsets.fromLTRB(sidePadding, 14, sidePadding, 28),
                 children: [
-                  _DashboardHeader(
+                  DashboardTopHeader(
                     companyName: _isDeveloper ? 'Platform overview' : registeredName,
                     selectedFilter: _selectedDateFilter,
                     onFilterChanged: _onDateFilterChanged,
@@ -644,9 +678,12 @@ class _DashboardScreenState extends State<DashboardScreen> {
                     searchController: _searchController,
                     onSearchChanged: (val) => setState(() => _searchQuery = val),
                     onRefresh: _isLoading ? null : _loadStatistics,
+                    session: widget.session,
+                    onOpenBusinessSettings: widget.onOpenBusinessSettings,
+                    onLogout: widget.onLogout,
                   ),
                   const SizedBox(height: 20),
-                  _DashboardWelcomeRow(
+                  DashboardWelcomeRow(
                     userName: widget.session.user.fullName.trim().isNotEmpty
                         ? widget.session.user.fullName.trim()
                         : 'Roshan Kumar',
@@ -657,13 +694,13 @@ class _DashboardScreenState extends State<DashboardScreen> {
                   ),
                   const SizedBox(height: 18),
                   if (!_isDeveloper)
-                    _AssistantBanner(onTap: widget.onOpenAiChat),
+                    DashboardAssistantBanner(onTap: widget.onOpenAiChat),
                   if (_usingCachedData) ...[
                     const SizedBox(height: 12),
                     const OfflineCacheBanner(),
                   ],
                   const SizedBox(height: 18),
-                  _DashboardShortcuts(
+                  DashboardModuleShortcuts(
                     user: widget.session.user,
                     onViewInvoices: () => widget.onViewInvoices('All'),
                     onViewExpenses: widget.onViewExpenses,
@@ -673,7 +710,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
                   ),
                   const SizedBox(height: 20),
                   if (_developerOverview != null) ...[
-                    _DeveloperOverviewPanel(
+                    DeveloperOverviewPanel(
                       overview: _developerOverview!,
                       selectedCompanyId: _selectedCompanyId,
                       onCompanySelected: (companyId) {
@@ -687,11 +724,11 @@ class _DashboardScreenState extends State<DashboardScreen> {
                     const SizedBox(height: 18),
                   ],
                   if (_error != null) ...[
-                    _ErrorCard(message: _error!, onRetry: _loadStatistics),
+                    DashboardErrorCard(message: _error!, onRetry: _loadStatistics),
                     const SizedBox(height: 18),
                   ],
                   if (_invoiceLoadError != null) ...[
-                    _ErrorCard(
+                    DashboardErrorCard(
                       message: _invoiceLoadError!,
                       onRetry: _loadStatistics,
                     ),
@@ -721,7 +758,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
                       selectedDateFilter: _selectedDateFilter,
                     ),
                   if (_recentAuditLogs.isNotEmpty)
-                    _RecentAuditLogsSection(
+                    DashboardRecentAuditLogs(
                       logs: _recentAuditLogs,
                       onOpenAuditLogs: widget.onOpenAuditLogs,
                     ),
@@ -732,997 +769,5 @@ class _DashboardScreenState extends State<DashboardScreen> {
         ),
       ),
     );
-  }
-}
-
-class _DashboardHeader extends StatelessWidget {
-  const _DashboardHeader({
-    required this.companyName,
-    required this.selectedFilter,
-    required this.onFilterChanged,
-    required this.userInitial,
-    required this.onMenuTap,
-    required this.unreadNotificationCount,
-    required this.onOpenNotifications,
-    required this.searchController,
-    required this.onSearchChanged,
-    this.onRefresh,
-  });
-
-  final String companyName;
-  final String selectedFilter;
-  final ValueChanged<String> onFilterChanged;
-  final String userInitial;
-  final VoidCallback? onMenuTap;
-  final int unreadNotificationCount;
-  final VoidCallback onOpenNotifications;
-  final TextEditingController searchController;
-  final ValueChanged<String> onSearchChanged;
-  final VoidCallback? onRefresh;
-
-  @override
-  Widget build(BuildContext context) {
-    final isDesktop = MediaQuery.of(context).size.width > 850;
-
-    return Container(
-      padding: EdgeInsets.symmetric(
-        horizontal: isDesktop ? 18 : 14,
-        vertical: isDesktop ? 12 : 12,
-      ),
-      decoration: AppTheme.neuCardDecoration(radius: 26),
-      child: isDesktop
-          ? Row(
-              children: [
-                _buildCompanyTopNavBadge(isDesktop: true),
-                const Spacer(),
-                _buildSearchField(width: 240),
-                const SizedBox(width: 12),
-                _buildFilterDropdown(context),
-                const SizedBox(width: 10),
-                _buildNeuIconButton(
-                  tooltip: 'Sync dashboard',
-                  icon: Icons.refresh_rounded,
-                  onTap: onRefresh,
-                ),
-                const SizedBox(width: 10),
-                _buildNotificationButton(),
-                const SizedBox(width: 10),
-                _buildUserAvatar(),
-              ],
-            )
-          : Column(
-              crossAxisAlignment: CrossAxisAlignment.stretch,
-              children: [
-                Row(
-                  children: [
-                    Expanded(child: _buildCompanyTopNavBadge(isDesktop: false)),
-                    const SizedBox(width: 8),
-                    _buildNeuIconButton(
-                      tooltip: 'Sync dashboard',
-                      icon: Icons.refresh_rounded,
-                      onTap: onRefresh,
-                    ),
-                    const SizedBox(width: 8),
-                    _buildNotificationButton(),
-                    const SizedBox(width: 8),
-                    _buildUserAvatar(),
-                  ],
-                ),
-                const SizedBox(height: 12),
-                Row(
-                  children: [
-                    Expanded(child: _buildSearchField()),
-                    const SizedBox(width: 10),
-                    _buildFilterDropdown(context),
-                  ],
-                ),
-              ],
-            ),
-    );
-  }
-
-  Widget _buildCompanyTopNavBadge({required bool isDesktop}) {
-    return Row(
-      mainAxisSize: MainAxisSize.min,
-      children: [
-        if (isDesktop) ...[
-          const Text(
-            'Dashboard',
-            style: TextStyle(
-              fontSize: 15.5,
-              fontWeight: FontWeight.w800,
-              color: Color(0xFF1E293B),
-              letterSpacing: -0.3,
-            ),
-          ),
-          const Padding(
-            padding: EdgeInsets.symmetric(horizontal: 12),
-            child: SizedBox(
-              height: 18,
-              child: VerticalDivider(width: 1, color: Color(0xFFCBD5E1)),
-            ),
-          ),
-        ],
-        Flexible(
-          child: Container(
-            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-            decoration: AppTheme.neuPillDecoration(radius: 20),
-            child: Row(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                Container(
-                  width: 26,
-                  height: 26,
-                  decoration: AppTheme.neuOrbDecoration(
-                    active: true,
-                    activeColor: const Color(0xFF2B3548),
-                  ),
-                  child: const Icon(
-                    Icons.business_rounded,
-                    size: 13,
-                    color: Colors.white,
-                  ),
-                ),
-                const SizedBox(width: 8),
-                Flexible(
-                  child: ConstrainedBox(
-                    constraints: BoxConstraints(maxWidth: isDesktop ? 280 : 180),
-                    child: Text(
-                      companyName,
-                      overflow: TextOverflow.ellipsis,
-                      style: const TextStyle(
-                        fontSize: 13,
-                        fontWeight: FontWeight.w800,
-                        color: Color(0xFF1E293B),
-                        letterSpacing: -0.2,
-                      ),
-                    ),
-                  ),
-                ),
-                const SizedBox(width: 6),
-                Container(
-                  width: 7,
-                  height: 7,
-                  decoration: const BoxDecoration(
-                    color: Color(0xFF10B981),
-                    shape: BoxShape.circle,
-                  ),
-                ),
-              ],
-            ),
-          ),
-        ),
-      ],
-    );
-  }
-
-  Widget _buildSearchField({double? width}) {
-    return Container(
-      height: 40,
-      width: width,
-      decoration: AppTheme.neuRecessedDecoration(radius: 18),
-      child: TextField(
-        controller: searchController,
-        onChanged: onSearchChanged,
-        style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w600, color: Color(0xFF1E293B)),
-        decoration: const InputDecoration(
-          filled: false,
-          hintText: 'Search invoices, clients...',
-          hintStyle: TextStyle(fontSize: 12, color: Color(0xFF64748B)),
-          prefixIcon: Icon(Icons.search_rounded, size: 18, color: Color(0xFF475569)),
-          border: InputBorder.none,
-          enabledBorder: InputBorder.none,
-          focusedBorder: InputBorder.none,
-          isDense: true,
-          contentPadding: EdgeInsets.symmetric(vertical: 10),
-        ),
-      ),
-    );
-  }
-
-  Widget _buildNeuIconButton({
-    required String tooltip,
-    required IconData icon,
-    required VoidCallback? onTap,
-  }) {
-    return Tooltip(
-      message: tooltip,
-      child: InkWell(
-        onTap: onTap,
-        borderRadius: BorderRadius.circular(20),
-        child: Container(
-          width: 40,
-          height: 40,
-          decoration: AppTheme.neuOrbDecoration(),
-          child: Icon(icon, size: 19, color: const Color(0xFF334155)),
-        ),
-      ),
-    );
-  }
-
-  Widget _buildNotificationButton() {
-    return Stack(
-      clipBehavior: Clip.none,
-      children: [
-        _buildNeuIconButton(
-          tooltip: 'Notifications',
-          icon: Icons.notifications_none_rounded,
-          onTap: onOpenNotifications,
-        ),
-        if (unreadNotificationCount > 0)
-          Positioned(
-            top: 7,
-            right: 7,
-            child: Container(
-              width: 8.5,
-              height: 8.5,
-              decoration: BoxDecoration(
-                color: const Color(0xFFEF4444),
-                shape: BoxShape.circle,
-                border: Border.all(color: Colors.white, width: 1.5),
-              ),
-            ),
-          ),
-      ],
-    );
-  }
-
-  Widget _buildUserAvatar() {
-    return Container(
-      width: 40,
-      height: 40,
-      decoration: AppTheme.neuOrbDecoration(
-        active: true,
-        activeColor: const Color(0xFF2B3548),
-      ),
-      child: Center(
-        child: Text(
-          userInitial,
-          style: const TextStyle(
-            color: Colors.white,
-            fontSize: 15,
-            fontWeight: FontWeight.w800,
-          ),
-        ),
-      ),
-    );
-  }
-
-  Widget _buildFilterDropdown(BuildContext context) {
-    final options = [
-      'FY 2025-26',
-      'FY 2024-25',
-      'FY 2023-24',
-      'Apr 15, 2025 - May 15, 2025',
-      'This Month',
-      'Last 30 Days',
-      'All Dates',
-      'Custom Date Range...',
-    ];
-
-    return PopupMenuButton<String>(
-      onSelected: onFilterChanged,
-      shape: RoundedRectangleBorder(
-        borderRadius: BorderRadius.circular(18),
-        side: BorderSide(color: Colors.white.withValues(alpha: 0.9)),
-      ),
-      color: AppColors.neuSurface,
-      elevation: 6,
-      position: PopupMenuPosition.under,
-      itemBuilder: (context) => options.map((opt) {
-        final isSelected = opt == selectedFilter;
-        return PopupMenuItem<String>(
-          value: opt,
-          child: Row(
-            children: [
-              Icon(
-                isSelected ? Icons.check_circle_rounded : Icons.calendar_today_outlined,
-                size: 15,
-                color: isSelected ? const Color(0xFF2563EB) : const Color(0xFF64748B),
-              ),
-              const SizedBox(width: 8),
-              Expanded(
-                child: Text(
-                  opt,
-                  style: TextStyle(
-                    fontSize: 12.5,
-                    fontWeight: isSelected ? FontWeight.w800 : FontWeight.w600,
-                    color: isSelected ? const Color(0xFF1E293B) : const Color(0xFF475569),
-                  ),
-                ),
-              ),
-            ],
-          ),
-        );
-      }).toList(),
-      child: Container(
-        height: 40,
-        padding: const EdgeInsets.symmetric(horizontal: 13),
-        decoration: AppTheme.neuPillDecoration(radius: 20),
-        child: Row(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            const Icon(Icons.calendar_today_outlined, size: 13, color: Color(0xFF334155)),
-            const SizedBox(width: 6),
-            ConstrainedBox(
-              constraints: const BoxConstraints(maxWidth: 118),
-              child: Text(
-                selectedFilter,
-                overflow: TextOverflow.ellipsis,
-                style: const TextStyle(
-                  fontSize: 12,
-                  fontWeight: FontWeight.w800,
-                  color: Color(0xFF1E293B),
-                ),
-              ),
-            ),
-            const SizedBox(width: 4),
-            const Icon(Icons.keyboard_arrow_down_rounded, size: 16, color: Color(0xFF64748B)),
-          ],
-        ),
-      ),
-    );
-  }
-}
-
-class _DashboardWelcomeRow extends StatelessWidget {
-  const _DashboardWelcomeRow({
-    required this.userName,
-    required this.subtitle,
-    this.onCreateInvoice,
-  });
-
-  final String userName;
-  final String subtitle;
-  final VoidCallback? onCreateInvoice;
-
-  @override
-  Widget build(BuildContext context) {
-    return Row(
-      crossAxisAlignment: CrossAxisAlignment.center,
-      children: [
-        Expanded(
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Text(
-                'Hello, $userName',
-                maxLines: 1,
-                overflow: TextOverflow.ellipsis,
-                style: const TextStyle(
-                  fontSize: 23,
-                  fontWeight: FontWeight.w900,
-                  color: Color(0xFF1E293B),
-                  letterSpacing: -0.5,
-                ),
-              ),
-              const SizedBox(height: 3),
-              Text(
-                subtitle,
-                maxLines: 1,
-                overflow: TextOverflow.ellipsis,
-                style: const TextStyle(
-                  fontSize: 13,
-                  fontWeight: FontWeight.w600,
-                  color: Color(0xFF64748B),
-                ),
-              ),
-            ],
-          ),
-        ),
-        if (onCreateInvoice != null) ...[
-          const SizedBox(width: 10),
-          InkWell(
-            onTap: onCreateInvoice,
-            borderRadius: BorderRadius.circular(24),
-            child: Container(
-              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 11),
-              decoration: AppTheme.neuPillDecoration(
-                radius: 24,
-                active: true,
-                activeColor: const Color(0xFF2B3548),
-              ),
-              child: const Row(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  Icon(Icons.add_circle_outline_rounded, size: 17, color: Colors.white),
-                  SizedBox(width: 7),
-                  Text(
-                    'New Invoice',
-                    style: TextStyle(
-                      color: Colors.white,
-                      fontSize: 13,
-                      fontWeight: FontWeight.w800,
-                      letterSpacing: -0.2,
-                    ),
-                  ),
-                ],
-              ),
-            ),
-          ),
-        ],
-      ],
-    );
-  }
-}
-
-class _AssistantBanner extends StatelessWidget {
-  const _AssistantBanner({required this.onTap});
-
-  final VoidCallback onTap;
-
-  @override
-  Widget build(BuildContext context) {
-    final isCompact = MediaQuery.sizeOf(context).width < 520;
-    return Container(
-      decoration: AppTheme.neuCardDecoration(radius: 24),
-      padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 16),
-      child: Row(
-        crossAxisAlignment: CrossAxisAlignment.center,
-        children: [
-          Container(
-            width: 48,
-            height: 48,
-            decoration: AppTheme.neuOrbDecoration(),
-            child: const Icon(
-              Icons.auto_awesome_rounded,
-              color: Color(0xFF2B3548),
-              size: 23,
-            ),
-          ),
-          const SizedBox(width: 14),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                const Text(
-                  'AI INVOICE ASSISTANT',
-                  style: TextStyle(
-                    color: Color(0xFF475569),
-                    fontSize: 10,
-                    fontWeight: FontWeight.w800,
-                    letterSpacing: 0.7,
-                  ),
-                ),
-                const SizedBox(height: 3),
-                const Text(
-                  'Generate invoices & insights in seconds',
-                  style: TextStyle(
-                    fontSize: 14.5,
-                    fontWeight: FontWeight.w800,
-                    color: Color(0xFF1E293B),
-                    letterSpacing: -0.3,
-                  ),
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                ),
-                if (!isCompact) ...[
-                  const SizedBox(height: 2),
-                  const Text(
-                    'Auto-fill security guard line items, calculate daily wages & GST, and query metrics.',
-                    style: TextStyle(
-                      fontSize: 11.5,
-                      color: Color(0xFF64748B),
-                      height: 1.35,
-                    ),
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                  ),
-                ],
-              ],
-            ),
-          ),
-          const SizedBox(width: 12),
-          InkWell(
-            onTap: onTap,
-            borderRadius: BorderRadius.circular(22),
-            child: Container(
-              padding: EdgeInsets.symmetric(horizontal: isCompact ? 12 : 16, vertical: 10),
-              decoration: AppTheme.neuPillDecoration(
-                radius: 22,
-                active: true,
-                activeColor: const Color(0xFF2B3548),
-              ),
-              child: Row(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  Text(
-                    isCompact ? 'Open AI' : 'Try Assistant',
-                    style: const TextStyle(
-                      color: Colors.white,
-                      fontSize: 12,
-                      fontWeight: FontWeight.w800,
-                    ),
-                  ),
-                  const SizedBox(width: 5),
-                  const Icon(
-                    Icons.arrow_forward_rounded,
-                    color: Colors.white,
-                    size: 14,
-                  ),
-                ],
-              ),
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-}
-
-class _DashboardShortcuts extends StatelessWidget {
-  const _DashboardShortcuts({
-    required this.user,
-    required this.onViewInvoices,
-    required this.onViewExpenses,
-    required this.onViewClients,
-    required this.onOpenTemplates,
-    this.onOpenPayroll,
-  });
-
-  final UserSummary user;
-  final VoidCallback onViewInvoices;
-  final VoidCallback onViewExpenses;
-  final VoidCallback onViewClients;
-  final VoidCallback onOpenTemplates;
-  final VoidCallback? onOpenPayroll;
-
-  @override
-  Widget build(BuildContext context) {
-    final items = [
-      if (user.hasPermission('INVOICES'))
-        _ModuleCardData(
-          label: 'Invoices',
-          icon: Icons.receipt_long_rounded,
-          iconBg: const Color(0xFF2B3548),
-          iconColor: const Color(0xFF2B3548),
-          onTap: onViewInvoices,
-        ),
-      if (user.hasPermission('EXPENSES'))
-        _ModuleCardData(
-          label: 'Expenses',
-          icon: Icons.account_balance_wallet_rounded,
-          iconBg: const Color(0xFFEAEEF5),
-          iconColor: const Color(0xFF334155),
-          onTap: onViewExpenses,
-        ),
-      if (onOpenPayroll != null)
-        _ModuleCardData(
-          label: 'Payroll',
-          icon: Icons.groups_rounded,
-          iconBg: const Color(0xFFEAEEF5),
-          iconColor: const Color(0xFF334155),
-          onTap: onOpenPayroll!,
-        ),
-      if (user.hasPermission('CLIENTS'))
-        _ModuleCardData(
-          label: 'Clients',
-          icon: Icons.people_alt_rounded,
-          iconBg: const Color(0xFFEAEEF5),
-          iconColor: const Color(0xFF334155),
-          onTap: onViewClients,
-        ),
-      if (user.hasPermission('INVOICES'))
-        _ModuleCardData(
-          label: 'Templates',
-          icon: Icons.tune_rounded,
-          iconBg: const Color(0xFFEAEEF5),
-          iconColor: const Color(0xFF334155),
-          onTap: onOpenTemplates,
-        ),
-    ];
-
-    return Row(
-      children: [
-        for (int i = 0; i < items.length; i++) ...[
-          Expanded(
-            child: _ClayModuleTile(
-              item: items[i],
-              isHighlighted: i == 0,
-            ),
-          ),
-          if (i < items.length - 1) const SizedBox(width: 10),
-        ],
-      ],
-    );
-  }
-}
-
-class _ClayModuleTile extends StatefulWidget {
-  const _ClayModuleTile({
-    required this.item,
-    this.isHighlighted = false,
-  });
-
-  final _ModuleCardData item;
-  final bool isHighlighted;
-
-  @override
-  State<_ClayModuleTile> createState() => _ClayModuleTileState();
-}
-
-class _ClayModuleTileState extends State<_ClayModuleTile> {
-  bool _hovered = false;
-
-  @override
-  Widget build(BuildContext context) {
-    final item = widget.item;
-    final activeDark = widget.isHighlighted || _hovered;
-    return MouseRegion(
-      onEnter: (_) => setState(() => _hovered = true),
-      onExit: (_) => setState(() => _hovered = false),
-      cursor: SystemMouseCursors.click,
-      child: GestureDetector(
-        onTap: item.onTap,
-        child: AnimatedContainer(
-          duration: const Duration(milliseconds: 180),
-          curve: Curves.easeOutCubic,
-          transform: _hovered ? Matrix4.translationValues(0, -3, 0) : Matrix4.identity(),
-          padding: const EdgeInsets.symmetric(vertical: 14, horizontal: 6),
-          decoration: activeDark
-              ? AppTheme.neuPillDecoration(
-                  radius: 22,
-                  active: true,
-                  activeColor: const Color(0xFF2B3548),
-                )
-              : AppTheme.neuCardDecoration(radius: 22),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              Container(
-                width: 40,
-                height: 40,
-                decoration: activeDark
-                    ? BoxDecoration(
-                        color: Colors.white.withValues(alpha: 0.14),
-                        shape: BoxShape.circle,
-                        border: Border.all(color: Colors.white.withValues(alpha: 0.25)),
-                      )
-                    : AppTheme.neuOrbDecoration(),
-                child: Icon(
-                  item.icon,
-                  color: activeDark ? Colors.white : item.iconColor,
-                  size: 20,
-                ),
-              ),
-              const SizedBox(height: 9),
-              Text(
-                item.label,
-                maxLines: 1,
-                overflow: TextOverflow.ellipsis,
-                style: TextStyle(
-                  fontSize: 12,
-                  fontWeight: FontWeight.w800,
-                  color: activeDark ? Colors.white : const Color(0xFF1E293B),
-                  letterSpacing: -0.2,
-                ),
-              ),
-            ],
-          ),
-        ),
-      ),
-    );
-  }
-}
-
-class _ModuleCardData {
-  const _ModuleCardData({
-    required this.label,
-    required this.icon,
-    required this.iconBg,
-    required this.iconColor,
-    required this.onTap,
-  });
-
-  final String label;
-  final IconData icon;
-  final Color iconBg;
-  final Color iconColor;
-  final VoidCallback onTap;
-}
-
-class _DeveloperOverviewPanel extends StatelessWidget {
-  const _DeveloperOverviewPanel({
-    required this.overview,
-    required this.selectedCompanyId,
-    required this.onCompanySelected,
-  });
-
-  final DeveloperOverview overview;
-  final int? selectedCompanyId;
-  final ValueChanged<int?> onCompanySelected;
-
-  @override
-  Widget build(BuildContext context) {
-    return AppCard(
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Text(
-            'Platform snapshot',
-            style: Theme.of(context).textTheme.titleLarge?.copyWith(
-                  fontWeight: FontWeight.w800,
-                ),
-          ),
-          const SizedBox(height: 14),
-          Wrap(
-            spacing: 10,
-            runSpacing: 10,
-            children: [
-              _PlatformMetric(
-                label: 'Organizations',
-                value: '${overview.totalCompanies}',
-              ),
-              _PlatformMetric(label: 'Users', value: '${overview.totalUsers}'),
-              _PlatformMetric(
-                label: 'Invoices',
-                value: '${overview.totalInvoices}',
-              ),
-              _PlatformMetric(
-                label: 'Platform revenue',
-                value: _money(overview.totalPlatformRevenue),
-              ),
-            ],
-          ),
-          const SizedBox(height: 14),
-          SizedBox(
-            height: 42,
-            child: ListView(
-              scrollDirection: Axis.horizontal,
-              children: [
-                ChoiceChip(
-                  label: const Text('All companies'),
-                  selected: selectedCompanyId == null,
-                  onSelected: (_) => onCompanySelected(null),
-                ),
-                for (final company in overview.companies)
-                  Padding(
-                    padding: const EdgeInsets.only(left: 8),
-                    child: ChoiceChip(
-                      label: Text(
-                        '${company.companyName} (${company.companyCode})',
-                      ),
-                      selected: selectedCompanyId == company.companyId,
-                      onSelected: company.companyId == null
-                          ? null
-                          : (_) => onCompanySelected(company.companyId),
-                    ),
-                  ),
-              ],
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-}
-
-class _PlatformMetric extends StatelessWidget {
-  const _PlatformMetric({required this.label, required this.value});
-
-  final String label;
-  final String value;
-
-  @override
-  Widget build(BuildContext context) => Container(
-        constraints: const BoxConstraints(minWidth: 112),
-        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
-        decoration: BoxDecoration(
-          color: Theme.of(context).colorScheme.surfaceContainerHighest,
-          borderRadius: BorderRadius.circular(12),
-        ),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Text(value, style: const TextStyle(fontWeight: FontWeight.w800)),
-            const SizedBox(height: 3),
-            Text(
-              label,
-              style: const TextStyle(fontSize: 11, color: AppColors.muted),
-            ),
-          ],
-        ),
-      );
-}
-
-class _ErrorCard extends StatelessWidget {
-  const _ErrorCard({required this.message, required this.onRetry});
-
-  final String message;
-  final Future<void> Function() onRetry;
-
-  @override
-  Widget build(BuildContext context) => AppCard(
-        child: Row(
-          children: [
-            const Icon(Icons.cloud_off, color: AppColors.overdue),
-            const SizedBox(width: 12),
-            Expanded(child: Text(message)),
-            TextButton(onPressed: onRetry, child: const Text('Retry')),
-          ],
-        ),
-      );
-}
-
-
-String _money(double amount) => formatDashboardMoney(amount);
-
-class _RecentAuditLogsSection extends StatelessWidget {
-  const _RecentAuditLogsSection({
-    required this.logs,
-    required this.onOpenAuditLogs,
-  });
-
-  final List<AuditLog> logs;
-  final VoidCallback? onOpenAuditLogs;
-
-  @override
-  Widget build(BuildContext context) {
-    if (logs.isEmpty) return const SizedBox.shrink();
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        const SizedBox(height: 20),
-        Row(
-          mainAxisAlignment: MainAxisAlignment.spaceBetween,
-          children: [
-            Row(
-              children: [
-                Container(
-                  padding: const EdgeInsets.all(6),
-                  decoration: BoxDecoration(
-                    color: const Color(0xFF0284C7).withValues(alpha: 0.1),
-                    borderRadius: BorderRadius.circular(8),
-                  ),
-                  child: const Icon(
-                    Icons.history_edu_rounded,
-                    size: 18,
-                    color: Color(0xFF0284C7),
-                  ),
-                ),
-                const SizedBox(width: 8),
-                const Text(
-                  'Recent Audit & Activity Logs',
-                  style: TextStyle(
-                    fontSize: 16,
-                    fontWeight: FontWeight.bold,
-                  ),
-                ),
-              ],
-            ),
-            if (onOpenAuditLogs != null)
-              TextButton.icon(
-                onPressed: onOpenAuditLogs,
-                icon: const Icon(Icons.arrow_forward_rounded, size: 14),
-                label: const Text('View All', style: TextStyle(fontSize: 12)),
-              ),
-          ],
-        ),
-        const SizedBox(height: 10),
-        AppCard(
-          padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
-          child: Column(
-            children: [
-              for (int i = 0; i < logs.length; i++) ...[
-                _buildLogItem(context, logs[i]),
-                if (i < logs.length - 1)
-                  const Divider(height: 16, thickness: 0.5),
-              ],
-            ],
-          ),
-        ),
-      ],
-    );
-  }
-
-  Widget _buildLogItem(BuildContext context, AuditLog log) {
-    final (icon, color) = _getModuleIconAndColor(log.module);
-    final timeStr = _formatRelativeTime(log.createdAt);
-
-    return InkWell(
-      onTap: onOpenAuditLogs,
-      borderRadius: BorderRadius.circular(8),
-      child: Padding(
-        padding: const EdgeInsets.symmetric(vertical: 4),
-        child: Row(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Container(
-              padding: const EdgeInsets.all(7),
-              decoration: BoxDecoration(
-                color: color.withValues(alpha: 0.1),
-                shape: BoxShape.circle,
-              ),
-              child: Icon(icon, size: 15, color: color),
-            ),
-            const SizedBox(width: 10),
-            Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Row(
-                    children: [
-                      Expanded(
-                        child: Text(
-                          log.title,
-                          style: const TextStyle(
-                            fontSize: 13,
-                            fontWeight: FontWeight.w600,
-                          ),
-                          maxLines: 1,
-                          overflow: TextOverflow.ellipsis,
-                        ),
-                      ),
-                      Text(
-                        timeStr,
-                        style: const TextStyle(
-                          fontSize: 11,
-                          color: AppColors.muted,
-                        ),
-                      ),
-                    ],
-                  ),
-                  const SizedBox(height: 2),
-                  Row(
-                    children: [
-                      Container(
-                        padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 1),
-                        decoration: BoxDecoration(
-                          color: Colors.grey.shade100,
-                          borderRadius: BorderRadius.circular(4),
-                        ),
-                        child: Text(
-                          log.userName,
-                          style: TextStyle(
-                            fontSize: 10,
-                            fontWeight: FontWeight.bold,
-                            color: Colors.grey.shade700,
-                          ),
-                        ),
-                      ),
-                      const SizedBox(width: 6),
-                      Expanded(
-                        child: Text(
-                          log.description.isNotEmpty ? log.description : log.action,
-                          style: const TextStyle(fontSize: 11, color: AppColors.muted),
-                          maxLines: 1,
-                          overflow: TextOverflow.ellipsis,
-                        ),
-                      ),
-                    ],
-                  ),
-                ],
-              ),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-
-  (IconData, Color) _getModuleIconAndColor(String module) {
-    switch (module.toUpperCase()) {
-      case 'INVOICE':
-        return (Icons.receipt_long_rounded, const Color(0xFF2563EB));
-      case 'EXPENSE':
-        return (Icons.account_balance_wallet_rounded, const Color(0xFFD97706));
-      case 'CLIENT':
-        return (Icons.people_alt_rounded, const Color(0xFF059669));
-      case 'EMPLOYEE':
-        return (Icons.badge_rounded, const Color(0xFF7C3AED));
-      case 'TEAM':
-        return (Icons.manage_accounts_rounded, const Color(0xFFDC2626));
-      default:
-        return (Icons.history_rounded, const Color(0xFF0284C7));
-    }
-  }
-
-  String _formatRelativeTime(DateTime? dt) {
-    if (dt == null) return '';
-    final diff = DateTime.now().difference(dt);
-    if (diff.inMinutes < 1) return 'Just now';
-    if (diff.inMinutes < 60) return '${diff.inMinutes}m ago';
-    if (diff.inHours < 24) return '${diff.inHours}h ago';
-    return '${diff.inDays}d ago';
   }
 }

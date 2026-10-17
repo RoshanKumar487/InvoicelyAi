@@ -68,6 +68,44 @@ class _AppShellState extends State<AppShell> {
   TemplateConfig? _preferredTemplate;
   Map<String, Object?> _invoiceLocalSettings = <String, Object?>{};
   bool _invoiceFullscreen = false;
+  final List<DashboardNotificationItem> _shellNotifications = [
+    DashboardNotificationItem(
+      id: '1',
+      title: 'Payment Received',
+      message: 'Payment of ₹45,200 received for Invoice #INV-2025-001 from Acme Security',
+      timeAgo: '12m ago',
+      icon: Icons.check_circle_outline_rounded,
+      color: const Color(0xFF10B981),
+      isRead: false,
+    ),
+    DashboardNotificationItem(
+      id: '2',
+      title: 'Invoice Overdue Notice',
+      message: 'Invoice #INV-2025-004 is overdue by 3 days (₹18,500)',
+      timeAgo: '2h ago',
+      icon: Icons.warning_amber_rounded,
+      color: const Color(0xFFEF4444),
+      isRead: false,
+    ),
+    DashboardNotificationItem(
+      id: '3',
+      title: 'New Client Onboarded',
+      message: 'Metro Guard Logistics profile has been verified and activated',
+      timeAgo: 'Yesterday',
+      icon: Icons.person_add_alt_1_rounded,
+      color: const Color(0xFF0284C7),
+      isRead: false,
+    ),
+    DashboardNotificationItem(
+      id: '4',
+      title: 'Tax & GST Summary Ready',
+      message: 'Monthly GST summary for March 2025 is ready for review',
+      timeAgo: '2d ago',
+      icon: Icons.receipt_long_rounded,
+      color: const Color(0xFF8B5CF6),
+      isRead: true,
+    ),
+  ];
 
   @override
   void initState() {
@@ -228,12 +266,15 @@ class _AppShellState extends State<AppShell> {
     final isWide = MediaQuery.sizeOf(context).width >= 760;
     final page = _buildPage();
     if (!isWide) {
-      final showBottomBar = !_invoiceFullscreen &&
-          !(_destination == _Destination.menu && _moreSection != null);
+      // Keep bottom navigation bar visible on mobile and tablet screens even during invoice edit/preview
       return PopScope(
-        canPop: _destination == _Destination.dashboard && _moreSection == null,
+        canPop: _destination == _Destination.dashboard && _moreSection == null && !_invoiceFullscreen,
         onPopInvokedWithResult: (didPop, _) {
           if (didPop) return;
+          if (_invoiceFullscreen) {
+            setState(() => _invoiceFullscreen = false);
+            return;
+          }
           if (_moreSection != null) {
             setState(() => _moreSection = null);
           } else if (_destination != _Destination.dashboard) {
@@ -246,38 +287,36 @@ class _AppShellState extends State<AppShell> {
         child: Scaffold(
           backgroundColor: AppColors.background,
           body: page,
-          bottomNavigationBar: showBottomBar
-              ? Container(
-                  margin: const EdgeInsets.fromLTRB(12, 0, 12, 10),
-                  decoration: AppTheme.neuPillDecoration(radius: 26),
-                  child: ClipRRect(
-                    borderRadius: BorderRadius.circular(26),
-                    child: NavigationBar(
-                      height: 64,
-                      backgroundColor: AppColors.neuSurface,
-                      surfaceTintColor: Colors.transparent,
-                      indicatorColor: const Color(0xFF2B3548),
-                      selectedIndex: _destination.index,
-                      onDestinationSelected: (index) => setState(() {
-                        _destination = _Destination.values[index];
-                        _moreSection = null;
-                        _invoiceFullscreen = false;
-                        if (_destination == _Destination.invoices) {
-                          _invoiceStatusFilter = 'All';
-                        }
-                      }),
-                      destinations: [
-                        for (final item in _Destination.values)
-                          NavigationDestination(
-                            icon: Icon(item.icon, color: const Color(0xFF64748B)),
-                            selectedIcon: Icon(item.icon, color: Colors.white),
-                            label: item.label,
-                          ),
-                      ],
+          bottomNavigationBar: Container(
+            margin: const EdgeInsets.fromLTRB(12, 0, 12, 10),
+            decoration: AppTheme.neuPillDecoration(radius: 26),
+            child: ClipRRect(
+              borderRadius: BorderRadius.circular(26),
+              child: NavigationBar(
+                height: 64,
+                backgroundColor: AppColors.neuSurface,
+                surfaceTintColor: Colors.transparent,
+                indicatorColor: const Color(0xFFE2E8F0),
+                selectedIndex: _destination.index,
+                onDestinationSelected: (index) => setState(() {
+                  _destination = _Destination.values[index];
+                  _moreSection = null;
+                  _invoiceFullscreen = false;
+                  if (_destination == _Destination.invoices) {
+                    _invoiceStatusFilter = 'All';
+                  }
+                }),
+                destinations: [
+                  for (final item in _Destination.values)
+                    NavigationDestination(
+                      icon: Icon(item.icon, color: const Color(0xFF64748B)),
+                      selectedIcon: Icon(item.icon, color: const Color(0xFF0F172A)),
+                      label: item.label,
                     ),
-                  ),
-                )
-              : null,
+                ],
+              ),
+            ),
+          ),
         ),
       );
     }
@@ -293,8 +332,8 @@ class _AppShellState extends State<AppShell> {
               borderRadius: BorderRadius.circular(26),
               child: NavigationRail(
                 backgroundColor: AppColors.neuSurface,
-                indicatorColor: const Color(0xFF2B3548),
-                selectedIconTheme: const IconThemeData(color: Colors.white, size: 22),
+                indicatorColor: const Color(0xFFE2E8F0),
+                selectedIconTheme: const IconThemeData(color: Color(0xFF0F172A), size: 22),
                 unselectedIconTheme: const IconThemeData(color: Color(0xFF64748B), size: 21),
                 selectedLabelTextStyle: const TextStyle(
                   color: Color(0xFF1E293B),
@@ -322,14 +361,14 @@ class _AppShellState extends State<AppShell> {
                     height: 46,
                     decoration: AppTheme.neuOrbDecoration(
                       active: true,
-                      activeColor: const Color(0xFF2B3548),
+                      activeColor: const Color(0xFFE2E8F0),
                       shape: BoxShape.rectangle,
                       radius: 15,
                     ),
                     child: const Icon(
                       Icons.receipt_long_rounded,
                       size: 23,
-                      color: Colors.white,
+                      color: Color(0xFF0F172A),
                     ),
                   ),
                 ),
@@ -340,10 +379,74 @@ class _AppShellState extends State<AppShell> {
                       label: Text(item.label),
                     ),
                 ],
+                trailing: Expanded(
+                  child: Align(
+                    alignment: Alignment.bottomCenter,
+                    child: Padding(
+                      padding: const EdgeInsets.only(bottom: 16),
+                      child: Column(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          // Business Settings Icon in down of side menu (Desktop only)
+                          Tooltip(
+                            message: 'Business Settings',
+                            child: InkWell(
+                              onTap: _openBusinessSettings,
+                              borderRadius: BorderRadius.circular(16),
+                              child: Container(
+                                width: 42,
+                                height: 42,
+                                decoration: AppTheme.neuOrbDecoration(
+                                  active: _destination == _Destination.menu && _moreSection == 'Business Settings',
+                                  activeColor: const Color(0xFFE2E8F0),
+                                ),
+                                child: Icon(
+                                  Icons.settings_outlined,
+                                  size: 20,
+                                  color: (_destination == _Destination.menu && _moreSection == 'Business Settings')
+                                      ? const Color(0xFF0F172A)
+                                      : const Color(0xFF475569),
+                                ),
+                              ),
+                            ),
+                          ),
+                          const SizedBox(height: 12),
+                          // Logout Icon above/below matching more menu
+                          Tooltip(
+                            message: 'Sign out',
+                            child: InkWell(
+                              onTap: widget.onLogout,
+                              borderRadius: BorderRadius.circular(16),
+                              child: Container(
+                                width: 42,
+                                height: 42,
+                                decoration: AppTheme.neuOrbDecoration(),
+                                child: const Icon(
+                                  Icons.logout_rounded,
+                                  size: 19,
+                                  color: Color(0xFFDC2626),
+                                ),
+                              ),
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ),
+                ),
               ),
             ),
           ),
-          Expanded(child: page),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                if (_destination != _Destination.dashboard)
+                  _buildDesktopTopNavBar(),
+                Expanded(child: page),
+              ],
+            ),
+          ),
         ],
       ),
     );
@@ -382,6 +485,7 @@ class _AppShellState extends State<AppShell> {
           onOpenTemplates: () => _openMoreSection('Invoice & Template Studio'),
           onOpenPayroll: () => _openMoreSection('Payroll & Disbursals'),
           onOpenAuditLogs: () => _openMoreSection('Audit Logs'),
+          onOpenBusinessSettings: _openBusinessSettings,
         ),
       _Destination.invoices => InvoiceFeatureScreen(
           key: ValueKey('invoices-$_invoiceStatusFilter'),
@@ -486,19 +590,241 @@ class _AppShellState extends State<AppShell> {
         _moreSection = section;
       });
 
-  Future<void> _openBusinessSettings() => Navigator.of(context).push<void>(
-        MaterialPageRoute<void>(
-          builder: (routeContext) => SettingsScreen(
-            apiClient: widget.apiClient,
-            localPreferences: _localPreferences,
-            initialLocalSettings: _invoiceLocalSettings,
-            onSaveLocalSettings: (settings) => setState(
-              () => _invoiceLocalSettings = Map<String, Object?>.from(settings),
+  void _openBusinessSettings() {
+    setState(() {
+      _destination = _Destination.menu;
+      _moreSection = 'Business Settings';
+    });
+  }
+
+  Widget _buildDesktopTopNavBar() {
+    final title = switch (_destination) {
+      _Destination.dashboard => 'Dashboard',
+      _Destination.invoices => 'Invoices',
+      _Destination.aiAgent => 'AI Agent',
+      _Destination.expenses => 'Expenses',
+      _Destination.menu => _moreSection ?? 'More Features',
+    };
+
+    final registeredName = _invoiceLocalSettings['businessName']?.toString().trim().isNotEmpty == true
+        ? _invoiceLocalSettings['businessName']!.toString().trim()
+        : (_invoiceLocalSettings['companyName']?.toString().trim().isNotEmpty == true
+            ? _invoiceLocalSettings['companyName']!.toString().trim()
+            : (widget.session.company?.name.trim().isNotEmpty == true
+                ? widget.session.company!.name.trim()
+                : 'Your business'));
+
+    final userInitial = widget.session.user.fullName.trim().isNotEmpty
+        ? widget.session.user.fullName.trim()[0].toUpperCase()
+        : (widget.session.user.email.isNotEmpty
+            ? widget.session.user.email[0].toUpperCase()
+            : 'U');
+
+    final unreadCount = _shellNotifications.where((n) => !n.isRead).length;
+
+    final screenWidth = MediaQuery.sizeOf(context).width;
+    final sideMargin = screenWidth > 900 ? 24.0 : 16.0;
+
+    return Container(
+      width: double.infinity,
+      margin: EdgeInsets.fromLTRB(sideMargin, 12, sideMargin, 8),
+      padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 12),
+      decoration: AppTheme.neuCardDecoration(radius: 26),
+      child: Row(
+        children: [
+          // Page Title
+          Text(
+            title,
+            style: const TextStyle(
+              fontSize: 15.5,
+              fontWeight: FontWeight.w800,
+              color: Color(0xFF1E293B),
+              letterSpacing: -0.3,
             ),
-            onBack: () => Navigator.of(routeContext).pop(),
           ),
-        ),
-      );
+          const Padding(
+            padding: EdgeInsets.symmetric(horizontal: 12),
+            child: SizedBox(
+              height: 18,
+              child: VerticalDivider(width: 1, color: Color(0xFFCBD5E1)),
+            ),
+          ),
+          // Company Badge
+          Flexible(
+            child: Container(
+              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+              decoration: AppTheme.neuPillDecoration(radius: 20),
+              child: Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Container(
+                    width: 26,
+                    height: 26,
+                    decoration: AppTheme.neuOrbDecoration(
+                      active: true,
+                      activeColor: const Color(0xFFE2E8F0),
+                    ),
+                    child: const Icon(
+                      Icons.business_rounded,
+                      size: 13,
+                      color: Color(0xFF0F172A),
+                    ),
+                  ),
+                  const SizedBox(width: 8),
+                  Flexible(
+                    child: ConstrainedBox(
+                      constraints: const BoxConstraints(maxWidth: 260),
+                      child: Text(
+                        registeredName,
+                        overflow: TextOverflow.ellipsis,
+                        style: const TextStyle(
+                          fontSize: 13,
+                          fontWeight: FontWeight.w800,
+                          color: Color(0xFF1E293B),
+                          letterSpacing: -0.2,
+                        ),
+                      ),
+                    ),
+                  ),
+                  const SizedBox(width: 6),
+                  Container(
+                    width: 7,
+                    height: 7,
+                    decoration: const BoxDecoration(
+                      color: Color(0xFF10B981),
+                      shape: BoxShape.circle,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ),
+          const Spacer(),
+          // Sub-section back button
+          if (_destination == _Destination.menu && _moreSection != null) ...[
+            InkWell(
+              onTap: () => setState(() => _moreSection = null),
+              borderRadius: BorderRadius.circular(16),
+              child: Container(
+                padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 7),
+                decoration: AppTheme.neuPillDecoration(radius: 16),
+                child: const Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Icon(Icons.arrow_back_rounded, size: 14, color: Color(0xFF475569)),
+                    SizedBox(width: 5),
+                    Text(
+                      'More menu',
+                      style: TextStyle(
+                        fontSize: 12,
+                        fontWeight: FontWeight.w700,
+                        color: Color(0xFF334155),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+            const SizedBox(width: 10),
+          ],
+          // Refresh Icon
+          Tooltip(
+            message: 'Refresh view',
+            child: InkWell(
+              onTap: () => setState(() {}),
+              borderRadius: BorderRadius.circular(20),
+              child: Container(
+                width: 40,
+                height: 40,
+                decoration: AppTheme.neuOrbDecoration(),
+                child: const Icon(Icons.refresh_rounded, size: 19, color: Color(0xFF334155)),
+              ),
+            ),
+          ),
+          const SizedBox(width: 10),
+          // Notifications Bell
+          Stack(
+            clipBehavior: Clip.none,
+            children: [
+              Tooltip(
+                message: 'Notifications',
+                child: InkWell(
+                  onTap: () => DashboardScreen.showNotificationsDialog(
+                    context: context,
+                    notifications: _shellNotifications,
+                    onMarkAllRead: () => setState(() {
+                      for (final n in _shellNotifications) {
+                        n.isRead = true;
+                      }
+                    }),
+                    onNotificationRead: (_) => setState(() {}),
+                  ),
+                  borderRadius: BorderRadius.circular(20),
+                  child: Container(
+                    width: 40,
+                    height: 40,
+                    decoration: AppTheme.neuOrbDecoration(),
+                    child: const Icon(
+                      Icons.notifications_none_rounded,
+                      size: 19,
+                      color: Color(0xFF334155),
+                    ),
+                  ),
+                ),
+              ),
+              if (unreadCount > 0)
+                Positioned(
+                  top: 7,
+                  right: 7,
+                  child: Container(
+                    width: 8.5,
+                    height: 8.5,
+                    decoration: BoxDecoration(
+                      color: const Color(0xFFEF4444),
+                      shape: BoxShape.circle,
+                      border: Border.all(color: Colors.white, width: 1.5),
+                    ),
+                  ),
+                ),
+            ],
+          ),
+          const SizedBox(width: 10),
+          // User Profile Avatar
+          Tooltip(
+            message: 'View profile details',
+            child: InkWell(
+              onTap: () => DashboardScreen.showUserProfileDialog(
+                context: context,
+                session: widget.session,
+                userInitial: userInitial,
+                onOpenBusinessSettings: _openBusinessSettings,
+                onLogout: widget.onLogout,
+              ),
+              borderRadius: BorderRadius.circular(20),
+              child: Container(
+                width: 40,
+                height: 40,
+                decoration: AppTheme.neuOrbDecoration(
+                  active: true,
+                  activeColor: const Color(0xFFE2E8F0),
+                ),
+                child: Center(
+                  child: Text(
+                    userInitial,
+                    style: const TextStyle(
+                      color: Color(0xFF0F172A),
+                      fontSize: 15,
+                      fontWeight: FontWeight.w800,
+                    ),
+                  ),
+                ),
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
 
   Widget _buildExpenses() => ExpensesScreen(
         repository: ExpensesRepository(apiClient: widget.apiClient),

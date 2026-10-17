@@ -12,6 +12,7 @@ import '../data/employee.dart';
 import '../data/employee_repository.dart';
 import 'widgets/employee_biodata_preview_dialog.dart';
 import 'widgets/employee_editor_dialog.dart';
+import '../../payroll/presentation/widgets/statutory_wage_calculator_dialog.dart';
 
 class EmployeeManagementScreen extends StatefulWidget {
   const EmployeeManagementScreen({
@@ -414,6 +415,14 @@ class _EmployeeManagementScreenState extends State<EmployeeManagementScreen> {
               icon: const Icon(Icons.document_scanner_outlined),
               onPressed: _scanAadhaarDirect,
             ),
+          IconButton(
+            tooltip: 'Statutory Wage & CTC Calculator',
+            icon: const Icon(Icons.calculate_outlined),
+            onPressed: () => showDialog<void>(
+              context: context,
+              builder: (ctx) => const StatutoryWageCalculatorDialog(),
+            ),
+          ),
           IconButton(
             tooltip: 'Refresh list',
             icon: const Icon(Icons.sync),

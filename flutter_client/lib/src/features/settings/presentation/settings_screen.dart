@@ -493,20 +493,26 @@ class _SettingsScreenState extends State<SettingsScreen> {
 
   @override
   Widget build(BuildContext context) {
+    final isDesktop = MediaQuery.of(context).size.width >= 760;
     return DefaultTabController(
       length: 4,
       child: Scaffold(
+        backgroundColor: const Color(0xFFF1F5F9),
         appBar: AppBar(
+          backgroundColor: isDesktop ? const Color(0xFFF1F5F9) : null,
+          elevation: 0,
+          scrolledUnderElevation: 0,
           leading: widget.onBack == null
               ? null
               : IconButton(
                   onPressed: widget.onBack,
                   icon: const Icon(Icons.arrow_back),
+                  tooltip: 'Back to menu',
                 ),
-          title: const Text('Business Settings'),
+          title: !isDesktop ? const Text('Business Settings') : null,
           actions: [
             Padding(
-              padding: const EdgeInsets.only(right: 12),
+              padding: const EdgeInsets.only(right: 16),
               child: FilledButton.icon(
                 onPressed: _loading || _saving ? null : _save,
                 icon: _saving

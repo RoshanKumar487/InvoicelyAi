@@ -55,166 +55,272 @@ class InvoiceSectionAccordion extends StatelessWidget {
           // Section Header Tile
           InkWell(
             onTap: () => onExpansionChanged(!isExpanded),
-            child: Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
-              child: Row(
-                children: [
-                  // Neumorphic circular icon orb
-                  Container(
-                    width: 40,
-                    height: 40,
-                    decoration: AppTheme.neuOrbDecoration(
-                      isActive: isExpanded && enabled,
-                      activeColor: const Color(0xFF2563EB),
-                    ),
-                    child: Center(
-                      child: Icon(
-                        section.icon,
-                        size: 19,
-                        color: (isExpanded && enabled)
-                            ? Colors.white
-                            : (enabled ? const Color(0xFF2563EB) : const Color(0xFF94A3B8)),
+            child: LayoutBuilder(
+              builder: (context, constraints) {
+                final isCompact = constraints.maxWidth < 460;
+
+                final formulaWidget = onSectionFormula != null
+                    ? Tooltip(
+                        message: 'Formula & Daily Wage Auto-Calculation Settings',
+                        child: InkWell(
+                          onTap: onSectionFormula,
+                          borderRadius: BorderRadius.circular(12),
+                          child: Container(
+                            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                            decoration: AppTheme.neuPillDecoration(radius: 12),
+                            child: const Row(
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                Icon(Icons.functions_rounded, size: 14, color: Color(0xFF1D4ED8)),
+                                SizedBox(width: 3),
+                                Text(
+                                  'Formula',
+                                  style: TextStyle(
+                                    fontSize: 10,
+                                    fontWeight: FontWeight.w800,
+                                    color: Color(0xFF1E3A8A),
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ),
+                        ),
+                      )
+                    : null;
+
+                final countBadges = enabled
+                    ? Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Container(
+                            padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 3),
+                            decoration: AppTheme.neuRecessedDecoration(radius: 10),
+                            child: Text(
+                              '$total fields',
+                              style: const TextStyle(
+                                fontSize: 10,
+                                fontWeight: FontWeight.w700,
+                                color: Color(0xFF475569),
+                              ),
+                            ),
+                          ),
+                          const SizedBox(width: 5),
+                          Container(
+                            padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2.5),
+                            decoration: BoxDecoration(
+                              color: const Color(0xFFECFDF5),
+                              borderRadius: BorderRadius.circular(10),
+                              border: Border.all(color: const Color(0xFFA7F3D0)),
+                            ),
+                            child: Text(
+                              '$visible visible',
+                              style: const TextStyle(
+                                fontSize: 10,
+                                fontWeight: FontWeight.w700,
+                                color: Color(0xFF059669),
+                              ),
+                            ),
+                          ),
+                        ],
+                      )
+                    : Container(
+                        padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 2.5),
+                        decoration: BoxDecoration(
+                          color: const Color(0xFFFEF2F2),
+                          borderRadius: BorderRadius.circular(10),
+                          border: Border.all(color: const Color(0xFFFECACA)),
+                        ),
+                        child: const Text(
+                          'Hidden',
+                          style: TextStyle(
+                            fontSize: 10,
+                            fontWeight: FontWeight.w600,
+                            color: Color(0xFFDC2626),
+                          ),
+                        ),
+                      );
+
+                final switchAndChevron = Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    GestureDetector(
+                      onTap: () {}, // Stop event propagation
+                      child: Transform.scale(
+                        scale: 0.8,
+                        child: Switch(
+                          value: enabled,
+                          activeColor: const Color(0xFF2563EB),
+                          onChanged: onEnabledChanged,
+                        ),
                       ),
                     ),
-                  ),
-                  const SizedBox(width: 12),
+                    const SizedBox(width: 4),
+                    Container(
+                      width: 26,
+                      height: 26,
+                      decoration: AppTheme.neuOrbDecoration(),
+                      child: Icon(
+                        isExpanded ? Icons.keyboard_arrow_up_rounded : Icons.keyboard_arrow_down_rounded,
+                        color: const Color(0xFF64748B),
+                        size: 18,
+                      ),
+                    ),
+                  ],
+                );
 
-                  // Title and Subtitle
-                  Expanded(
+                if (isCompact) {
+                  // Mobile Layout: Top row with Icon, Title, and Switch/Chevron. Bottom row with Formula & Badges
+                  return Padding(
+                    padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
+                      mainAxisSize: MainAxisSize.min,
                       children: [
-                        Text(
-                          section.title,
-                          style: TextStyle(
-                            fontSize: 14,
-                            fontWeight: FontWeight.w800,
-                            color: enabled ? const Color(0xFF0F172A) : const Color(0xFF64748B),
-                          ),
-                        ),
-                        const SizedBox(height: 2),
-                        Text(
-                          section.subtitle,
-                          style: const TextStyle(
-                            fontSize: 11.5,
-                            color: Color(0xFF64748B),
-                          ),
-                          maxLines: 1,
-                          overflow: TextOverflow.ellipsis,
-                        ),
-                      ],
-                    ),
-                  ),
-                  const SizedBox(width: 8),
-
-                  // Formula Icon Button on Section Header (Subtotal / Tax & Totals and Services & Duty)
-                  if (onSectionFormula != null) ...[
-                    Tooltip(
-                      message: 'Formula & Daily Wage Auto-Calculation Settings',
-                      child: InkWell(
-                        onTap: onSectionFormula,
-                        borderRadius: BorderRadius.circular(12),
-                        child: Container(
-                          padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 5),
-                          decoration: AppTheme.neuPillDecoration(radius: 12),
-                          child: const Row(
-                            mainAxisSize: MainAxisSize.min,
-                            children: [
-                              Icon(Icons.functions_rounded, size: 15, color: Color(0xFF1D4ED8)),
-                              SizedBox(width: 3),
-                              Text(
-                                'Formula',
-                                style: TextStyle(
-                                  fontSize: 10.5,
-                                  fontWeight: FontWeight.w800,
-                                  color: Color(0xFF1E3A8A),
+                        Row(
+                          children: [
+                            // Neumorphic circular icon orb
+                            Container(
+                              width: 38,
+                              height: 38,
+                              decoration: AppTheme.neuOrbDecoration(
+                                isActive: isExpanded && enabled,
+                                activeColor: const Color(0xFF2563EB),
+                              ),
+                              child: Center(
+                                child: Icon(
+                                  section.icon,
+                                  size: 18,
+                                  color: (isExpanded && enabled)
+                                      ? Colors.white
+                                      : (enabled ? const Color(0xFF2563EB) : const Color(0xFF94A3B8)),
                                 ),
                               ),
+                            ),
+                            const SizedBox(width: 10),
+
+                            // Section Title & Subtitle
+                            Expanded(
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                mainAxisSize: MainAxisSize.min,
+                                children: [
+                                  Text(
+                                    section.title,
+                                    style: TextStyle(
+                                      fontSize: 13.5,
+                                      fontWeight: FontWeight.w800,
+                                      color: enabled ? const Color(0xFF0F172A) : const Color(0xFF64748B),
+                                    ),
+                                    maxLines: 1,
+                                    overflow: TextOverflow.ellipsis,
+                                  ),
+                                  const SizedBox(height: 1),
+                                  Text(
+                                    section.subtitle,
+                                    style: const TextStyle(
+                                      fontSize: 11,
+                                      color: Color(0xFF64748B),
+                                    ),
+                                    maxLines: 1,
+                                    overflow: TextOverflow.ellipsis,
+                                  ),
+                                ],
+                              ),
+                            ),
+                            const SizedBox(width: 6),
+
+                            // Switch & Expand Chevron
+                            switchAndChevron,
+                          ],
+                        ),
+
+                        // Badges & Formula Row below Title on compact screens
+                        Padding(
+                          padding: const EdgeInsets.only(top: 8, left: 48),
+                          child: Wrap(
+                            spacing: 6,
+                            runSpacing: 4,
+                            crossAxisAlignment: WrapCrossAlignment.center,
+                            children: [
+                              countBadges,
+                              if (formulaWidget != null) formulaWidget,
                             ],
                           ),
                         ),
-                      ),
+                      ],
                     ),
-                    const SizedBox(width: 6),
-                  ],
+                  );
+                }
 
-                  // Field Count Badges
-                  if (enabled) ...[
-                    Container(
-                      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3.5),
-                      decoration: AppTheme.neuRecessedDecoration(radius: 12),
-                      child: Text(
-                        '$total fields',
-                        style: const TextStyle(
-                          fontSize: 10.5,
-                          fontWeight: FontWeight.w700,
-                          color: Color(0xFF475569),
+                // Desktop Layout: Everything in a single neat row
+                return Padding(
+                  padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+                  child: Row(
+                    children: [
+                      // Neumorphic circular icon orb
+                      Container(
+                        width: 40,
+                        height: 40,
+                        decoration: AppTheme.neuOrbDecoration(
+                          isActive: isExpanded && enabled,
+                          activeColor: const Color(0xFF2563EB),
+                        ),
+                        child: Center(
+                          child: Icon(
+                            section.icon,
+                            size: 19,
+                            color: (isExpanded && enabled)
+                                ? Colors.white
+                                : (enabled ? const Color(0xFF2563EB) : const Color(0xFF94A3B8)),
+                          ),
                         ),
                       ),
-                    ),
-                    const SizedBox(width: 6),
-                    Container(
-                      padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 3),
-                      decoration: BoxDecoration(
-                        color: const Color(0xFFECFDF5),
-                        borderRadius: BorderRadius.circular(12),
-                        border: Border.all(color: const Color(0xFFA7F3D0)),
-                      ),
-                      child: Text(
-                        '$visible visible',
-                        style: const TextStyle(
-                          fontSize: 10.5,
-                          fontWeight: FontWeight.w700,
-                          color: Color(0xFF059669),
-                        ),
-                      ),
-                    ),
-                  ] else ...[
-                    Container(
-                      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
-                      decoration: BoxDecoration(
-                        color: const Color(0xFFFEF2F2),
-                        borderRadius: BorderRadius.circular(12),
-                        border: Border.all(color: const Color(0xFFFECACA)),
-                      ),
-                      child: const Text(
-                        'Hidden from invoice',
-                        style: TextStyle(
-                          fontSize: 10.5,
-                          fontWeight: FontWeight.w600,
-                          color: Color(0xFFDC2626),
-                        ),
-                      ),
-                    ),
-                  ],
-                  const SizedBox(width: 8),
+                      const SizedBox(width: 12),
 
-                  // Independent Master Switch (Toggling does NOT collapse accordion)
-                  GestureDetector(
-                    onTap: () {}, // Stop event propagation
-                    child: Transform.scale(
-                      scale: 0.82,
-                      child: Switch(
-                        value: enabled,
-                        activeColor: const Color(0xFF2563EB),
-                        onChanged: onEnabledChanged,
+                      // Title and Subtitle
+                      Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            Text(
+                              section.title,
+                              style: TextStyle(
+                                fontSize: 14,
+                                fontWeight: FontWeight.w800,
+                                color: enabled ? const Color(0xFF0F172A) : const Color(0xFF64748B),
+                              ),
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                            ),
+                            const SizedBox(height: 2),
+                            Text(
+                              section.subtitle,
+                              style: const TextStyle(
+                                fontSize: 11.5,
+                                color: Color(0xFF64748B),
+                              ),
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                            ),
+                          ],
+                        ),
                       ),
-                    ),
+                      const SizedBox(width: 8),
+
+                      if (formulaWidget != null) ...[
+                        formulaWidget,
+                        const SizedBox(width: 6),
+                      ],
+
+                      countBadges,
+                      const SizedBox(width: 8),
+
+                      switchAndChevron,
+                    ],
                   ),
-
-                  // Chevron indicator in Neumorphic mini-orb
-                  Container(
-                    width: 26,
-                    height: 26,
-                    decoration: AppTheme.neuOrbDecoration(),
-                    child: Icon(
-                      isExpanded ? Icons.keyboard_arrow_up_rounded : Icons.keyboard_arrow_down_rounded,
-                      color: const Color(0xFF64748B),
-                      size: 18,
-                    ),
-                  ),
-                ],
-              ),
+                );
+              },
             ),
           ),
 
@@ -232,42 +338,77 @@ class InvoiceSectionAccordion extends StatelessWidget {
                     const SizedBox(height: 12),
                   ],
                   // Field Table Header
-                  Container(
-                    padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
-                    decoration: const BoxDecoration(
-                      border: Border(bottom: BorderSide(color: Color(0xFFE2E8F0))),
-                    ),
-                    child: const Row(
-                      children: [
-                        SizedBox(
-                          width: 36,
-                          child: Text('#', style: TextStyle(fontSize: 11, fontWeight: FontWeight.bold, color: Color(0xFF64748B))),
-                        ),
-                        Expanded(
-                          flex: 5,
-                          child: Text('Field Label', style: TextStyle(fontSize: 11, fontWeight: FontWeight.bold, color: Color(0xFF64748B))),
-                        ),
-                        Expanded(
-                          flex: 3,
-                          child: Text('Type', style: TextStyle(fontSize: 11, fontWeight: FontWeight.bold, color: Color(0xFF64748B))),
-                        ),
-                        SizedBox(
-                          width: 52,
-                          child: Text('Req.', style: TextStyle(fontSize: 11, fontWeight: FontWeight.bold, color: Color(0xFF64748B))),
-                        ),
-                        SizedBox(
-                          width: 52,
-                          child: Text('Visible', style: TextStyle(fontSize: 11, fontWeight: FontWeight.bold, color: Color(0xFF64748B))),
-                        ),
-                        SizedBox(
-                          width: 104,
-                          child: Align(
-                            alignment: Alignment.centerRight,
-                            child: Text('Actions', style: TextStyle(fontSize: 11, fontWeight: FontWeight.bold, color: Color(0xFF64748B))),
+                  LayoutBuilder(
+                    builder: (context, tableConstraints) {
+                      final isCompactTable = tableConstraints.maxWidth < 460;
+                      if (isCompactTable) {
+                        return Container(
+                          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
+                          decoration: const BoxDecoration(
+                            border: Border(bottom: BorderSide(color: Color(0xFFE2E8F0))),
                           ),
+                          child: const Row(
+                            children: [
+                              SizedBox(
+                                width: 26,
+                                child: Text('#', style: TextStyle(fontSize: 11, fontWeight: FontWeight.bold, color: Color(0xFF64748B))),
+                              ),
+                              Expanded(
+                                child: Text('Field Name & Type', style: TextStyle(fontSize: 11, fontWeight: FontWeight.bold, color: Color(0xFF64748B))),
+                              ),
+                              SizedBox(
+                                width: 44,
+                                child: Text('Vis.', style: TextStyle(fontSize: 11, fontWeight: FontWeight.bold, color: Color(0xFF64748B))),
+                              ),
+                              SizedBox(
+                                width: 90,
+                                child: Align(
+                                  alignment: Alignment.centerRight,
+                                  child: Text('Actions', style: TextStyle(fontSize: 11, fontWeight: FontWeight.bold, color: Color(0xFF64748B))),
+                                ),
+                              ),
+                            ],
+                          ),
+                        );
+                      }
+                      return Container(
+                        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
+                        decoration: const BoxDecoration(
+                          border: Border(bottom: BorderSide(color: Color(0xFFE2E8F0))),
                         ),
-                      ],
-                    ),
+                        child: const Row(
+                          children: [
+                            SizedBox(
+                              width: 36,
+                              child: Text('#', style: TextStyle(fontSize: 11, fontWeight: FontWeight.bold, color: Color(0xFF64748B))),
+                            ),
+                            Expanded(
+                              flex: 5,
+                              child: Text('Field Label', style: TextStyle(fontSize: 11, fontWeight: FontWeight.bold, color: Color(0xFF64748B))),
+                            ),
+                            Expanded(
+                              flex: 3,
+                              child: Text('Type', style: TextStyle(fontSize: 11, fontWeight: FontWeight.bold, color: Color(0xFF64748B))),
+                            ),
+                            SizedBox(
+                              width: 52,
+                              child: Text('Req.', style: TextStyle(fontSize: 11, fontWeight: FontWeight.bold, color: Color(0xFF64748B))),
+                            ),
+                            SizedBox(
+                              width: 52,
+                              child: Text('Visible', style: TextStyle(fontSize: 11, fontWeight: FontWeight.bold, color: Color(0xFF64748B))),
+                            ),
+                            SizedBox(
+                              width: 104,
+                              child: Align(
+                                alignment: Alignment.centerRight,
+                                child: Text('Actions', style: TextStyle(fontSize: 11, fontWeight: FontWeight.bold, color: Color(0xFF64748B))),
+                              ),
+                            ),
+                          ],
+                        ),
+                      );
+                    },
                   ),
 
                   // Field Rows
@@ -287,63 +428,75 @@ class InvoiceSectionAccordion extends StatelessWidget {
                   const SizedBox(height: 12),
 
                   // Bottom Action Bar: + Add Custom Field, Status & Settings
-                  Row(
+                  Wrap(
+                    spacing: 8,
+                    runSpacing: 8,
+                    alignment: WrapAlignment.spaceBetween,
+                    crossAxisAlignment: WrapCrossAlignment.center,
                     children: [
-                      OutlinedButton.icon(
-                        icon: const Icon(Icons.add, size: 15, color: Color(0xFF2563EB)),
-                        label: const Text(
-                          'Add Custom Field',
-                          style: TextStyle(fontSize: 12, fontWeight: FontWeight.w600, color: Color(0xFF2563EB)),
-                        ),
-                        style: OutlinedButton.styleFrom(
-                          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-                          side: const BorderSide(color: Color(0xFF93C5FD)),
-                          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
-                          backgroundColor: Colors.white,
-                        ),
-                        onPressed: onAddField,
-                      ),
-                      if (onSectionFormula != null) ...[
-                        const SizedBox(width: 8),
-                        OutlinedButton.icon(
-                          icon: const Icon(Icons.functions_rounded, size: 15, color: Color(0xFF1D4ED8)),
-                          label: const Text(
-                            'Formula Setup',
-                            style: TextStyle(fontSize: 12, fontWeight: FontWeight.w700, color: Color(0xFF1D4ED8)),
+                      Wrap(
+                        spacing: 8,
+                        runSpacing: 8,
+                        children: [
+                          OutlinedButton.icon(
+                            icon: const Icon(Icons.add, size: 15, color: Color(0xFF2563EB)),
+                            label: const Text(
+                              'Add Custom Field',
+                              style: TextStyle(fontSize: 12, fontWeight: FontWeight.w600, color: Color(0xFF2563EB)),
+                            ),
+                            style: OutlinedButton.styleFrom(
+                              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                              side: const BorderSide(color: Color(0xFF93C5FD)),
+                              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+                              backgroundColor: Colors.white,
+                            ),
+                            onPressed: onAddField,
                           ),
-                          style: OutlinedButton.styleFrom(
-                            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-                            side: const BorderSide(color: Color(0xFFBFDBFE)),
-                            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
-                            backgroundColor: const Color(0xFFEFF6FF),
-                          ),
-                          onPressed: onSectionFormula,
-                        ),
-                      ],
-                      const Spacer(),
-                      const Icon(Icons.check_circle_rounded, size: 14, color: Color(0xFF16A34A)),
-                      const SizedBox(width: 4),
-                      const Text(
-                        'Changes saved',
-                        style: TextStyle(fontSize: 11.5, color: Color(0xFF16A34A), fontWeight: FontWeight.w500),
+                          if (onSectionFormula != null)
+                            OutlinedButton.icon(
+                              icon: const Icon(Icons.functions_rounded, size: 15, color: Color(0xFF1D4ED8)),
+                              label: const Text(
+                                'Formula Setup',
+                                style: TextStyle(fontSize: 12, fontWeight: FontWeight.w700, color: Color(0xFF1D4ED8)),
+                              ),
+                              style: OutlinedButton.styleFrom(
+                                padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                                side: const BorderSide(color: Color(0xFFBFDBFE)),
+                                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+                                backgroundColor: const Color(0xFFEFF6FF),
+                              ),
+                              onPressed: onSectionFormula,
+                            ),
+                        ],
                       ),
-                      const SizedBox(width: 12),
-                      if (onSectionSettings != null)
-                        IconButton(
-                          icon: const Icon(Icons.settings_outlined, size: 17, color: Color(0xFF64748B)),
-                          tooltip: 'Section settings',
-                          onPressed: onSectionSettings,
-                          padding: EdgeInsets.zero,
-                          constraints: const BoxConstraints(minWidth: 28, minHeight: 28),
-                        ),
-                      if (onDeleteSection != null && !section.isLocked)
-                        IconButton(
-                          icon: const Icon(Icons.delete_outline_rounded, size: 17, color: Color(0xFFEF4444)),
-                          tooltip: 'Remove section',
-                          onPressed: onDeleteSection,
-                          padding: EdgeInsets.zero,
-                          constraints: const BoxConstraints(minWidth: 28, minHeight: 28),
-                        ),
+                      Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          const Icon(Icons.check_circle_rounded, size: 14, color: Color(0xFF16A34A)),
+                          const SizedBox(width: 4),
+                          const Text(
+                            'Changes saved',
+                            style: TextStyle(fontSize: 11.5, color: Color(0xFF16A34A), fontWeight: FontWeight.w500),
+                          ),
+                          const SizedBox(width: 10),
+                          if (onSectionSettings != null)
+                            IconButton(
+                              icon: const Icon(Icons.settings_outlined, size: 17, color: Color(0xFF64748B)),
+                              tooltip: 'Section settings',
+                              onPressed: onSectionSettings,
+                              padding: EdgeInsets.zero,
+                              constraints: const BoxConstraints(minWidth: 28, minHeight: 28),
+                            ),
+                          if (onDeleteSection != null && !section.isLocked)
+                            IconButton(
+                              icon: const Icon(Icons.delete_outline_rounded, size: 17, color: Color(0xFFEF4444)),
+                              tooltip: 'Remove section',
+                              onPressed: onDeleteSection,
+                              padding: EdgeInsets.zero,
+                              constraints: const BoxConstraints(minWidth: 28, minHeight: 28),
+                            ),
+                        ],
+                      ),
                     ],
                   ),
                 ],
@@ -366,185 +519,353 @@ class InvoiceSectionAccordion extends StatelessWidget {
     required VoidCallback onDelete,
   }) {
     final hasFormula = field.formula.trim().isNotEmpty;
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
-      decoration: const BoxDecoration(
-        color: Colors.white,
-        border: Border(bottom: BorderSide(color: Color(0xFFF1F5F9))),
-      ),
-      child: Row(
-        children: [
-          // Drag handle & index
-          SizedBox(
-            width: 36,
-            child: Row(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                const Icon(Icons.drag_indicator, size: 14, color: Color(0xFFCBD5E1)),
-                const SizedBox(width: 2),
-                Text(
-                  '$index',
-                  style: const TextStyle(fontSize: 11, fontWeight: FontWeight.w600, color: Color(0xFF64748B)),
-                ),
-              ],
-            ),
-          ),
 
-          // Field Label + optional active formula badge
-          Expanded(
-            flex: 5,
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              mainAxisSize: MainAxisSize.min,
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        final isCompact = constraints.maxWidth < 460;
+
+        if (isCompact) {
+          // Mobile compact row
+          return Container(
+            padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 8),
+            decoration: const BoxDecoration(
+              color: Colors.white,
+              border: Border(bottom: BorderSide(color: Color(0xFFF1F5F9))),
+            ),
+            child: Row(
               children: [
-                Text(
-                  field.label,
-                  style: TextStyle(
-                    fontSize: 12.5,
-                    fontWeight: FontWeight.w600,
-                    color: field.isVisible ? const Color(0xFF1E293B) : const Color(0xFF94A3B8),
+                SizedBox(
+                  width: 24,
+                  child: Text(
+                    '$index',
+                    style: const TextStyle(fontSize: 11, fontWeight: FontWeight.w600, color: Color(0xFF64748B)),
                   ),
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
                 ),
-                if (hasFormula)
-                  Padding(
-                    padding: const EdgeInsets.only(top: 2),
-                    child: Row(
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        const Icon(Icons.functions_rounded, size: 11, color: Color(0xFF2563EB)),
-                        const SizedBox(width: 3),
-                        Flexible(
-                          child: Text(
-                            field.formula,
-                            style: const TextStyle(
-                              fontSize: 10,
-                              fontWeight: FontWeight.w700,
-                              color: Color(0xFF2563EB),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Row(
+                        children: [
+                          Flexible(
+                            child: Text(
+                              field.label,
+                              style: TextStyle(
+                                fontSize: 12,
+                                fontWeight: FontWeight.w600,
+                                color: field.isVisible ? const Color(0xFF1E293B) : const Color(0xFF94A3B8),
+                              ),
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
                             ),
-                            maxLines: 1,
-                            overflow: TextOverflow.ellipsis,
+                          ),
+                          if (field.isRequired) ...[
+                            const SizedBox(width: 4),
+                            Container(
+                              padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 1),
+                              decoration: BoxDecoration(
+                                color: const Color(0xFFEFF6FF),
+                                borderRadius: BorderRadius.circular(4),
+                              ),
+                              child: const Text(
+                                'Req',
+                                style: TextStyle(fontSize: 9, fontWeight: FontWeight.bold, color: Color(0xFF2563EB)),
+                              ),
+                            ),
+                          ],
+                        ],
+                      ),
+                      const SizedBox(height: 3),
+                      Wrap(
+                        spacing: 4,
+                        runSpacing: 2,
+                        crossAxisAlignment: WrapCrossAlignment.center,
+                        children: [
+                          Container(
+                            padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 1.5),
+                            decoration: BoxDecoration(
+                              color: const Color(0xFFF1F5F9),
+                              borderRadius: BorderRadius.circular(6),
+                            ),
+                            child: Text(
+                              field.type.label,
+                              style: const TextStyle(
+                                fontSize: 9.5,
+                                fontWeight: FontWeight.w600,
+                                color: Color(0xFF475569),
+                              ),
+                            ),
+                          ),
+                          if (hasFormula)
+                            Row(
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                const Icon(Icons.functions_rounded, size: 10, color: Color(0xFF2563EB)),
+                                const SizedBox(width: 2),
+                                Text(
+                                  field.formula,
+                                  style: const TextStyle(
+                                    fontSize: 9.5,
+                                    fontWeight: FontWeight.w700,
+                                    color: Color(0xFF2563EB),
+                                  ),
+                                  maxLines: 1,
+                                  overflow: TextOverflow.ellipsis,
+                                ),
+                              ],
+                            ),
+                        ],
+                      ),
+                    ],
+                  ),
+                ),
+                // Visible toggle
+                SizedBox(
+                  width: 42,
+                  child: Transform.scale(
+                    scale: 0.70,
+                    child: Switch(
+                      value: field.isVisible,
+                      activeColor: const Color(0xFF2563EB),
+                      onChanged: onVisibilityChanged,
+                    ),
+                  ),
+                ),
+                // Action icons
+                Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    if (onFormula != null)
+                      IconButton(
+                        icon: Container(
+                          padding: const EdgeInsets.all(2),
+                          decoration: BoxDecoration(
+                            color: hasFormula ? const Color(0xFFDBEAFE) : Colors.transparent,
+                            borderRadius: BorderRadius.circular(4),
+                          ),
+                          child: Icon(
+                            Icons.functions_rounded,
+                            size: 14,
+                            color: hasFormula ? const Color(0xFF2563EB) : const Color(0xFF64748B),
                           ),
                         ),
-                      ],
+                        tooltip: 'Configure Formula',
+                        onPressed: onFormula,
+                        padding: EdgeInsets.zero,
+                        constraints: const BoxConstraints(minWidth: 22, minHeight: 22),
+                      ),
+                    IconButton(
+                      icon: const Icon(Icons.edit_outlined, size: 14, color: Color(0xFF64748B)),
+                      tooltip: 'Edit Field',
+                      onPressed: onEdit,
+                      padding: EdgeInsets.zero,
+                      constraints: const BoxConstraints(minWidth: 22, minHeight: 22),
                     ),
-                  ),
+                    IconButton(
+                      icon: const Icon(Icons.copy_rounded, size: 13, color: Color(0xFF64748B)),
+                      tooltip: 'Duplicate Field',
+                      onPressed: onDuplicate,
+                      padding: EdgeInsets.zero,
+                      constraints: const BoxConstraints(minWidth: 22, minHeight: 22),
+                    ),
+                    if (!field.isRequired)
+                      IconButton(
+                        icon: const Icon(Icons.delete_outline_rounded, size: 15, color: Color(0xFFEF4444)),
+                        tooltip: 'Remove field',
+                        onPressed: onDelete,
+                        padding: EdgeInsets.zero,
+                        constraints: const BoxConstraints(minWidth: 22, minHeight: 22),
+                      ),
+                  ],
+                ),
               ],
             ),
-          ),
+          );
+        }
 
-          // Type pill badge
-          Expanded(
-            flex: 3,
-            child: Align(
-              alignment: Alignment.centerLeft,
-              child: Container(
-                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
-                decoration: BoxDecoration(
-                  color: const Color(0xFFF1F5F9),
-                  borderRadius: BorderRadius.circular(10),
+        // Desktop layout
+        return Container(
+          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
+          decoration: const BoxDecoration(
+            color: Colors.white,
+            border: Border(bottom: BorderSide(color: Color(0xFFF1F5F9))),
+          ),
+          child: Row(
+            children: [
+              // Drag handle & index
+              SizedBox(
+                width: 36,
+                child: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    const Icon(Icons.drag_indicator, size: 14, color: Color(0xFFCBD5E1)),
+                    const SizedBox(width: 2),
+                    Text(
+                      '$index',
+                      style: const TextStyle(fontSize: 11, fontWeight: FontWeight.w600, color: Color(0xFF64748B)),
+                    ),
+                  ],
                 ),
+              ),
+
+              // Field Label + optional active formula badge
+              Expanded(
+                flex: 5,
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Text(
+                      field.label,
+                      style: TextStyle(
+                        fontSize: 12.5,
+                        fontWeight: FontWeight.w600,
+                        color: field.isVisible ? const Color(0xFF1E293B) : const Color(0xFF94A3B8),
+                      ),
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                    if (hasFormula)
+                      Padding(
+                        padding: const EdgeInsets.only(top: 2),
+                        child: Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            const Icon(Icons.functions_rounded, size: 11, color: Color(0xFF2563EB)),
+                            const SizedBox(width: 3),
+                            Flexible(
+                              child: Text(
+                                field.formula,
+                                style: const TextStyle(
+                                  fontSize: 10,
+                                  fontWeight: FontWeight.w700,
+                                  color: Color(0xFF2563EB),
+                                ),
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                  ],
+                ),
+              ),
+
+              // Type pill badge
+              Expanded(
+                flex: 3,
+                child: Align(
+                  alignment: Alignment.centerLeft,
+                  child: Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+                    decoration: BoxDecoration(
+                      color: const Color(0xFFF1F5F9),
+                      borderRadius: BorderRadius.circular(10),
+                    ),
+                    child: Text(
+                      field.type.label,
+                      style: const TextStyle(
+                        fontSize: 10.5,
+                        fontWeight: FontWeight.w600,
+                        color: Color(0xFF475569),
+                      ),
+                    ),
+                  ),
+                ),
+              ),
+
+              // Required status
+              SizedBox(
+                width: 52,
                 child: Text(
-                  field.type.label,
-                  style: const TextStyle(
-                    fontSize: 10.5,
-                    fontWeight: FontWeight.w600,
-                    color: Color(0xFF475569),
+                  field.isRequired ? 'Yes' : 'No',
+                  style: TextStyle(
+                    fontSize: 11.5,
+                    color: field.isRequired ? const Color(0xFF2563EB) : const Color(0xFF64748B),
+                    fontWeight: field.isRequired ? FontWeight.bold : FontWeight.normal,
                   ),
                 ),
               ),
-            ),
-          ),
 
-          // Required status
-          SizedBox(
-            width: 52,
-            child: Text(
-              field.isRequired ? 'Yes' : 'No',
-              style: TextStyle(
-                fontSize: 11.5,
-                color: field.isRequired ? const Color(0xFF2563EB) : const Color(0xFF64748B),
-                fontWeight: field.isRequired ? FontWeight.bold : FontWeight.normal,
+              // Visible toggle
+              SizedBox(
+                width: 52,
+                child: Transform.scale(
+                  scale: 0.72,
+                  child: Switch(
+                    value: field.isVisible,
+                    activeColor: const Color(0xFF2563EB),
+                    onChanged: onVisibilityChanged,
+                  ),
+                ),
               ),
-            ),
-          ),
 
-          // Visible toggle
-          SizedBox(
-            width: 52,
-            child: Transform.scale(
-              scale: 0.72,
-              child: Switch(
-                value: field.isVisible,
-                activeColor: const Color(0xFF2563EB),
-                onChanged: onVisibilityChanged,
-              ),
-            ),
-          ),
-
-          // Actions: Formula Icon BEFORE Edit Icon, then Duplicate, Delete
-          SizedBox(
-            width: 104,
-            child: Row(
-              mainAxisAlignment: MainAxisAlignment.end,
-              children: [
-                if (onFormula != null)
-                  IconButton(
-                    icon: Container(
-                      padding: const EdgeInsets.all(2),
-                      decoration: BoxDecoration(
-                        color: hasFormula ? const Color(0xFFDBEAFE) : Colors.transparent,
-                        borderRadius: BorderRadius.circular(5),
+              // Actions: Formula Icon BEFORE Edit Icon, then Duplicate, Delete
+              SizedBox(
+                width: 104,
+                child: Row(
+                  mainAxisAlignment: MainAxisAlignment.end,
+                  children: [
+                    if (onFormula != null)
+                      IconButton(
+                        icon: Container(
+                          padding: const EdgeInsets.all(2),
+                          decoration: BoxDecoration(
+                            color: hasFormula ? const Color(0xFFDBEAFE) : Colors.transparent,
+                            borderRadius: BorderRadius.circular(5),
+                          ),
+                          child: Icon(
+                            Icons.functions_rounded,
+                            size: 15,
+                            color: hasFormula ? const Color(0xFF2563EB) : const Color(0xFF64748B),
+                          ),
+                        ),
+                        tooltip: hasFormula
+                            ? 'Formula: ${field.formula} (Click to configure)'
+                            : 'Configure Formula / Auto-Calculation',
+                        onPressed: onFormula,
+                        padding: EdgeInsets.zero,
+                        constraints: const BoxConstraints(minWidth: 24, minHeight: 24),
                       ),
-                      child: Icon(
-                        Icons.functions_rounded,
-                        size: 15,
-                        color: hasFormula ? const Color(0xFF2563EB) : const Color(0xFF64748B),
+                    IconButton(
+                      icon: const Icon(Icons.edit_outlined, size: 15, color: Color(0xFF64748B)),
+                      tooltip: 'Edit Field',
+                      onPressed: onEdit,
+                      padding: EdgeInsets.zero,
+                      constraints: const BoxConstraints(minWidth: 24, minHeight: 24),
+                    ),
+                    IconButton(
+                      icon: const Icon(Icons.copy_rounded, size: 14, color: Color(0xFF64748B)),
+                      tooltip: 'Duplicate Field',
+                      onPressed: onDuplicate,
+                      padding: EdgeInsets.zero,
+                      constraints: const BoxConstraints(minWidth: 24, minHeight: 24),
+                    ),
+                    if (!field.isRequired)
+                      IconButton(
+                        icon: const Icon(Icons.delete_outline_rounded, size: 16, color: Color(0xFFEF4444)),
+                        tooltip: 'Remove field from template',
+                        onPressed: onDelete,
+                        padding: EdgeInsets.zero,
+                        constraints: const BoxConstraints(minWidth: 24, minHeight: 24),
+                      )
+                    else
+                      const Tooltip(
+                        message: 'Required field (cannot be removed)',
+                        child: Padding(
+                          padding: EdgeInsets.symmetric(horizontal: 5),
+                          child: Icon(Icons.lock_outline_rounded, size: 14, color: Color(0xFF94A3B8)),
+                        ),
                       ),
-                    ),
-                    tooltip: hasFormula
-                        ? 'Formula: ${field.formula} (Click to configure)'
-                        : 'Configure Formula / Auto-Calculation',
-                    onPressed: onFormula,
-                    padding: EdgeInsets.zero,
-                    constraints: const BoxConstraints(minWidth: 24, minHeight: 24),
-                  ),
-                IconButton(
-                  icon: const Icon(Icons.edit_outlined, size: 15, color: Color(0xFF64748B)),
-                  tooltip: 'Edit Field',
-                  onPressed: onEdit,
-                  padding: EdgeInsets.zero,
-                  constraints: const BoxConstraints(minWidth: 24, minHeight: 24),
+                  ],
                 ),
-                IconButton(
-                  icon: const Icon(Icons.copy_rounded, size: 14, color: Color(0xFF64748B)),
-                  tooltip: 'Duplicate Field',
-                  onPressed: onDuplicate,
-                  padding: EdgeInsets.zero,
-                  constraints: const BoxConstraints(minWidth: 24, minHeight: 24),
-                ),
-                if (!field.isRequired)
-                  IconButton(
-                    icon: const Icon(Icons.delete_outline_rounded, size: 16, color: Color(0xFFEF4444)),
-                    tooltip: 'Remove field from template',
-                    onPressed: onDelete,
-                    padding: EdgeInsets.zero,
-                    constraints: const BoxConstraints(minWidth: 24, minHeight: 24),
-                  )
-                else
-                  const Tooltip(
-                    message: 'Required field (cannot be removed)',
-                    child: Padding(
-                      padding: EdgeInsets.symmetric(horizontal: 5),
-                      child: Icon(Icons.lock_outline_rounded, size: 14, color: Color(0xFF94A3B8)),
-                    ),
-                  ),
-              ],
-            ),
+              ),
+            ],
           ),
-        ],
-      ),
+        );
+      },
     );
   }
 }

@@ -10,6 +10,7 @@ import '../../../shared/widgets/offline_cache_banner.dart';
 import '../../../theme/app_theme.dart';
 import '../data/payroll_models.dart';
 import '../data/payroll_repository.dart';
+import 'widgets/statutory_wage_calculator_dialog.dart';
 
 class PayrollScreen extends StatefulWidget {
   const PayrollScreen({
@@ -456,6 +457,14 @@ class _PayrollScreenState extends State<PayrollScreen> {
                 icon: const Icon(Icons.arrow_back),
               ),
         actions: [
+          IconButton(
+            tooltip: 'Statutory & Wage Calculator',
+            onPressed: () => showDialog<void>(
+              context: context,
+              builder: (ctx) => const StatutoryWageCalculatorDialog(),
+            ),
+            icon: const Icon(Icons.calculate_outlined),
+          ),
           IconButton(
             tooltip: 'Run Batch Payroll',
             onPressed: _generateNewPayrollRun,

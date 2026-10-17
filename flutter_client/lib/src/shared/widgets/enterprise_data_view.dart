@@ -466,8 +466,20 @@ class _EnterpriseDataViewState<T> extends State<EnterpriseDataView<T>> {
                     Padding(
                       padding: const EdgeInsets.only(right: 8),
                       child: ChoiceChip(
-                        label: Text(chip, style: const TextStyle(fontSize: 12)),
+                        label: Text(
+                          chip,
+                          style: TextStyle(
+                            fontSize: 12,
+                            fontWeight: widget.selectedFilterChip == chip ? FontWeight.w800 : FontWeight.w600,
+                            color: widget.selectedFilterChip == chip ? const Color(0xFF0F172A) : const Color(0xFF475569),
+                          ),
+                        ),
                         selected: widget.selectedFilterChip == chip,
+                        selectedColor: const Color(0xFFE2E8F0),
+                        backgroundColor: AppColors.neuSurface,
+                        side: BorderSide(
+                          color: widget.selectedFilterChip == chip ? const Color(0xFFCBD5E1) : Colors.white.withValues(alpha: 0.85),
+                        ),
                         onSelected: (selected) {
                           if (selected && widget.onFilterChipSelected != null) {
                             setState(() => _currentPage = 0);

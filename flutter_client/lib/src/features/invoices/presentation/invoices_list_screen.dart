@@ -9,6 +9,8 @@ import '../../../shared/widgets/offline_cache_banner.dart';
 import '../../audit/data/audit_log_service.dart';
 import '../data/invoice.dart';
 import '../data/invoice_repository.dart';
+import 'widgets/invoice_record_payment_dialog.dart';
+import 'widgets/recurring_invoice_setup_dialog.dart';
 
 class InvoicesListScreen extends StatefulWidget {
   const InvoicesListScreen({
@@ -157,6 +159,32 @@ class _InvoicesListScreenState extends State<InvoicesListScreen> {
       ..showSnackBar(SnackBar(content: Text(message)));
   }
 
+  Future<void> _recordPayment(Invoice invoice) async {
+    final result = await InvoiceRecordPaymentDialog.show(context, invoice: invoice);
+    if (result != null && mounted) {
+      try {
+        await widget.repository.updateInvoice(result.updatedInvoice);
+        _showMessage('Recorded settlement of ${invoice.currencySymbol}${result.amountRecorded.toStringAsFixed(2)}');
+        await _load();
+      } catch (e) {
+        if (mounted) _showMessage('Could not record settlement: $e');
+      }
+    }
+  }
+
+  Future<void> _setupRecurring(Invoice invoice) async {
+    final result = await RecurringInvoiceSetupDialog.show(context, invoice: invoice);
+    if (result != null && mounted) {
+      try {
+        await widget.repository.updateInvoice(result.updatedInvoice);
+        _showMessage('Configured ${result.frequency} schedule for ${invoice.invoiceNumber}');
+        await _load();
+      } catch (e) {
+        if (mounted) _showMessage('Could not update schedule: $e');
+      }
+    }
+  }
+
   void _downloadInvoicesReport(List<Invoice> currentInvoices) {
     TableExportHelper.showExportMenu(
       context: context,
@@ -282,10 +310,16 @@ class _InvoicesListScreenState extends State<InvoicesListScreen> {
       ),
       EnterpriseTableColumn<Invoice>(
         title: 'Actions',
-        width: 90,
+        width: 125,
         cellBuilder: (ctx, inv) => Row(
           mainAxisSize: MainAxisSize.min,
           children: [
+            if (inv.status.toLowerCase() != 'paid')
+              IconButton(
+                icon: const Icon(Icons.payments_outlined, size: 18, color: Color(0xFF16A34A)),
+                tooltip: 'Record settlement',
+                onPressed: () => _recordPayment(inv),
+              ),
             IconButton(
               icon: const Icon(Icons.visibility_outlined, size: 18),
               tooltip: 'View preview',
@@ -295,6 +329,8 @@ class _InvoicesListScreenState extends State<InvoicesListScreen> {
               icon: const Icon(Icons.more_vert, size: 18),
               tooltip: 'More actions',
               onSelected: (action) {
+                if (action == 'settle') _recordPayment(inv);
+                if (action == 'recurring') _setupRecurring(inv);
                 if (action == 'edit') widget.onEdit(inv);
                 if (action == 'delete') _delete(inv);
                 if (action == 'mark_paid') _setStatus(inv, 'Paid');
@@ -302,6 +338,9 @@ class _InvoicesListScreenState extends State<InvoicesListScreen> {
               },
               itemBuilder: (context) => [
                 const PopupMenuItem(value: 'edit', child: Text('Edit Invoice')),
+                if (inv.status.toLowerCase() != 'paid')
+                  const PopupMenuItem(value: 'settle', child: Text('Record Settlement')),
+                const PopupMenuItem(value: 'recurring', child: Text('Recurring Schedule')),
                 if (inv.status.toLowerCase() != 'paid')
                   const PopupMenuItem(value: 'mark_paid', child: Text('Mark as Paid')),
                 if (inv.status.toLowerCase() == 'draft')
@@ -438,7 +477,7 @@ class _InvoicesListScreenState extends State<InvoicesListScreen> {
             onPressed: _loading ? null : _load,
             icon: const Icon(Icons.sync),
           ),
-          const SizedBox(width: 8),
+          const SizedBox(width: 16),
         ],
       ),
       floatingActionButton: FloatingActionButton.extended(
@@ -516,7 +555,7 @@ class _InvoicesListScreenState extends State<InvoicesListScreen> {
                     padding: EdgeInsets.all(48),
                     child: Center(child: CircularProgressIndicator()),
                   )
-                else
+                else ...[
                   EnterpriseDataView<Invoice>(
                     items: filtered,
                     headerTitle: 'Invoice Directory',
@@ -596,9 +635,12 @@ class _InvoicesListScreenState extends State<InvoicesListScreen> {
                       onEdit: () => widget.onEdit(invoice),
                       onDelete: () => _delete(invoice),
                       onStatusChanged: (status) => _setStatus(invoice, status),
+                      onRecordPayment: () => _recordPayment(invoice),
+                      onScheduleRecurring: () => _setupRecurring(invoice),
                     ),
                     columns: _invoiceTableColumns(),
                   ),
+                ],
               ],
             ),
           );
@@ -616,6 +658,8 @@ class _InvoiceCard extends StatelessWidget {
     required this.onEdit,
     required this.onDelete,
     required this.onStatusChanged,
+    required this.onRecordPayment,
+    required this.onScheduleRecurring,
   });
 
   final Invoice invoice;
@@ -623,9 +667,13 @@ class _InvoiceCard extends StatelessWidget {
   final VoidCallback onEdit;
   final VoidCallback onDelete;
   final ValueChanged<String> onStatusChanged;
+  final VoidCallback onRecordPayment;
+  final VoidCallback onScheduleRecurring;
 
   @override
   Widget build(BuildContext context) {
+    final hasRecurring = invoice.terms.contains('🔁 Recurring');
+
     return AppCard(
       padding: EdgeInsets.zero,
       child: InkWell(
@@ -652,25 +700,51 @@ class _InvoiceCard extends StatelessWidget {
                   PopupMenuButton<String>(
                     tooltip: 'Invoice actions',
                     onSelected: (action) {
+                      if (action == 'settle') onRecordPayment();
+                      if (action == 'recurring') onScheduleRecurring();
                       if (action == 'edit') onEdit();
                       if (action == 'delete') onDelete();
                     },
-                    itemBuilder: (context) => const [
-                      PopupMenuItem(value: 'edit', child: Text('Edit')),
-                      PopupMenuItem(
+                    itemBuilder: (context) => [
+                      const PopupMenuItem(value: 'edit', child: Text('Edit')),
+                      if (invoice.status.toLowerCase() != 'paid')
+                        const PopupMenuItem(value: 'settle', child: Text('Record Settlement')),
+                      const PopupMenuItem(value: 'recurring', child: Text('Recurring Schedule')),
+                      const PopupMenuDivider(),
+                      const PopupMenuItem(
                         value: 'delete',
-                        child: Text('Delete'),
+                        child: Text('Delete', style: TextStyle(color: Colors.red)),
                       ),
                     ],
                   ),
                 ],
               ),
               const SizedBox(height: 4),
-              Text(
-                invoice.clientCompany.isEmpty
-                    ? invoice.clientName
-                    : '${invoice.clientName} · ${invoice.clientCompany}',
-                style: Theme.of(context).textTheme.bodyMedium,
+              Row(
+                children: [
+                  Expanded(
+                    child: Text(
+                      invoice.clientCompany.isEmpty
+                          ? invoice.clientName
+                          : '${invoice.clientName} · ${invoice.clientCompany}',
+                      style: Theme.of(context).textTheme.bodyMedium,
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                  ),
+                  if (hasRecurring)
+                    Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 2),
+                      decoration: BoxDecoration(
+                        color: const Color(0xFFF3E8FF),
+                        borderRadius: BorderRadius.circular(8),
+                        border: Border.all(color: const Color(0xFFE9D5FF)),
+                      ),
+                      child: const Text(
+                        '🔁 Retainer',
+                        style: TextStyle(fontSize: 10, fontWeight: FontWeight.w700, color: Color(0xFF7E22CE)),
+                      ),
+                    ),
+                ],
               ),
               const SizedBox(height: 14),
               Wrap(
@@ -705,11 +779,34 @@ class _InvoiceCard extends StatelessWidget {
                             invoice.status.toLowerCase() != 'paid')
                           Text(
                             '${_money(invoice.balanceDue, invoice.currencySymbol)} due',
-                            style: Theme.of(context).textTheme.bodySmall,
+                            style: Theme.of(context).textTheme.bodySmall?.copyWith(color: const Color(0xFFDC2626)),
                           ),
                       ],
                     ),
                   ),
+                  if (invoice.status.toLowerCase() != 'paid') ...[
+                    InkWell(
+                      onTap: onRecordPayment,
+                      borderRadius: BorderRadius.circular(10),
+                      child: Container(
+                        padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 5),
+                        decoration: BoxDecoration(
+                          color: const Color(0xFFDCFCE7),
+                          borderRadius: BorderRadius.circular(10),
+                          border: Border.all(color: const Color(0xFFBBF7D0)),
+                        ),
+                        child: const Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            Icon(Icons.payments_outlined, size: 14, color: Color(0xFF15803D)),
+                            SizedBox(width: 4),
+                            Text('Settle', style: TextStyle(fontSize: 11.5, fontWeight: FontWeight.w700, color: Color(0xFF15803D))),
+                          ],
+                        ),
+                      ),
+                    ),
+                    const SizedBox(width: 8),
+                  ],
                   PopupMenuButton<String>(
                     tooltip: 'Change status',
                     onSelected: onStatusChanged,
