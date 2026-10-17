@@ -340,6 +340,61 @@ class _AppShellState extends State<AppShell> {
                       label: Text(item.label),
                     ),
                 ],
+                trailing: Expanded(
+                  child: Align(
+                    alignment: Alignment.bottomCenter,
+                    child: Padding(
+                      padding: const EdgeInsets.only(bottom: 16),
+                      child: Column(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          // Business Settings Icon in down of side menu (Desktop only)
+                          Tooltip(
+                            message: 'Business Settings',
+                            child: InkWell(
+                              onTap: _openBusinessSettings,
+                              borderRadius: BorderRadius.circular(16),
+                              child: Container(
+                                width: 42,
+                                height: 42,
+                                decoration: AppTheme.neuOrbDecoration(
+                                  active: _destination == _Destination.menu && _moreSection == 'Business Settings',
+                                  activeColor: const Color(0xFF2B3548),
+                                ),
+                                child: Icon(
+                                  Icons.settings_outlined,
+                                  size: 20,
+                                  color: (_destination == _Destination.menu && _moreSection == 'Business Settings')
+                                      ? Colors.white
+                                      : const Color(0xFF475569),
+                                ),
+                              ),
+                            ),
+                          ),
+                          const SizedBox(height: 12),
+                          // Logout Icon above/below matching more menu
+                          Tooltip(
+                            message: 'Sign out',
+                            child: InkWell(
+                              onTap: widget.onLogout,
+                              borderRadius: BorderRadius.circular(16),
+                              child: Container(
+                                width: 42,
+                                height: 42,
+                                decoration: AppTheme.neuOrbDecoration(),
+                                child: const Icon(
+                                  Icons.logout_rounded,
+                                  size: 19,
+                                  color: Color(0xFFDC2626),
+                                ),
+                              ),
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ),
+                ),
               ),
             ),
           ),
@@ -382,6 +437,7 @@ class _AppShellState extends State<AppShell> {
           onOpenTemplates: () => _openMoreSection('Invoice & Template Studio'),
           onOpenPayroll: () => _openMoreSection('Payroll & Disbursals'),
           onOpenAuditLogs: () => _openMoreSection('Audit Logs'),
+          onOpenBusinessSettings: _openBusinessSettings,
         ),
       _Destination.invoices => InvoiceFeatureScreen(
           key: ValueKey('invoices-$_invoiceStatusFilter'),

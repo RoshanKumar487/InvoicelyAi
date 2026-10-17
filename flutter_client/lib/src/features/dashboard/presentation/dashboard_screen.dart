@@ -34,6 +34,7 @@ class DashboardScreen extends StatefulWidget {
     required this.onOpenTemplates,
     this.onOpenPayroll,
     this.onOpenAuditLogs,
+    this.onOpenBusinessSettings,
     this.registeredCompanyName,
     this.localSettings = const {},
     super.key,
@@ -50,6 +51,7 @@ class DashboardScreen extends StatefulWidget {
   final VoidCallback onOpenTemplates;
   final VoidCallback? onOpenPayroll;
   final VoidCallback? onOpenAuditLogs;
+  final VoidCallback? onOpenBusinessSettings;
   final String? registeredCompanyName;
   final Map<String, Object?> localSettings;
 
@@ -644,6 +646,9 @@ class _DashboardScreenState extends State<DashboardScreen> {
                     searchController: _searchController,
                     onSearchChanged: (val) => setState(() => _searchQuery = val),
                     onRefresh: _isLoading ? null : _loadStatistics,
+                    session: widget.session,
+                    onOpenBusinessSettings: widget.onOpenBusinessSettings,
+                    onLogout: widget.onLogout,
                   ),
                   const SizedBox(height: 20),
                   _DashboardWelcomeRow(
@@ -747,6 +752,9 @@ class _DashboardHeader extends StatelessWidget {
     required this.searchController,
     required this.onSearchChanged,
     this.onRefresh,
+    required this.session,
+    this.onOpenBusinessSettings,
+    required this.onLogout,
   });
 
   final String companyName;
@@ -759,6 +767,9 @@ class _DashboardHeader extends StatelessWidget {
   final TextEditingController searchController;
   final ValueChanged<String> onSearchChanged;
   final VoidCallback? onRefresh;
+  final AuthSession session;
+  final VoidCallback? onOpenBusinessSettings;
+  final Future<void> Function() onLogout;
 
   @override
   Widget build(BuildContext context) {
@@ -787,7 +798,7 @@ class _DashboardHeader extends StatelessWidget {
                 const SizedBox(width: 10),
                 _buildNotificationButton(),
                 const SizedBox(width: 10),
-                _buildUserAvatar(),
+                _buildUserAvatar(context),
               ],
             )
           : Column(
@@ -805,7 +816,7 @@ class _DashboardHeader extends StatelessWidget {
                     const SizedBox(width: 8),
                     _buildNotificationButton(),
                     const SizedBox(width: 8),
-                    _buildUserAvatar(),
+                    _buildUserAvatar(context),
                   ],
                 ),
                 const SizedBox(height: 12),
@@ -967,24 +978,278 @@ class _DashboardHeader extends StatelessWidget {
     );
   }
 
-  Widget _buildUserAvatar() {
-    return Container(
-      width: 40,
-      height: 40,
-      decoration: AppTheme.neuOrbDecoration(
-        active: true,
-        activeColor: const Color(0xFF2B3548),
-      ),
-      child: Center(
-        child: Text(
-          userInitial,
-          style: const TextStyle(
-            color: Colors.white,
-            fontSize: 15,
-            fontWeight: FontWeight.w800,
+  Widget _buildUserAvatar(BuildContext context) {
+    return Tooltip(
+      message: 'View profile details',
+      child: InkWell(
+        onTap: () => _showUserProfileDialog(context),
+        borderRadius: BorderRadius.circular(20),
+        child: Container(
+          width: 40,
+          height: 40,
+          decoration: AppTheme.neuOrbDecoration(
+            active: true,
+            activeColor: const Color(0xFF2B3548),
+          ),
+          child: Center(
+            child: Text(
+              userInitial,
+              style: const TextStyle(
+                color: Colors.white,
+                fontSize: 15,
+                fontWeight: FontWeight.w800,
+              ),
+            ),
           ),
         ),
       ),
+    );
+  }
+
+  void _showUserProfileDialog(BuildContext context) {
+    final user = session.user;
+    final company = session.company;
+    final role = user.role.toUpperCase();
+    final permissions = user.permissions.split(',').where((p) => p.trim().isNotEmpty).toList();
+
+    showDialog<void>(
+      context: context,
+      builder: (dialogCtx) => Dialog(
+        backgroundColor: Colors.transparent,
+        insetPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 24),
+        child: Container(
+          width: 420,
+          padding: const EdgeInsets.all(22),
+          decoration: AppTheme.neuCardDecoration(radius: 28),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              // Header with Avatar and Close Button
+              Row(
+                children: [
+                  Container(
+                    width: 52,
+                    height: 52,
+                    decoration: AppTheme.neuOrbDecoration(
+                      active: true,
+                      activeColor: const Color(0xFF2B3548),
+                    ),
+                    child: Center(
+                      child: Text(
+                        userInitial,
+                        style: const TextStyle(
+                          color: Colors.white,
+                          fontSize: 22,
+                          fontWeight: FontWeight.w900,
+                        ),
+                      ),
+                    ),
+                  ),
+                  const SizedBox(width: 14),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          user.fullName.trim().isNotEmpty ? user.fullName.trim() : 'Roshan Kumar',
+                          style: const TextStyle(
+                            fontSize: 17,
+                            fontWeight: FontWeight.w800,
+                            color: Color(0xFF0F172A),
+                          ),
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                        ),
+                        const SizedBox(height: 2),
+                        Container(
+                          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+                          decoration: BoxDecoration(
+                            color: const Color(0xFF2B3548),
+                            borderRadius: BorderRadius.circular(8),
+                          ),
+                          child: Text(
+                            role,
+                            style: const TextStyle(
+                              fontSize: 10.5,
+                              fontWeight: FontWeight.w800,
+                              color: Colors.white,
+                              letterSpacing: 0.5,
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                  InkWell(
+                    onTap: () => Navigator.of(dialogCtx).pop(),
+                    borderRadius: BorderRadius.circular(16),
+                    child: Container(
+                      width: 32,
+                      height: 32,
+                      decoration: AppTheme.neuOrbDecoration(),
+                      child: const Icon(Icons.close_rounded, size: 17, color: Color(0xFF64748B)),
+                    ),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 18),
+
+              // Profile Details Card
+              Container(
+                padding: const EdgeInsets.all(14),
+                decoration: AppTheme.neuRecessedDecoration(radius: 18),
+                child: Column(
+                  children: [
+                    _buildProfileInfoRow(
+                      icon: Icons.email_outlined,
+                      label: 'Email',
+                      value: user.email.isNotEmpty ? user.email : 'roshankumar70975@gmail.com',
+                    ),
+                    if (user.mobile.isNotEmpty) ...[
+                      const Divider(height: 14, color: Color(0xFFD5DCE6)),
+                      _buildProfileInfoRow(
+                        icon: Icons.phone_android_rounded,
+                        label: 'Mobile',
+                        value: user.mobile,
+                      ),
+                    ],
+                    const Divider(height: 14, color: Color(0xFFD5DCE6)),
+                    _buildProfileInfoRow(
+                      icon: Icons.business_rounded,
+                      label: 'Organization',
+                      value: company?.name.isNotEmpty == true
+                          ? company!.name
+                          : (companyName.isNotEmpty ? companyName : 'Central Security Force'),
+                    ),
+                    if (company?.code != null && company!.code!.isNotEmpty) ...[
+                      const Divider(height: 14, color: Color(0xFFD5DCE6)),
+                      _buildProfileInfoRow(
+                        icon: Icons.tag_rounded,
+                        label: 'Org Code',
+                        value: company.code ?? '',
+                      ),
+                    ],
+                  ],
+                ),
+              ),
+
+              if (permissions.isNotEmpty) ...[
+                const SizedBox(height: 14),
+                Wrap(
+                  spacing: 6,
+                  runSpacing: 6,
+                  children: permissions.map((p) => Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                    decoration: AppTheme.neuPillDecoration(radius: 10),
+                    child: Text(
+                      p,
+                      style: const TextStyle(fontSize: 10, fontWeight: FontWeight.w700, color: Color(0xFF475569)),
+                    ),
+                  )).toList(),
+                ),
+              ],
+
+              const SizedBox(height: 20),
+
+              // Actions: Redirection to Business Settings and Logout
+              Row(
+                children: [
+                  if (onOpenBusinessSettings != null)
+                    Expanded(
+                      child: InkWell(
+                        onTap: () {
+                          Navigator.of(dialogCtx).pop();
+                          onOpenBusinessSettings!();
+                        },
+                        borderRadius: BorderRadius.circular(16),
+                        child: Container(
+                          padding: const EdgeInsets.symmetric(vertical: 11),
+                          decoration: AppTheme.neuPillDecoration(radius: 16),
+                          child: const Row(
+                            mainAxisAlignment: MainAxisAlignment.center,
+                            children: [
+                              Icon(Icons.settings_outlined, size: 16, color: Color(0xFF1E293B)),
+                              SizedBox(width: 7),
+                              Text(
+                                'Business Settings',
+                                style: TextStyle(
+                                  fontSize: 12.5,
+                                  fontWeight: FontWeight.w800,
+                                  color: Color(0xFF1E293B),
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                      ),
+                    ),
+                  if (onOpenBusinessSettings != null) const SizedBox(width: 10),
+                  Expanded(
+                    child: InkWell(
+                      onTap: () async {
+                        Navigator.of(dialogCtx).pop();
+                        await onLogout();
+                      },
+                      borderRadius: BorderRadius.circular(16),
+                      child: Container(
+                        padding: const EdgeInsets.symmetric(vertical: 11),
+                        decoration: AppTheme.neuPillDecoration(
+                          radius: 16,
+                          active: true,
+                          activeColor: const Color(0xFFDC2626),
+                        ),
+                        child: const Row(
+                          mainAxisAlignment: MainAxisAlignment.center,
+                          children: [
+                            Icon(Icons.logout_rounded, size: 16, color: Colors.white),
+                            SizedBox(width: 7),
+                            Text(
+                              'Logout',
+                              style: TextStyle(
+                                fontSize: 12.5,
+                                fontWeight: FontWeight.w800,
+                                color: Colors.white,
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildProfileInfoRow({
+    required IconData icon,
+    required String label,
+    required String value,
+  }) {
+    return Row(
+      children: [
+        Icon(icon, size: 16, color: const Color(0xFF64748B)),
+        const SizedBox(width: 10),
+        Text(
+          label,
+          style: const TextStyle(fontSize: 11.5, fontWeight: FontWeight.w600, color: Color(0xFF64748B)),
+        ),
+        const Spacer(),
+        Flexible(
+          child: Text(
+            value,
+            textAlign: TextAlign.right,
+            style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w700, color: Color(0xFF0F172A)),
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+          ),
+        ),
+      ],
     );
   }
 
