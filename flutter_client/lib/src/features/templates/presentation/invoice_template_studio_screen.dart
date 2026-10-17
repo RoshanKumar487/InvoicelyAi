@@ -2419,7 +2419,128 @@ class _InvoiceTemplateStudioScreenState
       ),
       child: LayoutBuilder(
         builder: (context, constraints) {
-          final isCompact = constraints.maxWidth < 960;
+          final isCompact = constraints.maxWidth < 700;
+
+          if (isCompact) {
+            // Mobile-optimized Top Studio Bar: Back button, Template selector, Save & Publish actions
+            return Row(
+              children: [
+                // Back Button
+                InkWell(
+                  onTap: widget.onBack ?? () => Navigator.of(context).maybePop(),
+                  borderRadius: BorderRadius.circular(18),
+                  child: Container(
+                    width: 36,
+                    height: 36,
+                    decoration: AppTheme.neuOrbDecoration(),
+                    child: const Icon(Icons.arrow_back, size: 18, color: Color(0xFF0F172A)),
+                  ),
+                ),
+                const SizedBox(width: 8),
+
+                // Template Selector Pill (Truncated if needed)
+                Expanded(
+                  child: InkWell(
+                    onTap: _showTemplateSelectorDialog,
+                    borderRadius: BorderRadius.circular(12),
+                    child: Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 6),
+                      decoration: AppTheme.neuPillDecoration(radius: 12),
+                      child: Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          const Icon(
+                            Icons.style_outlined,
+                            size: 14,
+                            color: Color(0xFF2563EB),
+                          ),
+                          const SizedBox(width: 6),
+                          Flexible(
+                            child: Text(
+                              _templateName,
+                              overflow: TextOverflow.ellipsis,
+                              style: const TextStyle(
+                                fontSize: 12.5,
+                                fontWeight: FontWeight.w700,
+                                color: Color(0xFF1E293B),
+                              ),
+                            ),
+                          ),
+                          const SizedBox(width: 2),
+                          const Icon(Icons.keyboard_arrow_down_rounded, size: 15, color: Color(0xFF64748B)),
+                        ],
+                      ),
+                    ),
+                  ),
+                ),
+                const SizedBox(width: 6),
+
+                // Compact Save Draft Button
+                IconButton(
+                  icon: _saving
+                      ? const SizedBox(width: 16, height: 16, child: CircularProgressIndicator(strokeWidth: 2))
+                      : const Icon(Icons.save_outlined, size: 20, color: Color(0xFF2563EB)),
+                  tooltip: 'Save Draft',
+                  onPressed: _saving ? null : _saveDraft,
+                  style: IconButton.styleFrom(
+                    backgroundColor: const Color(0xFFEFF6FF),
+                    padding: const EdgeInsets.all(7),
+                  ),
+                ),
+                const SizedBox(width: 4),
+
+                // Compact Publish Button
+                ElevatedButton(
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: AppColors.neuActiveDark,
+                    padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+                    elevation: 0,
+                    minimumSize: Size.zero,
+                  ),
+                  onPressed: _saving ? null : _publishTemplate,
+                  child: const Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Icon(Icons.rocket_launch_rounded, size: 13, color: Colors.white),
+                      SizedBox(width: 4),
+                      Text('Publish', style: TextStyle(fontSize: 11.5, fontWeight: FontWeight.w700, color: Colors.white)),
+                    ],
+                  ),
+                ),
+                const SizedBox(width: 2),
+
+                // More Menu
+                PopupMenuButton<String>(
+                  icon: const Icon(Icons.more_vert_rounded, color: Color(0xFF64748B), size: 20),
+                  padding: EdgeInsets.zero,
+                  constraints: const BoxConstraints(minWidth: 32),
+                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+                  onSelected: (val) {
+                    if (val == 'reset') {
+                      setState(() => _sections = StudioSection.defaultSections(preset: _activePreset));
+                      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Sections reset to default')));
+                    } else if (val == 'export') {
+                      _exportPdfDocument();
+                    } else if (val == 'rename') {
+                      setState(() => _isEditingName = true);
+                    } else if (val == 'default') {
+                      _setAsCompanyDefault();
+                    }
+                  },
+                  itemBuilder: (ctx) => [
+                    const PopupMenuItem(value: 'export', child: Text('Export PDF Document')),
+                    const PopupMenuItem(value: 'rename', child: Text('Rename Template')),
+                    const PopupMenuItem(value: 'default', child: Text('Set as Company Default')),
+                    const PopupMenuItem(value: 'duplicate', child: Text('Duplicate Template')),
+                    const PopupMenuItem(value: 'reset', child: Text('Reset to Preset Defaults')),
+                  ],
+                ),
+              ],
+            );
+          }
+
+          // Desktop Top Studio Bar
           return SingleChildScrollView(
             scrollDirection: Axis.horizontal,
             child: ConstrainedBox(
@@ -2514,7 +2635,7 @@ class _InvoiceTemplateStudioScreenState
                                     ),
                                     const SizedBox(width: 7),
                                     ConstrainedBox(
-                                      constraints: BoxConstraints(maxWidth: isCompact ? 150 : 230),
+                                      constraints: const BoxConstraints(maxWidth: 230),
                                       child: Text(
                                         _templateName,
                                         overflow: TextOverflow.ellipsis,
@@ -3535,14 +3656,17 @@ class _InvoiceTemplateStudioScreenState
 
   // 3. Left Column: Accordion Section Editor
   Widget _buildLeftAccordionEditor() {
-    return Container(
-      color: const Color(0xFFF8FAFC),
-      child: ListView(
-        padding: const EdgeInsets.all(18),
-        children: [
-          // Industry Preset Block
-          _buildIndustryPresetsHeader(),
-          const SizedBox(height: 14),
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        final isMobile = constraints.maxWidth < 600;
+        return Container(
+          color: const Color(0xFFF8FAFC),
+          child: ListView(
+            padding: EdgeInsets.symmetric(horizontal: isMobile ? 10 : 18, vertical: isMobile ? 12 : 18),
+            children: [
+              // Industry Preset Block
+              _buildIndustryPresetsHeader(),
+              const SizedBox(height: 14),
 
           // Official Company Letterhead Studio Card (Default for All Documents)
           _buildCompanyLetterheadStudioCard(),
@@ -3580,6 +3704,8 @@ class _InvoiceTemplateStudioScreenState
           const SizedBox(height: 40),
         ],
       ),
+    );
+      },
     );
   }
 
