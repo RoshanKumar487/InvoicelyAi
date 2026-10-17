@@ -1,6 +1,8 @@
 import 'dart:typed_data';
 import 'package:pdf/pdf.dart';
 import 'package:pdf/widgets.dart' as pw;
+import '../../../core/storage/local_preferences.dart';
+import '../../templates/data/company_letterhead.dart';
 import 'employee.dart';
 
 class EmployeeBiodataExport {
@@ -24,6 +26,38 @@ class EmployeeBiodataExport {
   }) async {
     final pdf = pw.Document();
 
+    // Load default Company Letterhead settings from template_studio LocalPreferences
+    final studioPrefs = LocalPreferences(scope: 'template_studio');
+    final savedSettings = <String, Object?>{};
+    for (final k in const [
+      'letterhead_enabled',
+      'letterhead_style_id',
+      'letterhead_company_name',
+      'letterhead_tagline',
+      'letterhead_phone',
+      'letterhead_email',
+      'letterhead_website',
+      'letterhead_address',
+      'letterhead_gstin',
+      'letterhead_pan',
+      'letterhead_cin',
+      'studio_primary_color',
+      'invoiceLogo',
+    ]) {
+      final v = await studioPrefs.readString(k);
+      if (v != null && v.isNotEmpty) {
+        savedSettings[k] = v;
+      }
+    }
+
+    final letterheadConfig = CompanyLetterheadConfig.fromSettings(
+      localSettings: savedSettings,
+      fallbackCompanyName: companyName.isNotEmpty ? companyName : null,
+      fallbackAddress: companyAddress.isNotEmpty ? companyAddress : null,
+      fallbackPhone: companyPhone.isNotEmpty ? companyPhone : null,
+      fallbackEmail: companyEmail.isNotEmpty ? companyEmail : null,
+    );
+
     final isExecutive = templateStyle.toLowerCase() == 'executive';
     final isMinimal = templateStyle.toLowerCase() == 'minimal';
 
@@ -42,13 +76,59 @@ class EmployeeBiodataExport {
     pdf.addPage(
       pw.Page(
         pageFormat: PdfPageFormat.a4,
-        margin: const pw.EdgeInsets.all(32),
+        margin: const pw.EdgeInsets.all(28),
         build: (context) {
           return pw.Column(
             crossAxisAlignment: pw.CrossAxisAlignment.start,
             children: [
-              // 1. Header Block
-              if (isExecutive)
+              // 1. Official Company Letterhead Header (or Classic Header)
+              if (letterheadConfig.isLetterheadActive) ...[
+                CompanyLetterheadPdf.buildPdfHeader(
+                  config: letterheadConfig,
+                  overridePrimary: primaryColor,
+                  scale: 0.95,
+                  showGstBadges: true,
+                ),
+                pw.Row(
+                  mainAxisAlignment: pw.MainAxisAlignment.spaceBetween,
+                  crossAxisAlignment: pw.CrossAxisAlignment.center,
+                  children: [
+                    pw.Column(
+                      crossAxisAlignment: pw.CrossAxisAlignment.start,
+                      children: [
+                        pw.Text(
+                          'STAFF BIODATA & EMPLOYMENT VERIFICATION FORM',
+                          style: pw.TextStyle(
+                            fontSize: 12,
+                            fontWeight: pw.FontWeight.bold,
+                            color: primaryColor,
+                          ),
+                        ),
+                        pw.SizedBox(height: 2),
+                        pw.Text(
+                          'Employee Code: ${employee.employeeCode.isNotEmpty ? employee.employeeCode : "STAFF"}  |  Designation: ${employee.designation}',
+                          style: const pw.TextStyle(fontSize: 8.5, color: PdfColors.grey700),
+                        ),
+                      ],
+                    ),
+                    pw.Container(
+                      width: 60,
+                      height: 68,
+                      decoration: pw.BoxDecoration(
+                        border: pw.Border.all(color: PdfColors.grey400),
+                        color: PdfColors.grey100,
+                      ),
+                      child: pw.Center(
+                        child: pw.Text(
+                          'PASSPORT\nPHOTO',
+                          textAlign: pw.TextAlign.center,
+                          style: const pw.TextStyle(fontSize: 6.5, color: PdfColors.grey600),
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              ] else if (isExecutive)
                 pw.Container(
                   padding: const pw.EdgeInsets.all(12),
                   decoration: pw.BoxDecoration(
@@ -162,7 +242,7 @@ class EmployeeBiodataExport {
                     ],
                   ),
                 ),
-              pw.SizedBox(height: 10),
+              pw.SizedBox(height: 8),
 
               // 2. Personal Details
               _sectionHeader('1. PERSONAL & IDENTITY PROFILE', primaryColor, sectionBg),
@@ -341,6 +421,15 @@ class EmployeeBiodataExport {
                   ),
                 ],
               ),
+              if (letterheadConfig.isLetterheadActive) ...[
+                pw.SizedBox(height: 6),
+                CompanyLetterheadPdf.buildPdfFooter(
+                  config: letterheadConfig,
+                  overridePrimary: primaryColor,
+                  scale: 0.92,
+                  pageLabel: 'Biodata • Page 1 of 1',
+                ),
+              ],
             ],
           );
         },

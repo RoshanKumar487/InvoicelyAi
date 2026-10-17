@@ -1,16 +1,22 @@
 import 'dart:convert';
+import 'dart:typed_data';
 
 import 'package:flutter/material.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:printing/printing.dart';
 import 'package:pdf/pdf.dart';
-import 'package:pdf/widgets.dart' as pw;
+import 'package:share_plus/share_plus.dart';
 
 import '../../../core/api/api_client.dart';
 import '../../../core/storage/local_preferences.dart';
 import '../../../shared/widgets/signature_pad_dialog.dart';
+import '../../invoices/data/invoice.dart';
+import '../../invoices/data/invoice_docx_export.dart';
+import '../../invoices/data/invoice_pdf_export.dart';
+import '../data/company_letterhead.dart';
 import '../data/studio_section_model.dart';
 import '../data/template_config.dart';
+import 'widgets/formula_builder_popup.dart';
 import 'widgets/invoice_section_accordion.dart';
 
 class InvoiceTemplateStudioScreen extends StatefulWidget {
@@ -135,6 +141,23 @@ class _InvoiceTemplateStudioScreenState
   String? _signeeName;
   String? _signeeTitle;
 
+  // Official Company Letterhead State (Default for All Documents: Invoice, Biodata, etc.)
+  bool _letterheadEnabled = true;
+  String _letterheadStyleId = 'modern_ribbon';
+  String _letterheadCompanyName = 'Northstar Security Services Pvt. Ltd.';
+  String _letterheadTagline = 'Smart Solutions for a Better Tomorrow';
+  String _letterheadPhone = '+91 98765 43210';
+  String _letterheadEmail = 'info@northstarsecurity.in';
+  String _letterheadWebsite = 'www.northstarsecurity.in';
+  String _letterheadAddress = '#12, 3rd Floor, Green Park, Bengaluru, Karnataka - 560076';
+  String _letterheadGstin = '29ABCDE1234F1Z5';
+  String _letterheadPan = 'ABCDE1234F';
+  String _letterheadCin = 'PSARA/KA/2021/889';
+
+  // Automatic Daily Wage & Formula Calculation State
+  String _itemCalculationFormula = 'monthly_salary_30';
+  double _standardDutyDays = 30.0;
+
   // Sections Model List
   late List<StudioSection> _sections;
 
@@ -174,11 +197,46 @@ class _InvoiceTemplateStudioScreenState
     super.dispose();
   }
 
+  static String? _stripDataPrefix(String? value) {
+    if (value == null || value.trim().isEmpty) return null;
+    final trimmed = value.trim();
+    if (trimmed.startsWith('data:')) {
+      final idx = trimmed.indexOf(',');
+      if (idx != -1) return trimmed.substring(idx + 1);
+    }
+    return trimmed;
+  }
+
   Future<void> _loadSavedSettings() async {
     try {
       final defId = await _localPreferences.readString('company_default_template_id');
       if (defId != null && defId.isNotEmpty && mounted) {
         setState(() => _companyDefaultTemplateId = defId);
+      }
+      final savedPreset = await _localPreferences.readString('studio_preset');
+      if (savedPreset != null && savedPreset.isNotEmpty && mounted) {
+        setState(() => _activePreset = savedPreset);
+      }
+      final savedTplName = await _localPreferences.readString('studio_template_name');
+      if (savedTplName != null && savedTplName.isNotEmpty && mounted) {
+        setState(() {
+          _templateName = savedTplName;
+          _nameController.text = savedTplName;
+        });
+      }
+      final savedPrimaryHex = await _localPreferences.readString('studio_primary_color');
+      if (savedPrimaryHex != null && savedPrimaryHex.isNotEmpty && mounted) {
+        final parsed = int.tryParse(savedPrimaryHex.replaceFirst('#', ''), radix: 16);
+        if (parsed != null) {
+          setState(() => _primaryColor = Color(0xFF000000 | parsed));
+        }
+      }
+      final savedHeaderTextHex = await _localPreferences.readString('studio_table_header_text_color');
+      if (savedHeaderTextHex != null && savedHeaderTextHex.isNotEmpty && mounted) {
+        final parsed = int.tryParse(savedHeaderTextHex.replaceFirst('#', ''), radix: 16);
+        if (parsed != null) {
+          setState(() => _tableHeaderTextColor = Color(0xFF000000 | parsed));
+        }
       }
       final savedFont = await _localPreferences.readString('studio_font_family');
       if (savedFont != null && savedFont.isNotEmpty && mounted) {
@@ -198,6 +256,33 @@ class _InvoiceTemplateStudioScreenState
       final savedTitle = await _localPreferences.readString('studio_doc_title');
       if (savedTitle != null && savedTitle.isNotEmpty && mounted) {
         setState(() => _documentTitle = savedTitle);
+      }
+      final savedUppercase = await _localPreferences.readString('studio_uppercase_headings');
+      if (savedUppercase != null && mounted) {
+        setState(() => _uppercaseHeadings = savedUppercase == 'true');
+      }
+      final savedWatermark = await _localPreferences.readString('studio_watermark');
+      if (savedWatermark != null && savedWatermark.isNotEmpty && mounted) {
+        setState(() => _watermark = savedWatermark);
+      }
+      final savedMargin = await _localPreferences.readString('studio_page_margin');
+      if (savedMargin != null && savedMargin.isNotEmpty && mounted) {
+        setState(() => _pageMargin = savedMargin);
+      }
+      final savedShowQr = await _localPreferences.readString('studio_show_qr');
+      if (savedShowQr != null && mounted) {
+        setState(() => _showQrCode = savedShowQr == 'true');
+      }
+      final savedFormula = await _localPreferences.readString('itemCalculationFormula');
+      if (savedFormula != null && savedFormula.isNotEmpty && mounted) {
+        setState(() => _itemCalculationFormula = savedFormula);
+      }
+      final savedDays = await _localPreferences.readString('standardDutyDays');
+      if (savedDays != null && savedDays.isNotEmpty && mounted) {
+        final parsedDays = double.tryParse(savedDays);
+        if (parsedDays != null && parsedDays > 0) {
+          setState(() => _standardDutyDays = parsedDays);
+        }
       }
       final savedLogo = await _localPreferences.readString('invoiceLogo');
       if (savedLogo != null && savedLogo.isNotEmpty && mounted) {
@@ -219,11 +304,80 @@ class _InvoiceTemplateStudioScreenState
       if (savedTitleSig != null && savedTitleSig.isNotEmpty && mounted) {
         setState(() => _signeeTitle ??= savedTitleSig);
       }
+      final savedLhEnabled = await _localPreferences.readString('letterhead_enabled');
+      if (savedLhEnabled != null && mounted) {
+        setState(() => _letterheadEnabled = savedLhEnabled == 'true');
+      }
+      final savedLhStyle = await _localPreferences.readString('letterhead_style_id');
+      if (savedLhStyle != null && savedLhStyle.isNotEmpty && mounted) {
+        setState(() => _letterheadStyleId = savedLhStyle);
+      }
+      final savedLhName = await _localPreferences.readString('letterhead_company_name');
+      if (savedLhName != null &&
+          savedLhName.isNotEmpty &&
+          savedLhName != 'Northstar Security Services Pvt. Ltd.' &&
+          mounted) {
+        setState(() => _letterheadCompanyName = savedLhName);
+      }
+      final savedLhTagline = await _localPreferences.readString('letterhead_tagline');
+      if (savedLhTagline != null && savedLhTagline.isNotEmpty && mounted) {
+        setState(() => _letterheadTagline = savedLhTagline);
+      }
+      final savedLhPhone = await _localPreferences.readString('letterhead_phone');
+      if (savedLhPhone != null && savedLhPhone.isNotEmpty && mounted) {
+        setState(() => _letterheadPhone = savedLhPhone);
+      }
+      final savedLhEmail = await _localPreferences.readString('letterhead_email');
+      if (savedLhEmail != null && savedLhEmail.isNotEmpty && mounted) {
+        setState(() => _letterheadEmail = savedLhEmail);
+      }
+      final savedLhWeb = await _localPreferences.readString('letterhead_website');
+      if (savedLhWeb != null && savedLhWeb.isNotEmpty && mounted) {
+        setState(() => _letterheadWebsite = savedLhWeb);
+      }
+      final savedLhAddr = await _localPreferences.readString('letterhead_address');
+      if (savedLhAddr != null && savedLhAddr.isNotEmpty && mounted) {
+        setState(() => _letterheadAddress = savedLhAddr);
+      }
+      final savedLhGstin = await _localPreferences.readString('letterhead_gstin');
+      if (savedLhGstin != null && savedLhGstin.isNotEmpty && mounted) {
+        setState(() => _letterheadGstin = savedLhGstin);
+      }
+      final savedLhPan = await _localPreferences.readString('letterhead_pan');
+      if (savedLhPan != null && savedLhPan.isNotEmpty && mounted) {
+        setState(() => _letterheadPan = savedLhPan);
+      }
+      final savedLhCin = await _localPreferences.readString('letterhead_cin');
+      if (savedLhCin != null && savedLhCin.isNotEmpty && mounted) {
+        setState(() => _letterheadCin = savedLhCin);
+      }
+      final savedSectionsCache = await _localPreferences.readString('sections_cache');
+      if (savedSectionsCache != null &&
+          savedSectionsCache.isNotEmpty &&
+          (widget.initialLocalSettings['studio_sections_json'] == null ||
+              widget.initialLocalSettings['studio_sections_json'].toString().isEmpty)) {
+        try {
+          final decoded = jsonDecode(savedSectionsCache) as List<dynamic>;
+          final parsed = decoded
+              .map((e) => StudioSection.fromJson(e as Map<String, dynamic>))
+              .toList();
+          if (parsed.isNotEmpty && mounted) {
+            for (final s in parsed) {
+              s.isExpanded = false;
+            }
+            setState(() => _sections = parsed);
+          }
+        } catch (_) {}
+      }
     } catch (_) {}
   }
 
   void _initFromInitialSettings() {
     if (widget.initialLocalSettings.isNotEmpty) {
+      final preset = widget.initialLocalSettings['studio_preset']?.toString();
+      if (preset != null && preset.isNotEmpty) {
+        _activePreset = preset;
+      }
       final name = widget.initialLocalSettings['studio_template_name']?.toString();
       if (name != null && name.isNotEmpty) {
         _templateName = name;
@@ -235,11 +389,100 @@ class _InvoiceTemplateStudioScreenState
         _companyDefaultTemplateId = defaultTpl;
         _selectedTemplateId = defaultTpl;
       }
-      _logoBase64 = widget.initialLocalSettings['invoiceLogo']?.toString();
-      _stampBase64 = widget.initialLocalSettings['invoiceStamp']?.toString();
-      _signatureBase64 = widget.initialLocalSettings['invoiceSignature']?.toString();
+      final primaryHex = widget.initialLocalSettings['studio_primary_color']?.toString();
+      if (primaryHex != null && primaryHex.isNotEmpty) {
+        final parsed = int.tryParse(primaryHex.replaceFirst('#', ''), radix: 16);
+        if (parsed != null) {
+          _primaryColor = Color(0xFF000000 | parsed);
+        }
+      }
+      final headerTextHex = widget.initialLocalSettings['studio_table_header_text_color']?.toString();
+      if (headerTextHex != null && headerTextHex.isNotEmpty) {
+        final parsed = int.tryParse(headerTextHex.replaceFirst('#', ''), radix: 16);
+        if (parsed != null) {
+          _tableHeaderTextColor = Color(0xFF000000 | parsed);
+        }
+      }
+      final font = widget.initialLocalSettings['studio_font_family']?.toString();
+      if (font != null && font.isNotEmpty) {
+        _fontFamily = font;
+      }
+      final scaleStr = widget.initialLocalSettings['studio_font_scale']?.toString();
+      if (scaleStr != null && scaleStr.isNotEmpty) {
+        final parsed = double.tryParse(scaleStr);
+        if (parsed != null && parsed > 0) {
+          _fontScale = parsed;
+        }
+      }
+      final border = widget.initialLocalSettings['studio_table_border']?.toString();
+      if (border != null && border.isNotEmpty) {
+        _tableBorderStyle = border;
+      }
+      final docTitle = widget.initialLocalSettings['customTitle']?.toString();
+      if (docTitle != null && docTitle.isNotEmpty) {
+        _documentTitle = docTitle;
+      }
+      if (widget.initialLocalSettings['studio_uppercase_headings'] is bool) {
+        _uppercaseHeadings = widget.initialLocalSettings['studio_uppercase_headings'] as bool;
+      }
+      final watermark = widget.initialLocalSettings['studio_watermark']?.toString();
+      if (watermark != null && watermark.isNotEmpty) {
+        _watermark = watermark;
+      }
+      final margin = widget.initialLocalSettings['studio_page_margin']?.toString();
+      if (margin != null && margin.isNotEmpty) {
+        _pageMargin = margin;
+      }
+      if (widget.initialLocalSettings['showQrCode'] is bool) {
+        _showQrCode = widget.initialLocalSettings['showQrCode'] as bool;
+      }
+      final formula = widget.initialLocalSettings['itemCalculationFormula']?.toString();
+      if (formula != null && formula.isNotEmpty) {
+        _itemCalculationFormula = formula;
+      }
+      final stdDays = double.tryParse(widget.initialLocalSettings['standardDutyDays']?.toString() ?? '');
+      if (stdDays != null && stdDays > 0) {
+        _standardDutyDays = stdDays;
+      }
+
+      // Sync organization branding assets & Business Profile company details
+      _logoBase64 = widget.initialLocalSettings['invoiceLogo']?.toString() ??
+          _stripDataPrefix(widget.initialLocalSettings['logoUrl']?.toString());
+      _stampBase64 = widget.initialLocalSettings['invoiceStamp']?.toString() ??
+          _stripDataPrefix(widget.initialLocalSettings['stampUrl']?.toString());
+      _signatureBase64 = widget.initialLocalSettings['invoiceSignature']?.toString() ??
+          _stripDataPrefix(widget.initialLocalSettings['signatureUrl']?.toString());
       _signeeName = widget.initialLocalSettings['signeeName']?.toString();
       _signeeTitle = widget.initialLocalSettings['signeeTitle']?.toString();
+
+      final orgName = widget.initialLocalSettings['businessName']?.toString().trim() ??
+          widget.initialLocalSettings['companyName']?.toString().trim();
+      if (orgName != null &&
+          orgName.isNotEmpty &&
+          orgName != 'Northstar Security Services Pvt. Ltd.' &&
+          orgName != 'Apex Nova Dynamics') {
+        _letterheadCompanyName = orgName;
+      }
+      final orgAddr = widget.initialLocalSettings['businessAddress']?.toString().trim();
+      if (orgAddr != null && orgAddr.isNotEmpty) {
+        _letterheadAddress = orgAddr;
+      }
+      final orgGstin = widget.initialLocalSettings['businessGstin']?.toString().trim();
+      if (orgGstin != null && orgGstin.isNotEmpty) {
+        _letterheadGstin = orgGstin;
+      }
+      final orgPan = widget.initialLocalSettings['businessPan']?.toString().trim();
+      if (orgPan != null && orgPan.isNotEmpty) {
+        _letterheadPan = orgPan;
+      }
+      final orgPhone = widget.initialLocalSettings['businessPhone']?.toString().trim();
+      if (orgPhone != null && orgPhone.isNotEmpty) {
+        _letterheadPhone = orgPhone;
+      }
+      final orgEmail = widget.initialLocalSettings['businessEmail']?.toString().trim();
+      if (orgEmail != null && orgEmail.isNotEmpty) {
+        _letterheadEmail = orgEmail;
+      }
 
       final savedSectionsJson =
           widget.initialLocalSettings['studio_sections_json']?.toString();
@@ -474,10 +717,24 @@ class _InvoiceTemplateStudioScreenState
   Future<void> _autoSaveLocal() async {
     final sectionsJson =
         jsonEncode(_sections.map((s) => s.toJson()).toList());
+    final primaryHex =
+        '#${_primaryColor.toARGB32().toRadixString(16).padLeft(8, '0').substring(2)}';
+    final headerTextHex =
+        '#${_tableHeaderTextColor.toARGB32().toRadixString(16).padLeft(8, '0').substring(2)}';
     final data = <String, Object?>{
+      ...widget.initialLocalSettings,
       'studio_template_name': _templateName,
       'studio_preset': _activePreset,
       'studio_sections_json': sectionsJson,
+      'studio_primary_color': primaryHex,
+      'studio_table_header_text_color': headerTextHex,
+      'studio_font_family': _fontFamily,
+      'studio_font_scale': _fontScale.toString(),
+      'studio_table_border': _tableBorderStyle,
+      'studio_uppercase_headings': _uppercaseHeadings,
+      'studio_watermark': _watermark,
+      'studio_page_margin': _pageMargin,
+      'showQrCode': _showQrCode,
       'businessCategory': _activePreset == 'security_agency' ? 'Security Agency' : 'Corporate Suite',
       'dutyHeader': 'Duty Days',
       'showDuty': true,
@@ -493,9 +750,47 @@ class _InvoiceTemplateStudioScreenState
       'showLogo': _logoBase64 != null && _logoBase64!.isNotEmpty,
       'showStamp': _stampBase64 != null && _stampBase64!.isNotEmpty,
       'showSignature': _signatureBase64 != null && _signatureBase64!.isNotEmpty,
+      'letterhead_enabled': _letterheadEnabled,
+      'letterhead_style_id': _letterheadStyleId,
+      'letterhead_company_name': _letterheadCompanyName,
+      'letterhead_tagline': _letterheadTagline,
+      'letterhead_phone': _letterheadPhone,
+      'letterhead_email': _letterheadEmail,
+      'letterhead_website': _letterheadWebsite,
+      'letterhead_address': _letterheadAddress,
+      'letterhead_gstin': _letterheadGstin,
+      'letterhead_pan': _letterheadPan,
+      'letterhead_cin': _letterheadCin,
+      'itemCalculationFormula': _itemCalculationFormula,
+      'standardDutyDays': _standardDutyDays.toString(),
     };
     widget.onSaveLocalSettings?.call(data);
     await _localPreferences.writeString('sections_cache', sectionsJson);
+    await _localPreferences.writeString('studio_preset', _activePreset);
+    await _localPreferences.writeString('studio_template_name', _templateName);
+    await _localPreferences.writeString('studio_primary_color', primaryHex);
+    await _localPreferences.writeString('studio_table_header_text_color', headerTextHex);
+    await _localPreferences.writeString('studio_font_family', _fontFamily);
+    await _localPreferences.writeString('studio_font_scale', _fontScale.toString());
+    await _localPreferences.writeString('studio_table_border', _tableBorderStyle);
+    await _localPreferences.writeString('studio_doc_title', _documentTitle);
+    await _localPreferences.writeString('studio_uppercase_headings', _uppercaseHeadings.toString());
+    await _localPreferences.writeString('studio_watermark', _watermark);
+    await _localPreferences.writeString('studio_page_margin', _pageMargin);
+    await _localPreferences.writeString('studio_show_qr', _showQrCode.toString());
+    await _localPreferences.writeString('itemCalculationFormula', _itemCalculationFormula);
+    await _localPreferences.writeString('standardDutyDays', _standardDutyDays.toString());
+    await _localPreferences.writeString('letterhead_enabled', _letterheadEnabled.toString());
+    await _localPreferences.writeString('letterhead_style_id', _letterheadStyleId);
+    await _localPreferences.writeString('letterhead_company_name', _letterheadCompanyName);
+    await _localPreferences.writeString('letterhead_tagline', _letterheadTagline);
+    await _localPreferences.writeString('letterhead_phone', _letterheadPhone);
+    await _localPreferences.writeString('letterhead_email', _letterheadEmail);
+    await _localPreferences.writeString('letterhead_website', _letterheadWebsite);
+    await _localPreferences.writeString('letterhead_address', _letterheadAddress);
+    await _localPreferences.writeString('letterhead_gstin', _letterheadGstin);
+    await _localPreferences.writeString('letterhead_pan', _letterheadPan);
+    await _localPreferences.writeString('letterhead_cin', _letterheadCin);
     if (_logoBase64 != null) {
       await _localPreferences.writeString('invoiceLogo', _logoBase64!);
     }
@@ -511,6 +806,66 @@ class _InvoiceTemplateStudioScreenState
     if (_signeeTitle != null) {
       await _localPreferences.writeString('signeeTitle', _signeeTitle!);
     }
+  }
+
+  Future<void> _openSectionFormulaPopup(StudioSection section) async {
+    final result = await FormulaBuilderPopup.show(
+      context,
+      targetTitle: '${section.title} — Automatic Subtotal & Daily Wage',
+      initialFormulaCode: _itemCalculationFormula,
+      initialExpression: '',
+      initialStandardDays: _standardDutyDays,
+    );
+    if (result == null || !mounted) return;
+    setState(() {
+      _itemCalculationFormula = result.formulaCode;
+      _standardDutyDays = result.standardDutyDays;
+      for (final f in section.fields) {
+        if (f.id == 'f_tot_sub' || f.id == 'f_col_amount') {
+          f.formula = result.formulaExpression;
+        }
+      }
+      _markSaved();
+    });
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text(
+          '✓ Formula saved: ${result.formulaExpression} (Base: ${result.standardDutyDays.toStringAsFixed(0)} days)',
+        ),
+        backgroundColor: const Color(0xFF047857),
+        behavior: SnackBarBehavior.floating,
+      ),
+    );
+  }
+
+  Future<void> _openFieldFormulaPopup(StudioSection section, StudioField field) async {
+    final result = await FormulaBuilderPopup.show(
+      context,
+      targetTitle: '${field.label} (${section.title})',
+      initialFormulaCode: _itemCalculationFormula,
+      initialExpression: field.formula,
+      initialStandardDays: _standardDutyDays,
+    );
+    if (result == null || !mounted) return;
+    setState(() {
+      field.formula = result.formulaExpression;
+      if (section.id == 'sec_services' ||
+          section.id == 'sec_tax_totals' ||
+          field.id == 'f_tot_sub' ||
+          field.id == 'f_col_amount' ||
+          field.id == 'f_col_rate') {
+        _itemCalculationFormula = result.formulaCode;
+        _standardDutyDays = result.standardDutyDays;
+      }
+      _markSaved();
+    });
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text('✓ Formula saved for "${field.label}": ${result.formulaExpression}'),
+        backgroundColor: const Color(0xFF047857),
+        behavior: SnackBarBehavior.floating,
+      ),
+    );
   }
 
   Future<void> _saveDraft() async {
@@ -616,6 +971,7 @@ class _InvoiceTemplateStudioScreenState
   void _showAddFieldDialog(StudioSection section) {
     final labelCtrl = TextEditingController();
     final defaultValCtrl = TextEditingController();
+    final formulaCtrl = TextEditingController();
     StudioFieldType selectedType = StudioFieldType.text;
     bool isRequired = false;
 
@@ -628,8 +984,10 @@ class _InvoiceTemplateStudioScreenState
             children: [
               const Icon(Icons.add_circle_outline, color: Color(0xFF2563EB)),
               const SizedBox(width: 8),
-              Text('Add Custom Field to "${section.title}"',
-                  style: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold)),
+              Expanded(
+                child: Text('Add Custom Field to "${section.title}"',
+                    style: const TextStyle(fontSize: 15.5, fontWeight: FontWeight.bold)),
+              ),
             ],
           ),
           content: SingleChildScrollView(
@@ -642,7 +1000,7 @@ class _InvoiceTemplateStudioScreenState
                 TextField(
                   controller: labelCtrl,
                   decoration: InputDecoration(
-                    hintText: 'e.g. Supervisor Name, Shift ID',
+                    hintText: 'e.g. Supervisor Name, Allowance, Shift Bonus',
                     isDense: true,
                     border: OutlineInputBorder(borderRadius: BorderRadius.circular(8)),
                   ),
@@ -684,6 +1042,47 @@ class _InvoiceTemplateStudioScreenState
                   ),
                 ),
                 const SizedBox(height: 14),
+                const Text('Auto-Calculation Formula (Optional)', style: TextStyle(fontWeight: FontWeight.w600, fontSize: 13)),
+                const SizedBox(height: 6),
+                Row(
+                  children: [
+                    Expanded(
+                      child: TextField(
+                        controller: formulaCtrl,
+                        decoration: InputDecoration(
+                          hintText: 'e.g. (Monthly Rate ÷ 30) × Qty × Duty',
+                          isDense: true,
+                          prefixIcon: const Icon(Icons.functions_rounded, size: 16, color: Color(0xFF2563EB)),
+                          border: OutlineInputBorder(borderRadius: BorderRadius.circular(8)),
+                        ),
+                      ),
+                    ),
+                    const SizedBox(width: 6),
+                    IconButton.filledTonal(
+                      tooltip: 'Open Formula Builder Popup',
+                      icon: const Icon(Icons.functions_rounded, size: 18, color: Color(0xFF1D4ED8)),
+                      onPressed: () async {
+                        final res = await FormulaBuilderPopup.show(
+                          context,
+                          targetTitle: labelCtrl.text.trim().isNotEmpty
+                              ? labelCtrl.text.trim()
+                              : 'New Custom Field',
+                          initialFormulaCode: _itemCalculationFormula,
+                          initialExpression: formulaCtrl.text.trim(),
+                          initialStandardDays: _standardDutyDays,
+                        );
+                        if (res != null) {
+                          setDlgState(() {
+                            formulaCtrl.text = res.formulaExpression;
+                            _itemCalculationFormula = res.formulaCode;
+                            _standardDutyDays = res.standardDutyDays;
+                          });
+                        }
+                      },
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 10),
                 SwitchListTile(
                   contentPadding: EdgeInsets.zero,
                   title: const Text('Required Field', style: TextStyle(fontSize: 13, fontWeight: FontWeight.w600)),
@@ -717,6 +1116,7 @@ class _InvoiceTemplateStudioScreenState
                       isRequired: isRequired,
                       isVisible: true,
                       defaultValue: defaultValCtrl.text.trim(),
+                      formula: formulaCtrl.text.trim(),
                     ),
                   );
                   _markSaved();
@@ -734,6 +1134,7 @@ class _InvoiceTemplateStudioScreenState
   void _showEditFieldDialog(StudioSection section, StudioField field) {
     final labelCtrl = TextEditingController(text: field.label);
     final defaultValCtrl = TextEditingController(text: field.defaultValue);
+    final formulaCtrl = TextEditingController(text: field.formula);
     StudioFieldType selectedType = field.type;
     bool isRequired = field.isRequired;
 
@@ -794,6 +1195,47 @@ class _InvoiceTemplateStudioScreenState
                   ),
                 ),
                 const SizedBox(height: 14),
+                const Text('Formula / Auto-Calculation', style: TextStyle(fontWeight: FontWeight.w600, fontSize: 13)),
+                const SizedBox(height: 6),
+                Row(
+                  children: [
+                    Expanded(
+                      child: TextField(
+                        controller: formulaCtrl,
+                        decoration: InputDecoration(
+                          hintText: 'e.g. (Monthly Rate ÷ 30) × Qty × Duty',
+                          isDense: true,
+                          prefixIcon: const Icon(Icons.functions_rounded, size: 16, color: Color(0xFF2563EB)),
+                          border: OutlineInputBorder(borderRadius: BorderRadius.circular(8)),
+                        ),
+                      ),
+                    ),
+                    const SizedBox(width: 6),
+                    IconButton.filledTonal(
+                      tooltip: 'Configure Formula in Popup',
+                      icon: const Icon(Icons.functions_rounded, size: 18, color: Color(0xFF1D4ED8)),
+                      onPressed: () async {
+                        final res = await FormulaBuilderPopup.show(
+                          context,
+                          targetTitle: labelCtrl.text.trim().isNotEmpty
+                              ? labelCtrl.text.trim()
+                              : field.label,
+                          initialFormulaCode: _itemCalculationFormula,
+                          initialExpression: formulaCtrl.text.trim(),
+                          initialStandardDays: _standardDutyDays,
+                        );
+                        if (res != null) {
+                          setDlgState(() {
+                            formulaCtrl.text = res.formulaExpression;
+                            _itemCalculationFormula = res.formulaCode;
+                            _standardDutyDays = res.standardDutyDays;
+                          });
+                        }
+                      },
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 10),
                 SwitchListTile(
                   contentPadding: EdgeInsets.zero,
                   title: const Text('Required Field', style: TextStyle(fontSize: 13, fontWeight: FontWeight.w600)),
@@ -823,6 +1265,7 @@ class _InvoiceTemplateStudioScreenState
                   field.type = selectedType;
                   field.isRequired = isRequired;
                   field.defaultValue = defaultValCtrl.text.trim();
+                  field.formula = formulaCtrl.text.trim();
                   _markSaved();
                 });
                 Navigator.of(ctx).pop();
@@ -1522,221 +1965,118 @@ class _InvoiceTemplateStudioScreenState
     );
   }
 
-  void _exportPdfDocument() async {
-    final pdf = pw.Document();
-    pdf.addPage(
-      pw.Page(
-        pageFormat: PdfPageFormat.a4,
-        margin: const pw.EdgeInsets.all(32),
-        build: (pw.Context context) {
-          return pw.Column(
-            crossAxisAlignment: pw.CrossAxisAlignment.start,
-            children: [
-              // Header
-              pw.Row(
-                mainAxisAlignment: pw.MainAxisAlignment.spaceBetween,
-                children: [
-                  pw.Column(
-                    crossAxisAlignment: pw.CrossAxisAlignment.start,
-                    children: [
-                      pw.Text(
-                        'NORTHSTAR SECURITY SERVICES',
-                        style: pw.TextStyle(
-                          fontSize: 16,
-                          fontWeight: pw.FontWeight.bold,
-                          color: PdfColor.fromHex('1E3A8A'),
-                        ),
-                      ),
-                      pw.Text(
-                        'Safe People | Secure Tomorrow',
-                        style: pw.TextStyle(
-                          fontSize: 9,
-                          color: PdfColor.fromHex('64748B'),
-                          fontStyle: pw.FontStyle.italic,
-                        ),
-                      ),
-                    ],
-                  ),
-                  pw.Column(
-                    crossAxisAlignment: pw.CrossAxisAlignment.end,
-                    children: [
-                      pw.Text('Northstar Security Services Ltd.',
-                          style: pw.TextStyle(fontSize: 10, fontWeight: pw.FontWeight.bold)),
-                      pw.Text('#12, Green Park, Bengaluru - 560076', style: const pw.TextStyle(fontSize: 8)),
-                      pw.Text('GSTIN: 29ABCDE1234F1Z5 | PAN: ABCDE1234F', style: const pw.TextStyle(fontSize: 8)),
-                    ],
-                  ),
-                ],
-              ),
-              pw.SizedBox(height: 12),
-              pw.Divider(color: PdfColor.fromHex('2563EB'), thickness: 1.5),
-              pw.SizedBox(height: 12),
-
-              // Title and Meta
-              pw.Row(
-                mainAxisAlignment: pw.MainAxisAlignment.spaceBetween,
-                children: [
-                  pw.Text('TAX INVOICE',
-                      style: pw.TextStyle(fontSize: 18, fontWeight: pw.FontWeight.bold)),
-                  pw.Column(
-                    crossAxisAlignment: pw.CrossAxisAlignment.end,
-                    children: [
-                      pw.Text('Invoice No: INV-2025-0148', style: const pw.TextStyle(fontSize: 9)),
-                      pw.Text('Issue Date: 15 Apr 2025', style: const pw.TextStyle(fontSize: 9)),
-                      pw.Text('Due Date: 30 Apr 2025', style: const pw.TextStyle(fontSize: 9)),
-                    ],
-                  ),
-                ],
-              ),
-              pw.SizedBox(height: 16),
-
-              // Client Box
-              pw.Container(
-                padding: const pw.EdgeInsets.all(10),
-                decoration: pw.BoxDecoration(
-                  border: pw.Border.all(color: PdfColor.fromHex('CBD5E1')),
-                  borderRadius: pw.BorderRadius.circular(6),
-                ),
-                child: pw.Row(
-                  crossAxisAlignment: pw.CrossAxisAlignment.start,
-                  children: [
-                    pw.Expanded(
-                      child: pw.Column(
-                        crossAxisAlignment: pw.CrossAxisAlignment.start,
-                        children: [
-                          pw.Text('Bill To:', style: pw.TextStyle(fontSize: 9, fontWeight: pw.FontWeight.bold)),
-                          pw.Text('ABC Industries Pvt. Ltd.', style: pw.TextStyle(fontSize: 10, fontWeight: pw.FontWeight.bold)),
-                          pw.Text('101, Business Tower, MG Road, Bengaluru - 560001', style: const pw.TextStyle(fontSize: 8)),
-                          pw.Text('GSTIN: 29AABCA1234B1Z2', style: const pw.TextStyle(fontSize: 8)),
-                        ],
-                      ),
-                    ),
-                    pw.Expanded(
-                      child: pw.Column(
-                        crossAxisAlignment: pw.CrossAxisAlignment.start,
-                        children: [
-                          pw.Text('Service Location & Billing Period:', style: pw.TextStyle(fontSize: 9, fontWeight: pw.FontWeight.bold)),
-                          pw.Text('Tech Park, Whitefield, Bengaluru - 560066', style: const pw.TextStyle(fontSize: 8)),
-                          pw.Text('Period: 01 Apr 2025 - 30 Apr 2025 (30 Days)', style: const pw.TextStyle(fontSize: 8)),
-                        ],
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-              pw.SizedBox(height: 16),
-
-              // Table
-              pw.Table(
-                border: pw.TableBorder.all(color: PdfColor.fromHex('E2E8F0')),
-                columnWidths: {
-                  0: const pw.FlexColumnWidth(4),
-                  1: const pw.FlexColumnWidth(1.5),
-                  2: const pw.FlexColumnWidth(1.5),
-                  3: const pw.FlexColumnWidth(2),
-                  4: const pw.FlexColumnWidth(2),
-                },
-                children: [
-                  pw.TableRow(
-                    decoration: pw.BoxDecoration(color: PdfColor.fromHex('1E3A8A')),
-                    children: [
-                      _pdfTh('Particulars'),
-                      _pdfTh('Guards'),
-                      _pdfTh('Duty Days'),
-                      _pdfTh('Rate (INR)'),
-                      _pdfTh('Amount (INR)'),
-                    ],
-                  ),
-                  _pdfTr('Security Guard (12-hour shift)', '4', '26', '2,150.00', '2,23,600.00'),
-                  _pdfTr('Armed Guard (12-hour shift)', '2', '26', '2,850.00', '1,48,200.00'),
-                ],
-              ),
-              pw.SizedBox(height: 16),
-
-              // Totals
-              pw.Row(
-                mainAxisAlignment: pw.MainAxisAlignment.end,
-                children: [
-                  pw.Container(
-                    width: 220,
-                    child: pw.Column(
-                      crossAxisAlignment: pw.CrossAxisAlignment.end,
-                      children: [
-                        _pdfTotalRow('Subtotal', 'INR 3,71,800.00'),
-                        _pdfTotalRow('Discount', '(-) INR 5,000.00'),
-                        _pdfTotalRow('Taxable Amount', 'INR 3,66,800.00'),
-                        _pdfTotalRow('CGST (9%)', 'INR 33,012.00'),
-                        _pdfTotalRow('SGST (9%)', 'INR 33,012.00'),
-                        pw.Divider(color: PdfColor.fromHex('CBD5E1')),
-                        pw.Row(
-                          mainAxisAlignment: pw.MainAxisAlignment.spaceBetween,
-                          children: [
-                            pw.Text('Grand Total', style: pw.TextStyle(fontSize: 11, fontWeight: pw.FontWeight.bold)),
-                            pw.Text('INR 4,32,824.00', style: pw.TextStyle(fontSize: 11, fontWeight: pw.FontWeight.bold, color: PdfColor.fromHex('1E3A8A'))),
-                          ],
-                        ),
-                      ],
-                    ),
-                  ),
-                ],
-              ),
-              pw.Spacer(),
-
-              // Footer
-              pw.Row(
-                mainAxisAlignment: pw.MainAxisAlignment.spaceBetween,
-                children: [
-                  pw.Text('Thank you for your business!', style: const pw.TextStyle(fontSize: 8)),
-                  pw.Text('Page 1 of 1', style: const pw.TextStyle(fontSize: 8)),
-                ],
-              ),
-            ],
-          );
-        },
-      ),
-    );
-
-    await Printing.layoutPdf(
-      onLayout: (PdfPageFormat format) async => pdf.save(),
-      name: 'Invoice_Template_Export.pdf',
-    );
+  Map<String, Object?> _currentStudioSettingsMap() {
+    final sectionsJson =
+        jsonEncode(_sections.map((s) => s.toJson()).toList());
+    final primaryHex =
+        '#${_primaryColor.toARGB32().toRadixString(16).padLeft(8, '0').substring(2)}';
+    final headerTextHex =
+        '#${_tableHeaderTextColor.toARGB32().toRadixString(16).padLeft(8, '0').substring(2)}';
+    return <String, Object?>{
+      ...widget.initialLocalSettings,
+      'studio_template_name': _templateName,
+      'studio_preset': _activePreset,
+      'studio_sections_json': sectionsJson,
+      'studio_primary_color': primaryHex,
+      'studio_table_header_text_color': headerTextHex,
+      'studio_font_family': _fontFamily,
+      'studio_font_scale': _fontScale.toString(),
+      'studio_table_border': _tableBorderStyle,
+      'studio_uppercase_headings': _uppercaseHeadings,
+      'studio_watermark': _watermark,
+      'studio_page_margin': _pageMargin,
+      'showQrCode': _showQrCode,
+      'customTitle': _documentTitle,
+      'invoiceLogo': _logoBase64,
+      'invoiceStamp': _stampBase64,
+      'invoiceSignature': _signatureBase64,
+      'signeeName': _signeeName,
+      'signeeTitle': _signeeTitle,
+      'letterhead_enabled': _letterheadEnabled,
+      'letterhead_style_id': _letterheadStyleId,
+      'letterhead_company_name': _letterheadCompanyName,
+      'letterhead_tagline': _letterheadTagline,
+      'letterhead_phone': _letterheadPhone,
+      'letterhead_email': _letterheadEmail,
+      'letterhead_website': _letterheadWebsite,
+      'letterhead_address': _letterheadAddress,
+      'letterhead_gstin': _letterheadGstin,
+      'letterhead_pan': _letterheadPan,
+      'letterhead_cin': _letterheadCin,
+    };
   }
 
-  pw.Widget _pdfTh(String text) {
-    return pw.Padding(
-      padding: const pw.EdgeInsets.all(6),
-      child: pw.Text(
-        text,
-        style: pw.TextStyle(
-          fontSize: 8.5,
-          fontWeight: pw.FontWeight.bold,
-          color: PdfColors.white,
+  Invoice _samplePreviewInvoice() {
+    return const Invoice(
+      invoiceNumber: 'INV-2025-0148',
+      clientName: 'Mr. Rahul Sharma',
+      clientCompany: 'ABC Industries Pvt. Ltd.',
+      clientAddress: '101, Business Tower, MG Road,\nBengaluru, Karnataka - 560001',
+      clientTaxId: '29AABCA1234B1Z2',
+      clientPhone: '+91 98800 11223',
+      issueDate: '15 Apr 2025',
+      dueDate: '30 Apr 2025',
+      poNumber: 'PO-4587/2025',
+      paymentTerms: '30 Days',
+      currencyCode: 'INR',
+      currencySymbol: '₹',
+      taxRate: 18,
+      taxLabel: 'GST',
+      taxType: 'GST',
+      discountAmount: 5000,
+      items: [
+        InvoiceItem(
+          description: 'Security Guard (12-hour shift)',
+          quantity: 4,
+          dutyCount: 26,
+          standardDutyDays: 26,
+          unitPrice: 55900,
+          calculationFormula: 'monthly_salary_26',
         ),
-      ),
-    );
-  }
-
-  pw.TableRow _pdfTr(String c1, String c2, String c3, String c4, String c5) {
-    return pw.TableRow(
-      children: [
-        pw.Padding(padding: const pw.EdgeInsets.all(6), child: pw.Text(c1, style: const pw.TextStyle(fontSize: 8))),
-        pw.Padding(padding: const pw.EdgeInsets.all(6), child: pw.Text(c2, style: const pw.TextStyle(fontSize: 8))),
-        pw.Padding(padding: const pw.EdgeInsets.all(6), child: pw.Text(c3, style: const pw.TextStyle(fontSize: 8))),
-        pw.Padding(padding: const pw.EdgeInsets.all(6), child: pw.Text(c4, style: const pw.TextStyle(fontSize: 8))),
-        pw.Padding(padding: const pw.EdgeInsets.all(6), child: pw.Text(c5, style: const pw.TextStyle(fontSize: 8))),
+        InvoiceItem(
+          description: 'Armed Guard (12-hour shift)',
+          quantity: 2,
+          dutyCount: 26,
+          standardDutyDays: 26,
+          unitPrice: 74100,
+          calculationFormula: 'monthly_salary_26',
+        ),
       ],
     );
   }
 
-  pw.Widget _pdfTotalRow(String label, String value) {
-    return pw.Padding(
-      padding: const pw.EdgeInsets.symmetric(vertical: 2),
-      child: pw.Row(
-        mainAxisAlignment: pw.MainAxisAlignment.spaceBetween,
-        children: [
-          pw.Text(label, style: const pw.TextStyle(fontSize: 8)),
-          pw.Text(value, style: const pw.TextStyle(fontSize: 8)),
+  Future<void> _exportPdfDocument() async {
+    await _autoSaveLocal();
+    final settings = _currentStudioSettingsMap();
+    final sampleInv = _samplePreviewInvoice();
+    await Printing.layoutPdf(
+      onLayout: (PdfPageFormat format) => InvoicePdfExport.build(
+        sampleInv,
+        localSettings: settings,
+      ),
+      name: '${_templateName.replaceAll(RegExp(r'\s+'), '_')}.pdf',
+    );
+  }
+
+  Future<void> _exportDocxDocument() async {
+    await _autoSaveLocal();
+    final settings = _currentStudioSettingsMap();
+    final sampleInv = _samplePreviewInvoice();
+    final Uint8List bytes = InvoiceDocxExport.build(
+      sampleInv,
+      localSettings: settings,
+    );
+    await SharePlus.instance.share(
+      ShareParams(
+        files: [
+          XFile.fromData(
+            bytes,
+            mimeType:
+                'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+            name: '${_templateName.replaceAll(RegExp(r'\s+'), '_')}.docx',
+          ),
         ],
+        subject: '$_templateName - Word Template',
       ),
     );
   }
@@ -2548,6 +2888,353 @@ class _InvoiceTemplateStudioScreenState
     );
   }
 
+  CompanyLetterheadConfig _currentLetterheadConfig() {
+    final primaryHex =
+        '#${_primaryColor.toARGB32().toRadixString(16).padLeft(8, '0').substring(2)}';
+    return CompanyLetterheadConfig(
+      enabledForAllDocuments: _letterheadEnabled,
+      styleId: _letterheadStyleId,
+      companyName: _letterheadCompanyName,
+      tagline: _letterheadTagline,
+      phone: _letterheadPhone,
+      email: _letterheadEmail,
+      website: _letterheadWebsite,
+      address: _letterheadAddress,
+      gstin: _letterheadGstin,
+      pan: _letterheadPan,
+      cinOrLicense: _letterheadCin,
+      logoBase64: _logoBase64,
+      primaryColorHex: primaryHex,
+    );
+  }
+
+  Widget _buildCompanyLetterheadStudioCard() {
+    final lhConfig = _currentLetterheadConfig();
+    return Container(
+      margin: const EdgeInsets.only(bottom: 14),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(
+          color: _letterheadEnabled ? const Color(0xFF93C5FD) : const Color(0xFFE2E8F0),
+          width: _letterheadEnabled ? 1.5 : 1,
+        ),
+        boxShadow: const [
+          BoxShadow(
+            color: Color(0x08000000),
+            blurRadius: 8,
+            offset: Offset(0, 2),
+          ),
+        ],
+      ),
+      child: Theme(
+        data: Theme.of(context).copyWith(dividerColor: Colors.transparent),
+        child: ExpansionTile(
+          initiallyExpanded: true,
+          tilePadding: const EdgeInsets.symmetric(horizontal: 14, vertical: 4),
+          childrenPadding: const EdgeInsets.fromLTRB(14, 0, 14, 14),
+          leading: Container(
+            padding: const EdgeInsets.all(8),
+            decoration: BoxDecoration(
+              gradient: const LinearGradient(
+                colors: [Color(0xFF1E3A8A), Color(0xFF06B6D4)],
+              ),
+              borderRadius: BorderRadius.circular(8),
+            ),
+            child: const Icon(Icons.branding_watermark_rounded, color: Colors.white, size: 18),
+          ),
+          title: Row(
+            children: [
+              const Expanded(
+                child: Text(
+                  'Company Letterhead (Header & Footer)',
+                  style: TextStyle(
+                    fontSize: 13.5,
+                    fontWeight: FontWeight.w800,
+                    color: Color(0xFF0F172A),
+                  ),
+                ),
+              ),
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 2),
+                decoration: BoxDecoration(
+                  color: _letterheadEnabled ? const Color(0xFFDCFCE7) : const Color(0xFFF1F5F9),
+                  borderRadius: BorderRadius.circular(10),
+                ),
+                child: Text(
+                  _letterheadEnabled ? 'DEFAULT FOR ALL DOCS' : 'OFF',
+                  style: TextStyle(
+                    fontSize: 9.5,
+                    fontWeight: FontWeight.w800,
+                    color: _letterheadEnabled ? const Color(0xFF15803D) : const Color(0xFF64748B),
+                  ),
+                ),
+              ),
+            ],
+          ),
+          subtitle: const Text(
+            'Auto-applies header & footer to Invoices, Biodata, Quotations & PDFs',
+            style: TextStyle(fontSize: 11, color: Color(0xFF64748B)),
+          ),
+          children: [
+            // Master Toggle: Default for All Documents
+            SwitchListTile(
+              dense: true,
+              contentPadding: EdgeInsets.zero,
+              title: const Text(
+                'Use as Default Letterhead for All Documents (Invoice / Biodata)',
+                style: TextStyle(fontSize: 12, fontWeight: FontWeight.w700, color: Color(0xFF1E293B)),
+              ),
+              subtitle: const Text(
+                'Replaces standard header & footer with your branded letterhead banner',
+                style: TextStyle(fontSize: 10.5, color: Color(0xFF64748B)),
+              ),
+              value: _letterheadEnabled,
+              activeColor: const Color(0xFF2563EB),
+              onChanged: (val) {
+                setState(() {
+                  _letterheadEnabled = val;
+                  _markSaved();
+                });
+              },
+            ),
+            const SizedBox(height: 8),
+
+            // Layout Design Picker
+            const Align(
+              alignment: Alignment.centerLeft,
+              child: Text(
+                'Select Letterhead Layout Design:',
+                style: TextStyle(fontSize: 11.5, fontWeight: FontWeight.w700, color: Color(0xFF334155)),
+              ),
+            ),
+            const SizedBox(height: 8),
+            Wrap(
+              spacing: 8,
+              runSpacing: 8,
+              children: kLetterheadPresets.map((preset) {
+                final isSelected = _letterheadStyleId == preset.id;
+                return InkWell(
+                  onTap: () {
+                    setState(() {
+                      _letterheadStyleId = preset.id;
+                      if (preset.id == 'classic_traditional') {
+                        _letterheadEnabled = false;
+                      } else {
+                        _letterheadEnabled = true;
+                      }
+                      _markSaved();
+                    });
+                  },
+                  borderRadius: BorderRadius.circular(8),
+                  child: Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 7),
+                    decoration: BoxDecoration(
+                      color: isSelected ? const Color(0xFFEFF6FF) : const Color(0xFFF8FAFC),
+                      borderRadius: BorderRadius.circular(8),
+                      border: Border.all(
+                        color: isSelected ? const Color(0xFF2563EB) : const Color(0xFFCBD5E1),
+                        width: isSelected ? 1.8 : 1,
+                      ),
+                    ),
+                    child: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Container(
+                          width: 12,
+                          height: 12,
+                          decoration: BoxDecoration(
+                            gradient: LinearGradient(
+                              colors: [preset.accentColor, preset.secondaryColor],
+                            ),
+                            shape: BoxShape.circle,
+                          ),
+                        ),
+                        const SizedBox(width: 6),
+                        Text(
+                          preset.name,
+                          style: TextStyle(
+                            fontSize: 11,
+                            fontWeight: isSelected ? FontWeight.w800 : FontWeight.w600,
+                            color: isSelected ? const Color(0xFF1E3A8A) : const Color(0xFF334155),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                );
+              }).toList(),
+            ),
+            const SizedBox(height: 12),
+
+            // Live Mini Preview of Header + Footer (Matching User's NY Solutions Reference)
+            if (lhConfig.isLetterheadActive) ...[
+              Container(
+                padding: const EdgeInsets.all(10),
+                decoration: BoxDecoration(
+                  color: const Color(0xFFF1F5F9),
+                  borderRadius: BorderRadius.circular(8),
+                  border: Border.all(color: const Color(0xFFE2E8F0)),
+                ),
+                child: Column(
+                  children: [
+                    FittedBox(
+                      fit: BoxFit.scaleDown,
+                      child: SizedBox(
+                        width: 680,
+                        child: CompanyLetterheadWidgets.buildHeaderBanner(
+                          config: lhConfig,
+                          overridePrimaryColor: _primaryColor,
+                          showGstBadges: false,
+                        ),
+                      ),
+                    ),
+                    const Text(
+                      'Header (for all documents)',
+                      style: TextStyle(fontSize: 10, fontWeight: FontWeight.w700, color: Color(0xFF334155)),
+                    ),
+                    const SizedBox(height: 8),
+                    FittedBox(
+                      fit: BoxFit.scaleDown,
+                      child: SizedBox(
+                        width: 680,
+                        child: CompanyLetterheadWidgets.buildFooterBanner(
+                          config: lhConfig,
+                          overridePrimaryColor: _primaryColor,
+                        ),
+                      ),
+                    ),
+                    const SizedBox(height: 4),
+                    const Text(
+                      'Footer (for all documents)',
+                      style: TextStyle(fontSize: 10, fontWeight: FontWeight.w700, color: Color(0xFF334155)),
+                    ),
+                  ],
+                ),
+              ),
+              const SizedBox(height: 12),
+            ],
+
+            // Editable Letterhead Details
+            Row(
+              children: [
+                Expanded(
+                  child: TextFormField(
+                    initialValue: _letterheadCompanyName,
+                    decoration: InputDecoration(
+                      labelText: 'Company Name on Letterhead',
+                      isDense: true,
+                      contentPadding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+                      border: OutlineInputBorder(borderRadius: BorderRadius.circular(8)),
+                    ),
+                    onChanged: (v) {
+                      setState(() {
+                        _letterheadCompanyName = v;
+                        _markSaved();
+                      });
+                    },
+                  ),
+                ),
+                const SizedBox(width: 8),
+                Expanded(
+                  child: TextFormField(
+                    initialValue: _letterheadTagline,
+                    decoration: InputDecoration(
+                      labelText: 'Company Tagline / Slogan',
+                      isDense: true,
+                      contentPadding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+                      border: OutlineInputBorder(borderRadius: BorderRadius.circular(8)),
+                    ),
+                    onChanged: (v) {
+                      setState(() {
+                        _letterheadTagline = v;
+                        _markSaved();
+                      });
+                    },
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 8),
+            Row(
+              children: [
+                Expanded(
+                  child: TextFormField(
+                    initialValue: _letterheadPhone,
+                    decoration: InputDecoration(
+                      labelText: 'Phone Number',
+                      isDense: true,
+                      contentPadding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+                      border: OutlineInputBorder(borderRadius: BorderRadius.circular(8)),
+                    ),
+                    onChanged: (v) {
+                      setState(() {
+                        _letterheadPhone = v;
+                        _markSaved();
+                      });
+                    },
+                  ),
+                ),
+                const SizedBox(width: 8),
+                Expanded(
+                  child: TextFormField(
+                    initialValue: _letterheadEmail,
+                    decoration: InputDecoration(
+                      labelText: 'Official Email',
+                      isDense: true,
+                      contentPadding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+                      border: OutlineInputBorder(borderRadius: BorderRadius.circular(8)),
+                    ),
+                    onChanged: (v) {
+                      setState(() {
+                        _letterheadEmail = v;
+                        _markSaved();
+                      });
+                    },
+                  ),
+                ),
+                const SizedBox(width: 8),
+                Expanded(
+                  child: TextFormField(
+                    initialValue: _letterheadWebsite,
+                    decoration: InputDecoration(
+                      labelText: 'Website URL',
+                      isDense: true,
+                      contentPadding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+                      border: OutlineInputBorder(borderRadius: BorderRadius.circular(8)),
+                    ),
+                    onChanged: (v) {
+                      setState(() {
+                        _letterheadWebsite = v;
+                        _markSaved();
+                      });
+                    },
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 8),
+            TextFormField(
+              initialValue: _letterheadAddress,
+              decoration: InputDecoration(
+                labelText: 'Registered Office Address (Header & Footer)',
+                isDense: true,
+                contentPadding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+                border: OutlineInputBorder(borderRadius: BorderRadius.circular(8)),
+              ),
+              onChanged: (v) {
+                setState(() {
+                  _letterheadAddress = v;
+                  _markSaved();
+                });
+              },
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
   // 3. Left Column: Accordion Section Editor
   Widget _buildLeftAccordionEditor() {
     return Container(
@@ -2557,7 +3244,10 @@ class _InvoiceTemplateStudioScreenState
         children: [
           // Industry Preset Block
           _buildIndustryPresetsHeader(),
-          const SizedBox(height: 16),
+          const SizedBox(height: 14),
+
+          // Official Company Letterhead Studio Card (Default for All Documents)
+          _buildCompanyLetterheadStudioCard(),
 
           // Accordion Section Cards
           for (final section in _sections)
@@ -2574,6 +3264,10 @@ class _InvoiceTemplateStudioScreenState
               onFieldVisibilityChanged: (field, isVis) =>
                   _onFieldVisibilityChanged(section, field, isVis),
               onAddField: () => _showAddFieldDialog(section),
+              onFieldFormula: (field) => _openFieldFormulaPopup(section, field),
+              onSectionFormula: (section.id == 'sec_tax_totals' || section.id == 'sec_services')
+                  ? () => _openSectionFormulaPopup(section)
+                  : null,
               onEditField: (field) => _showEditFieldDialog(section, field),
               onDuplicateField: (field) => _duplicateField(section, field),
               onDeleteField: (field) => _deleteField(section, field),
@@ -2704,65 +3398,73 @@ class _InvoiceTemplateStudioScreenState
           Expanded(
             child: LayoutBuilder(
               builder: (context, constraints) {
-                final availableWidth = constraints.maxWidth - 32;
+                final availableWidth = (constraints.maxWidth - 32).clamp(240.0, 2400.0);
                 final isNarrow = availableWidth < 760;
+                final fitScale = isNarrow ? (availableWidth / 760.0) : 1.0;
+                final effectiveScale = (fitScale * _zoomLevel).clamp(0.3, 2.0);
+                final renderedWidth = 760.0 * effectiveScale;
 
-                Widget canvas = Transform.scale(
-                  scale: _zoomLevel,
-                  alignment: Alignment.topCenter,
-                  child: Container(
-                    width: 760,
-                    decoration: BoxDecoration(
-                      color: Colors.white,
-                      borderRadius: BorderRadius.circular(4),
-                      boxShadow: const [
-                        BoxShadow(
-                          color: Color(0x1A000000),
-                          blurRadius: 18,
-                          offset: Offset(0, 6),
-                        ),
-                      ],
-                    ),
-                    padding: pagePadding,
-                    child: Stack(
-                      children: [
-                        if (_watermark != 'None')
-                          Positioned.fill(
-                            child: IgnorePointer(
-                              child: Center(
-                                child: Transform.rotate(
-                                  angle: -0.35,
-                                  child: Text(
-                                    _watermark,
-                                    style: TextStyle(
-                                      fontFamily: _fontFamily,
-                                      fontSize: 60 * _fontScale,
-                                      fontWeight: FontWeight.w900,
-                                      color: const Color(0xFF0F172A).withValues(alpha: 0.04),
-                                      letterSpacing: 8,
-                                    ),
+                final paperCard = Container(
+                  width: 760,
+                  decoration: BoxDecoration(
+                    color: Colors.white,
+                    borderRadius: BorderRadius.circular(4),
+                    boxShadow: const [
+                      BoxShadow(
+                        color: Color(0x1A000000),
+                        blurRadius: 18,
+                        offset: Offset(0, 6),
+                      ),
+                    ],
+                  ),
+                  padding: pagePadding,
+                  child: Stack(
+                    children: [
+                      if (_watermark != 'None')
+                        Positioned.fill(
+                          child: IgnorePointer(
+                            child: Center(
+                              child: Transform.rotate(
+                                angle: -0.35,
+                                child: Text(
+                                  _watermark,
+                                  style: TextStyle(
+                                    fontFamily: _fontFamily,
+                                    fontSize: 60 * _fontScale,
+                                    fontWeight: FontWeight.w900,
+                                    color: const Color(0xFF0F172A).withValues(alpha: 0.04),
+                                    letterSpacing: 8,
                                   ),
                                 ),
                               ),
                             ),
                           ),
-                        _buildA4DocumentContent(),
-                      ],
-                    ),
+                        ),
+                      _buildA4DocumentContent(),
+                    ],
                   ),
                 );
 
-                if (isNarrow) {
-                  canvas = FittedBox(
-                    fit: BoxFit.contain,
+                final scaledCanvas = SizedBox(
+                  width: renderedWidth,
+                  child: FittedBox(
+                    fit: BoxFit.fitWidth,
                     alignment: Alignment.topCenter,
-                    child: canvas,
-                  );
-                }
+                    child: paperCard,
+                  ),
+                );
 
                 return SingleChildScrollView(
+                  physics: const BouncingScrollPhysics(parent: AlwaysScrollableScrollPhysics()),
                   padding: EdgeInsets.all(isNarrow ? 12 : 24),
-                  child: Center(child: canvas),
+                  child: SingleChildScrollView(
+                    scrollDirection: Axis.horizontal,
+                    physics: const BouncingScrollPhysics(),
+                    child: ConstrainedBox(
+                      constraints: BoxConstraints(minWidth: availableWidth),
+                      child: Center(child: scaledCanvas),
+                    ),
+                  ),
                 );
               },
             ),
@@ -2780,131 +3482,157 @@ class _InvoiceTemplateStudioScreenState
         color: Colors.white,
         border: Border(bottom: BorderSide(color: Color(0xFFE2E8F0))),
       ),
-      child: Row(
-        children: [
-          // Left mode tabs
-          Container(
-            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-            decoration: const BoxDecoration(
-              border: Border(bottom: BorderSide(color: Color(0xFF2563EB), width: 2)),
-            ),
-            child: const Row(
-              children: [
-                Icon(Icons.visibility_rounded, size: 14, color: Color(0xFF2563EB)),
-                SizedBox(width: 6),
-                Text('Preview', style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold, color: Color(0xFF2563EB))),
-              ],
-            ),
-          ),
-          const SizedBox(width: 16),
-          InkWell(
-            onTap: _showPageSettingsDialog,
-            borderRadius: BorderRadius.circular(6),
-            child: Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 4),
-              child: const Row(
+      child: LayoutBuilder(
+        builder: (context, constraints) {
+          return SingleChildScrollView(
+            scrollDirection: Axis.horizontal,
+            child: ConstrainedBox(
+              constraints: BoxConstraints(minWidth: constraints.maxWidth),
+              child: Row(
+                mainAxisAlignment: MainAxisAlignment.spaceBetween,
                 children: [
-                  Icon(Icons.tune_rounded, size: 14, color: Color(0xFF64748B)),
-                  SizedBox(width: 6),
-                  Text('Page settings', style: TextStyle(fontSize: 12, color: Color(0xFF64748B))),
+                  Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      // Left mode tabs
+                      Container(
+                        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                        decoration: const BoxDecoration(
+                          border: Border(bottom: BorderSide(color: Color(0xFF2563EB), width: 2)),
+                        ),
+                        child: const Row(
+                          children: [
+                            Icon(Icons.visibility_rounded, size: 14, color: Color(0xFF2563EB)),
+                            SizedBox(width: 6),
+                            Text('Preview', style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold, color: Color(0xFF2563EB))),
+                          ],
+                        ),
+                      ),
+                      const SizedBox(width: 16),
+                      InkWell(
+                        onTap: _showPageSettingsDialog,
+                        borderRadius: BorderRadius.circular(6),
+                        child: const Padding(
+                          padding: EdgeInsets.symmetric(horizontal: 6, vertical: 4),
+                          child: Row(
+                            children: [
+                              Icon(Icons.tune_rounded, size: 14, color: Color(0xFF64748B)),
+                              SizedBox(width: 6),
+                              Text('Page settings', style: TextStyle(fontSize: 12, color: Color(0xFF64748B))),
+                            ],
+                          ),
+                        ),
+                      ),
+                      const SizedBox(width: 16),
+                      InkWell(
+                        onTap: _showStyleDialog,
+                        borderRadius: BorderRadius.circular(6),
+                        child: const Padding(
+                          padding: EdgeInsets.symmetric(horizontal: 6, vertical: 4),
+                          child: Row(
+                            children: [
+                              Icon(Icons.palette_outlined, size: 14, color: Color(0xFF64748B)),
+                              SizedBox(width: 6),
+                              Text('Style', style: TextStyle(fontSize: 12, color: Color(0xFF64748B))),
+                            ],
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(width: 16),
+                  Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      // Sample Data Pill Dropdown
+                      Container(
+                        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                        decoration: BoxDecoration(
+                          color: const Color(0xFFF8FAFC),
+                          borderRadius: BorderRadius.circular(16),
+                          border: Border.all(color: const Color(0xFFE2E8F0)),
+                        ),
+                        child: DropdownButtonHideUnderline(
+                          child: DropdownButton<String>(
+                            value: _sampleDataset,
+                            isDense: true,
+                            icon: const Icon(Icons.keyboard_arrow_down_rounded, size: 16, color: Color(0xFF64748B)),
+                            style: const TextStyle(fontSize: 11.5, fontWeight: FontWeight.w600, color: Color(0xFF334155)),
+                            items: const [
+                              DropdownMenuItem(value: 'Security Agency (Northstar)', child: Text('📋 Security Agency Sample')),
+                              DropdownMenuItem(value: 'WASM Security & Tech', child: Text('📋 WASM Boxed Sample')),
+                              DropdownMenuItem(value: 'GST Service Tech', child: Text('📋 GST Service Data')),
+                              DropdownMenuItem(value: 'Apex Consulting', child: Text('📋 Consulting Data')),
+                              DropdownMenuItem(value: 'Retail Mart', child: Text('📋 Retail Data')),
+                            ],
+                            onChanged: (val) {
+                              if (val != null) setState(() => _sampleDataset = val);
+                            },
+                          ),
+                        ),
+                      ),
+                      const SizedBox(width: 12),
+
+                      // Zoom Controls
+                      IconButton(
+                        icon: const Icon(Icons.remove, size: 14, color: Color(0xFF64748B)),
+                        tooltip: 'Zoom Out',
+                        onPressed: () {
+                          if (_zoomLevel > 0.6) setState(() => _zoomLevel -= 0.1);
+                        },
+                        padding: EdgeInsets.zero,
+                        constraints: const BoxConstraints(minWidth: 26, minHeight: 26),
+                      ),
+                      Text('${(_zoomLevel * 100).round()}%',
+                          style: const TextStyle(fontSize: 11.5, fontWeight: FontWeight.w600, color: Color(0xFF475569))),
+                      IconButton(
+                        icon: const Icon(Icons.add, size: 14, color: Color(0xFF64748B)),
+                        tooltip: 'Zoom In',
+                        onPressed: () {
+                          if (_zoomLevel < 1.4) setState(() => _zoomLevel += 0.1);
+                        },
+                        padding: EdgeInsets.zero,
+                        constraints: const BoxConstraints(minWidth: 26, minHeight: 26),
+                      ),
+                      const SizedBox(width: 8),
+
+                      // Page indicator
+                      Text('$_currentPage/$_totalPages ▾',
+                          style: const TextStyle(fontSize: 11.5, color: Color(0xFF64748B))),
+                      const SizedBox(width: 12),
+
+                      // Format
+                      Text('$_paperFormat ▾',
+                          style: const TextStyle(fontSize: 11.5, fontWeight: FontWeight.w600, color: Color(0xFF334155))),
+                      const SizedBox(width: 12),
+
+                      // Download PDF Action
+                      IconButton(
+                        icon: const Icon(Icons.picture_as_pdf_rounded, size: 18, color: Color(0xFFDC2626)),
+                        tooltip: 'Export / Download PDF',
+                        onPressed: _exportPdfDocument,
+                      ),
+
+                      // Export Word DOCX Action
+                      IconButton(
+                        icon: const Icon(Icons.description_rounded, size: 18, color: Color(0xFF2563EB)),
+                        tooltip: 'Export Word (.docx)',
+                        onPressed: _exportDocxDocument,
+                      ),
+
+                      // Print Action
+                      IconButton(
+                        icon: const Icon(Icons.print_outlined, size: 18, color: Color(0xFF475569)),
+                        tooltip: 'Print Invoice',
+                        onPressed: _exportPdfDocument,
+                      ),
+                    ],
+                  ),
                 ],
               ),
             ),
-          ),
-          const SizedBox(width: 16),
-          InkWell(
-            onTap: _showStyleDialog,
-            borderRadius: BorderRadius.circular(6),
-            child: Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 4),
-              child: const Row(
-                children: [
-                  Icon(Icons.palette_outlined, size: 14, color: Color(0xFF64748B)),
-                  SizedBox(width: 6),
-                  Text('Style', style: TextStyle(fontSize: 12, color: Color(0xFF64748B))),
-                ],
-              ),
-            ),
-          ),
-
-          const Spacer(),
-
-          // Sample Data Pill Dropdown
-          Container(
-            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
-            decoration: BoxDecoration(
-              color: const Color(0xFFF8FAFC),
-              borderRadius: BorderRadius.circular(16),
-              border: Border.all(color: const Color(0xFFE2E8F0)),
-            ),
-            child: DropdownButtonHideUnderline(
-              child: DropdownButton<String>(
-                value: _sampleDataset,
-                isDense: true,
-                icon: const Icon(Icons.keyboard_arrow_down_rounded, size: 16, color: Color(0xFF64748B)),
-                style: const TextStyle(fontSize: 11.5, fontWeight: FontWeight.w600, color: Color(0xFF334155)),
-                items: const [
-                  DropdownMenuItem(value: 'Security Agency (Northstar)', child: Text('📋 Security Agency Sample')),
-                  DropdownMenuItem(value: 'WASM Security & Tech', child: Text('📋 WASM Boxed Sample')),
-                  DropdownMenuItem(value: 'GST Service Tech', child: Text('📋 GST Service Data')),
-                  DropdownMenuItem(value: 'Apex Consulting', child: Text('📋 Consulting Data')),
-                  DropdownMenuItem(value: 'Retail Mart', child: Text('📋 Retail Data')),
-                ],
-                onChanged: (val) {
-                  if (val != null) setState(() => _sampleDataset = val);
-                },
-              ),
-            ),
-          ),
-          const SizedBox(width: 12),
-
-          // Zoom Controls
-          IconButton(
-            icon: const Icon(Icons.remove, size: 14, color: Color(0xFF64748B)),
-            tooltip: 'Zoom Out',
-            onPressed: () {
-              if (_zoomLevel > 0.6) setState(() => _zoomLevel -= 0.1);
-            },
-            padding: EdgeInsets.zero,
-            constraints: const BoxConstraints(minWidth: 26, minHeight: 26),
-          ),
-          Text('${(_zoomLevel * 100).round()}%',
-              style: const TextStyle(fontSize: 11.5, fontWeight: FontWeight.w600, color: Color(0xFF475569))),
-          IconButton(
-            icon: const Icon(Icons.add, size: 14, color: Color(0xFF64748B)),
-            tooltip: 'Zoom In',
-            onPressed: () {
-              if (_zoomLevel < 1.4) setState(() => _zoomLevel += 0.1);
-            },
-            padding: EdgeInsets.zero,
-            constraints: const BoxConstraints(minWidth: 26, minHeight: 26),
-          ),
-          const SizedBox(width: 8),
-
-          // Page indicator
-          Text('$_currentPage/$_totalPages ▾',
-              style: const TextStyle(fontSize: 11.5, color: Color(0xFF64748B))),
-          const SizedBox(width: 12),
-
-          // Format
-          Text('$_paperFormat ▾',
-              style: const TextStyle(fontSize: 11.5, fontWeight: FontWeight.w600, color: Color(0xFF334155))),
-          const SizedBox(width: 12),
-
-          // Download PDF Action
-          IconButton(
-            icon: const Icon(Icons.download_rounded, size: 18, color: Color(0xFF475569)),
-            tooltip: 'Download PDF',
-            onPressed: _exportPdfDocument,
-          ),
-
-          // Print Action
-          IconButton(
-            icon: const Icon(Icons.print_outlined, size: 18, color: Color(0xFF475569)),
-            tooltip: 'Print Invoice',
-            onPressed: _exportPdfDocument,
-          ),
-        ],
+          );
+        },
       ),
     );
   }
@@ -2936,116 +3664,129 @@ class _InvoiceTemplateStudioScreenState
     final bankSection = _sections.firstWhere((s) => s.id == 'sec_bank', orElse: () => _sections.first);
     final termsSection = _sections.firstWhere((s) => s.id == 'sec_terms', orElse: () => _sections.first);
 
+    final lhConfig = _currentLetterheadConfig();
+
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
-        // A. Header (Business & Branding)
+        // A. Header (Company Letterhead Banner or Classic Business Branding)
         if (brandingSection.enabled) ...[
-          Row(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            mainAxisAlignment: MainAxisAlignment.spaceBetween,
-            children: [
-              // Logo & Brand Name
-              Row(
-                crossAxisAlignment: CrossAxisAlignment.center,
-                children: [
-                  if (_isFieldVisible(brandingSection, 'f_biz_logo')) ...[
-                    Container(
-                      width: 46 * _fontScale,
-                      height: 52 * _fontScale,
-                      decoration: BoxDecoration(
-                        color: _logoBase64 != null ? Colors.transparent : _primaryColor,
-                        borderRadius: BorderRadius.circular(6),
+          if (lhConfig.isLetterheadActive)
+            CompanyLetterheadWidgets.buildHeaderBanner(
+              config: lhConfig,
+              overridePrimaryColor: _primaryColor,
+              fontScale: _fontScale,
+              fontFamily: _fontFamily,
+              showGstBadges: _isFieldVisible(brandingSection, 'f_biz_gstin') ||
+                  _isFieldVisible(brandingSection, 'f_biz_pan'),
+            )
+          else ...[
+            Row(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+              children: [
+                // Logo & Brand Name
+                Row(
+                  crossAxisAlignment: CrossAxisAlignment.center,
+                  children: [
+                    if (_isFieldVisible(brandingSection, 'f_biz_logo')) ...[
+                      Container(
+                        width: 46 * _fontScale,
+                        height: 52 * _fontScale,
+                        decoration: BoxDecoration(
+                          color: _logoBase64 != null ? Colors.transparent : _primaryColor,
+                          borderRadius: BorderRadius.circular(6),
+                        ),
+                        child: Center(
+                          child: _logoBase64 != null
+                              ? Image.memory(
+                                  base64Decode(_logoBase64!),
+                                  width: 46 * _fontScale,
+                                  height: 52 * _fontScale,
+                                  fit: BoxFit.contain,
+                                )
+                              : Icon(
+                                  _activePreset == 'security_agency'
+                                      ? Icons.shield_rounded
+                                      : Icons.business_rounded,
+                                  size: 28 * _fontScale,
+                                  color: Colors.white,
+                                ),
+                        ),
                       ),
-                      child: Center(
-                        child: _logoBase64 != null
-                            ? Image.memory(
-                                base64Decode(_logoBase64!),
-                                width: 46 * _fontScale,
-                                height: 52 * _fontScale,
-                                fit: BoxFit.contain,
-                              )
-                            : Icon(
-                                _activePreset == 'security_agency'
-                                    ? Icons.shield_rounded
-                                    : Icons.business_rounded,
-                                size: 28 * _fontScale,
-                                color: Colors.white,
-                              ),
-                      ),
-                    ),
-                    const SizedBox(width: 12),
-                  ],
-                  Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      if (_isFieldVisible(brandingSection, 'f_biz_name'))
+                      const SizedBox(width: 12),
+                    ],
+                    Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        if (_isFieldVisible(brandingSection, 'f_biz_name'))
+                          Text(
+                            _activePreset == 'security_agency'
+                                ? (_uppercaseHeadings ? 'NORTHSTAR' : 'Northstar')
+                                : (_uppercaseHeadings ? 'ENTERPRISE TECH' : 'Enterprise Tech'),
+                            style: _docStyle(
+                              fontSize: 19,
+                              fontWeight: FontWeight.w900,
+                              letterSpacing: 0.8,
+                              color: _primaryColor,
+                            ),
+                          ),
                         Text(
                           _activePreset == 'security_agency'
-                              ? (_uppercaseHeadings ? 'NORTHSTAR' : 'Northstar')
-                              : (_uppercaseHeadings ? 'ENTERPRISE TECH' : 'Enterprise Tech'),
+                              ? (_uppercaseHeadings ? 'SECURITY SERVICES' : 'Security Services')
+                              : (_uppercaseHeadings ? 'SOLUTIONS & SERVICES' : 'Solutions & Services'),
                           style: _docStyle(
-                            fontSize: 19,
-                            fontWeight: FontWeight.w900,
-                            letterSpacing: 0.8,
+                            fontSize: 11,
+                            fontWeight: FontWeight.w700,
+                            letterSpacing: 1.5,
                             color: _primaryColor,
                           ),
                         ),
-                      Text(
-                        _activePreset == 'security_agency'
-                            ? (_uppercaseHeadings ? 'SECURITY SERVICES' : 'Security Services')
-                            : (_uppercaseHeadings ? 'SOLUTIONS & SERVICES' : 'Solutions & Services'),
-                        style: _docStyle(
-                          fontSize: 11,
-                          fontWeight: FontWeight.w700,
-                          letterSpacing: 1.5,
-                          color: _primaryColor,
-                        ),
-                      ),
-                      if (_isFieldVisible(brandingSection, 'f_biz_tagline')) ...[
-                        const SizedBox(height: 2),
-                        Text(
-                          'Safe People  |  Secure Tomorrow',
-                          style: _docStyle(
-                            fontSize: 9.5,
-                            color: const Color(0xFF64748B),
-                            fontStyle: FontStyle.italic,
+                        if (_isFieldVisible(brandingSection, 'f_biz_tagline')) ...[
+                          const SizedBox(height: 2),
+                          Text(
+                            'Safe People  |  Secure Tomorrow',
+                            style: _docStyle(
+                              fontSize: 9.5,
+                              color: const Color(0xFF64748B),
+                              fontStyle: FontStyle.italic,
+                            ),
                           ),
-                        ),
+                        ],
                       ],
-                    ],
-                  ),
-                ],
-              ),
-
-              // Company Metadata
-              Column(
-                crossAxisAlignment: CrossAxisAlignment.end,
-                children: [
-                  if (_isFieldVisible(brandingSection, 'f_biz_name'))
-                    Text(
-                      'Northstar Security Services Ltd.',
-                      style: _docStyle(fontSize: 10.5, fontWeight: FontWeight.bold, color: const Color(0xFF1E293B)),
                     ),
-                  const SizedBox(height: 1),
-                  if (_isFieldVisible(brandingSection, 'f_biz_addr')) ...[
-                    Text('#12, 3rd Floor, Green Park, Bengaluru,', style: _docStyle(fontSize: 9.5, color: const Color(0xFF64748B))),
-                    Text('Karnataka - 560076', style: _docStyle(fontSize: 9.5, color: const Color(0xFF64748B))),
                   ],
-                  if (_isFieldVisible(brandingSection, 'f_biz_gstin'))
-                    Text('GSTIN: 29ABCDE1234F1Z5', style: _docStyle(fontSize: 9.5, color: const Color(0xFF64748B))),
-                  if (_isFieldVisible(brandingSection, 'f_biz_pan'))
-                    Text('PAN: ABCDE1234F', style: _docStyle(fontSize: 9.5, color: const Color(0xFF64748B))),
-                  const SizedBox(height: 2),
-                  Text('📞 +91 98765 43210', style: _docStyle(fontSize: 9.5, color: const Color(0xFF64748B))),
-                  Text('✉ info@northstarsecurity.in', style: _docStyle(fontSize: 9.5, color: const Color(0xFF64748B))),
-                ],
-              ),
-            ],
-          ),
-          const SizedBox(height: 14),
-          Divider(height: 1, color: _primaryColor, thickness: 1.5),
-          const SizedBox(height: 16),
+                ),
+
+                // Company Metadata
+                Column(
+                  crossAxisAlignment: CrossAxisAlignment.end,
+                  children: [
+                    if (_isFieldVisible(brandingSection, 'f_biz_name'))
+                      Text(
+                        'Northstar Security Services Ltd.',
+                        style: _docStyle(fontSize: 10.5, fontWeight: FontWeight.bold, color: const Color(0xFF1E293B)),
+                      ),
+                    const SizedBox(height: 1),
+                    if (_isFieldVisible(brandingSection, 'f_biz_addr')) ...[
+                      Text('#12, 3rd Floor, Green Park, Bengaluru,', style: _docStyle(fontSize: 9.5, color: const Color(0xFF64748B))),
+                      Text('Karnataka - 560076', style: _docStyle(fontSize: 9.5, color: const Color(0xFF64748B))),
+                    ],
+                    if (_isFieldVisible(brandingSection, 'f_biz_gstin'))
+                      Text('GSTIN: 29ABCDE1234F1Z5', style: _docStyle(fontSize: 9.5, color: const Color(0xFF64748B))),
+                    if (_isFieldVisible(brandingSection, 'f_biz_pan'))
+                      Text('PAN: ABCDE1234F', style: _docStyle(fontSize: 9.5, color: const Color(0xFF64748B))),
+                    const SizedBox(height: 2),
+                    Text('📞 +91 98765 43210', style: _docStyle(fontSize: 9.5, color: const Color(0xFF64748B))),
+                    Text('✉ info@northstarsecurity.in', style: _docStyle(fontSize: 9.5, color: const Color(0xFF64748B))),
+                  ],
+                ),
+              ],
+            ),
+            const SizedBox(height: 14),
+            Divider(height: 1, color: _primaryColor, thickness: 1.5),
+            const SizedBox(height: 16),
+          ],
         ],
 
         // B. Document Title & Details
@@ -3353,7 +4094,17 @@ class _InvoiceTemplateStudioScreenState
         ],
 
         // H. Custom Sections added by user
-        for (final customSec in _sections.where((s) => !s.id.startsWith('sec_')))
+        for (final customSec in _sections.where(
+          (s) => !const {
+            'sec_branding',
+            'sec_identity',
+            'sec_client',
+            'sec_services',
+            'sec_tax_totals',
+            'sec_bank',
+            'sec_terms',
+          }.contains(s.id),
+        ))
           if (customSec.enabled && customSec.fields.any((f) => f.isVisible)) ...[
             Container(
               padding: const EdgeInsets.all(12),
@@ -3393,78 +4144,113 @@ class _InvoiceTemplateStudioScreenState
             ),
           ],
 
-        // I. Document Footer
-        const Divider(height: 1, color: Color(0xFFE2E8F0)),
-        const SizedBox(height: 8),
-        Row(
-          mainAxisAlignment: MainAxisAlignment.spaceBetween,
-          children: [
-            Text('Thank you for your business!', style: _docStyle(fontSize: 9, color: const Color(0xFF64748B), fontStyle: FontStyle.italic)),
-            Text('Page 1 of 1', style: _docStyle(fontSize: 8.5, color: const Color(0xFF94A3B8))),
-          ],
-        ),
+        // I. Document Footer (Company Letterhead Footer or Classic Footer)
+        if (lhConfig.isLetterheadActive)
+          CompanyLetterheadWidgets.buildFooterBanner(
+            config: lhConfig,
+            overridePrimaryColor: _primaryColor,
+            fontScale: _fontScale,
+            fontFamily: _fontFamily,
+            pageLabel: 'Page 1 of 1',
+          )
+        else ...[
+          const Divider(height: 1, color: Color(0xFFE2E8F0)),
+          const SizedBox(height: 8),
+          Row(
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            children: [
+              Text('Thank you for your business!', style: _docStyle(fontSize: 9, color: const Color(0xFF64748B), fontStyle: FontStyle.italic)),
+              Text('Page 1 of 1', style: _docStyle(fontSize: 8.5, color: const Color(0xFF94A3B8))),
+            ],
+          ),
+        ],
       ],
     );
+  }
+
+  String _columnLabel(StudioSection section, String fieldId, String fallback) {
+    final fld = section.fields.firstWhere(
+      (f) => f.id == fieldId,
+      orElse: () => StudioField(id: '', label: fallback),
+    );
+    if (fld.id.isEmpty || fld.label.trim().isEmpty) return fallback;
+    return fld.label.replaceFirst(RegExp(r'\s*Column$', caseSensitive: false), '');
   }
 
   Widget _buildDynamicLineItemsTable(StudioSection section) {
     final isBoxed = _tableBorderStyle == 'boxed';
     final isStriped = _tableBorderStyle == 'striped';
 
-    // Determine columns based on preset
-    final List<({String label, int flex, TextAlign align})> columns;
-    final List<List<String>> rows;
+    // Determine full columns based on preset with field IDs
+    final List<({String fieldId, String label, int flex, TextAlign align})> allColumns;
+    final List<List<String>> allRows;
 
     if (_activePreset == 'gst_service') {
-      columns = [
-        (label: 'Service Description & Scope', flex: 5, align: TextAlign.left),
-        (label: 'SAC Code', flex: 2, align: TextAlign.center),
-        (label: 'Qty / Hrs', flex: 2, align: TextAlign.center),
-        (label: 'Rate (₹)', flex: 3, align: TextAlign.right),
-        (label: 'Amount (₹)', flex: 3, align: TextAlign.right),
+      allColumns = [
+        (fieldId: 'f_col_particulars', label: _columnLabel(section, 'f_col_particulars', 'Service Description & Scope'), flex: 5, align: TextAlign.left),
+        (fieldId: 'f_col_guards', label: _columnLabel(section, 'f_col_guards', 'SAC Code'), flex: 2, align: TextAlign.center),
+        (fieldId: 'f_col_duty', label: _columnLabel(section, 'f_col_duty', 'Qty / Hrs'), flex: 2, align: TextAlign.center),
+        (fieldId: 'f_col_rate', label: _columnLabel(section, 'f_col_rate', 'Rate (₹)'), flex: 3, align: TextAlign.right),
+        (fieldId: 'f_col_amount', label: _columnLabel(section, 'f_col_amount', 'Amount (₹)'), flex: 3, align: TextAlign.right),
       ];
-      rows = [
+      allRows = [
         ['Enterprise Cloud & Security Architecture', '998313', '160 Hrs', '1,500.00', '2,40,000.00'],
         ['Cybersecurity Audit & Penetration Testing', '998314', '1 Audit', '1,25,000.00', '1,25,000.00'],
       ];
     } else if (_activePreset == 'consulting') {
-      columns = [
-        (label: 'Scope & Deliverables', flex: 5, align: TextAlign.left),
-        (label: 'Lead Consultant', flex: 3, align: TextAlign.center),
-        (label: 'Hours / Days', flex: 2, align: TextAlign.center),
-        (label: 'Rate (₹)', flex: 3, align: TextAlign.right),
-        (label: 'Amount (₹)', flex: 3, align: TextAlign.right),
+      allColumns = [
+        (fieldId: 'f_col_particulars', label: _columnLabel(section, 'f_col_particulars', 'Scope & Deliverables'), flex: 5, align: TextAlign.left),
+        (fieldId: 'f_col_guards', label: _columnLabel(section, 'f_col_guards', 'Lead Consultant'), flex: 3, align: TextAlign.center),
+        (fieldId: 'f_col_duty', label: _columnLabel(section, 'f_col_duty', 'Hours / Days'), flex: 2, align: TextAlign.center),
+        (fieldId: 'f_col_rate', label: _columnLabel(section, 'f_col_rate', 'Rate (₹)'), flex: 3, align: TextAlign.right),
+        (fieldId: 'f_col_amount', label: _columnLabel(section, 'f_col_amount', 'Amount (₹)'), flex: 3, align: TextAlign.right),
       ];
-      rows = [
+      allRows = [
         ['Strategic IT Security Advisory - Phase 1', 'Principal Advisor', '40 Hrs', '5,500.00', '2,20,000.00'],
         ['Compliance Certification Preparation', 'Senior Specialist', '20 Hrs', '4,200.00', '84,000.00'],
       ];
     } else if (_activePreset == 'retail') {
-      columns = [
-        (label: 'Item Description', flex: 5, align: TextAlign.left),
-        (label: 'SKU / HSN', flex: 2, align: TextAlign.center),
-        (label: 'Qty', flex: 2, align: TextAlign.center),
-        (label: 'MRP (₹)', flex: 3, align: TextAlign.right),
-        (label: 'Net Total (₹)', flex: 3, align: TextAlign.right),
+      allColumns = [
+        (fieldId: 'f_col_particulars', label: _columnLabel(section, 'f_col_particulars', 'Item Description'), flex: 5, align: TextAlign.left),
+        (fieldId: 'f_col_guards', label: _columnLabel(section, 'f_col_guards', 'SKU / HSN'), flex: 2, align: TextAlign.center),
+        (fieldId: 'f_col_duty', label: _columnLabel(section, 'f_col_duty', 'Qty'), flex: 2, align: TextAlign.center),
+        (fieldId: 'f_col_rate', label: _columnLabel(section, 'f_col_rate', 'MRP (₹)'), flex: 3, align: TextAlign.right),
+        (fieldId: 'f_col_amount', label: _columnLabel(section, 'f_col_amount', 'Net Total (₹)'), flex: 3, align: TextAlign.right),
       ];
-      rows = [
+      allRows = [
         ['Smart Biometric Access Terminal Pro', 'BIO-901', '5', '18,500.00', '92,500.00'],
         ['HD Night-Vision CCTV Camera 4K', 'CAM-402', '12', '4,200.00', '50,400.00'],
       ];
     } else {
       // security_agency and default
-      columns = [
-        (label: 'Particulars', flex: 5, align: TextAlign.left),
-        (label: 'Guards', flex: 2, align: TextAlign.center),
-        (label: 'Duty Days', flex: 2, align: TextAlign.center),
-        (label: 'Rate (₹)', flex: 3, align: TextAlign.right),
-        (label: 'Amount (₹)', flex: 3, align: TextAlign.right),
+      allColumns = [
+        (fieldId: 'f_col_particulars', label: _columnLabel(section, 'f_col_particulars', 'Particulars'), flex: 5, align: TextAlign.left),
+        (fieldId: 'f_col_guards', label: _columnLabel(section, 'f_col_guards', 'Guards'), flex: 2, align: TextAlign.center),
+        (fieldId: 'f_col_duty', label: _columnLabel(section, 'f_col_duty', 'Duty Days'), flex: 2, align: TextAlign.center),
+        (fieldId: 'f_col_rate', label: _columnLabel(section, 'f_col_rate', 'Rate (₹)'), flex: 3, align: TextAlign.right),
+        (fieldId: 'f_col_amount', label: _columnLabel(section, 'f_col_amount', 'Amount (₹)'), flex: 3, align: TextAlign.right),
       ];
-      rows = [
+      allRows = [
         ['Security Guard (12-hour shift)', '4', '26', '2,150.00', '2,23,600.00'],
         ['Armed Guard (12-hour shift)', '2', '26', '2,850.00', '1,48,200.00'],
       ];
     }
+
+    final visibleIndices = <int>[];
+    for (int i = 0; i < allColumns.length; i++) {
+      if (_isFieldVisible(section, allColumns[i].fieldId)) {
+        visibleIndices.add(i);
+      }
+    }
+    if (visibleIndices.isEmpty) {
+      visibleIndices.add(0);
+    }
+
+    final columns = [for (final idx in visibleIndices) allColumns[idx]];
+    final rows = [
+      for (final row in allRows)
+        [for (final idx in visibleIndices) row[idx]],
+    ];
 
     return Container(
       decoration: BoxDecoration(

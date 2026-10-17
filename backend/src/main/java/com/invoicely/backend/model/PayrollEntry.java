@@ -7,7 +7,10 @@ import java.time.LocalDate;
 import java.time.OffsetDateTime;
 
 @Entity
-@Table(name = "payroll_entries")
+@Table(name = "payroll_entries", indexes = {
+    @Index(name = "idx_payroll_entries_company_id", columnList = "company_id"),
+    @Index(name = "idx_payroll_entries_run_id", columnList = "payroll_run_id")
+})
 public class PayrollEntry {
 
     @Id

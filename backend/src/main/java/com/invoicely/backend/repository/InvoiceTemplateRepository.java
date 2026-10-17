@@ -17,4 +17,8 @@ public interface InvoiceTemplateRepository extends JpaRepository<InvoiceTemplate
     Optional<InvoiceTemplate> findFirstByCompanyIdAndIsDefaultTrue(Long companyId);
 
     Optional<InvoiceTemplate> findFirstByCompanyIdAndStatus(Long companyId, String status);
+
+    Optional<InvoiceTemplate> findFirstByOrgCodeOrderByUpdatedAtDesc(String orgCode);
+
+    Optional<InvoiceTemplate> findFirstByCompanyIdOrderByUpdatedAtDesc(Long companyId);
 }

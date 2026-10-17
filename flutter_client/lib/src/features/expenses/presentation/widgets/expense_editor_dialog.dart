@@ -1,6 +1,8 @@
+import 'dart:convert';
 import 'dart:typed_data';
 
 import 'package:flutter/material.dart';
+import 'package:image_picker/image_picker.dart';
 
 import '../../data/expense.dart';
 
@@ -61,6 +63,7 @@ class _ExpenseEditorDialogState extends State<ExpenseEditorDialog> {
   }
 
   final _formKey = GlobalKey<FormState>();
+  final ImagePicker _imagePicker = ImagePicker();
   late final TextEditingController _title;
   late final TextEditingController _vendor;
   late final TextEditingController _amount;
@@ -73,6 +76,8 @@ class _ExpenseEditorDialogState extends State<ExpenseEditorDialog> {
   late String _paymentMethod;
   late String _status;
   late bool _taxDeductible;
+  Uint8List? _attachedBillBytes;
+  String? _receiptDataUri;
 
   @override
   void initState() {
@@ -108,6 +113,95 @@ class _ExpenseEditorDialogState extends State<ExpenseEditorDialog> {
         : 'Credit Card';
     _status = expense?.status.isNotEmpty == true ? expense!.status : 'Paid';
     _taxDeductible = expense?.taxDeductible ?? true;
+
+    _attachedBillBytes = widget.receiptImageBytes;
+    _receiptDataUri = expense?.receiptImageUri;
+    if (_attachedBillBytes != null &&
+        (_receiptDataUri == null || !_receiptDataUri!.startsWith('data:'))) {
+      _receiptDataUri = 'data:image/jpeg;base64,${base64Encode(_attachedBillBytes!)}';
+    } else if (_attachedBillBytes == null &&
+        _receiptDataUri != null &&
+        _receiptDataUri!.startsWith('data:')) {
+      final commaIdx = _receiptDataUri!.indexOf(',');
+      if (commaIdx != -1) {
+        try {
+          _attachedBillBytes = base64Decode(_receiptDataUri!.substring(commaIdx + 1));
+        } catch (_) {}
+      }
+    }
+  }
+
+  Future<void> _pickBillImage() async {
+    try {
+      final file = await _imagePicker.pickImage(
+        source: ImageSource.gallery,
+        imageQuality: 78,
+        maxWidth: 1600,
+      );
+      if (file == null || !mounted) return;
+      final bytes = await file.readAsBytes();
+      if (bytes.isEmpty || !mounted) return;
+      final ext = file.name.toLowerCase();
+      final mime = ext.endsWith('.png')
+          ? 'image/png'
+          : (ext.endsWith('.webp') ? 'image/webp' : 'image/jpeg');
+      setState(() {
+        _attachedBillBytes = bytes;
+        _receiptDataUri = 'data:$mime;base64,${base64Encode(bytes)}';
+      });
+    } catch (error) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Could not attach expense bill: $error')),
+        );
+      }
+    }
+  }
+
+  void _previewBillImage() {
+    if (_attachedBillBytes == null) return;
+    showDialog<void>(
+      context: context,
+      builder: (ctx) => Dialog(
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+        clipBehavior: Clip.antiAlias,
+        child: ConstrainedBox(
+          constraints: const BoxConstraints(maxWidth: 680, maxHeight: 740),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+                color: const Color(0xFF0F172A),
+                child: Row(
+                  children: [
+                    const Icon(Icons.receipt_long_rounded, color: Colors.white, size: 18),
+                    const SizedBox(width: 8),
+                    const Expanded(
+                      child: Text(
+                        'Organization Expense Bill / Receipt',
+                        style: TextStyle(color: Colors.white, fontWeight: FontWeight.w700),
+                      ),
+                    ),
+                    IconButton(
+                      onPressed: () => Navigator.pop(ctx),
+                      icon: const Icon(Icons.close, color: Colors.white, size: 20),
+                    ),
+                  ],
+                ),
+              ),
+              Flexible(
+                child: InteractiveViewer(
+                  minScale: 0.5,
+                  maxScale: 4.0,
+                  child: Image.memory(_attachedBillBytes!, fit: BoxFit.contain),
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
   }
 
   @override
@@ -166,7 +260,7 @@ class _ExpenseEditorDialogState extends State<ExpenseEditorDialog> {
         paymentMethod: _paymentMethod,
         taxDeductible: _taxDeductible,
         taxAmount: double.tryParse(_taxAmount.text.trim()) ?? 0,
-        receiptImageUri: previous?.receiptImageUri,
+        receiptImageUri: _receiptDataUri,
         notes: _notes.text.trim(),
         status: _status,
         dueDate: _dueDate.text.trim(),
@@ -177,7 +271,7 @@ class _ExpenseEditorDialogState extends State<ExpenseEditorDialog> {
   @override
   Widget build(BuildContext context) {
     final editing = widget.expense != null;
-    final isScanned = widget.receiptImageBytes != null || widget.initialValues?.receiptImageUri != null;
+    final isScanned = _attachedBillBytes != null || (_receiptDataUri != null && _receiptDataUri!.isNotEmpty);
 
     return Dialog(
       insetPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 24),
@@ -214,8 +308,8 @@ class _ExpenseEditorDialogState extends State<ExpenseEditorDialog> {
                       ),
                       Text(
                         isScanned
-                            ? 'Extracted via ML Kit OCR • Verify & Save'
-                            : 'Enter expense information',
+                            ? 'Organization bill attached • Saved with workspace'
+                            : 'Enter expense information & attach bill',
                         style: const TextStyle(fontSize: 11, color: Color(0xFF64748B)),
                       ),
                     ],
@@ -233,52 +327,107 @@ class _ExpenseEditorDialogState extends State<ExpenseEditorDialog> {
             child: ListView(
               padding: const EdgeInsets.all(16),
               children: [
-                // RECEIPT PREVIEW (IF ATTACHED)
-                if (widget.receiptImageBytes != null) ...[
-                  Container(
-                    decoration: BoxDecoration(
-                      color: const Color(0xFFF0FDF4),
-                      borderRadius: BorderRadius.circular(12),
-                      border: Border.all(color: const Color(0xFFBBF7D0)),
-                    ),
-                    padding: const EdgeInsets.all(10),
-                    child: Row(
-                      children: [
-                        ClipRRect(
-                          borderRadius: BorderRadius.circular(8),
-                          child: Image.memory(
-                            widget.receiptImageBytes!,
-                            width: 54,
-                            height: 54,
-                            fit: BoxFit.cover,
-                          ),
-                        ),
-                        const SizedBox(width: 12),
-                        const Expanded(
-                          child: Column(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: [
-                              Text(
-                                'Receipt attached & digitized',
-                                style: TextStyle(
-                                  fontWeight: FontWeight.bold,
-                                  fontSize: 13,
-                                  color: Color(0xFF166534),
-                                ),
-                              ),
-                              SizedBox(height: 2),
-                              Text(
-                                'Values below were automatically populated from receipt text.',
-                                style: TextStyle(fontSize: 11, color: Color(0xFF15803D)),
-                              ),
-                            ],
-                          ),
-                        ),
-                      ],
+                // RECEIPT / EXPENSE BILL ATTACHMENT (ORG-SCOPED)
+                Container(
+                  decoration: BoxDecoration(
+                    color: _attachedBillBytes != null ? const Color(0xFFF0FDF4) : const Color(0xFFF8FAFC),
+                    borderRadius: BorderRadius.circular(12),
+                    border: Border.all(
+                      color: _attachedBillBytes != null ? const Color(0xFFBBF7D0) : const Color(0xFFE2E8F0),
                     ),
                   ),
-                  const SizedBox(height: 16),
-                ],
+                  padding: const EdgeInsets.all(10),
+                  child: Row(
+                    children: [
+                      if (_attachedBillBytes != null)
+                        GestureDetector(
+                          onTap: _previewBillImage,
+                          child: ClipRRect(
+                            borderRadius: BorderRadius.circular(8),
+                            child: Image.memory(
+                              _attachedBillBytes!,
+                              width: 54,
+                              height: 54,
+                              fit: BoxFit.cover,
+                            ),
+                          ),
+                        )
+                      else
+                        Container(
+                          width: 48,
+                          height: 48,
+                          decoration: BoxDecoration(
+                            color: const Color(0xFFEFF6FF),
+                            borderRadius: BorderRadius.circular(10),
+                          ),
+                          child: const Icon(
+                            Icons.cloud_upload_outlined,
+                            color: Color(0xFF2563EB),
+                            size: 22,
+                          ),
+                        ),
+                      const SizedBox(width: 12),
+                      Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text(
+                              _attachedBillBytes != null
+                                  ? 'Expense Bill / Receipt Attached'
+                                  : 'Attach Expense Bill / Receipt',
+                              style: TextStyle(
+                                fontWeight: FontWeight.bold,
+                                fontSize: 13,
+                                color: _attachedBillBytes != null
+                                    ? const Color(0xFF166534)
+                                    : const Color(0xFF0F172A),
+                              ),
+                            ),
+                            const SizedBox(height: 2),
+                            Text(
+                              _attachedBillBytes != null
+                                  ? 'Stored with your organization workspace. Tap thumbnail to zoom.'
+                                  : 'Upload bill image to store securely under your organization.',
+                              style: TextStyle(
+                                fontSize: 11,
+                                color: _attachedBillBytes != null
+                                    ? const Color(0xFF15803D)
+                                    : const Color(0xFF64748B),
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                      if (_attachedBillBytes != null) ...[
+                        IconButton(
+                          onPressed: _previewBillImage,
+                          tooltip: 'View Full Bill',
+                          icon: const Icon(Icons.visibility_outlined, size: 18, color: Color(0xFF15803D)),
+                        ),
+                        IconButton(
+                          onPressed: () => setState(() {
+                            _attachedBillBytes = null;
+                            _receiptDataUri = null;
+                          }),
+                          tooltip: 'Remove Bill',
+                          icon: const Icon(Icons.delete_outline, size: 18, color: Color(0xFFDC2626)),
+                        ),
+                      ],
+                      OutlinedButton.icon(
+                        onPressed: _pickBillImage,
+                        icon: Icon(
+                          _attachedBillBytes != null ? Icons.sync_rounded : Icons.upload_file_rounded,
+                          size: 16,
+                        ),
+                        label: Text(
+                          _attachedBillBytes != null ? 'Replace' : 'Upload Bill',
+                          style: const TextStyle(fontSize: 12),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+                const SizedBox(height: 16),
 
                 // 1. EXPENSE TITLE & VENDOR
                 TextFormField(

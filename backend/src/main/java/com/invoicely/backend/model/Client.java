@@ -3,7 +3,10 @@ package com.invoicely.backend.model;
 import jakarta.persistence.*;
 
 @Entity
-@Table(name = "clients")
+@Table(name = "clients", indexes = {
+    @Index(name = "idx_clients_company_id", columnList = "company_id"),
+    @Index(name = "idx_clients_company_name", columnList = "company_id, name")
+})
 public class Client {
 
     @Id

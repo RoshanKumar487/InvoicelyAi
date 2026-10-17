@@ -46,6 +46,36 @@ public class InvoiceTemplateController {
         return ResponseEntity.ok(ApiResponse.ok(template));
     }
 
+    @GetMapping("/settings")
+    @Operation(summary = "Get or initialize customized template settings and section booleans for the user's organization")
+    public ResponseEntity<ApiResponse<InvoiceTemplate>> getTemplateSettings(
+            @RequestParam(required = false) String orgCode,
+            @AuthenticationPrincipal UserPrincipal principal) {
+        Long companyId = resolveCompanyId(principal);
+        InvoiceTemplate settings = templateService.getOrCreateSettings(companyId, orgCode, principal);
+        return ResponseEntity.ok(ApiResponse.ok("Template settings loaded", settings));
+    }
+
+    @PutMapping("/settings")
+    @Operation(summary = "Create or update customized template settings and section boolean flags for the user's organization")
+    public ResponseEntity<ApiResponse<InvoiceTemplate>> updateTemplateSettings(
+            @RequestBody java.util.Map<String, Object> payload,
+            @AuthenticationPrincipal UserPrincipal principal) {
+        Long companyId = resolveCompanyId(principal);
+        InvoiceTemplate saved = templateService.upsertSettings(payload, companyId, principal);
+        return ResponseEntity.ok(ApiResponse.ok("Template settings updated successfully", saved));
+    }
+
+    @PostMapping("/settings")
+    @Operation(summary = "Create or update customized template settings and section boolean flags for the user's organization")
+    public ResponseEntity<ApiResponse<InvoiceTemplate>> saveTemplateSettingsPost(
+            @RequestBody java.util.Map<String, Object> payload,
+            @AuthenticationPrincipal UserPrincipal principal) {
+        Long companyId = resolveCompanyId(principal);
+        InvoiceTemplate saved = templateService.upsertSettings(payload, companyId, principal);
+        return ResponseEntity.ok(ApiResponse.ok("Template settings saved successfully", saved));
+    }
+
     @GetMapping("/{id}")
     @Operation(summary = "Get invoice template by ID")
     public ResponseEntity<ApiResponse<InvoiceTemplate>> getTemplateById(
@@ -57,33 +87,28 @@ public class InvoiceTemplateController {
     }
 
     @PostMapping
-    @PreAuthorize("hasAnyRole('ADMIN', 'DEVELOPER')")
     @Operation(summary = "Save or create an invoice template draft")
     public ResponseEntity<ApiResponse<InvoiceTemplate>> saveDraft(
-            @RequestBody InvoiceTemplate draft,
+            @RequestBody java.util.Map<String, Object> payload,
             @AuthenticationPrincipal UserPrincipal principal) {
         Long companyId = resolveCompanyId(principal);
-        Long userId = principal != null ? principal.getId() : null;
-        InvoiceTemplate saved = templateService.saveDraft(draft, companyId, userId);
+        InvoiceTemplate saved = templateService.upsertSettings(payload, companyId, principal);
         return new ResponseEntity<>(ApiResponse.ok("Template draft saved successfully", saved), HttpStatus.CREATED);
     }
 
     @PutMapping("/{id}")
-    @PreAuthorize("hasAnyRole('ADMIN', 'DEVELOPER')")
     @Operation(summary = "Update an existing invoice template draft")
     public ResponseEntity<ApiResponse<InvoiceTemplate>> updateDraft(
             @PathVariable Long id,
-            @RequestBody InvoiceTemplate draft,
+            @RequestBody java.util.Map<String, Object> payload,
             @AuthenticationPrincipal UserPrincipal principal) {
         Long companyId = resolveCompanyId(principal);
-        Long userId = principal != null ? principal.getId() : null;
-        draft.setId(id);
-        InvoiceTemplate saved = templateService.saveDraft(draft, companyId, userId);
+        payload.put("id", id);
+        InvoiceTemplate saved = templateService.upsertSettings(payload, companyId, principal);
         return ResponseEntity.ok(ApiResponse.ok("Template updated successfully", saved));
     }
 
     @PostMapping("/{id}/publish")
-    @PreAuthorize("hasAnyRole('ADMIN', 'DEVELOPER')")
     @Operation(summary = "Publish an invoice template to make it the default for new invoices")
     public ResponseEntity<ApiResponse<InvoiceTemplate>> publishTemplate(
             @PathVariable Long id,
@@ -106,8 +131,8 @@ public class InvoiceTemplateController {
     }
 
     private Long resolveCompanyId(UserPrincipal principal) {
-        if (principal == null) return null;
-        if (principal.getRole() == Role.DEVELOPER) return null;
-        return principal.getCompanyId();
+        if (principal == null) return 1L;
+        if (principal.getCompanyId() != null) return principal.getCompanyId();
+        return 1L;
     }
 }

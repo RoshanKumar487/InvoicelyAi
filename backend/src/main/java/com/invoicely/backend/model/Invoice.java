@@ -8,7 +8,13 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import java.math.BigDecimal;
 
 @Entity
-@Table(name = "invoices")
+@Table(name = "invoices", indexes = {
+    @Index(name = "idx_invoices_company_id", columnList = "company_id"),
+    @Index(name = "idx_invoices_company_user", columnList = "company_id, created_by_user_id"),
+    @Index(name = "idx_invoices_company_status", columnList = "company_id, status"),
+    @Index(name = "idx_invoices_company_client", columnList = "company_id, client_id"),
+    @Index(name = "idx_invoices_number", columnList = "invoice_number")
+})
 public class Invoice {
 
     private static final ObjectMapper OBJECT_MAPPER = new ObjectMapper();

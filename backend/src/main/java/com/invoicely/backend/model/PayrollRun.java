@@ -9,7 +9,10 @@ import java.util.ArrayList;
 import java.util.List;
 
 @Entity
-@Table(name = "payroll_runs")
+@Table(name = "payroll_runs", indexes = {
+    @Index(name = "idx_payroll_runs_company_id", columnList = "company_id"),
+    @Index(name = "idx_payroll_runs_company_period", columnList = "company_id, period_year, period_month")
+})
 public class PayrollRun {
 
     @Id

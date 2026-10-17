@@ -10,15 +10,18 @@ import '../../../theme/app_theme.dart';
 import '../data/team_repository.dart';
 import '../../notifications/data/notification_repository.dart';
 import '../../audit/data/audit_log_service.dart';
+import '../../settings/data/settings_repository.dart';
 
 class TeamManagementScreen extends StatefulWidget {
   const TeamManagementScreen({
     required this.apiClient,
+    this.businessProfileName,
     this.onBack,
     super.key,
   });
 
   final ApiClient apiClient;
+  final String? businessProfileName;
   final VoidCallback? onBack;
 
   @override
@@ -27,10 +30,12 @@ class TeamManagementScreen extends StatefulWidget {
 
 class _TeamManagementScreenState extends State<TeamManagementScreen> {
   late final TeamRepository _repository;
+  late final SettingsRepository _settingsRepository;
   bool _loading = true;
   bool _saving = false;
   String? _error;
   Map<String, dynamic> _company = <String, dynamic>{};
+  String? _profileCompanyName;
   List<Map<String, dynamic>> _employees = <Map<String, dynamic>>[];
   List<Map<String, dynamic>> _requests = <Map<String, dynamic>>[];
   final Set<int> _editingEmployeeIds = <int>{};
@@ -51,7 +56,19 @@ class _TeamManagementScreenState extends State<TeamManagementScreen> {
   void initState() {
     super.initState();
     _repository = TeamRepository(apiClient: widget.apiClient);
+    _settingsRepository = SettingsRepository(apiClient: widget.apiClient);
     _load();
+  }
+
+  static bool _isPlaceholderName(String? value) {
+    if (value == null) return true;
+    final norm = value.trim().toLowerCase();
+    return norm.isEmpty ||
+        norm == 'apex nova dynamics' ||
+        norm == 'northstar security services pvt. ltd.' ||
+        norm == 'northstar security services' ||
+        norm == 'your company name' ||
+        norm == 'my business';
   }
 
   Future<void> _load() async {
@@ -60,14 +77,48 @@ class _TeamManagementScreenState extends State<TeamManagementScreen> {
       _error = null;
     });
     try {
-      final result = await Future.wait<Object>([
+      final result = await Future.wait<Object?>([
         _repository.loadCompany(),
         _repository.loadEmployees(),
         _repository.loadJoinRequests(),
+        _settingsRepository.loadProfile().catchError((_) => <String, dynamic>{}),
       ]);
       if (!mounted) return;
+      final loadedCompany = Map<String, dynamic>.from(result[0] as Map<String, dynamic>);
+      final profile = (result[3] as Map<String, dynamic>?) ?? <String, dynamic>{};
+      final profileBizName = profile['businessName']?.toString().trim() ??
+          profile['companyName']?.toString().trim() ??
+          widget.businessProfileName?.trim();
+
+      String? resolvedName;
+      if (!_isPlaceholderName(profileBizName)) {
+        resolvedName = profileBizName;
+      } else if (!_isPlaceholderName(widget.businessProfileName)) {
+        resolvedName = widget.businessProfileName!.trim();
+      }
+
+      if (resolvedName != null && resolvedName.isNotEmpty) {
+        final existingName = loadedCompany['companyName']?.toString().trim() ?? '';
+        loadedCompany['companyName'] = resolvedName;
+        // Also persist updated company name to backend Company record while keeping companyCode unchanged
+        if (existingName != resolvedName) {
+          unawaited(
+            widget.apiClient
+                .putJson(
+                  'api/v1/companies/my-company',
+                  <String, Object?>{
+                    ...loadedCompany,
+                    'companyName': resolvedName,
+                  },
+                )
+                .catchError((_) => <String, dynamic>{}),
+          );
+        }
+      }
+
       setState(() {
-        _company = result[0] as Map<String, dynamic>;
+        _company = loadedCompany;
+        _profileCompanyName = resolvedName;
         _employees = result[1] as List<Map<String, dynamic>>;
         _requests = result[2] as List<Map<String, dynamic>>;
         _loading = false;
@@ -389,10 +440,21 @@ class _TeamManagementScreenState extends State<TeamManagementScreen> {
     _showError('Organization code copied.');
   }
 
+  String _resolvedCompanyName() {
+    if (!_isPlaceholderName(_profileCompanyName)) {
+      return _profileCompanyName!.trim();
+    }
+    if (!_isPlaceholderName(widget.businessProfileName)) {
+      return widget.businessProfileName!.trim();
+    }
+    final raw = _company['companyName']?.toString().trim() ?? '';
+    return raw.isNotEmpty ? raw : 'Organization Workspace';
+  }
+
   Future<void> _shareViaWhatsApp() async {
     final code = _company['companyCode']?.toString() ?? '';
     if (code.isEmpty) return;
-    final companyName = _company['companyName']?.toString() ?? 'our workspace';
+    final companyName = _resolvedCompanyName();
     final text = 'Join $companyName on Invoicely!\nOrganization Code: $code\nOnboarding Link: https://invoicelyai.onrender.com/join?code=$code';
     final uri = Uri.parse('https://wa.me/?text=${Uri.encodeComponent(text)}');
     try {
@@ -410,8 +472,7 @@ class _TeamManagementScreenState extends State<TeamManagementScreen> {
 
   @override
   Widget build(BuildContext context) {
-    final companyName =
-        _company['companyName']?.toString() ?? 'Organization Workspace';
+    final companyName = _resolvedCompanyName();
     return Scaffold(
       appBar: AppBar(
         leading: widget.onBack == null

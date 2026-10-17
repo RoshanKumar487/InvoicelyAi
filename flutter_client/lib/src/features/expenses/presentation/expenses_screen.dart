@@ -266,14 +266,15 @@ class _ExpensesScreenState extends State<ExpensesScreen> {
       if (bytes.isEmpty) {
         throw const FormatException('The selected image is empty.');
       }
+      final encoded = base64Encode(bytes);
+      final dataUri = 'data:$mimeType;base64,$encoded';
       Expense scannedDraft;
       try {
         final ocr = await ReceiptOcrScanner.scan(imagePath: image.path);
-        scannedDraft = ocr.toExpenseDraft(receiptImageUri: image.path);
+        scannedDraft = ocr.toExpenseDraft(receiptImageUri: dataUri);
       } catch (_) {
         // Fall back to server AI scanning if on-device ML kit is unavailable
         try {
-          final encoded = base64Encode(bytes);
           if (encoded.length <= 8000000) {
             final draft = await widget.repository.scanReceipt(
               imageBase64: encoded,
@@ -294,7 +295,7 @@ class _ExpensesScreenState extends State<ExpensesScreen> {
               paymentMethod: draft.paymentMethod,
               taxDeductible: draft.taxDeductible,
               taxAmount: draft.taxAmount,
-              receiptImageUri: image.path,
+              receiptImageUri: dataUri,
               notes: draft.notes,
             );
           } else {
@@ -303,7 +304,7 @@ class _ExpensesScreenState extends State<ExpensesScreen> {
               currency: 'INR',
               currencySymbol: '₹',
               date: _dateFor(DateTime.now()),
-              receiptImageUri: image.path,
+              receiptImageUri: dataUri,
             );
           }
         } catch (_) {
@@ -312,7 +313,7 @@ class _ExpensesScreenState extends State<ExpensesScreen> {
             currency: 'INR',
             currencySymbol: '₹',
             date: _dateFor(DateTime.now()),
-            receiptImageUri: image.path,
+            receiptImageUri: dataUri,
           );
         }
       }
@@ -742,10 +743,16 @@ class _ExpensesScreenState extends State<ExpensesScreen> {
       ),
       EnterpriseTableColumn<Expense>(
         title: 'Actions',
-        width: 140,
+        width: 165,
         cellBuilder: (ctx, exp) => Row(
           mainAxisSize: MainAxisSize.min,
           children: [
+            if (exp.receiptImageUri != null && exp.receiptImageUri!.startsWith('data:'))
+              IconButton(
+                tooltip: 'View Uploaded Bill',
+                icon: const Icon(Icons.receipt_long_rounded, size: 18, color: Color(0xFF2563EB)),
+                onPressed: () => _previewBill(exp),
+              ),
             if (exp.isDue)
               IconButton(
                 tooltip: 'Mark as Paid',
@@ -766,6 +773,58 @@ class _ExpensesScreenState extends State<ExpensesScreen> {
         ),
       ),
     ];
+  }
+
+  void _previewBill(Expense exp) {
+    final uri = exp.receiptImageUri ?? '';
+    if (!uri.startsWith('data:')) return;
+    final commaIdx = uri.indexOf(',');
+    if (commaIdx == -1) return;
+    try {
+      final bytes = base64Decode(uri.substring(commaIdx + 1));
+      showDialog<void>(
+        context: context,
+        builder: (ctx) => Dialog(
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+          clipBehavior: Clip.antiAlias,
+          child: ConstrainedBox(
+            constraints: const BoxConstraints(maxWidth: 680, maxHeight: 740),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+                  color: const Color(0xFF0F172A),
+                  child: Row(
+                    children: [
+                      const Icon(Icons.receipt_long_rounded, color: Colors.white, size: 18),
+                      const SizedBox(width: 8),
+                      Expanded(
+                        child: Text(
+                          'Expense Bill: ${exp.title}',
+                          style: const TextStyle(color: Colors.white, fontWeight: FontWeight.w700),
+                        ),
+                      ),
+                      IconButton(
+                        onPressed: () => Navigator.pop(ctx),
+                        icon: const Icon(Icons.close, color: Colors.white, size: 20),
+                      ),
+                    ],
+                  ),
+                ),
+                Flexible(
+                  child: InteractiveViewer(
+                    minScale: 0.5,
+                    maxScale: 4.0,
+                    child: Image.memory(bytes, fit: BoxFit.contain),
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ),
+      );
+    } catch (_) {}
   }
 
 }

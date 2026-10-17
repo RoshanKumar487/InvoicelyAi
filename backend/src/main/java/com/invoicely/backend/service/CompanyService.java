@@ -40,13 +40,28 @@ public class CompanyService {
         this.tokenProvider = tokenProvider;
     }
 
-    @Transactional(readOnly = true)
+    private Company syncCompanyNameWithProfile(Company company) {
+        if (company == null || company.getId() == null) return company;
+        businessProfileRepository.findFirstByCompanyId(company.getId()).ifPresent(profile -> {
+            String bpName = profile.getBusinessName();
+            if (bpName != null && !bpName.isBlank()
+                    && !"Apex Nova Dynamics".equalsIgnoreCase(bpName.trim())
+                    && !bpName.trim().equals(company.getCompanyName())) {
+                company.setCompanyName(bpName.trim());
+                companyRepository.save(company);
+            }
+        });
+        return company;
+    }
+
+    @Transactional
     public CompanySummaryDto getMyCompany(UserPrincipal principal) {
         if (principal.getCompanyId() == null) {
             throw new ResourceNotFoundException("Company", "userId", principal.getId());
         }
         Company company = companyRepository.findById(principal.getCompanyId())
                 .orElseThrow(() -> new ResourceNotFoundException("Company", "id", principal.getCompanyId()));
+        company = syncCompanyNameWithProfile(company);
         return new CompanySummaryDto(company, principal.getRole() != null ? principal.getRole().name() : "ADMIN", true);
     }
 
@@ -87,6 +102,7 @@ public class CompanyService {
         if (savedCompany.getPhone() != null) profile.setPhone(savedCompany.getPhone());
         if (savedCompany.getLocation() != null) profile.setAddress(savedCompany.getLocation());
         if (savedCompany.getWebsite() != null) profile.setWebsite(savedCompany.getWebsite());
+        if (savedCompany.getSignatureStampUrl() != null) profile.setStampUrl(savedCompany.getSignatureStampUrl());
         businessProfileRepository.save(profile);
 
         return new CompanySummaryDto(savedCompany, principal.getRole() != null ? principal.getRole().name() : "ADMIN", true);
@@ -96,7 +112,7 @@ public class CompanyService {
     public List<CompanySummaryDto> getMyCompanies(UserPrincipal principal) {
         if (principal.getRole() == Role.DEVELOPER && principal.getCompanyId() == null) {
             return companyRepository.findAll().stream()
-                    .map(c -> new CompanySummaryDto(c, "DEVELOPER", false))
+                    .map(c -> new CompanySummaryDto(syncCompanyNameWithProfile(c), "DEVELOPER", false))
                     .collect(Collectors.toList());
         }
 
@@ -117,6 +133,7 @@ public class CompanyService {
         return memberships.stream().map(m -> {
             Company c = companyRepository.findById(m.getCompanyId()).orElse(null);
             if (c == null) return null;
+            c = syncCompanyNameWithProfile(c);
             boolean isActive = c.getId().equals(principal.getCompanyId());
             return new CompanySummaryDto(c, m.getRole().name(), isActive);
         }).filter(dto -> dto != null).collect(Collectors.toList());

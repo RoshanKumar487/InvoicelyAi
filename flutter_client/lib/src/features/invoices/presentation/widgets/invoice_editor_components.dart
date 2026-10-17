@@ -13,9 +13,14 @@ String _money(double value, String symbol) =>
     '$symbol${value.toStringAsFixed(2)}';
 
 class TotalsPreview extends StatelessWidget {
-  const TotalsPreview({required this.invoice, super.key});
+  const TotalsPreview({
+    required this.invoice,
+    this.onAutoRound,
+    super.key,
+  });
 
   final Invoice invoice;
+  final VoidCallback? onAutoRound;
 
   String get _symbol {
     final sym = invoice.currencySymbol.trim();
@@ -27,71 +32,350 @@ class TotalsPreview extends StatelessWidget {
   }
 
   @override
-  Widget build(BuildContext context) => AppCard(
-        padding: const EdgeInsets.all(16),
-        child: Column(
-          children: [
-            TotalLine(
-              label: 'Subtotal',
-              value: _money(invoice.subtotal, _symbol),
-            ),
-            TotalLine(
-              label: 'Discount',
-              value:
-                  '−${_money(invoice.totalDiscount, _symbol)}',
-            ),
-            if (invoice.isRcm)
-              const TotalLine(
-                label: 'Reverse Charge (RCM)',
-                value: 'Tax payable by recipient (0.00)',
-              )
-            else
-              TotalLine(
-                label:
-                    '${invoice.taxLabel} (${_num(invoice.taxRate)}%${invoice.isTaxInclusive ? ', included' : ''})',
-                value: _money(invoice.taxAmount, _symbol),
+  Widget build(BuildContext context) {
+    final isGst = invoice.taxType.toUpperCase() == 'GST' &&
+        !invoice.isRcm &&
+        invoice.taxRate > 0;
+    final halfTaxRate = invoice.taxRate / 2;
+    final halfTaxAmount = invoice.taxAmount / 2;
+    final extraCharges = invoice.shippingFee + invoice.additionalCharges;
+
+    return Container(
+      decoration: BoxDecoration(
+        gradient: const LinearGradient(
+          begin: Alignment.topLeft,
+          end: Alignment.bottomRight,
+          colors: [Color(0xFFF8FAFC), Color(0xFFEFF6FF)],
+        ),
+        borderRadius: BorderRadius.circular(20),
+        border: Border.all(color: const Color(0xFFBFDBFE), width: 1.4),
+        boxShadow: const [
+          BoxShadow(
+            color: Color(0x141E3A8A),
+            blurRadius: 18,
+            offset: Offset(0, 8),
+          ),
+          BoxShadow(
+            color: Colors.white,
+            blurRadius: 2,
+            offset: Offset(-2, -2),
+          ),
+        ],
+      ),
+      clipBehavior: Clip.antiAlias,
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          // Top Colored Header Strip
+          Container(
+            padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 12),
+            decoration: const BoxDecoration(
+              gradient: LinearGradient(
+                begin: Alignment.centerLeft,
+                end: Alignment.centerRight,
+                colors: [Color(0xFF1E3A8A), Color(0xFF2563EB)],
               ),
-            TotalLine(
-              label: 'Shipping & additional charges',
-              value: _money(
-                invoice.shippingFee + invoice.additionalCharges,
-                _symbol,
-              ),
             ),
-            if (invoice.roundOff != 0)
-              TotalLine(
-                label: 'Round off',
-                value: '${invoice.roundOff > 0 ? '+' : ''}${_money(invoice.roundOff, _symbol)}',
-              ),
-            const Divider(),
-            TotalLine(
-              label: 'Total',
-              value: _money(invoice.total, _symbol),
-              emphasized: true,
-            ),
-            if (invoice.total > 0)
-              Padding(
-                padding: const EdgeInsets.only(top: 2, bottom: 4),
-                child: Align(
-                  alignment: Alignment.centerRight,
+            child: Row(
+              children: [
+                Container(
+                  padding: const EdgeInsets.all(6),
+                  decoration: BoxDecoration(
+                    color: Colors.white.withValues(alpha: 0.18),
+                    borderRadius: BorderRadius.circular(8),
+                  ),
+                  child: const Icon(
+                    Icons.calculate_outlined,
+                    size: 16,
+                    color: Colors.white,
+                  ),
+                ),
+                const SizedBox(width: 10),
+                const Expanded(
                   child: Text(
-                    AmountToWords.convert(invoice.total, currency: _symbol),
-                    style: const TextStyle(
-                      fontSize: 11,
-                      fontStyle: FontStyle.italic,
-                      color: Color(0xFF64748B),
+                    'INVOICE TOTAL & TAX SUMMARY',
+                    style: TextStyle(
+                      color: Colors.white,
+                      fontSize: 12,
+                      fontWeight: FontWeight.w800,
+                      letterSpacing: 0.6,
                     ),
                   ),
                 ),
-              ),
-            TotalLine(
-              label: 'Balance due',
-              value: _money(invoice.balanceDue, _symbol),
-              emphasized: true,
+                if (onAutoRound != null)
+                  InkWell(
+                    onTap: onAutoRound,
+                    borderRadius: BorderRadius.circular(8),
+                    child: Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 4),
+                      decoration: BoxDecoration(
+                        color: Colors.white.withValues(alpha: 0.16),
+                        borderRadius: BorderRadius.circular(8),
+                        border: Border.all(color: Colors.white.withValues(alpha: 0.3)),
+                      ),
+                      child: const Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Icon(Icons.auto_fix_high_rounded, size: 12, color: Colors.white),
+                          SizedBox(width: 4),
+                          Text(
+                            'Auto Round',
+                            style: TextStyle(
+                              color: Colors.white,
+                              fontSize: 10.5,
+                              fontWeight: FontWeight.w700,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ),
+              ],
             ),
-          ],
-        ),
-      );
+          ),
+
+          // Breakdown Rows
+          Padding(
+            padding: const EdgeInsets.fromLTRB(18, 14, 18, 12),
+            child: Column(
+              children: [
+                TotalLine(
+                  label: 'Gross Subtotal (${invoice.items.length} ${invoice.items.length == 1 ? "item" : "items"})',
+                  value: _money(invoice.subtotal, _symbol),
+                ),
+                if (invoice.totalDiscount > 0)
+                  TotalLine(
+                    label: 'Total Discount',
+                    value: '−${_money(invoice.totalDiscount, _symbol)}',
+                    valueColor: const Color(0xFF059669),
+                    badgeText: 'SAVED',
+                    badgeColor: const Color(0xFFDCFCE7),
+                  ),
+                const SizedBox(height: 4),
+                Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                  decoration: BoxDecoration(
+                    color: const Color(0xFFE0E7FF).withValues(alpha: 0.55),
+                    borderRadius: BorderRadius.circular(10),
+                    border: Border.all(color: const Color(0xFFC7D2FE)),
+                  ),
+                  child: Row(
+                    children: [
+                      const Expanded(
+                        child: Text(
+                          'Taxable Value',
+                          style: TextStyle(
+                            fontSize: 12.5,
+                            fontWeight: FontWeight.w800,
+                            color: Color(0xFF1E3A8A),
+                          ),
+                        ),
+                      ),
+                      Text(
+                        _money(invoice.taxableAmount, _symbol),
+                        style: const TextStyle(
+                          fontSize: 13.5,
+                          fontWeight: FontWeight.w800,
+                          color: Color(0xFF1E3A8A),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+                const SizedBox(height: 6),
+                if (invoice.isRcm)
+                  TotalLine(
+                    label: 'Reverse Charge (RCM)',
+                    value: '${_symbol}0.00',
+                    badgeText: 'Payable by Recipient',
+                    badgeColor: const Color(0xFFFEF3C7),
+                    valueColor: const Color(0xFFB45309),
+                  )
+                else if (isGst) ...[
+                  TotalLine(
+                    label: 'CGST (${_num(halfTaxRate)}%)',
+                    value: _money(halfTaxAmount, _symbol),
+                    valueColor: const Color(0xFF334155),
+                  ),
+                  TotalLine(
+                    label: 'SGST (${_num(halfTaxRate)}%)',
+                    value: _money(halfTaxAmount, _symbol),
+                    valueColor: const Color(0xFF334155),
+                  ),
+                  TotalLine(
+                    label: 'Total GST (${_num(invoice.taxRate)}%${invoice.isTaxInclusive ? " incl." : ""})',
+                    value: _money(invoice.taxAmount, _symbol),
+                    valueColor: const Color(0xFF1D4ED8),
+                    emphasized: true,
+                  ),
+                ] else
+                  TotalLine(
+                    label:
+                        '${invoice.taxLabel} (${_num(invoice.taxRate)}%${invoice.isTaxInclusive ? ", included" : ""})',
+                    value: _money(invoice.taxAmount, _symbol),
+                    valueColor: const Color(0xFF1D4ED8),
+                  ),
+                if (extraCharges > 0)
+                  TotalLine(
+                    label: 'Shipping & Additional Charges',
+                    value: '+${_money(extraCharges, _symbol)}',
+                  ),
+                if (invoice.roundOff != 0)
+                  TotalLine(
+                    label: 'Round Off Adjustment',
+                    value:
+                        '${invoice.roundOff > 0 ? "+" : ""}${_money(invoice.roundOff, _symbol)}',
+                    valueColor: const Color(0xFF6366F1),
+                  ),
+              ],
+            ),
+          ),
+
+          // Vibrant Claymorphic Grand Total Banner
+          Container(
+            margin: const EdgeInsets.fromLTRB(12, 0, 12, 12),
+            padding: const EdgeInsets.all(16),
+            decoration: BoxDecoration(
+              gradient: const LinearGradient(
+                begin: Alignment.topLeft,
+                end: Alignment.bottomRight,
+                colors: [Color(0xFF1E3A8A), Color(0xFF2563EB), Color(0xFF1D4ED8)],
+              ),
+              borderRadius: BorderRadius.circular(16),
+              border: Border.all(
+                color: const Color(0xFF93C5FD).withValues(alpha: 0.5),
+                width: 1.2,
+              ),
+              boxShadow: const [
+                BoxShadow(
+                  color: Color(0x381E3A8A),
+                  blurRadius: 14,
+                  offset: Offset(0, 6),
+                ),
+                BoxShadow(
+                  color: Color(0x33FFFFFF),
+                  blurRadius: 2,
+                  offset: Offset(-1, -1),
+                ),
+              ],
+            ),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                Row(
+                  crossAxisAlignment: CrossAxisAlignment.center,
+                  children: [
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          const Text(
+                            'GRAND TOTAL PAYABLE',
+                            style: TextStyle(
+                              color: Color(0xFFBFDBFE),
+                              fontSize: 10.5,
+                              fontWeight: FontWeight.w800,
+                              letterSpacing: 0.8,
+                            ),
+                          ),
+                          const SizedBox(height: 2),
+                          Text(
+                            invoice.isTaxInclusive
+                                ? 'Inclusive of all applicable taxes'
+                                : 'Inclusive of ${invoice.taxLabel} (${_num(invoice.taxRate)}%)',
+                            style: const TextStyle(
+                              color: Color(0xFF93C5FD),
+                              fontSize: 11,
+                              fontWeight: FontWeight.w500,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                    FittedBox(
+                      fit: BoxFit.scaleDown,
+                      child: Text(
+                        _money(invoice.total, _symbol),
+                        style: const TextStyle(
+                          color: Colors.white,
+                          fontSize: 24,
+                          fontWeight: FontWeight.w900,
+                          letterSpacing: -0.5,
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+                if (invoice.total > 0) ...[
+                  const SizedBox(height: 10),
+                  Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                    decoration: BoxDecoration(
+                      color: Colors.white.withValues(alpha: 0.12),
+                      borderRadius: BorderRadius.circular(8),
+                      border: Border.all(color: Colors.white.withValues(alpha: 0.18)),
+                    ),
+                    child: Row(
+                      children: [
+                        const Icon(
+                          Icons.spellcheck_rounded,
+                          size: 14,
+                          color: Color(0xFFBFDBFE),
+                        ),
+                        const SizedBox(width: 6),
+                        Expanded(
+                          child: Text(
+                            AmountToWords.convert(invoice.total, currency: _symbol),
+                            style: const TextStyle(
+                              fontSize: 11,
+                              fontWeight: FontWeight.w600,
+                              fontStyle: FontStyle.italic,
+                              color: Colors.white,
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ],
+                if (invoice.amountPaid > 0 || invoice.balanceDue != invoice.total) ...[
+                  const SizedBox(height: 10),
+                  Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 7),
+                    decoration: BoxDecoration(
+                      color: const Color(0xFF0F172A).withValues(alpha: 0.35),
+                      borderRadius: BorderRadius.circular(8),
+                    ),
+                    child: Row(
+                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                      children: [
+                        Text(
+                          'Paid: ${_money(invoice.amountPaid, _symbol)}',
+                          style: const TextStyle(
+                            color: Color(0xFF6EE7B7),
+                            fontSize: 11.5,
+                            fontWeight: FontWeight.w700,
+                          ),
+                        ),
+                        Text(
+                          'Balance Due: ${_money(invoice.balanceDue, _symbol)}',
+                          style: const TextStyle(
+                            color: Color(0xFFFDE047),
+                            fontSize: 12,
+                            fontWeight: FontWeight.w800,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ],
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
 }
 
 class TotalLine extends StatelessWidget {
@@ -99,12 +383,18 @@ class TotalLine extends StatelessWidget {
     required this.label,
     required this.value,
     this.emphasized = false,
+    this.valueColor,
+    this.badgeText,
+    this.badgeColor,
     super.key,
   });
 
   final String label;
   final String value;
   final bool emphasized;
+  final Color? valueColor;
+  final String? badgeText;
+  final Color? badgeColor;
 
   @override
   Widget build(BuildContext context) => Padding(
@@ -112,18 +402,48 @@ class TotalLine extends StatelessWidget {
         child: Row(
           children: [
             Expanded(
-              child: Text(
-                label,
-                style: emphasized
-                    ? const TextStyle(fontWeight: FontWeight.w700)
-                    : null,
+              child: Row(
+                children: [
+                  Flexible(
+                    child: Text(
+                      label,
+                      style: TextStyle(
+                        fontSize: 12.5,
+                        fontWeight: emphasized ? FontWeight.w800 : FontWeight.w600,
+                        color: emphasized
+                            ? const Color(0xFF0F172A)
+                            : const Color(0xFF475569),
+                      ),
+                    ),
+                  ),
+                  if (badgeText != null) ...[
+                    const SizedBox(width: 6),
+                    Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                      decoration: BoxDecoration(
+                        color: badgeColor ?? const Color(0xFFE0F2FE),
+                        borderRadius: BorderRadius.circular(6),
+                      ),
+                      child: Text(
+                        badgeText!,
+                        style: TextStyle(
+                          fontSize: 9.5,
+                          fontWeight: FontWeight.w800,
+                          color: valueColor ?? const Color(0xFF0369A1),
+                        ),
+                      ),
+                    ),
+                  ],
+                ],
               ),
             ),
             Text(
               value,
-              style: emphasized
-                  ? const TextStyle(fontWeight: FontWeight.w800)
-                  : null,
+              style: TextStyle(
+                fontSize: emphasized ? 13.5 : 12.5,
+                fontWeight: emphasized ? FontWeight.w800 : FontWeight.w700,
+                color: valueColor ?? const Color(0xFF0F172A),
+              ),
             ),
           ],
         ),
@@ -322,11 +642,11 @@ InvoiceItem makeNewLineItem([bool isSecurity = false]) => InvoiceItem(
       description: '',
       itemDetails: '',
       quantity: 1,
-      dutyCount: isSecurity ? 26 : 0,
+      dutyCount: isSecurity ? 30 : 0,
       unitPrice: 0,
       unit: isSecurity ? 'Duty' : 'pcs',
-      calculationFormula: isSecurity ? 'monthly_salary_26' : null,
-      standardDutyDays: 26,
+      calculationFormula: isSecurity ? 'monthly_salary_30' : null,
+      standardDutyDays: 30,
     );
 
 String formatDateString(DateTime date) =>

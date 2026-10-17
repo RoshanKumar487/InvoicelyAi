@@ -13,6 +13,8 @@ class InvoiceSectionAccordion extends StatelessWidget {
     required this.onEditField,
     required this.onDuplicateField,
     required this.onDeleteField,
+    this.onFieldFormula,
+    this.onSectionFormula,
     this.onSectionSettings,
     this.onDeleteSection,
     this.customContent,
@@ -26,6 +28,8 @@ class InvoiceSectionAccordion extends StatelessWidget {
   final ValueChanged<StudioField> onEditField;
   final ValueChanged<StudioField> onDuplicateField;
   final ValueChanged<StudioField> onDeleteField;
+  final ValueChanged<StudioField>? onFieldFormula;
+  final VoidCallback? onSectionFormula;
   final VoidCallback? onSectionSettings;
   final VoidCallback? onDeleteSection;
   final Widget? customContent;
@@ -114,7 +118,44 @@ class InvoiceSectionAccordion extends StatelessWidget {
                       ],
                     ),
                   ),
-                  const SizedBox(width: 10),
+                  const SizedBox(width: 8),
+
+                  // Formula Icon Button on Section Header (Subtotal / Tax & Totals and Services & Duty)
+                  if (onSectionFormula != null) ...[
+                    Tooltip(
+                      message: 'Formula & Daily Wage Auto-Calculation Settings',
+                      child: InkWell(
+                        onTap: onSectionFormula,
+                        borderRadius: BorderRadius.circular(10),
+                        child: Container(
+                          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                          decoration: BoxDecoration(
+                            gradient: const LinearGradient(
+                              colors: [Color(0xFFEFF6FF), Color(0xFFDBEAFE)],
+                            ),
+                            borderRadius: BorderRadius.circular(10),
+                            border: Border.all(color: const Color(0xFF93C5FD)),
+                          ),
+                          child: const Row(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              Icon(Icons.functions_rounded, size: 15, color: Color(0xFF1D4ED8)),
+                              SizedBox(width: 3),
+                              Text(
+                                'Formula',
+                                style: TextStyle(
+                                  fontSize: 10.5,
+                                  fontWeight: FontWeight.w800,
+                                  color: Color(0xFF1E3A8A),
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                      ),
+                    ),
+                    const SizedBox(width: 6),
+                  ],
 
                   // Field Count Badges
                   if (enabled) ...[
@@ -169,7 +210,7 @@ class InvoiceSectionAccordion extends StatelessWidget {
                       ),
                     ),
                   ],
-                  const SizedBox(width: 12),
+                  const SizedBox(width: 8),
 
                   // Independent Master Switch (Toggling does NOT collapse accordion)
                   GestureDetector(
@@ -217,7 +258,7 @@ class InvoiceSectionAccordion extends StatelessWidget {
                     child: const Row(
                       children: [
                         SizedBox(
-                          width: 38,
+                          width: 36,
                           child: Text('#', style: TextStyle(fontSize: 11, fontWeight: FontWeight.bold, color: Color(0xFF64748B))),
                         ),
                         Expanded(
@@ -229,15 +270,15 @@ class InvoiceSectionAccordion extends StatelessWidget {
                           child: Text('Type', style: TextStyle(fontSize: 11, fontWeight: FontWeight.bold, color: Color(0xFF64748B))),
                         ),
                         SizedBox(
-                          width: 60,
-                          child: Text('Required', style: TextStyle(fontSize: 11, fontWeight: FontWeight.bold, color: Color(0xFF64748B))),
+                          width: 52,
+                          child: Text('Req.', style: TextStyle(fontSize: 11, fontWeight: FontWeight.bold, color: Color(0xFF64748B))),
                         ),
                         SizedBox(
-                          width: 55,
+                          width: 52,
                           child: Text('Visible', style: TextStyle(fontSize: 11, fontWeight: FontWeight.bold, color: Color(0xFF64748B))),
                         ),
                         SizedBox(
-                          width: 80,
+                          width: 104,
                           child: Align(
                             alignment: Alignment.centerRight,
                             child: Text('Actions', style: TextStyle(fontSize: 11, fontWeight: FontWeight.bold, color: Color(0xFF64748B))),
@@ -254,6 +295,7 @@ class InvoiceSectionAccordion extends StatelessWidget {
                       index: i + 1,
                       field: section.fields[i],
                       onVisibilityChanged: (val) => onFieldVisibilityChanged(section.fields[i], val),
+                      onFormula: onFieldFormula != null ? () => onFieldFormula!(section.fields[i]) : null,
                       onEdit: () => onEditField(section.fields[i]),
                       onDuplicate: () => onDuplicateField(section.fields[i]),
                       onDelete: () => onDeleteField(section.fields[i]),
@@ -279,6 +321,23 @@ class InvoiceSectionAccordion extends StatelessWidget {
                         ),
                         onPressed: onAddField,
                       ),
+                      if (onSectionFormula != null) ...[
+                        const SizedBox(width: 8),
+                        OutlinedButton.icon(
+                          icon: const Icon(Icons.functions_rounded, size: 15, color: Color(0xFF1D4ED8)),
+                          label: const Text(
+                            'Formula Setup',
+                            style: TextStyle(fontSize: 12, fontWeight: FontWeight.w700, color: Color(0xFF1D4ED8)),
+                          ),
+                          style: OutlinedButton.styleFrom(
+                            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                            side: const BorderSide(color: Color(0xFFBFDBFE)),
+                            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+                            backgroundColor: const Color(0xFFEFF6FF),
+                          ),
+                          onPressed: onSectionFormula,
+                        ),
+                      ],
                       const Spacer(),
                       const Icon(Icons.check_circle_rounded, size: 14, color: Color(0xFF16A34A)),
                       const SizedBox(width: 4),
@@ -319,10 +378,12 @@ class InvoiceSectionAccordion extends StatelessWidget {
     required int index,
     required StudioField field,
     required ValueChanged<bool> onVisibilityChanged,
+    VoidCallback? onFormula,
     required VoidCallback onEdit,
     required VoidCallback onDuplicate,
     required VoidCallback onDelete,
   }) {
+    final hasFormula = field.formula.trim().isNotEmpty;
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
       decoration: const BoxDecoration(
@@ -333,7 +394,7 @@ class InvoiceSectionAccordion extends StatelessWidget {
         children: [
           // Drag handle & index
           SizedBox(
-            width: 38,
+            width: 36,
             child: Row(
               mainAxisSize: MainAxisSize.min,
               children: [
@@ -347,18 +408,47 @@ class InvoiceSectionAccordion extends StatelessWidget {
             ),
           ),
 
-          // Field Label
+          // Field Label + optional active formula badge
           Expanded(
             flex: 5,
-            child: Text(
-              field.label,
-              style: TextStyle(
-                fontSize: 12.5,
-                fontWeight: FontWeight.w600,
-                color: field.isVisible ? const Color(0xFF1E293B) : const Color(0xFF94A3B8),
-              ),
-              maxLines: 1,
-              overflow: TextOverflow.ellipsis,
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Text(
+                  field.label,
+                  style: TextStyle(
+                    fontSize: 12.5,
+                    fontWeight: FontWeight.w600,
+                    color: field.isVisible ? const Color(0xFF1E293B) : const Color(0xFF94A3B8),
+                  ),
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                ),
+                if (hasFormula)
+                  Padding(
+                    padding: const EdgeInsets.only(top: 2),
+                    child: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        const Icon(Icons.functions_rounded, size: 11, color: Color(0xFF2563EB)),
+                        const SizedBox(width: 3),
+                        Flexible(
+                          child: Text(
+                            field.formula,
+                            style: const TextStyle(
+                              fontSize: 10,
+                              fontWeight: FontWeight.w700,
+                              color: Color(0xFF2563EB),
+                            ),
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+              ],
             ),
           ),
 
@@ -387,7 +477,7 @@ class InvoiceSectionAccordion extends StatelessWidget {
 
           // Required status
           SizedBox(
-            width: 60,
+            width: 52,
             child: Text(
               field.isRequired ? 'Yes' : 'No',
               style: TextStyle(
@@ -400,7 +490,7 @@ class InvoiceSectionAccordion extends StatelessWidget {
 
           // Visible toggle
           SizedBox(
-            width: 55,
+            width: 52,
             child: Transform.scale(
               scale: 0.72,
               child: Switch(
@@ -411,12 +501,33 @@ class InvoiceSectionAccordion extends StatelessWidget {
             ),
           ),
 
-          // Actions: Edit, Duplicate, Delete
+          // Actions: Formula Icon BEFORE Edit Icon, then Duplicate, Delete
           SizedBox(
-            width: 80,
+            width: 104,
             child: Row(
               mainAxisAlignment: MainAxisAlignment.end,
               children: [
+                if (onFormula != null)
+                  IconButton(
+                    icon: Container(
+                      padding: const EdgeInsets.all(2),
+                      decoration: BoxDecoration(
+                        color: hasFormula ? const Color(0xFFDBEAFE) : Colors.transparent,
+                        borderRadius: BorderRadius.circular(5),
+                      ),
+                      child: Icon(
+                        Icons.functions_rounded,
+                        size: 15,
+                        color: hasFormula ? const Color(0xFF2563EB) : const Color(0xFF64748B),
+                      ),
+                    ),
+                    tooltip: hasFormula
+                        ? 'Formula: ${field.formula} (Click to configure)'
+                        : 'Configure Formula / Auto-Calculation',
+                    onPressed: onFormula,
+                    padding: EdgeInsets.zero,
+                    constraints: const BoxConstraints(minWidth: 24, minHeight: 24),
+                  ),
                 IconButton(
                   icon: const Icon(Icons.edit_outlined, size: 15, color: Color(0xFF64748B)),
                   tooltip: 'Edit Field',

@@ -34,7 +34,7 @@ class HoverableCard extends StatefulWidget {
     this.onTap,
     this.padding = const EdgeInsets.all(16),
     this.accentColor,
-    this.borderRadius = 16.0,
+    this.borderRadius = 20.0,
   });
 
   final Widget child;
@@ -66,19 +66,30 @@ class _HoverableCardState extends State<HoverableCard> {
           curve: Curves.easeOutCubic,
           transform: _isHovered ? Matrix4.translationValues(0, -3.5, 0) : Matrix4.identity(),
           decoration: BoxDecoration(
-            color: Colors.white,
+            gradient: const LinearGradient(
+              begin: Alignment.topLeft,
+              end: Alignment.bottomRight,
+              colors: [Colors.white, Color(0xFFF8FAFC)],
+            ),
             borderRadius: BorderRadius.circular(widget.borderRadius),
             border: Border.all(
-              color: _isHovered ? effectiveAccent.withValues(alpha: 0.35) : const Color(0xFFE2E8F0),
-              width: _isHovered ? 1.3 : 1.0,
+              color: _isHovered
+                  ? effectiveAccent.withValues(alpha: 0.38)
+                  : const Color(0xFFE2E8F0),
+              width: _isHovered ? 1.4 : 1.1,
             ),
             boxShadow: [
               BoxShadow(
                 color: _isHovered
-                    ? effectiveAccent.withValues(alpha: 0.10)
-                    : const Color(0x060F172A),
-                blurRadius: _isHovered ? 18 : 10,
-                offset: _isHovered ? const Offset(0, 8) : const Offset(0, 2),
+                    ? effectiveAccent.withValues(alpha: 0.13)
+                    : const Color(0x0D0F172A),
+                blurRadius: _isHovered ? 20 : 14,
+                offset: _isHovered ? const Offset(0, 8) : const Offset(0, 5),
+              ),
+              const BoxShadow(
+                color: Colors.white,
+                blurRadius: 2,
+                offset: Offset(-2, -2),
               ),
             ],
           ),
@@ -270,19 +281,21 @@ class _DashboardAnalyticsState extends State<DashboardAnalytics> {
         LayoutBuilder(
           builder: (context, constraints) {
             if (constraints.maxWidth >= 940) {
-              return Row(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Expanded(
-                    flex: 5,
-                    child: _buildInvoiceStatisticsDonutCard(stats, totalInvoices),
-                  ),
-                  const SizedBox(width: 16),
-                  Expanded(
-                    flex: 7,
-                    child: _buildSalesAnalyticsCard(),
-                  ),
-                ],
+              return IntrinsicHeight(
+                child: Row(
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: [
+                    Expanded(
+                      flex: 5,
+                      child: _buildInvoiceStatisticsDonutCard(stats, totalInvoices),
+                    ),
+                    const SizedBox(width: 16),
+                    Expanded(
+                      flex: 7,
+                      child: _buildSalesAnalyticsCard(),
+                    ),
+                  ],
+                ),
               );
             }
             return Column(
@@ -305,16 +318,25 @@ class _DashboardAnalyticsState extends State<DashboardAnalytics> {
   Widget _buildWorkspaceIdentityBanner(int? teamCount) {
     final netCashflow = widget.statistics.totalRevenue - widget.statistics.totalExpenses;
     return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 11),
+      padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 12),
       decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(12),
-        border: Border.all(color: const Color(0xFFE2E8F0)),
+        gradient: const LinearGradient(
+          begin: Alignment.topLeft,
+          end: Alignment.bottomRight,
+          colors: [Colors.white, Color(0xFFF8FAFC)],
+        ),
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(color: const Color(0xFFE2E8F0), width: 1.1),
         boxShadow: const [
           BoxShadow(
-            color: Color(0x060F172A),
-            blurRadius: 8,
-            offset: Offset(0, 2),
+            color: Color(0x0A0F172A),
+            blurRadius: 12,
+            offset: Offset(0, 4),
+          ),
+          BoxShadow(
+            color: Colors.white,
+            blurRadius: 2,
+            offset: Offset(-1, -1),
           ),
         ],
       ),
@@ -323,55 +345,63 @@ class _DashboardAnalyticsState extends State<DashboardAnalytics> {
         child: Row(
           mainAxisAlignment: MainAxisAlignment.spaceBetween,
           children: [
-            Row(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                Container(
-                  width: 8,
-                  height: 8,
-                  decoration: const BoxDecoration(
-                    color: Color(0xFF10B981),
-                    shape: BoxShape.circle,
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+              decoration: BoxDecoration(
+                color: const Color(0xFFECFDF5),
+                borderRadius: BorderRadius.circular(20),
+                border: Border.all(color: const Color(0xFFA7F3D0)),
+              ),
+              child: Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Container(
+                    width: 7,
+                    height: 7,
+                    decoration: const BoxDecoration(
+                      color: Color(0xFF10B981),
+                      shape: BoxShape.circle,
+                    ),
                   ),
-                ),
-                const SizedBox(width: 7),
-                const Text(
-                  'Enterprise Live',
-                  style: TextStyle(fontSize: 12, fontWeight: FontWeight.w700, color: Color(0xFF15803D)),
-                ),
-              ],
+                  const SizedBox(width: 6),
+                  const Text(
+                    'Enterprise Live',
+                    style: TextStyle(fontSize: 11.5, fontWeight: FontWeight.w800, color: Color(0xFF047857)),
+                  ),
+                ],
+              ),
             ),
             const Padding(
-              padding: EdgeInsets.symmetric(horizontal: 12),
+              padding: EdgeInsets.symmetric(horizontal: 14),
               child: SizedBox(height: 14, child: VerticalDivider(width: 1, color: Color(0xFFCBD5E1))),
             ),
             _buildMiniStatusItem(
               icon: Icons.people_outline_rounded,
               label: 'Workforce',
               value: teamCount != null ? '$teamCount Staff' : '0 Staff',
-              color: const Color(0xFF334155),
+              color: const Color(0xFF1E293B),
               onTap: widget.onOpenPayroll,
             ),
             const Padding(
-              padding: EdgeInsets.symmetric(horizontal: 12),
+              padding: EdgeInsets.symmetric(horizontal: 14),
               child: SizedBox(height: 14, child: VerticalDivider(width: 1, color: Color(0xFFCBD5E1))),
             ),
             _buildMiniStatusItem(
               icon: Icons.receipt_long_outlined,
               label: 'Expenses',
               value: formatCompactMoney(widget.statistics.totalExpenses),
-              color: const Color(0xFF334155),
+              color: const Color(0xFF1E293B),
               onTap: widget.onViewExpenses,
             ),
             const Padding(
-              padding: EdgeInsets.symmetric(horizontal: 12),
+              padding: EdgeInsets.symmetric(horizontal: 14),
               child: SizedBox(height: 14, child: VerticalDivider(width: 1, color: Color(0xFFCBD5E1))),
             ),
             _buildMiniStatusItem(
               icon: Icons.trending_up_rounded,
               label: 'Net Cashflow',
               value: formatCompactMoney(netCashflow),
-              color: const Color(0xFF334155),
+              color: const Color(0xFF059669),
               onTap: () => widget.onViewInvoices('Paid'),
             ),
           ],
@@ -389,21 +419,21 @@ class _DashboardAnalyticsState extends State<DashboardAnalytics> {
   }) {
     return InkWell(
       onTap: onTap,
-      borderRadius: BorderRadius.circular(6),
+      borderRadius: BorderRadius.circular(8),
       child: Padding(
-        padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 2),
+        padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 3),
         child: Row(
           mainAxisSize: MainAxisSize.min,
           children: [
-            Icon(icon, size: 14, color: color),
-            const SizedBox(width: 5),
+            Icon(icon, size: 15, color: color),
+            const SizedBox(width: 6),
             Text(
               '$label: ',
-              style: const TextStyle(fontSize: 11, color: Color(0xFF64748B), fontWeight: FontWeight.w500),
+              style: const TextStyle(fontSize: 11.5, color: Color(0xFF64748B), fontWeight: FontWeight.w600),
             ),
             Text(
               value,
-              style: TextStyle(fontSize: 11, color: color, fontWeight: FontWeight.bold),
+              style: TextStyle(fontSize: 12, color: color, fontWeight: FontWeight.w800),
             ),
           ],
         ),
@@ -422,7 +452,7 @@ class _DashboardAnalyticsState extends State<DashboardAnalytics> {
     return LayoutBuilder(
       builder: (context, constraints) {
         final crossAxisCount = constraints.maxWidth >= 900 ? 4 : 2;
-        const spacing = 12.0;
+        const spacing = 14.0;
         final cardWidth = (constraints.maxWidth - spacing * (crossAxisCount - 1)) / crossAxisCount;
 
         final cards = [
@@ -508,75 +538,109 @@ class _DashboardAnalyticsState extends State<DashboardAnalytics> {
   }) {
     return SizedBox(
       width: width,
-      height: 165,
+      height: 170,
       child: HoverableCard(
         accentColor: accentColor,
         onTap: onTap,
-        padding: const EdgeInsets.fromLTRB(14, 12, 14, 10),
+        padding: const EdgeInsets.fromLTRB(16, 14, 16, 12),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           mainAxisAlignment: MainAxisAlignment.spaceBetween,
           children: [
-            // Top: Icon box
-            Container(
-              width: 30,
-              height: 30,
-              decoration: BoxDecoration(
-                color: iconBgColor,
-                borderRadius: BorderRadius.circular(8),
-              ),
-              child: Icon(icon, size: 16, color: iconColor),
-            ),
-
-            // Title
-            Text(
-              title,
-              style: const TextStyle(
-                fontSize: 12,
-                fontWeight: FontWeight.w600,
-                color: Color(0xFF64748B),
-              ),
-            ),
-
-            // Value
-            FittedBox(
-              fit: BoxFit.scaleDown,
-              alignment: Alignment.centerLeft,
-              child: Text(
-                value,
-                style: const TextStyle(
-                  fontSize: 20,
-                  fontWeight: FontWeight.w800,
-                  color: Color(0xFF0F172A),
-                  letterSpacing: -0.4,
-                ),
-              ),
-            ),
-
-            // Trend row
+            // Top Row: Claymorphic Icon box + Trend pill
             Row(
+              mainAxisAlignment: MainAxisAlignment.spaceBetween,
               children: [
-                Icon(
-                  isPositiveTrend ? Icons.arrow_upward_rounded : Icons.arrow_downward_rounded,
-                  size: 12,
-                  color: isPositiveTrend ? const Color(0xFF10B981) : const Color(0xFFEF4444),
+                Container(
+                  width: 34,
+                  height: 34,
+                  decoration: BoxDecoration(
+                    gradient: LinearGradient(
+                      begin: Alignment.topLeft,
+                      end: Alignment.bottomRight,
+                      colors: [Colors.white, iconBgColor],
+                    ),
+                    borderRadius: BorderRadius.circular(11),
+                    border: Border.all(
+                      color: iconColor.withValues(alpha: 0.2),
+                      width: 1,
+                    ),
+                    boxShadow: [
+                      BoxShadow(
+                        color: iconColor.withValues(alpha: 0.14),
+                        blurRadius: 6,
+                        offset: const Offset(0, 2),
+                      ),
+                    ],
+                  ),
+                  child: Icon(icon, size: 17, color: iconColor),
                 ),
-                const SizedBox(width: 2),
-                Text(
-                  trendText,
-                  style: TextStyle(
-                    fontSize: 11,
-                    fontWeight: FontWeight.w700,
-                    color: isPositiveTrend ? const Color(0xFF10B981) : const Color(0xFFEF4444),
+                Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 3),
+                  decoration: BoxDecoration(
+                    color: isPositiveTrend
+                        ? const Color(0xFFECFDF5)
+                        : const Color(0xFFFEF2F2),
+                    borderRadius: BorderRadius.circular(10),
+                    border: Border.all(
+                      color: isPositiveTrend
+                          ? const Color(0xFFA7F3D0)
+                          : const Color(0xFFFECACA),
+                    ),
+                  ),
+                  child: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Icon(
+                        isPositiveTrend
+                            ? Icons.arrow_upward_rounded
+                            : Icons.arrow_downward_rounded,
+                        size: 11,
+                        color: isPositiveTrend
+                            ? const Color(0xFF059669)
+                            : const Color(0xFFDC2626),
+                      ),
+                      const SizedBox(width: 2),
+                      Text(
+                        trendText,
+                        style: TextStyle(
+                          fontSize: 10.5,
+                          fontWeight: FontWeight.w800,
+                          color: isPositiveTrend
+                              ? const Color(0xFF059669)
+                              : const Color(0xFFDC2626),
+                        ),
+                      ),
+                    ],
                   ),
                 ),
-                const SizedBox(width: 4),
-                const Text(
-                  'Since last week',
-                  style: TextStyle(
-                    fontSize: 9.5,
-                    color: Color(0xFF94A3B8),
-                    fontWeight: FontWeight.w500,
+              ],
+            ),
+
+            // Title & Value
+            Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  title,
+                  style: const TextStyle(
+                    fontSize: 12,
+                    fontWeight: FontWeight.w600,
+                    color: Color(0xFF64748B),
+                  ),
+                ),
+                const SizedBox(height: 2),
+                FittedBox(
+                  fit: BoxFit.scaleDown,
+                  alignment: Alignment.centerLeft,
+                  child: Text(
+                    value,
+                    style: const TextStyle(
+                      fontSize: 21,
+                      fontWeight: FontWeight.w800,
+                      color: Color(0xFF0F172A),
+                      letterSpacing: -0.4,
+                    ),
                   ),
                 ),
               ],
@@ -875,20 +939,36 @@ class _DashboardAnalyticsState extends State<DashboardAnalytics> {
     final selected = _leftChartMode == modeKey;
     return InkWell(
       onTap: () => setState(() => _leftChartMode = modeKey),
-      borderRadius: BorderRadius.circular(6),
-      child: Container(
-        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+      borderRadius: BorderRadius.circular(8),
+      child: AnimatedContainer(
+        duration: const Duration(milliseconds: 160),
+        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
         decoration: BoxDecoration(
-          color: selected ? Colors.white : Colors.transparent,
-          borderRadius: BorderRadius.circular(6),
-          boxShadow: selected ? const [BoxShadow(color: Color(0x10000000), blurRadius: 4, offset: Offset(0, 1))] : null,
+          gradient: selected
+              ? const LinearGradient(
+                  begin: Alignment.topLeft,
+                  end: Alignment.bottomRight,
+                  colors: [Color(0xFF3B82F6), Color(0xFF2563EB)],
+                )
+              : null,
+          color: selected ? null : Colors.transparent,
+          borderRadius: BorderRadius.circular(8),
+          boxShadow: selected
+              ? const [
+                  BoxShadow(
+                    color: Color(0x332563EB),
+                    blurRadius: 6,
+                    offset: Offset(0, 2),
+                  ),
+                ]
+              : null,
         ),
         child: Text(
           label,
           style: TextStyle(
             fontSize: 10.5,
-            fontWeight: selected ? FontWeight.bold : FontWeight.w500,
-            color: selected ? const Color(0xFF2563EB) : const Color(0xFF64748B),
+            fontWeight: selected ? FontWeight.w800 : FontWeight.w600,
+            color: selected ? Colors.white : const Color(0xFF64748B),
           ),
         ),
       ),
@@ -1125,27 +1205,41 @@ class _DashboardAnalyticsState extends State<DashboardAnalytics> {
   }) {
     return InkWell(
       onTap: onTap,
-      borderRadius: BorderRadius.circular(6),
-      child: Container(
-        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+      borderRadius: BorderRadius.circular(8),
+      child: AnimatedContainer(
+        duration: const Duration(milliseconds: 160),
+        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
         decoration: BoxDecoration(
-          color: selected ? Colors.white : Colors.transparent,
-          borderRadius: BorderRadius.circular(6),
+          gradient: selected
+              ? const LinearGradient(
+                  begin: Alignment.topLeft,
+                  end: Alignment.bottomRight,
+                  colors: [Color(0xFF3B82F6), Color(0xFF2563EB)],
+                )
+              : null,
+          color: selected ? null : Colors.transparent,
+          borderRadius: BorderRadius.circular(8),
           boxShadow: selected
-              ? const [BoxShadow(color: Color(0x10000000), blurRadius: 4, offset: Offset(0, 1))]
+              ? const [
+                  BoxShadow(
+                    color: Color(0x332563EB),
+                    blurRadius: 6,
+                    offset: Offset(0, 2),
+                  ),
+                ]
               : null,
         ),
         child: Row(
           mainAxisSize: MainAxisSize.min,
           children: [
-            Icon(icon, size: 13, color: selected ? const Color(0xFF0F172A) : const Color(0xFF64748B)),
+            Icon(icon, size: 13, color: selected ? Colors.white : const Color(0xFF64748B)),
             const SizedBox(width: 4),
             Text(
               label,
               style: TextStyle(
                 fontSize: 11,
-                fontWeight: selected ? FontWeight.w700 : FontWeight.w500,
-                color: selected ? const Color(0xFF0F172A) : const Color(0xFF64748B),
+                fontWeight: selected ? FontWeight.w800 : FontWeight.w600,
+                color: selected ? Colors.white : const Color(0xFF64748B),
               ),
             ),
           ],
@@ -1485,18 +1579,48 @@ class _DashboardAnalyticsState extends State<DashboardAnalytics> {
     final selected = _recentInvoiceFilter == status;
     return InkWell(
       onTap: () => setState(() => _recentInvoiceFilter = status),
-      borderRadius: BorderRadius.circular(6),
-      child: Container(
-        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
+      borderRadius: BorderRadius.circular(10),
+      child: AnimatedContainer(
+        duration: const Duration(milliseconds: 160),
+        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
         decoration: BoxDecoration(
-          color: selected ? const Color(0xFF0F172A) : const Color(0xFFF1F5F9),
-          borderRadius: BorderRadius.circular(6),
+          gradient: selected
+              ? const LinearGradient(
+                  begin: Alignment.topLeft,
+                  end: Alignment.bottomRight,
+                  colors: [Color(0xFF2563EB), Color(0xFF1E3A8A)],
+                )
+              : const LinearGradient(
+                  begin: Alignment.topLeft,
+                  end: Alignment.bottomRight,
+                  colors: [Colors.white, Color(0xFFF1F5F9)],
+                ),
+          borderRadius: BorderRadius.circular(10),
+          border: Border.all(
+            color: selected ? const Color(0xFF60A5FA) : const Color(0xFFE2E8F0),
+            width: 1,
+          ),
+          boxShadow: selected
+              ? const [
+                  BoxShadow(
+                    color: Color(0x331E3A8A),
+                    blurRadius: 8,
+                    offset: Offset(0, 3),
+                  ),
+                ]
+              : const [
+                  BoxShadow(
+                    color: Color(0x080F172A),
+                    blurRadius: 4,
+                    offset: Offset(0, 2),
+                  ),
+                ],
         ),
         child: Text(
           status,
           style: TextStyle(
             fontSize: 11,
-            fontWeight: selected ? FontWeight.w700 : FontWeight.w500,
+            fontWeight: selected ? FontWeight.w800 : FontWeight.w600,
             color: selected ? Colors.white : const Color(0xFF475569),
           ),
         ),

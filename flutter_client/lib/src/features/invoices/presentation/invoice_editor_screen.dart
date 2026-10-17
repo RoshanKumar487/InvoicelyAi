@@ -5,7 +5,10 @@ import 'package:flutter/material.dart';
 import '../../../core/api/api_exception.dart';
 import '../../clients/data/client.dart';
 import '../../clients/data/clients_repository.dart';
+import '../../employees/data/employee.dart';
+import '../../employees/data/employee_repository.dart';
 import '../../templates/data/template_config.dart';
+import '../../templates/presentation/widgets/formula_builder_popup.dart';
 import '../data/invoice.dart';
 import '../data/invoice_repository.dart';
 import 'widgets/client_billing_card.dart';
@@ -74,6 +77,7 @@ class _InvoiceEditorScreenState extends State<InvoiceEditorScreen> {
   late bool _taxInclusive;
   late List<InvoiceItem> _items;
   List<Client> _clients = const [];
+  List<Employee> _employees = const [];
   int? _selectedClientId;
   bool _loadingClients = false;
   bool _loadingPreviousItems = false;
@@ -195,6 +199,7 @@ class _InvoiceEditorScreenState extends State<InvoiceEditorScreen> {
       _items.add(_newLineItem(isSecurity));
     }
     unawaited(_loadClients());
+    unawaited(_loadEmployees());
   }
 
   @override
@@ -226,6 +231,17 @@ class _InvoiceEditorScreenState extends State<InvoiceEditorScreen> {
 
   double _value(TextEditingController controller) =>
       double.tryParse(controller.text.trim()) ?? 0;
+
+  Future<void> _loadEmployees() async {
+    try {
+      final repo = EmployeeRepository(apiClient: widget.repository.apiClient);
+      final employees = await repo.list();
+      if (!mounted) return;
+      setState(() => _employees = employees);
+    } catch (_) {
+      // Optional autofetch source; ignore errors
+    }
+  }
 
   Future<void> _loadClients() async {
     final repository = widget.clientRepository;
@@ -521,6 +537,53 @@ class _InvoiceEditorScreenState extends State<InvoiceEditorScreen> {
     });
   }
 
+  Future<void> _openFormulaPopup() async {
+    final currentFormulaKey =
+        _localSettings['itemCalculationFormula']?.toString() ?? 'monthly_salary_30';
+    final currentDays =
+        double.tryParse(_localSettings['standardDutyDays']?.toString() ?? '30') ?? 30.0;
+    final sym = _currencySymbol.text.trim().isEmpty ? '₹' : _currencySymbol.text.trim();
+
+    final result = await FormulaBuilderPopup.show(
+      context,
+      targetTitle: 'Subtotal & Daily Wage Formula',
+      initialFormulaCode: currentFormulaKey,
+      initialExpression: '(Rate / 30) * Duty * Qty',
+      initialStandardDays: currentDays,
+      currencySymbol: sym,
+    );
+
+    if (result == null || !mounted) return;
+    final parsedDate = DateTime.tryParse(_issueDate) ?? DateTime.now();
+    final calendarDays = DateTime(parsedDate.year, parsedDate.month + 1, 0).day;
+    final resolvedDays = (result.formulaCode == 'calendar_month' ||
+            result.formulaCode == 'monthly_salary_calendar')
+        ? calendarDays.toDouble()
+        : result.standardDutyDays;
+
+    setState(() {
+      _localSettings = Map<String, Object?>.from(_localSettings)
+        ..['itemCalculationFormula'] = result.formulaCode
+        ..['standardDutyDays'] = resolvedDays
+        ..['showItemDuty'] = true;
+      _items = [
+        for (final item in _items)
+          item.copyWith(
+            calculationFormula: result.formulaCode,
+            standardDutyDays: resolvedDays,
+            dutyCount: item.dutyCount <= 0 ? resolvedDays : item.dutyCount,
+          ),
+      ];
+    });
+    widget.onSaveLocalSettings?.call(_localSettings);
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text('Daily wage formula saved: ${result.formulaExpression}'),
+        backgroundColor: const Color(0xFF047857),
+      ),
+    );
+  }
+
   void _openItemCustomizerDialog() {
     showModalBottomSheet<void>(
       context: context,
@@ -533,6 +596,10 @@ class _InvoiceEditorScreenState extends State<InvoiceEditorScreen> {
         initialSettings: _localSettings,
         onOpenInvoiceSettings: widget.onOpenInvoiceSettings,
         onApply: (applied) {
+          final formulaKey =
+              applied['itemCalculationFormula']?.toString() ?? 'monthly_salary_30';
+          final stdDays =
+              double.tryParse(applied['standardDutyDays']?.toString() ?? '30') ?? 30.0;
           setState(() {
             _localSettings = applied;
             if (applied['industryPresetId'] == 'security' &&
@@ -543,14 +610,22 @@ class _InvoiceEditorScreenState extends State<InvoiceEditorScreen> {
                 description: 'Security Guard (12 Hrs Shift)',
                 itemDetails: '',
                 quantity: 1,
-                dutyCount: 26,
-                unitPrice: 18500,
+                dutyCount: stdDays,
+                unitPrice: 30000,
                 unit: 'Duty',
                 taxRate: _items[0].taxRate,
                 discountRate: _items[0].discountRate,
-                calculationFormula: 'monthly_salary_26',
-                standardDutyDays: 26,
+                calculationFormula: formulaKey,
+                standardDutyDays: stdDays,
               );
+            } else {
+              _items = [
+                for (final item in _items)
+                  item.copyWith(
+                    calculationFormula: formulaKey,
+                    standardDutyDays: stdDays,
+                  ),
+              ];
             }
           });
           widget.onSaveLocalSettings?.call(applied);
@@ -564,6 +639,48 @@ class _InvoiceEditorScreenState extends State<InvoiceEditorScreen> {
 
   void _updateItem(int index, InvoiceItem item) {
     setState(() => _items[index] = item);
+  }
+
+  void _duplicateItem(int index) {
+    final source = _items[index];
+    setState(() {
+      _items.insert(
+        index + 1,
+        source.copyWith(
+          id: 'local-${DateTime.now().microsecondsSinceEpoch}-${_items.length}',
+        ),
+      );
+    });
+  }
+
+  void _addQuickPresetItem(ItemSuggestion preset) {
+    final isSecurity = _localSettings['industryPresetId'] == 'security' ||
+        _localSettings['showItemDuty'] == true;
+    final formulaKey =
+        _localSettings['itemCalculationFormula']?.toString() ??
+            (isSecurity ? 'monthly_salary_30' : 'standard');
+    final stdDays =
+        double.tryParse(_localSettings['standardDutyDays']?.toString() ?? '30') ?? 30.0;
+    final newItem = InvoiceItem(
+      id: 'local-${DateTime.now().microsecondsSinceEpoch}-${_items.length}',
+      description: preset.title,
+      itemDetails: preset.defaultDetails,
+      quantity: 1,
+      dutyCount: preset.defaultDuty ?? (isSecurity ? stdDays : 0),
+      unitPrice: preset.defaultRate ?? 0,
+      unit: preset.defaultUnit ?? (isSecurity ? 'Duty' : 'pcs'),
+      calculationFormula: formulaKey,
+      standardDutyDays: stdDays,
+    );
+    setState(() {
+      if (_items.length == 1 &&
+          _items.first.description.trim().isEmpty &&
+          _items.first.unitPrice == 0) {
+        _items[0] = newItem;
+      } else {
+        _items.add(newItem);
+      }
+    });
   }
 
   void _removeItem(int index) {
@@ -590,6 +707,7 @@ class _InvoiceEditorScreenState extends State<InvoiceEditorScreen> {
   @override
   Widget build(BuildContext context) {
     final draft = _draft;
+    final isDesktop = MediaQuery.sizeOf(context).width >= 900;
     final paymentTermOptions = <String>[
       'Due on Receipt',
       'Net 15',
@@ -606,15 +724,63 @@ class _InvoiceEditorScreenState extends State<InvoiceEditorScreen> {
         _shippingDetails.text.isNotEmpty;
     final hasPaymentOpt = _show('showPaymentInstructions', fallback: false) ||
         _paymentInstructions.text.isNotEmpty;
+
     return Scaffold(
+      backgroundColor: isDesktop ? const Color(0xFFF1F5F9) : null,
       appBar: AppBar(
         leading: IconButton(
           tooltip: 'Back',
           onPressed: _saving ? null : widget.onCancel,
           icon: const Icon(Icons.arrow_back),
         ),
-        title: Text(widget.invoice == null ? 'Create invoice' : 'Edit invoice'),
+        title: Row(
+          children: [
+            Text(widget.invoice == null ? 'Create invoice' : 'Edit invoice'),
+            if (isDesktop) ...[
+              const SizedBox(width: 12),
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                decoration: BoxDecoration(
+                  color: const Color(0xFFEFF6FF),
+                  borderRadius: BorderRadius.circular(20),
+                  border: Border.all(color: const Color(0xFFBFDBFE)),
+                ),
+                child: const Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Icon(Icons.auto_awesome_mosaic_rounded, size: 13, color: Color(0xFF2563EB)),
+                    SizedBox(width: 5),
+                    Text(
+                      'Live Document Editor',
+                      style: TextStyle(
+                        fontSize: 11,
+                        fontWeight: FontWeight.w800,
+                        color: Color(0xFF1E3A8A),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ],
+          ],
+        ),
         actions: [
+          if (isDesktop) ...[
+            OutlinedButton.icon(
+              onPressed: _openItemCustomizerDialog,
+              icon: const Icon(Icons.tune_rounded, size: 16),
+              label: const Text('Columns & Formula'),
+            ),
+            const SizedBox(width: 8),
+            if (widget.onOpenInvoiceSettings != null) ...[
+              OutlinedButton.icon(
+                onPressed: widget.onOpenInvoiceSettings,
+                icon: const Icon(Icons.settings_outlined, size: 16),
+                label: const Text('Invoice Settings'),
+              ),
+              const SizedBox(width: 8),
+            ],
+          ],
           Padding(
             padding: const EdgeInsets.only(right: 12),
             child: FilledButton.icon(
@@ -628,401 +794,1170 @@ class _InvoiceEditorScreenState extends State<InvoiceEditorScreen> {
                       ),
                     )
                   : const Icon(Icons.save_outlined),
-              label: Text(_saving ? 'Saving' : 'Save'),
+              label: Text(_saving ? 'Saving' : 'Save Invoice'),
             ),
           ),
         ],
       ),
       body: Form(
         key: _formKey,
-        child: ListView(
-          padding: const EdgeInsets.fromLTRB(20, 8, 20, 32),
+        child: isDesktop
+            ? _buildDesktopDocumentEditor(
+                context: context,
+                draft: draft,
+                paymentTermOptions: paymentTermOptions,
+                hasNotesOpt: hasNotesOpt,
+                hasShippingOpt: hasShippingOpt,
+                hasPaymentOpt: hasPaymentOpt,
+              )
+            : _buildMobileForm(
+                context: context,
+                draft: draft,
+                paymentTermOptions: paymentTermOptions,
+                hasNotesOpt: hasNotesOpt,
+                hasShippingOpt: hasShippingOpt,
+                hasPaymentOpt: hasPaymentOpt,
+              ),
+      ),
+    );
+  }
+
+  // ---------------------------------------------------------------------------
+  // MOBILE FORM LAYOUT (Preserved intact!)
+  // ---------------------------------------------------------------------------
+  Widget _buildMobileForm({
+    required BuildContext context,
+    required Invoice draft,
+    required List<String> paymentTermOptions,
+    required bool hasNotesOpt,
+    required bool hasShippingOpt,
+    required bool hasPaymentOpt,
+  }) {
+    return ListView(
+      padding: const EdgeInsets.fromLTRB(20, 8, 20, 32),
+      children: [
+        if (_error != null) ...[
+          _ErrorBanner(message: _error!),
+          const SizedBox(height: 14),
+        ],
+        _SectionCard(
+          title: _label('customTitle', 'Invoice details'),
+          subtitle: 'Number, dates and payment terms',
           children: [
-            if (_error != null) ...[
-              _ErrorBanner(message: _error!),
-              const SizedBox(height: 14),
-            ],
-            _SectionCard(
-              title: _label('customTitle', 'Invoice details'),
-              subtitle: 'Number, dates and payment terms',
+            _ResponsiveFields(
               children: [
-                _ResponsiveFields(
-                  children: [
-                    if (_show('showInvoiceNumber', fallback: true))
-                      _textField(
-                        controller: _number,
-                        label: _label('customInvoiceNoLabel', 'Invoice number'),
-                        validator: _required,
-                      ),
-                    if (_show('showIssueDate', fallback: true))
-                      _dateField(
-                        label: _label('customDateLabel', 'Issue date'),
-                        date: _issueDate,
-                        onTap: () => _pickDate(issue: true),
-                      ),
-                    if (_show('showDueDate', fallback: false))
-                      _dateField(
-                        label: _label('customDueDateLabel', 'Due date'),
-                        date: _dueDate,
-                        onTap: () => _pickDate(issue: false),
-                      ),
-                    if (_show('showPaymentTerms', fallback: false))
-                      DropdownButtonFormField<String>(
-                        value: _paymentTerms,
-                        isExpanded: true,
-                        decoration: InputDecoration(
-                          labelText: _label('customTermsLabel', 'Payment terms'),
-                        ),
-                        items: paymentTermOptions
-                            .map((value) => DropdownMenuItem(
-                                  value: value,
-                                  child: Text(
-                                    value,
-                                    maxLines: 1,
-                                    overflow: TextOverflow.ellipsis,
-                                  ),
-                                ))
-                            .toList(),
-                        selectedItemBuilder: (context) => paymentTermOptions
-                            .map((value) => Align(
-                                  alignment: Alignment.centerLeft,
-                                  child: Text(
-                                    value,
-                                    maxLines: 1,
-                                    overflow: TextOverflow.ellipsis,
-                                  ),
-                                ))
-                            .toList(),
-                        onChanged: (value) =>
-                            setState(() => _paymentTerms = value ?? 'Net 30'),
-                      ),
-                    if (_show('showPoNumber', fallback: false))
-                      _textField(
-                        controller: _poNumber,
-                        label: _label('customPoLabel', 'Purchase order number'),
-                        isRequired: false,
-                      ),
-                    DropdownButtonFormField<String>(
-                      value: _template,
-                      isExpanded: true,
-                      decoration:
-                          const InputDecoration(labelText: 'Invoice style'),
-                      items: [
-                        if (!templatePresets
-                            .any((item) => item.id == _template))
-                          DropdownMenuItem<String>(
-                            value: _template,
-                            child: Text(
-                              widget.preferredTemplate?.id == _template
-                                  ? widget.preferredTemplate!.name
-                                  : _template,
-                              maxLines: 1,
-                              overflow: TextOverflow.ellipsis,
-                            ),
-                          ),
-                        ...templatePresets
-                            .map((template) => DropdownMenuItem<String>(
-                                  value: template.id,
-                                  child: Text(
-                                    template.name,
-                                    maxLines: 1,
-                                    overflow: TextOverflow.ellipsis,
-                                  ),
-                                )),
-                      ],
-                      selectedItemBuilder: (context) => [
-                        if (!templatePresets
-                            .any((item) => item.id == _template))
-                          Align(
-                            alignment: Alignment.centerLeft,
-                            child: Text(
-                              widget.preferredTemplate?.id == _template
-                                  ? widget.preferredTemplate!.name
-                                  : _template,
-                              maxLines: 1,
-                              overflow: TextOverflow.ellipsis,
-                            ),
-                          ),
-                        ...templatePresets.map(
-                          (template) => Align(
-                            alignment: Alignment.centerLeft,
-                            child: Text(
-                              template.name,
-                              maxLines: 1,
-                              overflow: TextOverflow.ellipsis,
-                            ),
-                          ),
-                        ),
-                      ],
-                      onChanged: (value) =>
-                          setState(() => _template = value ?? 'modern'),
+                if (_show('showInvoiceNumber', fallback: true))
+                  _textField(
+                    controller: _number,
+                    label: _label('customInvoiceNoLabel', 'Invoice number'),
+                    validator: _required,
+                  ),
+                if (_show('showIssueDate', fallback: true))
+                  _dateField(
+                    label: _label('customDateLabel', 'Issue date'),
+                    date: _issueDate,
+                    onTap: () => _pickDate(issue: true),
+                  ),
+                if (_show('showDueDate', fallback: false))
+                  _dateField(
+                    label: _label('customDueDateLabel', 'Due date'),
+                    date: _dueDate,
+                    onTap: () => _pickDate(issue: false),
+                  ),
+                if (_show('showPaymentTerms', fallback: false))
+                  DropdownButtonFormField<String>(
+                    value: _paymentTerms,
+                    isExpanded: true,
+                    decoration: InputDecoration(
+                      labelText: _label('customTermsLabel', 'Payment terms'),
+                    ),
+                    items: paymentTermOptions
+                        .map((value) => DropdownMenuItem(
+                              value: value,
+                              child: Text(
+                                value,
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
+                              ),
+                            ))
+                        .toList(),
+                    selectedItemBuilder: (context) => paymentTermOptions
+                        .map((value) => Align(
+                              alignment: Alignment.centerLeft,
+                              child: Text(
+                                value,
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
+                              ),
+                            ))
+                        .toList(),
+                    onChanged: (value) =>
+                        setState(() => _paymentTerms = value ?? 'Net 30'),
+                  ),
+                if (_show('showPoNumber', fallback: false))
+                  _textField(
+                    controller: _poNumber,
+                    label: _label('customPoLabel', 'Purchase order number'),
+                    isRequired: false,
+                  ),
+                _buildTemplateDropdown(),
+              ],
+            ),
+          ],
+        ),
+        if (_show('showBillToSection', fallback: true)) ...[
+          const SizedBox(height: 14),
+          _buildClientBillingCard(),
+        ],
+        const SizedBox(height: 14),
+        _SectionCard(
+          title: 'Line items',
+          subtitle: 'Quantities, rates and optional line discounts',
+          trailing: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              IconButton(
+                tooltip: 'Daily Wage & Subtotal Formula Setup',
+                onPressed: _openFormulaPopup,
+                icon: const Icon(
+                  Icons.functions_rounded,
+                  color: Color(0xFF4F46E5),
+                ),
+              ),
+              OutlinedButton.icon(
+                onPressed: _openItemCustomizerDialog,
+                icon: const Icon(Icons.tune_rounded, size: 16),
+                label: const Text('Item Settings', style: TextStyle(fontSize: 12)),
+                style: OutlinedButton.styleFrom(
+                  padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                  visualDensity: VisualDensity.compact,
+                ),
+              ),
+              const SizedBox(width: 6),
+              IconButton(
+                tooltip: 'Add item',
+                onPressed: () {
+                  final isSecurity = _localSettings['industryPresetId'] == 'security' ||
+                      _localSettings['showItemDuty'] == true;
+                  setState(() => _items.add(_newLineItem(isSecurity)));
+                },
+                icon: const Icon(Icons.add_circle_outline),
+              ),
+            ],
+          ),
+          children: [
+            Align(
+              alignment: Alignment.centerRight,
+              child: TextButton.icon(
+                onPressed: _loadingPreviousItems ? null : _copyPreviousItems,
+                icon: _loadingPreviousItems
+                    ? const SizedBox(
+                        width: 16,
+                        height: 16,
+                        child: CircularProgressIndicator(strokeWidth: 2),
+                      )
+                    : const Icon(Icons.history),
+                label: const Text('Use items from previous invoice'),
+              ),
+            ),
+            for (var index = 0; index < _items.length; index++) ...[
+              LineItemEditor(
+                key: ValueKey(_items[index].id),
+                index: index,
+                item: _items[index],
+                currencySymbol: _currencySymbol.text,
+                localSettings: _localSettings,
+                issueDate: _issueDate,
+                forceDesktopRow: false,
+                employees: _employees,
+                onOpenFormulaSettings: _openFormulaPopup,
+                showDescriptionField: _globalShowItemDescriptions ||
+                    _items[index].itemDetails.isNotEmpty,
+                onToggleDescription: (open) {
+                  setState(() => _globalShowItemDescriptions = open);
+                },
+                onChanged: (item) => _updateItem(index, item),
+                onDuplicate: () => _duplicateItem(index),
+                onRemove: () => _removeItem(index),
+              ),
+              if (index != _items.length - 1) const Divider(height: 28),
+            ],
+          ],
+        ),
+        const SizedBox(height: 14),
+        _SectionCard(
+          title: 'Invoice adjustments',
+          subtitle: 'Tax and currency use your saved invoice defaults',
+          children: [
+            Text(
+              '${_taxLabel.text} ${_num(_value(_taxRate))}% · $_taxType'
+              '${_taxInclusive ? ' · tax included in prices' : ''}'
+              ' · ${_currencyCode.text}',
+              style: Theme.of(context).textTheme.bodySmall,
+            ),
+            const SizedBox(height: 14),
+            _ResponsiveFields(
+              children: _buildAdjustmentFields(draft),
+            ),
+            const SizedBox(height: 12),
+            _TotalsPreview(
+              invoice: draft,
+              onAutoRound: () => _autoRoundOff(draft),
+            ),
+          ],
+        ),
+        if (hasNotesOpt || hasShippingOpt || hasPaymentOpt) ...[
+          const SizedBox(height: 14),
+          _buildOptionalDetailsCard(
+            hasNotesOpt: hasNotesOpt,
+            hasShippingOpt: hasShippingOpt,
+            hasPaymentOpt: hasPaymentOpt,
+          ),
+        ],
+        const SizedBox(height: 20),
+        FilledButton.icon(
+          onPressed: _saving ? null : _save,
+          icon: const Icon(Icons.save_outlined),
+          label: Text(
+              widget.invoice == null ? 'Create invoice' : 'Save changes'),
+        ),
+      ],
+    );
+  }
+
+  // ---------------------------------------------------------------------------
+  // LAPTOP / DESKTOP LIVE-PREVIEW DOCUMENT-STYLE EDITOR
+  // ---------------------------------------------------------------------------
+  Widget _buildDesktopDocumentEditor({
+    required BuildContext context,
+    required Invoice draft,
+    required List<String> paymentTermOptions,
+    required bool hasNotesOpt,
+    required bool hasShippingOpt,
+    required bool hasPaymentOpt,
+  }) {
+    final companyName =
+        _localSettings['businessName']?.toString().trim().isNotEmpty == true
+            ? _localSettings['businessName']!.toString().trim()
+            : (_localSettings['companyName']?.toString().trim().isNotEmpty == true
+                ? _localSettings['companyName']!.toString().trim()
+                : 'Your Company');
+    final companyGstin = _localSettings['businessGstin']?.toString().trim() ?? '';
+    final companyAddress = _localSettings['businessAddress']?.toString().trim() ?? '';
+    final sym = _currencySymbol.text.trim().isEmpty ? '₹' : _currencySymbol.text.trim();
+
+    return SingleChildScrollView(
+      padding: const EdgeInsets.fromLTRB(24, 16, 24, 40),
+      child: Center(
+        child: ConstrainedBox(
+          constraints: const BoxConstraints(maxWidth: 1240),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              if (_error != null) ...[
+                _ErrorBanner(message: _error!),
+                const SizedBox(height: 14),
+              ],
+
+              // Document Sheet Surface
+              Container(
+                decoration: BoxDecoration(
+                  color: Colors.white,
+                  borderRadius: BorderRadius.circular(22),
+                  border: Border.all(color: const Color(0xFFCBD5E1), width: 1.2),
+                  boxShadow: const [
+                    BoxShadow(
+                      color: Color(0x140F172A),
+                      blurRadius: 28,
+                      offset: Offset(0, 12),
                     ),
                   ],
                 ),
-              ],
-            ),
-            if (_show('showBillToSection', fallback: true)) ...[
-              const SizedBox(height: 14),
-              ClientBillingCard(
-                localSettings: _localSettings,
-                clientNameController: _clientName,
-              companyController: _company,
-              emailController: _email,
-              phoneController: _phone,
-              addressController: _address,
-              taxIdController: _clientTaxId,
-              selectedClientId: _selectedClientId,
-              loadingClients: _loadingClients,
-              showSuggestions: _showClientSuggestions,
-              clientLoadError: _clientLoadError,
-              matchingClients: _matchingClients,
-              hasExactClientMatch: _hasExactClientMatch,
-              canSaveClient: widget.clientRepository != null,
-              onClearClient: () => setState(() {
-                _selectedClientId = null;
-                _clientName.clear();
-                _company.clear();
-                _email.clear();
-                _phone.clear();
-                _address.clear();
-                _clientTaxId.clear();
-              }),
-              onApplyClient: _applyClient,
-              onSaveClient: _createClientFromInvoice,
-              onNameChanged: (_) => setState(() {
-                _selectedClientId = null;
-                _showClientSuggestions = true;
-              }),
-              onNameTap: () => setState(() {
-                _showClientSuggestions = _clientName.text.isNotEmpty;
-              }),
-            ),
-          ],
-          const SizedBox(height: 14),
-            _SectionCard(
-              title: 'Line items',
-              subtitle: 'Quantities, rates and optional line discounts',
-              trailing: Row(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  OutlinedButton.icon(
-                    onPressed: _openItemCustomizerDialog,
-                    icon: const Icon(Icons.tune_rounded, size: 16),
-                    label: const Text('Item Settings', style: TextStyle(fontSize: 12)),
-                    style: OutlinedButton.styleFrom(
-                      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
-                      visualDensity: VisualDensity.compact,
-                    ),
-                  ),
-                  const SizedBox(width: 6),
-                  IconButton(
-                    tooltip: 'Add item',
-                    onPressed: () {
-                      final isSecurity = _localSettings['industryPresetId'] == 'security' ||
-                          _localSettings['showItemDuty'] == true;
-                      setState(() => _items.add(_newLineItem(isSecurity)));
-                    },
-                    icon: const Icon(Icons.add_circle_outline),
-                  ),
-                ],
-              ),
-              children: [
-                Align(
-                  alignment: Alignment.centerRight,
-                  child: TextButton.icon(
-                    onPressed:
-                        _loadingPreviousItems ? null : _copyPreviousItems,
-                    icon: _loadingPreviousItems
-                        ? const SizedBox(
-                            width: 16,
-                            height: 16,
-                            child: CircularProgressIndicator(strokeWidth: 2),
-                          )
-                        : const Icon(Icons.history),
-                    label: const Text('Use items from previous invoice'),
-                  ),
-                ),
-                for (var index = 0; index < _items.length; index++) ...[
-                  LineItemEditor(
-                    key: ValueKey(_items[index].id),
-                    index: index,
-                    item: _items[index],
-                    currencySymbol: _currencySymbol.text,
-                    localSettings: _localSettings,
-                    issueDate: _issueDate,
-                    showDescriptionField: _globalShowItemDescriptions ||
-                        _items[index].itemDetails.isNotEmpty,
-                    onToggleDescription: (open) {
-                      setState(() => _globalShowItemDescriptions = open);
-                    },
-                    onChanged: (item) => _updateItem(index, item),
-                    onRemove: () => _removeItem(index),
-                  ),
-                  if (index != _items.length - 1) const Divider(height: 28),
-                ],
-              ],
-            ),
-            const SizedBox(height: 14),
-            _SectionCard(
-              title: 'Invoice adjustments',
-              subtitle: 'Tax and currency use your saved invoice defaults',
-              children: [
-                Text(
-                  '${_taxLabel.text} ${_num(_value(_taxRate))}% · $_taxType'
-                  '${_taxInclusive ? ' · tax included in prices' : ''}'
-                  ' · ${_currencyCode.text}',
-                  style: Theme.of(context).textTheme.bodySmall,
-                ),
-                const SizedBox(height: 14),
-                _ResponsiveFields(
+                clipBehavior: Clip.antiAlias,
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
                   children: [
-                    if (_show('showDiscount', fallback: true)) ...[
-                      _decimalField(
-                        controller: _discountPercent,
-                        label: '${_label('customDiscountLabel', 'Discount')} (%)',
-                        min: 0,
-                        max: 100,
-                        onChanged: () => setState(() {}),
+                    // 1. Document Top Brand & Live Status Header Band
+                    Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 26, vertical: 18),
+                      decoration: const BoxDecoration(
+                        gradient: LinearGradient(
+                          begin: Alignment.topLeft,
+                          end: Alignment.bottomRight,
+                          colors: [Color(0xFF0F172A), Color(0xFF1E3A8A), Color(0xFF2563EB)],
+                        ),
                       ),
-                      _decimalField(
-                        controller: _discountAmount,
-                        label: '${_label('customDiscountLabel', 'Discount')} amount',
-                        min: 0,
-                        onChanged: () => setState(() {}),
-                      ),
-                    ],
-                    if (_show('showShippingFee', fallback: false) || _value(_shippingFee) > 0)
-                      _decimalField(
-                        controller: _shippingFee,
-                        label: _label('customShippingLabel', 'Shipping'),
-                        min: 0,
-                        onChanged: () => setState(() {}),
-                      ),
-                    if (_show('showAdditionalCharges', fallback: false) || _value(_additionalCharges) > 0)
-                      _decimalField(
-                        controller: _additionalCharges,
-                        label: _label('customAdjustmentsLabel', 'Additional charges'),
-                        min: 0,
-                        onChanged: () => setState(() {}),
-                      ),
-                    if (_show('showRoundOff', fallback: false) || _value(_roundOff) != 0)
-                      Row(
-                        crossAxisAlignment: CrossAxisAlignment.end,
+                      child: Row(
                         children: [
-                          Expanded(
-                            child: _decimalField(
-                              controller: _roundOff,
-                              label: '${_label('customRoundOffLabel', 'Round off')} (+/−)',
-                              min: -1000,
-                              allowNegative: true,
-                              onChanged: () => setState(() {}),
+                          Container(
+                            width: 46,
+                            height: 46,
+                            decoration: BoxDecoration(
+                              color: Colors.white.withValues(alpha: 0.14),
+                              borderRadius: BorderRadius.circular(14),
+                              border: Border.all(color: Colors.white.withValues(alpha: 0.25)),
+                            ),
+                            child: const Icon(
+                              Icons.description_rounded,
+                              color: Colors.white,
+                              size: 24,
                             ),
                           ),
-                          const SizedBox(width: 8),
-                          Padding(
-                            padding: const EdgeInsets.only(bottom: 2),
-                            child: OutlinedButton.icon(
-                              onPressed: () => _autoRoundOff(draft),
-                              icon: const Icon(Icons.auto_fix_high, size: 16),
-                              label: const Text('Auto Round'),
+                          const SizedBox(width: 14),
+                          Expanded(
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Row(
+                                  children: [
+                                    Flexible(
+                                      child: Text(
+                                        companyName,
+                                        maxLines: 1,
+                                        overflow: TextOverflow.ellipsis,
+                                        style: const TextStyle(
+                                          color: Colors.white,
+                                          fontSize: 18,
+                                          fontWeight: FontWeight.w900,
+                                          letterSpacing: -0.3,
+                                        ),
+                                      ),
+                                    ),
+                                    if (companyGstin.isNotEmpty) ...[
+                                      const SizedBox(width: 10),
+                                      Container(
+                                        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+                                        decoration: BoxDecoration(
+                                          color: Colors.white.withValues(alpha: 0.15),
+                                          borderRadius: BorderRadius.circular(6),
+                                        ),
+                                        child: Text(
+                                          'GSTIN: $companyGstin',
+                                          style: const TextStyle(
+                                            color: Color(0xFFBFDBFE),
+                                            fontSize: 11,
+                                            fontWeight: FontWeight.w700,
+                                          ),
+                                        ),
+                                      ),
+                                    ],
+                                  ],
+                                ),
+                                const SizedBox(height: 3),
+                                Text(
+                                  companyAddress.isNotEmpty
+                                      ? companyAddress
+                                      : 'Interactive Document Mode • Edit fields directly below',
+                                  maxLines: 1,
+                                  overflow: TextOverflow.ellipsis,
+                                  style: const TextStyle(
+                                    color: Color(0xFF93C5FD),
+                                    fontSize: 12,
+                                    fontWeight: FontWeight.w500,
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ),
+                          const SizedBox(width: 16),
+                          // Live Grand Total Pill in Document Header
+                          Container(
+                            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+                            decoration: BoxDecoration(
+                              color: Colors.white.withValues(alpha: 0.14),
+                              borderRadius: BorderRadius.circular(14),
+                              border: Border.all(color: Colors.white.withValues(alpha: 0.28)),
+                            ),
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.end,
+                              children: [
+                                Text(
+                                  _label('customTitle', 'TAX INVOICE').toUpperCase(),
+                                  style: const TextStyle(
+                                    color: Color(0xFFBFDBFE),
+                                    fontSize: 10,
+                                    fontWeight: FontWeight.w800,
+                                    letterSpacing: 0.8,
+                                  ),
+                                ),
+                                const SizedBox(height: 2),
+                                Text(
+                                  '$sym${draft.total.toStringAsFixed(2)}',
+                                  style: const TextStyle(
+                                    color: Colors.white,
+                                    fontSize: 20,
+                                    fontWeight: FontWeight.w900,
+                                  ),
+                                ),
+                              ],
                             ),
                           ),
                         ],
                       ),
-                    if (_show('showAmountPaid', fallback: true))
-                      _decimalField(
-                        controller: _amountPaid,
-                        label: _label('customAmountPaidLabel', 'Amount already paid'),
-                        min: 0,
-                        onChanged: () => setState(() {}),
+                    ),
+
+                    // 2. Document Body Padding
+                    Padding(
+                      padding: const EdgeInsets.all(24),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.stretch,
+                        children: [
+                          // Row A: 2-Column Side-by-Side Bill To (Left) & Invoice Metadata (Right)
+                          Row(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              if (_show('showBillToSection', fallback: true)) ...[
+                                Expanded(
+                                  flex: 6,
+                                  child: _buildClientBillingCard(),
+                                ),
+                                const SizedBox(width: 18),
+                              ],
+                              Expanded(
+                                flex: 5,
+                                child: _SectionCard(
+                                  title: _label('customTitle', 'Invoice Details & Dates'),
+                                  subtitle: 'Document number, billing dates & template style',
+                                  children: [
+                                    Row(
+                                      children: [
+                                        if (_show('showInvoiceNumber', fallback: true))
+                                          Expanded(
+                                            child: _textField(
+                                              controller: _number,
+                                              label: _label('customInvoiceNoLabel', 'Invoice number'),
+                                              validator: _required,
+                                              onChanged: (_) => setState(() {}),
+                                            ),
+                                          ),
+                                        if (_show('showInvoiceNumber', fallback: true) &&
+                                            _show('showIssueDate', fallback: true))
+                                          const SizedBox(width: 12),
+                                        if (_show('showIssueDate', fallback: true))
+                                          Expanded(
+                                            child: _dateField(
+                                              label: _label('customDateLabel', 'Issue date'),
+                                              date: _issueDate,
+                                              onTap: () => _pickDate(issue: true),
+                                            ),
+                                          ),
+                                      ],
+                                    ),
+                                    const SizedBox(height: 12),
+                                    Row(
+                                      children: [
+                                        Expanded(
+                                          child: _dateField(
+                                            label: _label('customDueDateLabel', 'Due date'),
+                                            date: _dueDate,
+                                            onTap: () => _pickDate(issue: false),
+                                          ),
+                                        ),
+                                        const SizedBox(width: 12),
+                                        Expanded(
+                                          child: DropdownButtonFormField<String>(
+                                            value: _paymentTerms,
+                                            isExpanded: true,
+                                            decoration: InputDecoration(
+                                              labelText: _label('customTermsLabel', 'Payment terms'),
+                                            ),
+                                            items: paymentTermOptions
+                                                .map((value) => DropdownMenuItem(
+                                                      value: value,
+                                                      child: Text(
+                                                        value,
+                                                        maxLines: 1,
+                                                        overflow: TextOverflow.ellipsis,
+                                                      ),
+                                                    ))
+                                                .toList(),
+                                            onChanged: (value) =>
+                                                setState(() => _paymentTerms = value ?? 'Net 30'),
+                                          ),
+                                        ),
+                                      ],
+                                    ),
+                                    const SizedBox(height: 12),
+                                    Row(
+                                      children: [
+                                        Expanded(
+                                          child: _textField(
+                                            controller: _poNumber,
+                                            label: _label('customPoLabel', 'PO / Work Order No.'),
+                                            isRequired: false,
+                                          ),
+                                        ),
+                                        const SizedBox(width: 12),
+                                        Expanded(child: _buildTemplateDropdown()),
+                                      ],
+                                    ),
+                                  ],
+                                ),
+                              ),
+                            ],
+                          ),
+                          const SizedBox(height: 22),
+
+                          // Row B: Single-Line Tabular Line Items Editor Section
+                          Container(
+                            decoration: BoxDecoration(
+                              color: Colors.white,
+                              borderRadius: BorderRadius.circular(16),
+                              border: Border.all(color: const Color(0xFFCBD5E1), width: 1.2),
+                              boxShadow: const [
+                                BoxShadow(
+                                  color: Color(0x0A0F172A),
+                                  blurRadius: 12,
+                                  offset: Offset(0, 4),
+                                ),
+                              ],
+                            ),
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.stretch,
+                              children: [
+                                // Quick-Add Preset Toolbar above Table Header
+                                Container(
+                                  padding: const EdgeInsets.fromLTRB(16, 12, 16, 12),
+                                  decoration: const BoxDecoration(
+                                    color: Color(0xFFF8FAFC),
+                                    borderRadius: BorderRadius.vertical(top: Radius.circular(15)),
+                                  ),
+                                  child: Wrap(
+                                    alignment: WrapAlignment.spaceBetween,
+                                    crossAxisAlignment: WrapCrossAlignment.center,
+                                    spacing: 10,
+                                    runSpacing: 8,
+                                    children: [
+                                      Row(
+                                        mainAxisSize: MainAxisSize.min,
+                                        children: [
+                                          Container(
+                                            padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 4),
+                                            decoration: BoxDecoration(
+                                              color: const Color(0xFF1E3A8A),
+                                              borderRadius: BorderRadius.circular(8),
+                                            ),
+                                            child: Text(
+                                              '${_items.length} ${_items.length == 1 ? "ITEM" : "ITEMS"}',
+                                              style: const TextStyle(
+                                                color: Colors.white,
+                                                fontSize: 11,
+                                                fontWeight: FontWeight.w800,
+                                              ),
+                                            ),
+                                          ),
+                                          const SizedBox(width: 10),
+                                          const Text(
+                                            'Quick Add Service:',
+                                            style: TextStyle(
+                                              fontSize: 12,
+                                              fontWeight: FontWeight.w700,
+                                              color: Color(0xFF475569),
+                                            ),
+                                          ),
+                                          const SizedBox(width: 8),
+                                          for (final preset in securitySuggestions.take(5))
+                                            Padding(
+                                              padding: const EdgeInsets.only(right: 6),
+                                              child: ActionChip(
+                                                avatar: Icon(preset.icon, size: 14, color: const Color(0xFF2563EB)),
+                                                label: Text(
+                                                  '+ ${preset.title.replaceAll("Security ", "")}',
+                                                  style: const TextStyle(
+                                                    fontSize: 11,
+                                                    fontWeight: FontWeight.w700,
+                                                    color: Color(0xFF1E3A8A),
+                                                  ),
+                                                ),
+                                                backgroundColor: const Color(0xFFEFF6FF),
+                                                side: const BorderSide(color: Color(0xFFBFDBFE)),
+                                                visualDensity: VisualDensity.compact,
+                                                onPressed: () => _addQuickPresetItem(preset),
+                                              ),
+                                            ),
+                                        ],
+                                      ),
+                                      Row(
+                                        mainAxisSize: MainAxisSize.min,
+                                        children: [
+                                          TextButton.icon(
+                                            onPressed: _loadingPreviousItems ? null : _copyPreviousItems,
+                                            icon: _loadingPreviousItems
+                                                ? const SizedBox(
+                                                    width: 14,
+                                                    height: 14,
+                                                    child: CircularProgressIndicator(strokeWidth: 2),
+                                                  )
+                                                : const Icon(Icons.history_rounded, size: 16),
+                                            label: const Text(
+                                              'Copy Previous Invoice',
+                                              style: TextStyle(fontSize: 12, fontWeight: FontWeight.w700),
+                                            ),
+                                          ),
+                                          const SizedBox(width: 6),
+                                          OutlinedButton.icon(
+                                            onPressed: _openFormulaPopup,
+                                            icon: const Icon(Icons.functions_rounded, size: 15, color: Color(0xFF4F46E5)),
+                                            label: const Text(
+                                              'Daily Wage Formula',
+                                              style: TextStyle(
+                                                fontSize: 12,
+                                                fontWeight: FontWeight.w700,
+                                                color: Color(0xFF4338CA),
+                                              ),
+                                            ),
+                                            style: OutlinedButton.styleFrom(
+                                              visualDensity: VisualDensity.compact,
+                                              side: const BorderSide(color: Color(0xFFC7D2FE)),
+                                              backgroundColor: const Color(0xFFEEF2FF),
+                                            ),
+                                          ),
+                                          const SizedBox(width: 6),
+                                          OutlinedButton.icon(
+                                            onPressed: _openItemCustomizerDialog,
+                                            icon: const Icon(Icons.tune_rounded, size: 15),
+                                            label: const Text(
+                                              'Item Columns & Formula',
+                                              style: TextStyle(fontSize: 12, fontWeight: FontWeight.w700),
+                                            ),
+                                            style: OutlinedButton.styleFrom(
+                                              visualDensity: VisualDensity.compact,
+                                            ),
+                                          ),
+                                        ],
+                                      ),
+                                    ],
+                                  ),
+                                ),
+
+                                // Desktop Table Column Header Bar
+                                DesktopLineItemsTableHeader(
+                                  localSettings: _localSettings,
+                                  currencySymbol: sym,
+                                ),
+
+                                // Single-Line Item Rows
+                                for (var index = 0; index < _items.length; index++)
+                                  LineItemEditor(
+                                    key: ValueKey(_items[index].id),
+                                    index: index,
+                                    item: _items[index],
+                                    currencySymbol: sym,
+                                    localSettings: _localSettings,
+                                    issueDate: _issueDate,
+                                    forceDesktopRow: true,
+                                    employees: _employees,
+                                    onOpenFormulaSettings: _openFormulaPopup,
+                                    showDescriptionField: _globalShowItemDescriptions ||
+                                        _items[index].itemDetails.isNotEmpty,
+                                    onToggleDescription: (open) {
+                                      setState(() => _globalShowItemDescriptions = open);
+                                    },
+                                    onChanged: (item) => _updateItem(index, item),
+                                    onDuplicate: () => _duplicateItem(index),
+                                    onRemove: () => _removeItem(index),
+                                  ),
+
+                                // Table Bottom Bar: Add New Line Item Button + Live Subtotal
+                                Container(
+                                  padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+                                  decoration: const BoxDecoration(
+                                    color: Color(0xFFF8FAFC),
+                                    borderRadius: BorderRadius.vertical(bottom: Radius.circular(15)),
+                                  ),
+                                  child: Row(
+                                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                                    children: [
+                                      InkWell(
+                                        onTap: () {
+                                          final isSecurity =
+                                              _localSettings['industryPresetId'] == 'security' ||
+                                                  _localSettings['showItemDuty'] == true;
+                                          setState(() => _items.add(_newLineItem(isSecurity)));
+                                        },
+                                        borderRadius: BorderRadius.circular(12),
+                                        child: Container(
+                                          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 9),
+                                          decoration: BoxDecoration(
+                                            gradient: const LinearGradient(
+                                              begin: Alignment.topLeft,
+                                              end: Alignment.bottomRight,
+                                              colors: [Color(0xFF2563EB), Color(0xFF1D4ED8)],
+                                            ),
+                                            borderRadius: BorderRadius.circular(12),
+                                            boxShadow: const [
+                                              BoxShadow(
+                                                color: Color(0x332563EB),
+                                                blurRadius: 8,
+                                                offset: Offset(0, 3),
+                                              ),
+                                            ],
+                                          ),
+                                          child: const Row(
+                                            mainAxisSize: MainAxisSize.min,
+                                            children: [
+                                              Icon(Icons.add_circle_outline_rounded, size: 16, color: Colors.white),
+                                              SizedBox(width: 6),
+                                              Text(
+                                                'Add New Line Item',
+                                                style: TextStyle(
+                                                  color: Colors.white,
+                                                  fontSize: 12.5,
+                                                  fontWeight: FontWeight.w800,
+                                                ),
+                                              ),
+                                            ],
+                                          ),
+                                        ),
+                                      ),
+                                      Row(
+                                        children: [
+                                          InkWell(
+                                            onTap: _openFormulaPopup,
+                                            borderRadius: BorderRadius.circular(8),
+                                            child: Container(
+                                              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                                              margin: const EdgeInsets.only(right: 10),
+                                              decoration: BoxDecoration(
+                                                color: const Color(0xFFEEF2FF),
+                                                borderRadius: BorderRadius.circular(8),
+                                                border: Border.all(color: const Color(0xFFC7D2FE)),
+                                              ),
+                                              child: const Row(
+                                                mainAxisSize: MainAxisSize.min,
+                                                children: [
+                                                  Icon(Icons.functions_rounded, size: 14, color: Color(0xFF4F46E5)),
+                                                  SizedBox(width: 4),
+                                                  Text(
+                                                    'Formula',
+                                                    style: TextStyle(
+                                                      fontSize: 11,
+                                                      fontWeight: FontWeight.w800,
+                                                      color: Color(0xFF4338CA),
+                                                    ),
+                                                  ),
+                                                ],
+                                              ),
+                                            ),
+                                          ),
+                                          const Text(
+                                            'Items Gross Subtotal:',
+                                            style: TextStyle(
+                                              fontSize: 12.5,
+                                              fontWeight: FontWeight.w700,
+                                              color: Color(0xFF475569),
+                                            ),
+                                          ),
+                                          const SizedBox(width: 8),
+                                          Text(
+                                            '$sym${draft.subtotal.toStringAsFixed(2)}',
+                                            style: const TextStyle(
+                                              fontSize: 15,
+                                              fontWeight: FontWeight.w900,
+                                              color: Color(0xFF0F172A),
+                                            ),
+                                          ),
+                                        ],
+                                      ),
+                                    ],
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ),
+                          const SizedBox(height: 22),
+
+                          // Row C: Bottom Split — Adjustments & Notes (Left, Flex 6) + Colored Total Section (Right, Flex 5)
+                          Row(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Expanded(
+                                flex: 6,
+                                child: Column(
+                                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                                  children: [
+                                    _SectionCard(
+                                      title: 'Tax, Discounts & Adjustments',
+                                      subtitle:
+                                          '${_taxLabel.text} ${_num(_value(_taxRate))}% ($_taxType) · ${_currencyCode.text}',
+                                      trailing: FilterChip(
+                                        label: const Text(
+                                          'Tax Inclusive',
+                                          style: TextStyle(fontSize: 11.5, fontWeight: FontWeight.w700),
+                                        ),
+                                        selected: _taxInclusive,
+                                        onSelected: (val) => setState(() => _taxInclusive = val),
+                                        visualDensity: VisualDensity.compact,
+                                      ),
+                                      children: [
+                                        Row(
+                                          children: [
+                                            Expanded(
+                                              child: _decimalField(
+                                                controller: _taxRate,
+                                                label: '${_taxLabel.text} Rate (%)',
+                                                min: 0,
+                                                max: 100,
+                                                onChanged: () => setState(() {}),
+                                              ),
+                                            ),
+                                            const SizedBox(width: 12),
+                                            Expanded(
+                                              child: DropdownButtonFormField<String>(
+                                                value: const ['GST', 'IGST', 'VAT', 'TAX', 'NONE']
+                                                        .contains(_taxType.toUpperCase())
+                                                    ? _taxType.toUpperCase()
+                                                    : 'GST',
+                                                decoration: const InputDecoration(
+                                                  labelText: 'Tax Type',
+                                                ),
+                                                items: const [
+                                                  DropdownMenuItem(
+                                                    value: 'GST',
+                                                    child: Text('GST (CGST + SGST)'),
+                                                  ),
+                                                  DropdownMenuItem(
+                                                    value: 'IGST',
+                                                    child: Text('IGST (Inter-State)'),
+                                                  ),
+                                                  DropdownMenuItem(
+                                                    value: 'VAT',
+                                                    child: Text('VAT / Sales Tax'),
+                                                  ),
+                                                  DropdownMenuItem(
+                                                    value: 'NONE',
+                                                    child: Text('No Tax (0%)'),
+                                                  ),
+                                                ],
+                                                onChanged: (val) {
+                                                  if (val == null) return;
+                                                  setState(() {
+                                                    _taxType = val;
+                                                    if (val == 'NONE') {
+                                                      _taxRate.text = '0';
+                                                    }
+                                                  });
+                                                },
+                                              ),
+                                            ),
+                                          ],
+                                        ),
+                                        const SizedBox(height: 12),
+                                        _ResponsiveFields(
+                                          children: _buildAdjustmentFields(draft),
+                                        ),
+                                      ],
+                                    ),
+                                    if (hasNotesOpt || hasShippingOpt || hasPaymentOpt) ...[
+                                      const SizedBox(height: 16),
+                                      _buildOptionalDetailsCard(
+                                        hasNotesOpt: hasNotesOpt,
+                                        hasShippingOpt: hasShippingOpt,
+                                        hasPaymentOpt: hasPaymentOpt,
+                                      ),
+                                    ],
+                                  ],
+                                ),
+                              ),
+                              const SizedBox(width: 20),
+                              Expanded(
+                                flex: 5,
+                                child: Column(
+                                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                                  children: [
+                                    _TotalsPreview(
+                                      invoice: draft,
+                                      onAutoRound: () => _autoRoundOff(draft),
+                                    ),
+                                    const SizedBox(height: 16),
+                                    InkWell(
+                                      onTap: _saving ? null : _save,
+                                      borderRadius: BorderRadius.circular(16),
+                                      child: Container(
+                                        padding: const EdgeInsets.symmetric(vertical: 15),
+                                        decoration: BoxDecoration(
+                                          gradient: const LinearGradient(
+                                            begin: Alignment.topLeft,
+                                            end: Alignment.bottomRight,
+                                            colors: [Color(0xFF059669), Color(0xFF047857)],
+                                          ),
+                                          borderRadius: BorderRadius.circular(16),
+                                          border: Border.all(
+                                            color: const Color(0xFF6EE7B7).withValues(alpha: 0.6),
+                                            width: 1.2,
+                                          ),
+                                          boxShadow: const [
+                                            BoxShadow(
+                                              color: Color(0x38059669),
+                                              blurRadius: 14,
+                                              offset: Offset(0, 6),
+                                            ),
+                                          ],
+                                        ),
+                                        child: Row(
+                                          mainAxisAlignment: MainAxisAlignment.center,
+                                          children: [
+                                            const Icon(Icons.check_circle_outline_rounded, color: Colors.white, size: 20),
+                                            const SizedBox(width: 8),
+                                            Text(
+                                              _saving
+                                                  ? 'Saving Invoice...'
+                                                  : (widget.invoice == null
+                                                      ? 'Save & Generate Invoice'
+                                                      : 'Save Invoice Changes'),
+                                              style: const TextStyle(
+                                                color: Colors.white,
+                                                fontSize: 15,
+                                                fontWeight: FontWeight.w800,
+                                                letterSpacing: -0.2,
+                                              ),
+                                            ),
+                                          ],
+                                        ),
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                              ),
+                            ],
+                          ),
+                        ],
                       ),
+                    ),
                   ],
                 ),
-                const SizedBox(height: 8),
-                _TotalsPreview(invoice: draft),
-              ],
-            ),
-            if (hasNotesOpt || hasShippingOpt || hasPaymentOpt) ...[
-              const SizedBox(height: 14),
-              _SectionCard(
-                title: 'Optional details',
-                subtitle: 'Only add the sections needed for this invoice',
-                children: [
-                  Wrap(
-                    spacing: 8,
-                    runSpacing: 8,
-                    children: [
-                      if (hasNotesOpt)
-                        FilterChip(
-                          label: const Text('Notes & terms'),
-                          selected: _showNotesSection,
-                          onSelected: (value) =>
-                              setState(() => _showNotesSection = value),
-                        ),
-                      if (hasShippingOpt)
-                        FilterChip(
-                          label: Text(_label('customShipToLabel', 'Delivery details')),
-                          selected: _showShippingSection,
-                          onSelected: (value) =>
-                              setState(() => _showShippingSection = value),
-                        ),
-                      if (hasPaymentOpt)
-                        FilterChip(
-                          label: const Text('Payment instructions'),
-                          selected: _showPaymentSection,
-                          onSelected: (value) =>
-                              setState(() => _showPaymentSection = value),
-                        ),
-                    ],
-                  ),
-                  if (_showNotesSection && hasNotesOpt) ...[
-                    const SizedBox(height: 14),
-                    _textField(
-                      controller: _notes,
-                      label: 'Notes to client',
-                      isRequired: false,
-                      maxLines: 3,
-                    ),
-                    const SizedBox(height: 12),
-                    _textField(
-                      controller: _terms,
-                      label: 'Terms and conditions',
-                      isRequired: false,
-                      maxLines: 3,
-                    ),
-                  ],
-                  if (_showShippingSection && hasShippingOpt) ...[
-                    const SizedBox(height: 12),
-                    _textField(
-                      controller: _shippingDetails,
-                      label: _label('customShipToLabel', 'Delivery / shipping details'),
-                      hintText: 'Address, delivery date, carrier or tracking',
-                      isRequired: false,
-                      maxLines: 3,
-                    ),
-                  ],
-                  if (_showPaymentSection && hasPaymentOpt) ...[
-                    const SizedBox(height: 12),
-                    _textField(
-                      controller: _paymentInstructions,
-                      label: 'Payment instructions',
-                      isRequired: false,
-                      maxLines: 3,
-                    ),
-                  ],
-                ],
               ),
             ],
-            const SizedBox(height: 20),
-            FilledButton.icon(
-              onPressed: _saving ? null : _save,
-              icon: const Icon(Icons.save_outlined),
-              label: Text(
-                  widget.invoice == null ? 'Create invoice' : 'Save changes'),
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildTemplateDropdown() {
+    return DropdownButtonFormField<String>(
+      value: _template,
+      isExpanded: true,
+      decoration: const InputDecoration(labelText: 'Invoice style'),
+      items: [
+        if (!templatePresets.any((item) => item.id == _template))
+          DropdownMenuItem<String>(
+            value: _template,
+            child: Text(
+              widget.preferredTemplate?.id == _template
+                  ? widget.preferredTemplate!.name
+                  : _template,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+            ),
+          ),
+        ...templatePresets.map((template) => DropdownMenuItem<String>(
+              value: template.id,
+              child: Text(
+                template.name,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+              ),
+            )),
+      ],
+      selectedItemBuilder: (context) => [
+        if (!templatePresets.any((item) => item.id == _template))
+          Align(
+            alignment: Alignment.centerLeft,
+            child: Text(
+              widget.preferredTemplate?.id == _template
+                  ? widget.preferredTemplate!.name
+                  : _template,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+            ),
+          ),
+        ...templatePresets.map(
+          (template) => Align(
+            alignment: Alignment.centerLeft,
+            child: Text(
+              template.name,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+            ),
+          ),
+        ),
+      ],
+      onChanged: (value) => setState(() => _template = value ?? 'modern'),
+    );
+  }
+
+  Widget _buildClientBillingCard() {
+    return ClientBillingCard(
+      localSettings: _localSettings,
+      clientNameController: _clientName,
+      companyController: _company,
+      emailController: _email,
+      phoneController: _phone,
+      addressController: _address,
+      taxIdController: _clientTaxId,
+      selectedClientId: _selectedClientId,
+      loadingClients: _loadingClients,
+      showSuggestions: _showClientSuggestions,
+      clientLoadError: _clientLoadError,
+      matchingClients: _matchingClients,
+      hasExactClientMatch: _hasExactClientMatch,
+      canSaveClient: widget.clientRepository != null,
+      onClearClient: () => setState(() {
+        _selectedClientId = null;
+        _clientName.clear();
+        _company.clear();
+        _email.clear();
+        _phone.clear();
+        _address.clear();
+        _clientTaxId.clear();
+      }),
+      onApplyClient: _applyClient,
+      onSaveClient: _createClientFromInvoice,
+      onNameChanged: (_) => setState(() {
+        _selectedClientId = null;
+        _showClientSuggestions = true;
+      }),
+      onNameTap: () => setState(() {
+        _showClientSuggestions = _clientName.text.isNotEmpty;
+      }),
+    );
+  }
+
+  List<Widget> _buildAdjustmentFields(Invoice draft) {
+    return [
+      if (_show('showDiscount', fallback: true)) ...[
+        _decimalField(
+          controller: _discountPercent,
+          label: '${_label('customDiscountLabel', 'Discount')} (%)',
+          min: 0,
+          max: 100,
+          onChanged: () => setState(() {}),
+        ),
+        _decimalField(
+          controller: _discountAmount,
+          label: '${_label('customDiscountLabel', 'Discount')} amount',
+          min: 0,
+          onChanged: () => setState(() {}),
+        ),
+      ],
+      if (_show('showShippingFee', fallback: false) || _value(_shippingFee) > 0)
+        _decimalField(
+          controller: _shippingFee,
+          label: _label('customShippingLabel', 'Shipping'),
+          min: 0,
+          onChanged: () => setState(() {}),
+        ),
+      if (_show('showAdditionalCharges', fallback: false) || _value(_additionalCharges) > 0)
+        _decimalField(
+          controller: _additionalCharges,
+          label: _label('customAdjustmentsLabel', 'Additional charges'),
+          min: 0,
+          onChanged: () => setState(() {}),
+        ),
+      if (_show('showRoundOff', fallback: false) || _value(_roundOff) != 0)
+        Row(
+          crossAxisAlignment: CrossAxisAlignment.end,
+          children: [
+            Expanded(
+              child: _decimalField(
+                controller: _roundOff,
+                label: '${_label('customRoundOffLabel', 'Round off')} (+/−)',
+                min: -1000,
+                allowNegative: true,
+                onChanged: () => setState(() {}),
+              ),
+            ),
+            const SizedBox(width: 8),
+            Padding(
+              padding: const EdgeInsets.only(bottom: 2),
+              child: OutlinedButton.icon(
+                onPressed: () => _autoRoundOff(draft),
+                icon: const Icon(Icons.auto_fix_high, size: 16),
+                label: const Text('Auto Round'),
+              ),
             ),
           ],
         ),
-      ),
+      if (_show('showAmountPaid', fallback: true))
+        _decimalField(
+          controller: _amountPaid,
+          label: _label('customAmountPaidLabel', 'Amount already paid'),
+          min: 0,
+          onChanged: () => setState(() {}),
+        ),
+    ];
+  }
+
+  Widget _buildOptionalDetailsCard({
+    required bool hasNotesOpt,
+    required bool hasShippingOpt,
+    required bool hasPaymentOpt,
+  }) {
+    return _SectionCard(
+      title: 'Notes, Terms & Instructions',
+      subtitle: 'Only include the sections needed for this invoice',
+      children: [
+        Wrap(
+          spacing: 8,
+          runSpacing: 8,
+          children: [
+            if (hasNotesOpt)
+              FilterChip(
+                label: const Text('Notes & terms'),
+                selected: _showNotesSection,
+                onSelected: (value) => setState(() => _showNotesSection = value),
+              ),
+            if (hasShippingOpt)
+              FilterChip(
+                label: Text(_label('customShipToLabel', 'Delivery details')),
+                selected: _showShippingSection,
+                onSelected: (value) => setState(() => _showShippingSection = value),
+              ),
+            if (hasPaymentOpt)
+              FilterChip(
+                label: const Text('Payment instructions'),
+                selected: _showPaymentSection,
+                onSelected: (value) => setState(() => _showPaymentSection = value),
+              ),
+          ],
+        ),
+        if (_showNotesSection && hasNotesOpt) ...[
+          const SizedBox(height: 14),
+          _textField(
+            controller: _notes,
+            label: 'Notes to client',
+            isRequired: false,
+            maxLines: 3,
+          ),
+          const SizedBox(height: 12),
+          _textField(
+            controller: _terms,
+            label: 'Terms and conditions',
+            isRequired: false,
+            maxLines: 3,
+          ),
+        ],
+        if (_showShippingSection && hasShippingOpt) ...[
+          const SizedBox(height: 12),
+          _textField(
+            controller: _shippingDetails,
+            label: _label('customShipToLabel', 'Delivery / shipping details'),
+            hintText: 'Address, delivery date, carrier or tracking',
+            isRequired: false,
+            maxLines: 3,
+          ),
+        ],
+        if (_showPaymentSection && hasPaymentOpt) ...[
+          const SizedBox(height: 12),
+          _textField(
+            controller: _paymentInstructions,
+            label: 'Payment instructions',
+            isRequired: false,
+            maxLines: 3,
+          ),
+        ],
+      ],
     );
   }
 }

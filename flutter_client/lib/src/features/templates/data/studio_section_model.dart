@@ -36,6 +36,7 @@ class StudioField {
     this.placeholder = '',
     this.options = const [],
     this.isSystem = false,
+    this.formula = '',
   });
 
   final String id;
@@ -47,6 +48,7 @@ class StudioField {
   String placeholder;
   List<String> options;
   bool isSystem;
+  String formula;
 
   StudioField copyWith({
     String? id,
@@ -58,6 +60,7 @@ class StudioField {
     String? placeholder,
     List<String>? options,
     bool? isSystem,
+    String? formula,
   }) {
     return StudioField(
       id: id ?? this.id,
@@ -69,6 +72,7 @@ class StudioField {
       placeholder: placeholder ?? this.placeholder,
       options: options ?? List.from(this.options),
       isSystem: isSystem ?? this.isSystem,
+      formula: formula ?? this.formula,
     );
   }
 
@@ -82,6 +86,7 @@ class StudioField {
         'placeholder': placeholder,
         'options': options,
         'isSystem': isSystem,
+        'formula': formula,
       };
 
   factory StudioField.fromJson(Map<String, dynamic> json) {
@@ -95,6 +100,7 @@ class StudioField {
       placeholder: json['placeholder']?.toString() ?? '',
       options: (json['options'] as List<dynamic>?)?.map((e) => e.toString()).toList() ?? const [],
       isSystem: json['isSystem'] == true,
+      formula: json['formula']?.toString() ?? '',
     );
   }
 }
@@ -249,8 +255,8 @@ class StudioSection {
           StudioField(id: 'f_col_particulars', label: 'Particulars Column', type: StudioFieldType.text, isRequired: true, isVisible: true, defaultValue: 'Particulars'),
           StudioField(id: 'f_col_guards', label: 'Qty / Guards Column', type: StudioFieldType.number, isRequired: true, isVisible: true, defaultValue: preset == 'security_agency' ? 'Guards' : 'Qty'),
           StudioField(id: 'f_col_duty', label: 'Duty Column', type: StudioFieldType.number, isRequired: true, isVisible: true, defaultValue: 'Duty'),
-          StudioField(id: 'f_col_rate', label: 'Rate Column', type: StudioFieldType.currency, isRequired: true, isVisible: true, defaultValue: 'Rate (₹)'),
-          StudioField(id: 'f_col_amount', label: 'Total Column', type: StudioFieldType.currency, isRequired: true, isVisible: true, defaultValue: 'Total (₹)'),
+          StudioField(id: 'f_col_rate', label: 'Rate Column', type: StudioFieldType.currency, isRequired: true, isVisible: true, defaultValue: 'Rate (₹)', formula: 'Monthly Rate ÷ Month Days'),
+          StudioField(id: 'f_col_amount', label: 'Total Column', type: StudioFieldType.currency, isRequired: true, isVisible: true, defaultValue: 'Total (₹)', formula: '(Monthly Rate ÷ 30) × Qty × Duty'),
           StudioField(id: 'f_srv_shift', label: 'Shift Hours Breakdown', type: StudioFieldType.text, isRequired: false, isVisible: false, defaultValue: '12-Hour Shift'),
         ],
       ),
@@ -258,17 +264,17 @@ class StudioSection {
       // 5. Tax & Totals
       StudioSection(
         id: 'sec_tax_totals',
-        title: 'Tax & Totals',
-        subtitle: 'Subtotal, discounts, GST and grand total',
+        title: 'Tax & Totals (Subtotal & GST)',
+        subtitle: 'Automatic daily wage subtotal, discounts, GST and grand total',
         icon: Icons.percent_rounded,
         enabled: true,
         fields: [
-          StudioField(id: 'f_tot_sub', label: 'Taxable Subtotal', type: StudioFieldType.currency, isRequired: true, isVisible: true),
+          StudioField(id: 'f_tot_sub', label: 'Taxable Subtotal', type: StudioFieldType.currency, isRequired: true, isVisible: true, formula: 'SUM((Rate ÷ MonthDays) × Qty × Duty)'),
           StudioField(id: 'f_tot_disc', label: 'Special Discount', type: StudioFieldType.currency, isRequired: false, isVisible: true),
-          StudioField(id: 'f_tot_taxable', label: 'Net Taxable Amount', type: StudioFieldType.currency, isRequired: true, isVisible: true),
-          StudioField(id: 'f_tot_cgst', label: 'CGST (9%)', type: StudioFieldType.currency, isRequired: true, isVisible: true),
-          StudioField(id: 'f_tot_sgst', label: 'SGST (9%)', type: StudioFieldType.currency, isRequired: true, isVisible: true),
-          StudioField(id: 'f_tot_grand', label: 'Grand Total Payable', type: StudioFieldType.currency, isRequired: true, isVisible: true),
+          StudioField(id: 'f_tot_taxable', label: 'Net Taxable Amount', type: StudioFieldType.currency, isRequired: true, isVisible: true, formula: 'Subtotal - Discount'),
+          StudioField(id: 'f_tot_cgst', label: 'CGST (9%)', type: StudioFieldType.currency, isRequired: true, isVisible: true, formula: 'Taxable × 9%'),
+          StudioField(id: 'f_tot_sgst', label: 'SGST (9%)', type: StudioFieldType.currency, isRequired: true, isVisible: true, formula: 'Taxable × 9%'),
+          StudioField(id: 'f_tot_grand', label: 'Grand Total Payable', type: StudioFieldType.currency, isRequired: true, isVisible: true, formula: 'Taxable + CGST + SGST'),
         ],
       ),
 

@@ -85,7 +85,7 @@ class _AppShellState extends State<AppShell> {
           await _localPreferences.readMap('invoice_settings');
       final merged = Map<String, Object?>.from(invoiceSettings);
 
-      // Fetch server business profile to sync currency and business defaults if missing or updated
+      // Fetch server business profile to sync currency, branding assets, and business defaults per organization
       try {
         final profile = await SettingsRepository(apiClient: widget.apiClient).loadProfile();
         if (profile.isNotEmpty) {
@@ -103,20 +103,29 @@ class _AppShellState extends State<AppShell> {
                   : (profile['legalName']?.toString().trim().isNotEmpty == true
                       ? profile['legalName'].toString().trim()
                       : null));
-          if (bName != null && bName.isNotEmpty) {
+          if (bName != null &&
+              bName.isNotEmpty &&
+              bName.toLowerCase() != 'apex nova dynamics' &&
+              bName.toLowerCase() != 'northstar security services pvt. ltd.') {
             merged['businessName'] = bName;
             merged['companyName'] = bName;
           }
-          if (profile['address'] != null) merged['businessAddress'] ??= profile['address'];
-          if (profile['gstin'] != null) merged['businessGstin'] ??= profile['gstin'];
-          if (profile['panNumber'] != null) merged['businessPan'] ??= profile['panNumber'];
-          if (profile['phone'] != null) merged['businessPhone'] ??= profile['phone'];
-          if (profile['email'] != null) merged['businessEmail'] ??= profile['email'];
-          if (profile['upiId'] != null) merged['upiId'] ??= profile['upiId'];
-          if (profile['bankName'] != null) merged['bankName'] ??= profile['bankName'];
-          if (profile['accountNumber'] != null) merged['accountNumber'] ??= profile['accountNumber'];
-          if (profile['accountHolder'] != null) merged['accountHolder'] ??= profile['accountHolder'];
-          if (profile['ifscCode'] != null) merged['ifscCode'] ??= profile['ifscCode'];
+          if (profile['address'] != null) merged['businessAddress'] = profile['address'];
+          if (profile['gstin'] != null) merged['businessGstin'] = profile['gstin'];
+          if (profile['panNumber'] != null) merged['businessPan'] = profile['panNumber'];
+          if (profile['phone'] != null) merged['businessPhone'] = profile['phone'];
+          if (profile['email'] != null) merged['businessEmail'] = profile['email'];
+          if (profile['upiId'] != null) merged['upiId'] = profile['upiId'];
+          if (profile['bankName'] != null) merged['bankName'] = profile['bankName'];
+          if (profile['accountNumber'] != null) merged['accountNumber'] = profile['accountNumber'];
+          if (profile['accountHolder'] != null) merged['accountHolder'] = profile['accountHolder'];
+          if (profile['ifscCode'] != null) merged['ifscCode'] = profile['ifscCode'];
+          for (final assetKey in const ['logoUrl', 'stampUrl', 'signatureUrl', 'qrCodeUrl']) {
+            final val = profile[assetKey]?.toString().trim() ?? '';
+            if (val.isNotEmpty) {
+              merged[assetKey] = val;
+            }
+          }
         }
       } catch (_) {}
 
@@ -228,43 +237,39 @@ class _AppShellState extends State<AppShell> {
             }),
             labelType: NavigationRailLabelType.all,
             leading: Padding(
-              padding: const EdgeInsets.symmetric(vertical: 16),
-              child: Column(
-                children: [
-                  const Icon(
-                    Icons.receipt_long_rounded,
-                    size: 32,
-                    color: Color(0xFF1E3A8A),
+              padding: const EdgeInsets.only(top: 14, bottom: 8),
+              child: Container(
+                width: 44,
+                height: 44,
+                decoration: BoxDecoration(
+                  gradient: const LinearGradient(
+                    begin: Alignment.topLeft,
+                    end: Alignment.bottomRight,
+                    colors: [Color(0xFF2563EB), Color(0xFF1E3A8A)],
                   ),
-                  const SizedBox(height: 8),
-                  Container(
-                    padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 4),
-                    decoration: BoxDecoration(
-                      color: const Color(0x1F00F2FE),
-                      borderRadius: BorderRadius.circular(10),
-                      border: Border.all(color: const Color(0xFF00F2FE), width: 1),
-                    ),
-                    child: Row(
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        const Icon(Icons.business_rounded, size: 14, color: Color(0xFF00F2FE)),
-                        const SizedBox(width: 4),
-                        ConstrainedBox(
-                          constraints: const BoxConstraints(maxWidth: 58),
-                          child: Text(
-                            widget.session.company?.code ?? 'Workspace',
-                            overflow: TextOverflow.ellipsis,
-                            style: const TextStyle(
-                              fontSize: 10,
-                              fontWeight: FontWeight.bold,
-                              color: Color(0xFF00F2FE),
-                            ),
-                          ),
-                        ),
-                      ],
-                    ),
+                  borderRadius: BorderRadius.circular(14),
+                  border: Border.all(
+                    color: const Color(0xFF60A5FA).withValues(alpha: 0.45),
+                    width: 1.2,
                   ),
-                ],
+                  boxShadow: const [
+                    BoxShadow(
+                      color: Color(0x331E3A8A),
+                      blurRadius: 10,
+                      offset: Offset(0, 4),
+                    ),
+                    BoxShadow(
+                      color: Color(0x40FFFFFF),
+                      blurRadius: 2,
+                      offset: Offset(-1, -1),
+                    ),
+                  ],
+                ),
+                child: const Icon(
+                  Icons.receipt_long_rounded,
+                  size: 24,
+                  color: Colors.white,
+                ),
               ),
             ),
             destinations: [
@@ -376,8 +381,12 @@ class _AppShellState extends State<AppShell> {
           session: widget.session,
           onBack: onBack,
         ),
-      'Team management' =>
-        TeamManagementScreen(apiClient: widget.apiClient, onBack: onBack),
+      'Team management' => TeamManagementScreen(
+          apiClient: widget.apiClient,
+          businessProfileName: _invoiceLocalSettings['businessName']?.toString() ??
+              _invoiceLocalSettings['companyName']?.toString(),
+          onBack: onBack,
+        ),
       'Templates' ||
       'Invoice settings' ||
       'Invoice & Template Studio' ||

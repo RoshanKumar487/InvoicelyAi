@@ -5,7 +5,11 @@ import java.math.BigDecimal;
 import java.time.OffsetDateTime;
 
 @Entity
-@Table(name = "employees")
+@Table(name = "employees", indexes = {
+    @Index(name = "idx_employees_company_id", columnList = "company_id"),
+    @Index(name = "idx_employees_company_status", columnList = "company_id, status"),
+    @Index(name = "idx_employees_company_name", columnList = "company_id, full_name")
+})
 public class Employee {
 
     @Id

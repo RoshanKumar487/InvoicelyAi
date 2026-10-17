@@ -9,7 +9,10 @@ import java.time.OffsetDateTime;
  * Allows instant itemization in invoices with standardized pricing and HSN/SAC codes.
  */
 @Entity
-@Table(name = "catalog_items")
+@Table(name = "catalog_items", indexes = {
+    @Index(name = "idx_catalog_items_company_id", columnList = "company_id"),
+    @Index(name = "idx_catalog_items_company_name", columnList = "company_id, name")
+})
 public class CatalogItem {
 
     @Id

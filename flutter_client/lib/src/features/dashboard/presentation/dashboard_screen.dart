@@ -620,6 +620,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
       _ => 'Your business performance',
     };
     return Scaffold(
+      backgroundColor: const Color(0xFFF4F7FB),
       body: SafeArea(
         bottom: false,
         child: LayoutBuilder(
@@ -631,6 +632,9 @@ class _DashboardScreenState extends State<DashboardScreen> {
                 padding: EdgeInsets.fromLTRB(sidePadding, 12, sidePadding, 28),
                 children: [
                   _DashboardHeader(
+                    companyName: _isDeveloper ? 'Platform overview' : registeredName,
+                    selectedFilter: _selectedDateFilter,
+                    onFilterChanged: _onDateFilterChanged,
                     userInitial: widget.session.user.fullName.trim().isNotEmpty
                         ? widget.session.user.fullName.trim()[0].toUpperCase()
                         : 'R',
@@ -641,27 +645,24 @@ class _DashboardScreenState extends State<DashboardScreen> {
                     onSearchChanged: (val) => setState(() => _searchQuery = val),
                     onRefresh: _isLoading ? null : _loadStatistics,
                   ),
-                  const SizedBox(height: 12),
-                  _DashboardSubHeaderRow(
-                    companyName: _isDeveloper ? 'Platform overview' : registeredName,
-                    selectedFilter: _selectedDateFilter,
-                    onFilterChanged: _onDateFilterChanged,
-                  ),
-                  const SizedBox(height: 16),
+                  const SizedBox(height: 18),
                   _DashboardWelcomeRow(
                     userName: widget.session.user.fullName.trim().isNotEmpty
                         ? widget.session.user.fullName.trim()
                         : 'Roshan Kumar',
                     subtitle: subtitle,
+                    onCreateInvoice: widget.session.user.hasPermission('INVOICES')
+                        ? widget.onCreateInvoice
+                        : null,
                   ),
-                  const SizedBox(height: 14),
+                  const SizedBox(height: 16),
                   if (!_isDeveloper)
                     _AssistantBanner(onTap: widget.onOpenAiChat),
                   if (_usingCachedData) ...[
                     const SizedBox(height: 12),
                     const OfflineCacheBanner(),
                   ],
-                  const SizedBox(height: 14),
+                  const SizedBox(height: 16),
                   _DashboardShortcuts(
                     user: widget.session.user,
                     onViewInvoices: () => widget.onViewInvoices('All'),
@@ -670,7 +671,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
                     onOpenTemplates: widget.onOpenTemplates,
                     onOpenPayroll: widget.onOpenPayroll,
                   ),
-                  const SizedBox(height: 16),
+                  const SizedBox(height: 18),
                   if (_developerOverview != null) ...[
                     _DeveloperOverviewPanel(
                       overview: _developerOverview!,
@@ -736,6 +737,9 @@ class _DashboardScreenState extends State<DashboardScreen> {
 
 class _DashboardHeader extends StatelessWidget {
   const _DashboardHeader({
+    required this.companyName,
+    required this.selectedFilter,
+    required this.onFilterChanged,
     required this.userInitial,
     required this.onMenuTap,
     required this.unreadNotificationCount,
@@ -745,6 +749,9 @@ class _DashboardHeader extends StatelessWidget {
     this.onRefresh,
   });
 
+  final String companyName;
+  final String selectedFilter;
+  final ValueChanged<String> onFilterChanged;
   final String userInitial;
   final VoidCallback? onMenuTap;
   final int unreadNotificationCount;
@@ -757,178 +764,318 @@ class _DashboardHeader extends StatelessWidget {
   Widget build(BuildContext context) {
     final isDesktop = MediaQuery.of(context).size.width > 850;
 
+    return Container(
+      padding: EdgeInsets.symmetric(
+        horizontal: isDesktop ? 16 : 12,
+        vertical: isDesktop ? 10 : 10,
+      ),
+      decoration: BoxDecoration(
+        gradient: const LinearGradient(
+          begin: Alignment.topLeft,
+          end: Alignment.bottomRight,
+          colors: [Colors.white, Color(0xFFF8FAFC)],
+        ),
+        borderRadius: BorderRadius.circular(18),
+        border: Border.all(color: const Color(0xFFE2E8F0), width: 1.2),
+        boxShadow: const [
+          BoxShadow(
+            color: Color(0x0D0F172A),
+            blurRadius: 16,
+            offset: Offset(0, 6),
+          ),
+          BoxShadow(
+            color: Colors.white,
+            blurRadius: 2,
+            offset: Offset(-2, -2),
+          ),
+        ],
+      ),
+      child: isDesktop
+          ? Row(
+              children: [
+                _buildCompanyTopNavBadge(isDesktop: true),
+                const Spacer(),
+                _buildSearchField(width: 240),
+                const SizedBox(width: 10),
+                _buildFilterDropdown(context),
+                const SizedBox(width: 8),
+                _buildClayIconButton(
+                  tooltip: 'Sync dashboard',
+                  icon: Icons.refresh_rounded,
+                  onTap: onRefresh,
+                ),
+                const SizedBox(width: 8),
+                _buildNotificationButton(),
+                const SizedBox(width: 10),
+                _buildUserAvatar(),
+              ],
+            )
+          : Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                Row(
+                  children: [
+                    Expanded(child: _buildCompanyTopNavBadge(isDesktop: false)),
+                    const SizedBox(width: 6),
+                    _buildClayIconButton(
+                      tooltip: 'Sync dashboard',
+                      icon: Icons.refresh_rounded,
+                      onTap: onRefresh,
+                    ),
+                    const SizedBox(width: 6),
+                    _buildNotificationButton(),
+                    const SizedBox(width: 8),
+                    _buildUserAvatar(),
+                  ],
+                ),
+                const SizedBox(height: 10),
+                Row(
+                  children: [
+                    Expanded(child: _buildSearchField()),
+                    const SizedBox(width: 8),
+                    _buildFilterDropdown(context),
+                  ],
+                ),
+              ],
+            ),
+    );
+  }
+
+  Widget _buildCompanyTopNavBadge({required bool isDesktop}) {
     return Row(
+      mainAxisSize: MainAxisSize.min,
       children: [
         if (isDesktop) ...[
-          const Spacer(),
-          Container(
-            height: 38,
-            width: 240,
-            decoration: BoxDecoration(
-              color: const Color(0xFFF8FAFC),
-              borderRadius: BorderRadius.circular(10),
-              border: Border.all(color: const Color(0xFFE2E8F0)),
-            ),
-            child: TextField(
-              controller: searchController,
-              onChanged: onSearchChanged,
-              style: const TextStyle(fontSize: 13),
-              decoration: const InputDecoration(
-                hintText: 'Search anything...',
-                hintStyle: TextStyle(fontSize: 12, color: Color(0xFF94A3B8)),
-                prefixIcon: Icon(Icons.search_rounded, size: 18, color: Color(0xFF94A3B8)),
-                border: InputBorder.none,
-                isDense: true,
-                contentPadding: EdgeInsets.symmetric(vertical: 9),
-              ),
+          const Text(
+            'Dashboard',
+            style: TextStyle(
+              fontSize: 15,
+              fontWeight: FontWeight.w800,
+              color: Color(0xFF0F172A),
+              letterSpacing: -0.3,
             ),
           ),
-          const SizedBox(width: 8),
-          IconButton(
-            tooltip: 'Sync dashboard',
-            onPressed: onRefresh,
-            visualDensity: VisualDensity.compact,
-            icon: const Icon(Icons.refresh_rounded, size: 20, color: Color(0xFF64748B)),
-          ),
-          const SizedBox(width: 4),
-        ] else ...[
-          Expanded(
-            child: Container(
-              height: 38,
-              decoration: BoxDecoration(
-                color: const Color(0xFFF8FAFC),
-                borderRadius: BorderRadius.circular(10),
-                border: Border.all(color: const Color(0xFFE2E8F0)),
-              ),
-              child: TextField(
-                controller: searchController,
-                onChanged: onSearchChanged,
-                style: const TextStyle(fontSize: 13),
-                decoration: const InputDecoration(
-                  hintText: 'Search anything...',
-                  hintStyle: TextStyle(fontSize: 12, color: Color(0xFF94A3B8)),
-                  prefixIcon: Icon(Icons.search_rounded, size: 18, color: Color(0xFF94A3B8)),
-                  border: InputBorder.none,
-                  isDense: true,
-                  contentPadding: EdgeInsets.symmetric(vertical: 9),
-                ),
-              ),
+          const Padding(
+            padding: EdgeInsets.symmetric(horizontal: 10),
+            child: SizedBox(
+              height: 16,
+              child: VerticalDivider(width: 1, color: Color(0xFFCBD5E1)),
             ),
           ),
-          const SizedBox(width: 8),
         ],
-
-        // 3. Notification Bell with unread dot
-        Stack(
-          clipBehavior: Clip.none,
-          children: [
-            IconButton(
-              tooltip: 'Notifications',
-              onPressed: onOpenNotifications,
-              visualDensity: VisualDensity.compact,
-              icon: const Icon(
-                Icons.notifications_none_rounded,
-                size: 24,
-                color: Color(0xFF334155),
+        Flexible(
+          child: Container(
+            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+            decoration: BoxDecoration(
+              gradient: const LinearGradient(
+                begin: Alignment.topLeft,
+                end: Alignment.bottomRight,
+                colors: [Color(0xFFEFF6FF), Color(0xFFE0E7FF)],
               ),
+              borderRadius: BorderRadius.circular(12),
+              border: Border.all(color: const Color(0xFFBFDBFE), width: 1.1),
+              boxShadow: const [
+                BoxShadow(
+                  color: Color(0x142563EB),
+                  blurRadius: 8,
+                  offset: Offset(0, 3),
+                ),
+                BoxShadow(
+                  color: Colors.white,
+                  blurRadius: 2,
+                  offset: Offset(-1, -1),
+                ),
+              ],
             ),
-            if (unreadNotificationCount > 0)
-              Positioned(
-                top: 8,
-                right: 8,
-                child: Container(
-                  width: 8,
-                  height: 8,
+            child: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Container(
+                  width: 22,
+                  height: 22,
+                  decoration: BoxDecoration(
+                    gradient: const LinearGradient(
+                      begin: Alignment.topLeft,
+                      end: Alignment.bottomRight,
+                      colors: [Color(0xFF2563EB), Color(0xFF1D4ED8)],
+                    ),
+                    borderRadius: BorderRadius.circular(7),
+                    boxShadow: const [
+                      BoxShadow(
+                        color: Color(0x332563EB),
+                        blurRadius: 4,
+                        offset: Offset(0, 2),
+                      ),
+                    ],
+                  ),
+                  child: const Icon(
+                    Icons.business_rounded,
+                    size: 13,
+                    color: Colors.white,
+                  ),
+                ),
+                const SizedBox(width: 8),
+                Flexible(
+                  child: ConstrainedBox(
+                    constraints: BoxConstraints(maxWidth: isDesktop ? 280 : 190),
+                    child: Text(
+                      companyName,
+                      overflow: TextOverflow.ellipsis,
+                      style: const TextStyle(
+                        fontSize: 13,
+                        fontWeight: FontWeight.w800,
+                        color: Color(0xFF1E3A8A),
+                        letterSpacing: -0.2,
+                      ),
+                    ),
+                  ),
+                ),
+                const SizedBox(width: 6),
+                Container(
+                  width: 7,
+                  height: 7,
                   decoration: const BoxDecoration(
-                    color: Color(0xFFEF4444),
+                    color: Color(0xFF10B981),
                     shape: BoxShape.circle,
                   ),
                 ),
-              ),
-          ],
-        ),
-        const SizedBox(width: 6),
-
-        // 4. User Profile Circle Avatar
-        Container(
-          width: 36,
-          height: 36,
-          decoration: const BoxDecoration(
-            color: Color(0xFF2563EB),
-            shape: BoxShape.circle,
-          ),
-          child: Center(
-            child: Text(
-              userInitial,
-              style: const TextStyle(
-                color: Colors.white,
-                fontSize: 15,
-                fontWeight: FontWeight.w800,
-              ),
+              ],
             ),
           ),
         ),
       ],
     );
   }
-}
 
-class _DashboardSubHeaderRow extends StatelessWidget {
-  const _DashboardSubHeaderRow({
-    required this.companyName,
-    required this.selectedFilter,
-    required this.onFilterChanged,
-  });
+  Widget _buildSearchField({double? width}) {
+    return Container(
+      height: 38,
+      width: width,
+      decoration: BoxDecoration(
+        color: const Color(0xFFF1F5F9),
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: const Color(0xFFE2E8F0)),
+        boxShadow: const [
+          BoxShadow(
+            color: Colors.white,
+            blurRadius: 1,
+            offset: Offset(0, 1),
+          ),
+        ],
+      ),
+      child: TextField(
+        controller: searchController,
+        onChanged: onSearchChanged,
+        style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w500),
+        decoration: const InputDecoration(
+          hintText: 'Search invoices, clients...',
+          hintStyle: TextStyle(fontSize: 12, color: Color(0xFF94A3B8)),
+          prefixIcon: Icon(Icons.search_rounded, size: 18, color: Color(0xFF64748B)),
+          border: InputBorder.none,
+          isDense: true,
+          contentPadding: EdgeInsets.symmetric(vertical: 9),
+        ),
+      ),
+    );
+  }
 
-  final String companyName;
-  final String selectedFilter;
-  final ValueChanged<String> onFilterChanged;
-
-  @override
-  Widget build(BuildContext context) {
-    return Row(
-      mainAxisAlignment: MainAxisAlignment.spaceBetween,
-      children: [
-        // Left side: Dashboard 📍 NY / Central Security Force
-        Padding(
-          padding: const EdgeInsets.symmetric(vertical: 4, horizontal: 2),
-          child: Row(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              const Text(
-                'Dashboard',
-                style: TextStyle(
-                  fontSize: 13,
-                  fontWeight: FontWeight.w500,
-                  color: Color(0xFF64748B),
-                ),
+  Widget _buildClayIconButton({
+    required String tooltip,
+    required IconData icon,
+    required VoidCallback? onTap,
+  }) {
+    return Tooltip(
+      message: tooltip,
+      child: InkWell(
+        onTap: onTap,
+        borderRadius: BorderRadius.circular(12),
+        child: Container(
+          width: 38,
+          height: 38,
+          decoration: BoxDecoration(
+            gradient: const LinearGradient(
+              begin: Alignment.topLeft,
+              end: Alignment.bottomRight,
+              colors: [Colors.white, Color(0xFFF1F5F9)],
+            ),
+            borderRadius: BorderRadius.circular(12),
+            border: Border.all(color: const Color(0xFFE2E8F0)),
+            boxShadow: const [
+              BoxShadow(
+                color: Color(0x0D0F172A),
+                blurRadius: 6,
+                offset: Offset(0, 3),
               ),
-              const SizedBox(width: 6),
-              const Icon(
-                Icons.location_on_outlined,
-                size: 14,
-                color: Color(0xFF64748B),
-              ),
-              const SizedBox(width: 3),
-              ConstrainedBox(
-                constraints: const BoxConstraints(maxWidth: 160),
-                child: Text(
-                  'NY / $companyName',
-                  overflow: TextOverflow.ellipsis,
-                  style: const TextStyle(
-                    fontSize: 13,
-                    fontWeight: FontWeight.w600,
-                    color: Color(0xFF334155),
-                  ),
-                ),
+              BoxShadow(
+                color: Colors.white,
+                blurRadius: 2,
+                offset: Offset(-1, -1),
               ),
             ],
           ),
+          child: Icon(icon, size: 19, color: const Color(0xFF475569)),
         ),
+      ),
+    );
+  }
 
-        // Right side: 📅 FY 2025-26 ⌵
-        _buildFilterDropdown(context),
+  Widget _buildNotificationButton() {
+    return Stack(
+      clipBehavior: Clip.none,
+      children: [
+        _buildClayIconButton(
+          tooltip: 'Notifications',
+          icon: Icons.notifications_none_rounded,
+          onTap: onOpenNotifications,
+        ),
+        if (unreadNotificationCount > 0)
+          Positioned(
+            top: 7,
+            right: 7,
+            child: Container(
+              width: 8.5,
+              height: 8.5,
+              decoration: BoxDecoration(
+                color: const Color(0xFFEF4444),
+                shape: BoxShape.circle,
+                border: Border.all(color: Colors.white, width: 1.5),
+              ),
+            ),
+          ),
       ],
+    );
+  }
+
+  Widget _buildUserAvatar() {
+    return Container(
+      width: 38,
+      height: 38,
+      decoration: BoxDecoration(
+        gradient: const LinearGradient(
+          begin: Alignment.topLeft,
+          end: Alignment.bottomRight,
+          colors: [Color(0xFF3B82F6), Color(0xFF1D4ED8)],
+        ),
+        shape: BoxShape.circle,
+        border: Border.all(color: const Color(0xFF93C5FD), width: 1.2),
+        boxShadow: const [
+          BoxShadow(
+            color: Color(0x332563EB),
+            blurRadius: 8,
+            offset: Offset(0, 3),
+          ),
+        ],
+      ),
+      child: Center(
+        child: Text(
+          userInitial,
+          style: const TextStyle(
+            color: Colors.white,
+            fontSize: 15,
+            fontWeight: FontWeight.w800,
+          ),
+        ),
+      ),
     );
   }
 
@@ -947,11 +1094,11 @@ class _DashboardSubHeaderRow extends StatelessWidget {
     return PopupMenuButton<String>(
       onSelected: onFilterChanged,
       shape: RoundedRectangleBorder(
-        borderRadius: BorderRadius.circular(12),
+        borderRadius: BorderRadius.circular(14),
         side: const BorderSide(color: Color(0xFFE2E8F0)),
       ),
       color: Colors.white,
-      elevation: 4,
+      elevation: 6,
       position: PopupMenuPosition.under,
       itemBuilder: (context) => options.map((opt) {
         final isSelected = opt == selectedFilter;
@@ -980,29 +1127,39 @@ class _DashboardSubHeaderRow extends StatelessWidget {
         );
       }).toList(),
       child: Container(
-        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+        height: 38,
+        padding: const EdgeInsets.symmetric(horizontal: 12),
         decoration: BoxDecoration(
-          color: Colors.white,
-          borderRadius: BorderRadius.circular(10),
+          gradient: const LinearGradient(
+            begin: Alignment.topLeft,
+            end: Alignment.bottomRight,
+            colors: [Colors.white, Color(0xFFF1F5F9)],
+          ),
+          borderRadius: BorderRadius.circular(12),
           border: Border.all(color: const Color(0xFFCBD5E1)),
           boxShadow: const [
             BoxShadow(
-              color: Color(0x06000000),
-              blurRadius: 4,
-              offset: Offset(0, 1),
+              color: Color(0x0D0F172A),
+              blurRadius: 6,
+              offset: Offset(0, 3),
+            ),
+            BoxShadow(
+              color: Colors.white,
+              blurRadius: 2,
+              offset: Offset(-1, -1),
             ),
           ],
         ),
         child: Row(
           mainAxisSize: MainAxisSize.min,
           children: [
-            const Icon(Icons.calendar_today_outlined, size: 13, color: Color(0xFF475569)),
+            const Icon(Icons.calendar_today_outlined, size: 13, color: Color(0xFF2563EB)),
             const SizedBox(width: 6),
             Text(
               selectedFilter,
               style: const TextStyle(
                 fontSize: 12,
-                fontWeight: FontWeight.w600,
+                fontWeight: FontWeight.w700,
                 color: Color(0xFF1E293B),
               ),
             ),
@@ -1019,34 +1176,91 @@ class _DashboardWelcomeRow extends StatelessWidget {
   const _DashboardWelcomeRow({
     required this.userName,
     required this.subtitle,
+    this.onCreateInvoice,
   });
 
   final String userName;
   final String subtitle;
+  final VoidCallback? onCreateInvoice;
 
   @override
   Widget build(BuildContext context) {
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
+    return Row(
+      crossAxisAlignment: CrossAxisAlignment.center,
       children: [
-        Text(
-          'Welcome back, $userName!',
-          style: const TextStyle(
-            fontSize: 22,
-            fontWeight: FontWeight.w800,
-            color: Color(0xFF0F172A),
-            letterSpacing: -0.5,
+        Expanded(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                'Welcome back, $userName!',
+                style: const TextStyle(
+                  fontSize: 22,
+                  fontWeight: FontWeight.w800,
+                  color: Color(0xFF0F172A),
+                  letterSpacing: -0.5,
+                ),
+              ),
+              const SizedBox(height: 3),
+              Text(
+                subtitle,
+                style: const TextStyle(
+                  fontSize: 13,
+                  fontWeight: FontWeight.w500,
+                  color: Color(0xFF64748B),
+                ),
+              ),
+            ],
           ),
         ),
-        const SizedBox(height: 2),
-        Text(
-          subtitle,
-          style: const TextStyle(
-            fontSize: 13,
-            fontWeight: FontWeight.w500,
-            color: Color(0xFF64748B),
+        if (onCreateInvoice != null)
+          InkWell(
+            onTap: onCreateInvoice,
+            borderRadius: BorderRadius.circular(14),
+            child: Container(
+              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+              decoration: BoxDecoration(
+                gradient: const LinearGradient(
+                  begin: Alignment.topLeft,
+                  end: Alignment.bottomRight,
+                  colors: [Color(0xFF3B82F6), Color(0xFF1D4ED8)],
+                ),
+                borderRadius: BorderRadius.circular(14),
+                border: Border.all(
+                  color: const Color(0xFF93C5FD).withValues(alpha: 0.6),
+                  width: 1.2,
+                ),
+                boxShadow: const [
+                  BoxShadow(
+                    color: Color(0x382563EB),
+                    blurRadius: 12,
+                    offset: Offset(0, 5),
+                  ),
+                  BoxShadow(
+                    color: Color(0x40FFFFFF),
+                    blurRadius: 2,
+                    offset: Offset(-1, -1),
+                  ),
+                ],
+              ),
+              child: const Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Icon(Icons.add_circle_outline_rounded, size: 17, color: Colors.white),
+                  SizedBox(width: 7),
+                  Text(
+                    'New Invoice',
+                    style: TextStyle(
+                      color: Colors.white,
+                      fontSize: 13,
+                      fontWeight: FontWeight.w800,
+                      letterSpacing: -0.2,
+                    ),
+                  ),
+                ],
+              ),
+            ),
           ),
-        ),
       ],
     );
   }
@@ -1061,68 +1275,89 @@ class _AssistantBanner extends StatelessWidget {
   Widget build(BuildContext context) {
     return Container(
       decoration: BoxDecoration(
-        color: const Color(0xFFF0F7FF),
-        borderRadius: BorderRadius.circular(16),
-        border: Border.all(color: const Color(0xFFDBEAFE)),
+        gradient: const LinearGradient(
+          begin: Alignment.topLeft,
+          end: Alignment.bottomRight,
+          colors: [Color(0xFFF0F7FF), Color(0xFFE0EFFE)],
+        ),
+        borderRadius: BorderRadius.circular(20),
+        border: Border.all(color: const Color(0xFFBFDBFE), width: 1.3),
         boxShadow: const [
           BoxShadow(
-            color: Color(0x06000000),
-            blurRadius: 10,
-            offset: Offset(0, 2),
+            color: Color(0x142563EB),
+            blurRadius: 16,
+            offset: Offset(0, 6),
+          ),
+          BoxShadow(
+            color: Colors.white,
+            blurRadius: 3,
+            offset: Offset(-2, -2),
           ),
         ],
       ),
-      padding: const EdgeInsets.all(16),
+      padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 16),
       child: Row(
         crossAxisAlignment: CrossAxisAlignment.center,
         children: [
-          // Robot Icon Badge
+          // Claymorphic Robot Icon Badge
           Container(
-            width: 44,
-            height: 44,
-            decoration: const BoxDecoration(
-              color: Color(0xFFDBEAFE),
-              shape: BoxShape.circle,
+            width: 48,
+            height: 48,
+            decoration: BoxDecoration(
+              gradient: const LinearGradient(
+                begin: Alignment.topLeft,
+                end: Alignment.bottomRight,
+                colors: [Colors.white, Color(0xFFDBEAFE)],
+              ),
+              borderRadius: BorderRadius.circular(15),
+              border: Border.all(color: Colors.white, width: 1.5),
+              boxShadow: const [
+                BoxShadow(
+                  color: Color(0x222563EB),
+                  blurRadius: 10,
+                  offset: Offset(0, 4),
+                ),
+              ],
             ),
             child: const Icon(
               Icons.smart_toy_outlined,
               color: Color(0xFF2563EB),
-              size: 22,
+              size: 24,
             ),
           ),
-          const SizedBox(width: 14),
+          const SizedBox(width: 16),
 
           // Text Content
-          Expanded(
+          const Expanded(
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                const Text(
+                Text(
                   'AI INVOICE ASSISTANT',
                   style: TextStyle(
                     color: Color(0xFF2563EB),
                     fontSize: 10,
                     fontWeight: FontWeight.w800,
-                    letterSpacing: 0.5,
+                    letterSpacing: 0.6,
                   ),
                 ),
-                const SizedBox(height: 3),
-                const Text(
+                SizedBox(height: 3),
+                Text(
                   'Generate Invoices & insights in seconds',
                   style: TextStyle(
-                    fontSize: 14.5,
+                    fontSize: 15,
                     fontWeight: FontWeight.w800,
                     color: Color(0xFF0F172A),
                     letterSpacing: -0.3,
                   ),
                 ),
-                const SizedBox(height: 2),
-                const Text(
+                SizedBox(height: 2),
+                Text(
                   'Talk to our intelligent assistant to auto-fill line items, calculate taxes, and query financial metrics.',
                   style: TextStyle(
-                    fontSize: 11,
-                    color: Color(0xFF64748B),
-                    height: 1.3,
+                    fontSize: 11.5,
+                    color: Color(0xFF475569),
+                    height: 1.35,
                   ),
                   maxLines: 2,
                   overflow: TextOverflow.ellipsis,
@@ -1130,22 +1365,35 @@ class _AssistantBanner extends StatelessWidget {
               ],
             ),
           ),
-          const SizedBox(width: 12),
+          const SizedBox(width: 14),
 
-          // Try Assistant button
+          // Claymorphic Try Assistant button
           InkWell(
             onTap: onTap,
-            borderRadius: BorderRadius.circular(20),
+            borderRadius: BorderRadius.circular(16),
             child: Container(
-              padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
+              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
               decoration: BoxDecoration(
-                color: const Color(0xFF2563EB),
-                borderRadius: BorderRadius.circular(20),
+                gradient: const LinearGradient(
+                  begin: Alignment.topLeft,
+                  end: Alignment.bottomRight,
+                  colors: [Color(0xFF3B82F6), Color(0xFF1D4ED8)],
+                ),
+                borderRadius: BorderRadius.circular(16),
+                border: Border.all(
+                  color: const Color(0xFF93C5FD).withValues(alpha: 0.65),
+                  width: 1.2,
+                ),
                 boxShadow: const [
                   BoxShadow(
-                    color: Color(0x262563EB),
-                    blurRadius: 6,
-                    offset: Offset(0, 2),
+                    color: Color(0x382563EB),
+                    blurRadius: 10,
+                    offset: Offset(0, 4),
+                  ),
+                  BoxShadow(
+                    color: Color(0x40FFFFFF),
+                    blurRadius: 2,
+                    offset: Offset(-1, -1),
                   ),
                 ],
               ),
@@ -1156,15 +1404,15 @@ class _AssistantBanner extends StatelessWidget {
                     'Try Assistant',
                     style: TextStyle(
                       color: Colors.white,
-                      fontSize: 12,
-                      fontWeight: FontWeight.w700,
+                      fontSize: 12.5,
+                      fontWeight: FontWeight.w800,
                     ),
                   ),
-                  SizedBox(width: 4),
+                  SizedBox(width: 5),
                   Icon(
                     Icons.arrow_forward_rounded,
                     color: Colors.white,
-                    size: 13,
+                    size: 14,
                   ),
                 ],
               ),
@@ -1201,7 +1449,7 @@ class _DashboardShortcuts extends StatelessWidget {
           label: 'Invoices',
           icon: Icons.description_outlined,
           iconBg: const Color(0xFFEDE9FE),
-          iconColor: const Color(0xFF8B5CF6),
+          iconColor: const Color(0xFF7C3AED),
           onTap: onViewInvoices,
         ),
       if (user.hasPermission('EXPENSES'))
@@ -1233,65 +1481,126 @@ class _DashboardShortcuts extends StatelessWidget {
           label: 'Templates',
           icon: Icons.article_outlined,
           iconBg: const Color(0xFFEDE9FE),
-          iconColor: const Color(0xFF8B5CF6),
+          iconColor: const Color(0xFF7C3AED),
           onTap: onOpenTemplates,
         ),
     ];
 
     return Row(
-      children: items.map((item) {
-        return Expanded(
-          child: Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 4),
-            child: InkWell(
-              onTap: item.onTap,
-              borderRadius: BorderRadius.circular(12),
-              child: Container(
-                padding: const EdgeInsets.symmetric(vertical: 12),
+      children: [
+        for (int i = 0; i < items.length; i++) ...[
+          Expanded(child: _ClayModuleTile(item: items[i])),
+          if (i < items.length - 1) const SizedBox(width: 10),
+        ],
+      ],
+    );
+  }
+}
+
+class _ClayModuleTile extends StatefulWidget {
+  const _ClayModuleTile({required this.item});
+
+  final _ModuleCardData item;
+
+  @override
+  State<_ClayModuleTile> createState() => _ClayModuleTileState();
+}
+
+class _ClayModuleTileState extends State<_ClayModuleTile> {
+  bool _hovered = false;
+
+  @override
+  Widget build(BuildContext context) {
+    final item = widget.item;
+    return MouseRegion(
+      onEnter: (_) => setState(() => _hovered = true),
+      onExit: (_) => setState(() => _hovered = false),
+      cursor: SystemMouseCursors.click,
+      child: GestureDetector(
+        onTap: item.onTap,
+        child: AnimatedContainer(
+          duration: const Duration(milliseconds: 180),
+          curve: Curves.easeOutCubic,
+          transform: _hovered ? Matrix4.translationValues(0, -3, 0) : Matrix4.identity(),
+          padding: const EdgeInsets.symmetric(vertical: 14, horizontal: 8),
+          decoration: BoxDecoration(
+            gradient: const LinearGradient(
+              begin: Alignment.topLeft,
+              end: Alignment.bottomRight,
+              colors: [Colors.white, Color(0xFFF8FAFC)],
+            ),
+            borderRadius: BorderRadius.circular(18),
+            border: Border.all(
+              color: _hovered
+                  ? item.iconColor.withValues(alpha: 0.4)
+                  : const Color(0xFFE2E8F0),
+              width: _hovered ? 1.4 : 1.1,
+            ),
+            boxShadow: [
+              BoxShadow(
+                color: _hovered
+                    ? item.iconColor.withValues(alpha: 0.14)
+                    : const Color(0x0D0F172A),
+                blurRadius: _hovered ? 16 : 12,
+                offset: _hovered ? const Offset(0, 7) : const Offset(0, 4),
+              ),
+              const BoxShadow(
+                color: Colors.white,
+                blurRadius: 2,
+                offset: Offset(-2, -2),
+              ),
+            ],
+          ),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Container(
+                width: 42,
+                height: 42,
                 decoration: BoxDecoration(
-                  color: Colors.white,
-                  borderRadius: BorderRadius.circular(12),
-                  border: Border.all(color: const Color(0xFFE2E8F0)),
-                  boxShadow: const [
+                  gradient: LinearGradient(
+                    begin: Alignment.topLeft,
+                    end: Alignment.bottomRight,
+                    colors: [
+                      Colors.white,
+                      item.iconBg,
+                    ],
+                  ),
+                  borderRadius: BorderRadius.circular(13),
+                  border: Border.all(
+                    color: item.iconColor.withValues(alpha: 0.18),
+                    width: 1,
+                  ),
+                  boxShadow: [
                     BoxShadow(
-                      color: Color(0x06000000),
-                      blurRadius: 6,
-                      offset: Offset(0, 2),
+                      color: item.iconColor.withValues(alpha: 0.15),
+                      blurRadius: 8,
+                      offset: const Offset(0, 3),
                     ),
                   ],
                 ),
-                child: Column(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    Container(
-                      width: 38,
-                      height: 38,
-                      decoration: BoxDecoration(
-                        color: item.iconBg,
-                        borderRadius: BorderRadius.circular(10),
-                      ),
-                      child: Icon(
-                        item.icon,
-                        color: item.iconColor,
-                        size: 20,
-                      ),
-                    ),
-                    const SizedBox(height: 8),
-                    Text(
-                      item.label,
-                      style: const TextStyle(
-                        fontSize: 12,
-                        fontWeight: FontWeight.w700,
-                        color: Color(0xFF0F172A),
-                      ),
-                    ),
-                  ],
+                child: Icon(
+                  item.icon,
+                  color: item.iconColor,
+                  size: 21,
                 ),
               ),
-            ),
+              const SizedBox(height: 9),
+              Text(
+                item.label,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: const TextStyle(
+                  fontSize: 12.5,
+                  fontWeight: FontWeight.w800,
+                  color: Color(0xFF0F172A),
+                  letterSpacing: -0.2,
+                ),
+              ),
+            ],
           ),
-        );
-      }).toList(),
+        ),
+      ),
     );
   }
 }
