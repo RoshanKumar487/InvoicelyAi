@@ -2,6 +2,7 @@ import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
 
+import '../../../../theme/app_theme.dart';
 import '../../../clients/data/client.dart';
 import '../../../employees/data/employee.dart';
 import '../../../expenses/data/expense.dart';
@@ -26,7 +27,7 @@ String formatCompactMoney(double amount, [String symbol = '₹']) {
   return '$symbol${amount.toStringAsFixed(0)}';
 }
 
-/// Interactive card that elevates with smooth shadow and highlight border on hover.
+/// Interactive Neumorphic card that elevates with smooth dual directional shadows on hover.
 class HoverableCard extends StatefulWidget {
   const HoverableCard({
     super.key,
@@ -34,7 +35,7 @@ class HoverableCard extends StatefulWidget {
     this.onTap,
     this.padding = const EdgeInsets.all(16),
     this.accentColor,
-    this.borderRadius = 20.0,
+    this.borderRadius = 24.0,
   });
 
   final Widget child;
@@ -52,7 +53,7 @@ class _HoverableCardState extends State<HoverableCard> {
 
   @override
   Widget build(BuildContext context) {
-    final effectiveAccent = widget.accentColor ?? const Color(0xFF0284C7);
+    final effectiveAccent = widget.accentColor ?? const Color(0xFF2B3548);
 
     return MouseRegion(
       onEnter: (_) => setState(() => _isHovered = true),
@@ -64,59 +65,16 @@ class _HoverableCardState extends State<HoverableCard> {
         child: AnimatedContainer(
           duration: const Duration(milliseconds: 200),
           curve: Curves.easeOutCubic,
-          transform: _isHovered ? Matrix4.translationValues(0, -3.5, 0) : Matrix4.identity(),
-          decoration: BoxDecoration(
-            gradient: const LinearGradient(
-              begin: Alignment.topLeft,
-              end: Alignment.bottomRight,
-              colors: [Colors.white, Color(0xFFF8FAFC)],
-            ),
-            borderRadius: BorderRadius.circular(widget.borderRadius),
-            border: Border.all(
-              color: _isHovered
-                  ? effectiveAccent.withValues(alpha: 0.38)
-                  : const Color(0xFFE2E8F0),
-              width: _isHovered ? 1.4 : 1.1,
-            ),
-            boxShadow: [
-              BoxShadow(
-                color: _isHovered
-                    ? effectiveAccent.withValues(alpha: 0.13)
-                    : const Color(0x0D0F172A),
-                blurRadius: _isHovered ? 20 : 14,
-                offset: _isHovered ? const Offset(0, 8) : const Offset(0, 5),
-              ),
-              const BoxShadow(
-                color: Colors.white,
-                blurRadius: 2,
-                offset: Offset(-2, -2),
-              ),
-            ],
+          transform: _isHovered ? Matrix4.translationValues(0, -3.0, 0) : Matrix4.identity(),
+          decoration: AppTheme.neuCardDecoration(
+            radius: widget.borderRadius,
+            selected: _isHovered,
+            accentColor: effectiveAccent,
           ),
           clipBehavior: Clip.antiAlias,
-          child: Stack(
-            children: [
-              if (widget.accentColor != null)
-                Positioned(
-                  left: 0,
-                  top: 0,
-                  bottom: 0,
-                  width: 3.5,
-                  child: Container(
-                    decoration: BoxDecoration(
-                      color: widget.accentColor,
-                      borderRadius: BorderRadius.only(
-                        topLeft: Radius.circular(widget.borderRadius),
-                        bottomLeft: Radius.circular(widget.borderRadius),
-                      ),
-                    ),
-                  ),
-                ),
-              Padding(
-                padding: widget.padding,
-                child: widget.child,
-              ),
-            ],
+          child: Padding(
+            padding: widget.padding,
+            child: widget.child,
           ),
         ),
       ),
@@ -265,9 +223,9 @@ class _DashboardAnalyticsState extends State<DashboardAnalytics> {
       children: [
         // Role & Enterprise Workspace Header Strip
         _buildWorkspaceIdentityBanner(teamCount),
-        const SizedBox(height: 16),
+        const SizedBox(height: 18),
 
-        // 1. Top Row: 4 Behance-Style KPI Cards
+        // 1. Top Row: 4 Neumorphic KPI Cards
         _buildKpiCardsRow(
           totalClients: totalClientsCount,
           totalRevenue: totalRevenue,
@@ -289,7 +247,7 @@ class _DashboardAnalyticsState extends State<DashboardAnalytics> {
                       flex: 5,
                       child: _buildInvoiceStatisticsDonutCard(stats, totalInvoices),
                     ),
-                    const SizedBox(width: 16),
+                    const SizedBox(width: 18),
                     Expanded(
                       flex: 7,
                       child: _buildSalesAnalyticsCard(),
@@ -301,7 +259,7 @@ class _DashboardAnalyticsState extends State<DashboardAnalytics> {
             return Column(
               children: [
                 _buildInvoiceStatisticsDonutCard(stats, totalInvoices),
-                const SizedBox(height: 16),
+                const SizedBox(height: 18),
                 _buildSalesAnalyticsCard(),
               ],
             );
@@ -319,39 +277,15 @@ class _DashboardAnalyticsState extends State<DashboardAnalytics> {
     final netCashflow = widget.statistics.totalRevenue - widget.statistics.totalExpenses;
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 12),
-      decoration: BoxDecoration(
-        gradient: const LinearGradient(
-          begin: Alignment.topLeft,
-          end: Alignment.bottomRight,
-          colors: [Colors.white, Color(0xFFF8FAFC)],
-        ),
-        borderRadius: BorderRadius.circular(16),
-        border: Border.all(color: const Color(0xFFE2E8F0), width: 1.1),
-        boxShadow: const [
-          BoxShadow(
-            color: Color(0x0A0F172A),
-            blurRadius: 12,
-            offset: Offset(0, 4),
-          ),
-          BoxShadow(
-            color: Colors.white,
-            blurRadius: 2,
-            offset: Offset(-1, -1),
-          ),
-        ],
-      ),
+      decoration: AppTheme.neuPillDecoration(radius: 24),
       child: SingleChildScrollView(
         scrollDirection: Axis.horizontal,
         child: Row(
           mainAxisAlignment: MainAxisAlignment.spaceBetween,
           children: [
             Container(
-              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
-              decoration: BoxDecoration(
-                color: const Color(0xFFECFDF5),
-                borderRadius: BorderRadius.circular(20),
-                border: Border.all(color: const Color(0xFFA7F3D0)),
-              ),
+              padding: const EdgeInsets.symmetric(horizontal: 11, vertical: 5),
+              decoration: AppTheme.neuRecessedDecoration(radius: 18),
               child: Row(
                 mainAxisSize: MainAxisSize.min,
                 children: [
@@ -366,7 +300,7 @@ class _DashboardAnalyticsState extends State<DashboardAnalytics> {
                   const SizedBox(width: 6),
                   const Text(
                     'Enterprise Live',
-                    style: TextStyle(fontSize: 11.5, fontWeight: FontWeight.w800, color: Color(0xFF047857)),
+                    style: TextStyle(fontSize: 11.5, fontWeight: FontWeight.w800, color: Color(0xFF1E293B)),
                   ),
                 ],
               ),
@@ -452,7 +386,7 @@ class _DashboardAnalyticsState extends State<DashboardAnalytics> {
     return LayoutBuilder(
       builder: (context, constraints) {
         final crossAxisCount = constraints.maxWidth >= 900 ? 4 : 2;
-        const spacing = 14.0;
+        const spacing = 16.0;
         final cardWidth = (constraints.maxWidth - spacing * (crossAxisCount - 1)) / crossAxisCount;
 
         final cards = [
@@ -464,13 +398,13 @@ class _DashboardAnalyticsState extends State<DashboardAnalytics> {
             trendText: '+11.9%',
             isPositiveTrend: true,
             icon: Icons.people_outline_rounded,
-            iconBgColor: const Color(0xFFEFF6FF),
-            iconColor: const Color(0xFF2563EB),
+            iconBgColor: AppColors.neuSurface,
+            iconColor: const Color(0xFF2B3548),
             accentColor: const Color(0xFF2563EB),
             onTap: widget.onViewClients,
           ),
 
-          // Card 2: Revenue
+          // Card 2: Revenue (Dark Slate Active Neumorphic Tile)
           _buildKpiCardItem(
             width: cardWidth,
             title: _isStaff ? 'Your Revenue' : 'Revenue',
@@ -478,24 +412,25 @@ class _DashboardAnalyticsState extends State<DashboardAnalytics> {
             trendText: '+12.4%',
             isPositiveTrend: true,
             icon: Icons.currency_rupee_rounded,
-            iconBgColor: const Color(0xFFECFDF5),
-            iconColor: const Color(0xFF059669),
-            accentColor: const Color(0xFF059669),
+            iconBgColor: const Color(0xFF2B3548),
+            iconColor: Colors.white,
+            accentColor: const Color(0xFF10B981),
+            isDarkCard: true,
             onTap: () => widget.onViewInvoices('Paid'),
           ),
 
           // Card 3: Profit / Margin
           _buildKpiCardItem(
             width: cardWidth,
-            title: _isStaff ? 'Collection Rate' : 'Profit',
+            title: _isStaff ? 'Collection Rate' : 'Profit Margin',
             value: _isStaff
                 ? '${((totalRevenue / (totalRevenue + 100)) * 100).toInt()}%'
                 : '$profitMargin%',
-            trendText: '-2.8%',
-            isPositiveTrend: false,
+            trendText: '+4.2%',
+            isPositiveTrend: true,
             icon: Icons.bar_chart_rounded,
-            iconBgColor: const Color(0xFFF3E8FF),
-            iconColor: const Color(0xFF7C3AED),
+            iconBgColor: AppColors.neuSurface,
+            iconColor: const Color(0xFF2B3548),
             accentColor: const Color(0xFF7C3AED),
             onTap: widget.onViewExpenses,
           ),
@@ -507,9 +442,9 @@ class _DashboardAnalyticsState extends State<DashboardAnalytics> {
             value: totalInvoices.toString(),
             trendText: '+11.9%',
             isPositiveTrend: true,
-            icon: Icons.description_outlined,
-            iconBgColor: const Color(0xFFEFF6FF),
-            iconColor: const Color(0xFF2563EB),
+            icon: Icons.receipt_long_rounded,
+            iconBgColor: AppColors.neuSurface,
+            iconColor: const Color(0xFF2B3548),
             accentColor: const Color(0xFF2563EB),
             onTap: () => widget.onViewInvoices('All'),
           ),
@@ -535,132 +470,135 @@ class _DashboardAnalyticsState extends State<DashboardAnalytics> {
     required Color iconColor,
     required Color accentColor,
     required VoidCallback onTap,
+    bool isDarkCard = false,
   }) {
     return SizedBox(
       width: width,
-      height: 170,
-      child: HoverableCard(
-        accentColor: accentColor,
-        onTap: onTap,
-        padding: const EdgeInsets.fromLTRB(16, 14, 16, 12),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          mainAxisAlignment: MainAxisAlignment.spaceBetween,
-          children: [
-            // Top Row: Claymorphic Icon box + Trend pill
-            Row(
+      height: 172,
+      child: Material(
+        color: Colors.transparent,
+        child: InkWell(
+          onTap: onTap,
+          borderRadius: BorderRadius.circular(24),
+          child: Container(
+            decoration: isDarkCard
+                ? AppTheme.neuPillDecoration(
+                    radius: 24,
+                    active: true,
+                    activeColor: const Color(0xFF2B3548),
+                  )
+                : AppTheme.neuCardDecoration(radius: 24),
+            padding: const EdgeInsets.fromLTRB(16, 14, 16, 12),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
               mainAxisAlignment: MainAxisAlignment.spaceBetween,
               children: [
-                Container(
-                  width: 34,
-                  height: 34,
-                  decoration: BoxDecoration(
-                    gradient: LinearGradient(
-                      begin: Alignment.topLeft,
-                      end: Alignment.bottomRight,
-                      colors: [Colors.white, iconBgColor],
+                // Top Row: Neumorphic Icon Orb + Trend Pill
+                Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                  children: [
+                    Container(
+                      width: 38,
+                      height: 38,
+                      decoration: isDarkCard
+                          ? BoxDecoration(
+                              color: Colors.white.withValues(alpha: 0.14),
+                              shape: BoxShape.circle,
+                              border: Border.all(color: Colors.white.withValues(alpha: 0.25)),
+                            )
+                          : AppTheme.neuOrbDecoration(),
+                      child: Icon(icon, size: 18, color: iconColor),
                     ),
-                    borderRadius: BorderRadius.circular(11),
-                    border: Border.all(
-                      color: iconColor.withValues(alpha: 0.2),
-                      width: 1,
-                    ),
-                    boxShadow: [
-                      BoxShadow(
-                        color: iconColor.withValues(alpha: 0.14),
-                        blurRadius: 6,
-                        offset: const Offset(0, 2),
+                    Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3.5),
+                      decoration: isDarkCard
+                          ? BoxDecoration(
+                              color: Colors.white.withValues(alpha: 0.14),
+                              borderRadius: BorderRadius.circular(12),
+                            )
+                          : AppTheme.neuRecessedDecoration(radius: 12),
+                      child: Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Icon(
+                            isPositiveTrend
+                                ? Icons.arrow_upward_rounded
+                                : Icons.arrow_downward_rounded,
+                            size: 11,
+                            color: isDarkCard
+                                ? const Color(0xFF34D399)
+                                : (isPositiveTrend
+                                    ? const Color(0xFF059669)
+                                    : const Color(0xFFDC2626)),
+                          ),
+                          const SizedBox(width: 2),
+                          Text(
+                            trendText,
+                            style: TextStyle(
+                              fontSize: 10.5,
+                              fontWeight: FontWeight.w800,
+                              color: isDarkCard
+                                  ? Colors.white
+                                  : (isPositiveTrend
+                                      ? const Color(0xFF059669)
+                                      : const Color(0xFFDC2626)),
+                            ),
+                          ),
+                        ],
                       ),
-                    ],
-                  ),
-                  child: Icon(icon, size: 17, color: iconColor),
+                    ),
+                  ],
                 ),
-                Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 3),
-                  decoration: BoxDecoration(
-                    color: isPositiveTrend
-                        ? const Color(0xFFECFDF5)
-                        : const Color(0xFFFEF2F2),
-                    borderRadius: BorderRadius.circular(10),
-                    border: Border.all(
-                      color: isPositiveTrend
-                          ? const Color(0xFFA7F3D0)
-                          : const Color(0xFFFECACA),
-                    ),
-                  ),
-                  child: Row(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      Icon(
-                        isPositiveTrend
-                            ? Icons.arrow_upward_rounded
-                            : Icons.arrow_downward_rounded,
-                        size: 11,
-                        color: isPositiveTrend
-                            ? const Color(0xFF059669)
-                            : const Color(0xFFDC2626),
+
+                // Title & Value
+                Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      title,
+                      style: TextStyle(
+                        fontSize: 12,
+                        fontWeight: FontWeight.w700,
+                        color: isDarkCard ? Colors.white70 : const Color(0xFF64748B),
                       ),
-                      const SizedBox(width: 2),
-                      Text(
-                        trendText,
+                    ),
+                    const SizedBox(height: 3),
+                    FittedBox(
+                      fit: BoxFit.scaleDown,
+                      alignment: Alignment.centerLeft,
+                      child: Text(
+                        value,
                         style: TextStyle(
-                          fontSize: 10.5,
-                          fontWeight: FontWeight.w800,
-                          color: isPositiveTrend
-                              ? const Color(0xFF059669)
-                              : const Color(0xFFDC2626),
+                          fontSize: 21,
+                          fontWeight: FontWeight.w900,
+                          color: isDarkCard ? Colors.white : const Color(0xFF1E293B),
+                          letterSpacing: -0.4,
                         ),
                       ),
-                    ],
-                  ),
+                    ),
+                  ],
                 ),
-              ],
-            ),
 
-            // Title & Value
-            Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  title,
-                  style: const TextStyle(
-                    fontSize: 12,
-                    fontWeight: FontWeight.w600,
-                    color: Color(0xFF64748B),
-                  ),
-                ),
-                const SizedBox(height: 2),
-                FittedBox(
-                  fit: BoxFit.scaleDown,
-                  alignment: Alignment.centerLeft,
-                  child: Text(
-                    value,
-                    style: const TextStyle(
-                      fontSize: 21,
-                      fontWeight: FontWeight.w800,
-                      color: Color(0xFF0F172A),
-                      letterSpacing: -0.4,
+                // Sparkline at bottom
+                SizedBox(
+                  width: double.infinity,
+                  height: 22,
+                  child: CustomPaint(
+                    painter: MiniSparklinePainter(
+                      color: isDarkCard ? const Color(0xFF34D399) : accentColor,
+                      isPositive: isPositiveTrend,
                     ),
                   ),
                 ),
               ],
             ),
-
-            // Sparkline at bottom
-            SizedBox(
-              width: double.infinity,
-              height: 24,
-              child: CustomPaint(
-                painter: MiniSparklinePainter(color: accentColor, isPositive: isPositiveTrend),
-              ),
-            ),
-          ],
+          ),
         ),
       ),
     );
   }
 
-  // 2. Left Analytics Card: Invoice Overview (Donut / Client Pie / Market Share)
+  // 2. Left Analytics Card: Invoice Overview (Neumorphic Dial Donut / Client Pie / Market Share)
   Widget _buildInvoiceStatisticsDonutCard(DashboardStatistics stats, int totalInvoices) {
     final invoicesList = widget.invoices ?? const [];
     final invPaid = invoicesList.where((i) => i.status.toLowerCase() == 'paid').length;
@@ -679,15 +617,15 @@ class _DashboardAnalyticsState extends State<DashboardAnalytics> {
     final unpaidPercent = ((unpaid / safeTotal) * 100).toStringAsFixed(1);
 
     final donutSegments = [
-      DonutSegment('Paid', paid, const Color(0xFF1E3A8A)),       // Deep Navy/Royal Blue
-      DonutSegment('Overdue', overdue, const Color(0xFFF59E0B)),  // Amber
-      DonutSegment('Unpaid', unpaid, const Color(0xFF38BDF8)),    // Light Sky Blue
-      DonutSegment('Draft', drafts, const Color(0xFFCBD5E1)),     // Slate
+      DonutSegment('Paid', paid, const Color(0xFF2B3548)),
+      DonutSegment('Overdue', overdue, const Color(0xFFF59E0B)),
+      DonutSegment('Unpaid', unpaid, const Color(0xFF38BDF8)),
+      DonutSegment('Draft', drafts, const Color(0xFFCBD5E1)),
     ];
 
     // Client Distribution Segments
     final clientSegments = <DonutSegment>[
-      const DonutSegment('ABC Industries Pvt. Ltd.', 55, Color(0xFF1E3A8A)),
+      const DonutSegment('ABC Industries Pvt. Ltd.', 55, Color(0xFF2B3548)),
       const DonutSegment('Tech Park Whitefield', 28, Color(0xFF2563EB)),
       const DonutSegment('Northstar Security', 11, Color(0xFF0D9488)),
       const DonutSegment('Other Clients', 6, Color(0xFFF59E0B)),
@@ -695,33 +633,34 @@ class _DashboardAnalyticsState extends State<DashboardAnalytics> {
 
     // Market Share Segments
     final marketSegments = <DonutSegment>[
-      const DonutSegment('Security Guard (12h)', 60, Color(0xFF1E3A8A)),
+      const DonutSegment('Security Guard (12h)', 60, Color(0xFF2B3548)),
       const DonutSegment('Armed Guard (12h)', 24, Color(0xFF2563EB)),
       const DonutSegment('Patrol & Supervision', 10, Color(0xFF0D9488)),
       const DonutSegment('Facility & Escort', 6, Color(0xFF6366F1)),
     ];
 
     return HoverableCard(
-      accentColor: const Color(0xFF2563EB),
+      accentColor: const Color(0xFF2B3548),
       onTap: () => widget.onViewInvoices('All'),
       padding: const EdgeInsets.all(20),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          // Header Row with Icon & Mode Tabs
-          Row(
-            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+          // Header Row with Icon & Mode Tabs (Wrap prevents overflow on mobile)
+          Wrap(
+            alignment: WrapAlignment.spaceBetween,
+            crossAxisAlignment: WrapCrossAlignment.center,
+            spacing: 10,
+            runSpacing: 10,
             children: [
               Row(
+                mainAxisSize: MainAxisSize.min,
                 children: [
                   Container(
-                    width: 32,
-                    height: 32,
-                    decoration: BoxDecoration(
-                      color: const Color(0xFFEFF6FF),
-                      borderRadius: BorderRadius.circular(8),
-                    ),
-                    child: const Icon(Icons.description_outlined, size: 18, color: Color(0xFF2563EB)),
+                    width: 36,
+                    height: 36,
+                    decoration: AppTheme.neuOrbDecoration(),
+                    child: const Icon(Icons.donut_large_rounded, size: 18, color: Color(0xFF2B3548)),
                   ),
                   const SizedBox(width: 10),
                   Column(
@@ -730,35 +669,29 @@ class _DashboardAnalyticsState extends State<DashboardAnalytics> {
                       Text(
                         _leftChartMode == 'clients'
                             ? 'Client Distribution'
-                            : (_leftChartMode == 'market' ? 'Invoice Market Share' : 'Invoice overview'),
-                        style: const TextStyle(fontSize: 15, fontWeight: FontWeight.w800, color: Color(0xFF0F172A)),
+                            : (_leftChartMode == 'market' ? 'Service Share' : 'Invoice Overview'),
+                        style: const TextStyle(fontSize: 15, fontWeight: FontWeight.w800, color: Color(0xFF1E293B)),
                       ),
                       const SizedBox(height: 1),
-                      Text(
-                        _leftChartMode == 'clients'
-                            ? 'Revenue share by corporate client'
-                            : (_leftChartMode == 'market' ? 'Sector breakdown by service lines' : 'Track your invoice status and payment collection.'),
-                        style: const TextStyle(fontSize: 11, color: Color(0xFF64748B)),
+                      const Text(
+                        'Collection dial & status breakdown',
+                        style: TextStyle(fontSize: 11, color: Color(0xFF64748B)),
                       ),
                     ],
                   ),
                 ],
               ),
 
-              // Mode Switcher Popover / Segmented Toggle
+              // Mode Switcher Segmented Toggle
               Container(
-                decoration: BoxDecoration(
-                  color: const Color(0xFFF1F5F9),
-                  borderRadius: BorderRadius.circular(8),
-                  border: Border.all(color: const Color(0xFFE2E8F0)),
-                ),
-                padding: const EdgeInsets.all(2),
+                decoration: AppTheme.neuRecessedDecoration(radius: 12),
+                padding: const EdgeInsets.all(3),
                 child: Row(
                   mainAxisSize: MainAxisSize.min,
                   children: [
                     _buildChartSubModePill('Overview', 'overview'),
-                    _buildChartSubModePill('Client Pie', 'clients'),
-                    _buildChartSubModePill('Market Share', 'market'),
+                    _buildChartSubModePill('Clients', 'clients'),
+                    _buildChartSubModePill('Services', 'market'),
                   ],
                 ),
               ),
@@ -770,45 +703,54 @@ class _DashboardAnalyticsState extends State<DashboardAnalytics> {
           if (_leftChartMode == 'overview') ...[
             Row(
               children: [
-                SizedBox(
-                  width: 155,
-                  height: 155,
+                // Sculpted Neumorphic Dial Ring (matches sample image circular dial)
+                Container(
+                  width: 158,
+                  height: 158,
+                  padding: const EdgeInsets.all(10),
+                  decoration: AppTheme.neuOrbDecoration(),
                   child: Stack(
                     alignment: Alignment.center,
                     children: [
                       CustomPaint(
-                        size: const Size.square(155),
+                        size: const Size.square(136),
                         painter: BehanceDonutPainter(
                           segments: donutSegments,
                           total: totalInvoices,
                         ),
                       ),
-                      Column(
-                        mainAxisSize: MainAxisSize.min,
-                        children: [
-                          Text(
-                            '$totalInvoices',
-                            style: const TextStyle(
-                              fontSize: 24,
-                              fontWeight: FontWeight.w900,
-                              color: Color(0xFF0F172A),
-                              letterSpacing: -0.5,
+                      Container(
+                        width: 78,
+                        height: 78,
+                        decoration: AppTheme.neuOrbDecoration(),
+                        child: Column(
+                          mainAxisSize: MainAxisSize.min,
+                          mainAxisAlignment: MainAxisAlignment.center,
+                          children: [
+                            Text(
+                              '$totalInvoices',
+                              style: const TextStyle(
+                                fontSize: 22,
+                                fontWeight: FontWeight.w900,
+                                color: Color(0xFF1E293B),
+                                letterSpacing: -0.5,
+                              ),
                             ),
-                          ),
-                          const Text(
-                            'Invoices',
-                            style: TextStyle(
-                              fontSize: 11,
-                              fontWeight: FontWeight.w600,
-                              color: Color(0xFF64748B),
+                            const Text(
+                              'Invoices',
+                              style: TextStyle(
+                                fontSize: 10.5,
+                                fontWeight: FontWeight.w700,
+                                color: Color(0xFF64748B),
+                              ),
                             ),
-                          ),
-                        ],
+                          ],
+                        ),
                       ),
                     ],
                   ),
                 ),
-                const SizedBox(width: 24),
+                const SizedBox(width: 20),
                 Expanded(
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
@@ -817,7 +759,7 @@ class _DashboardAnalyticsState extends State<DashboardAnalytics> {
                         label: 'Total Paid',
                         count: paid,
                         percent: '$paidPercent%',
-                        color: const Color(0xFF1E3A8A),
+                        color: const Color(0xFF2B3548),
                         onTap: () => widget.onViewInvoices('Paid'),
                       ),
                       const SizedBox(height: 14),
@@ -939,30 +881,13 @@ class _DashboardAnalyticsState extends State<DashboardAnalytics> {
     final selected = _leftChartMode == modeKey;
     return InkWell(
       onTap: () => setState(() => _leftChartMode = modeKey),
-      borderRadius: BorderRadius.circular(8),
+      borderRadius: BorderRadius.circular(10),
       child: AnimatedContainer(
         duration: const Duration(milliseconds: 160),
         padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
-        decoration: BoxDecoration(
-          gradient: selected
-              ? const LinearGradient(
-                  begin: Alignment.topLeft,
-                  end: Alignment.bottomRight,
-                  colors: [Color(0xFF3B82F6), Color(0xFF2563EB)],
-                )
-              : null,
-          color: selected ? null : Colors.transparent,
-          borderRadius: BorderRadius.circular(8),
-          boxShadow: selected
-              ? const [
-                  BoxShadow(
-                    color: Color(0x332563EB),
-                    blurRadius: 6,
-                    offset: Offset(0, 2),
-                  ),
-                ]
-              : null,
-        ),
+        decoration: selected
+            ? AppTheme.neuPillDecoration(radius: 9, isActive: true, activeColor: AppColors.neuActiveDark)
+            : BoxDecoration(borderRadius: BorderRadius.circular(9)),
         child: Text(
           label,
           style: TextStyle(
@@ -984,7 +909,7 @@ class _DashboardAnalyticsState extends State<DashboardAnalytics> {
   }) {
     return InkWell(
       onTap: onTap,
-      borderRadius: BorderRadius.circular(6),
+      borderRadius: BorderRadius.circular(10),
       child: Padding(
         padding: const EdgeInsets.symmetric(vertical: 2),
         child: Column(
@@ -1035,8 +960,11 @@ class _DashboardAnalyticsState extends State<DashboardAnalytics> {
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           // Header Row with Toggle Switcher
-          Row(
-            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+          Wrap(
+            alignment: WrapAlignment.spaceBetween,
+            crossAxisAlignment: WrapCrossAlignment.center,
+            spacing: 10,
+            runSpacing: 8,
             children: [
               const Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
@@ -1048,19 +976,15 @@ class _DashboardAnalyticsState extends State<DashboardAnalytics> {
                   SizedBox(height: 2),
                   Text(
                     'Monthly business velocity & trend',
-                    style: TextStyle(fontSize: 11, color: Color(0xFF94A3B8)),
+                    style: TextStyle(fontSize: 11, color: Color(0xFF64748B)),
                   ),
                 ],
               ),
 
-              // Mode Switcher (Line vs Sticks)
+              // Mode Switcher (Line vs Sticks) in Recessed Neumorphic Track
               Container(
-                decoration: BoxDecoration(
-                  color: const Color(0xFFF1F5F9),
-                  borderRadius: BorderRadius.circular(8),
-                  border: Border.all(color: const Color(0xFFE2E8F0)),
-                ),
-                padding: const EdgeInsets.all(2),
+                decoration: AppTheme.neuRecessedDecoration(radius: 12),
+                padding: const EdgeInsets.all(3),
                 child: Row(
                   mainAxisSize: MainAxisSize.min,
                   children: [
@@ -1083,34 +1007,37 @@ class _DashboardAnalyticsState extends State<DashboardAnalytics> {
           ),
           const SizedBox(height: 16),
 
-          // Active Month Highlight Banner
+          // Active Month Highlight Banner in Neumorphic Recessed Groove
           Container(
-            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-            decoration: BoxDecoration(
-              color: const Color(0xFFF8FAFC),
-              borderRadius: BorderRadius.circular(10),
-              border: Border.all(color: const Color(0xFFE2E8F0)),
-            ),
+            padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 9),
+            decoration: AppTheme.neuRecessedDecoration(radius: 14),
             child: Row(
               mainAxisAlignment: MainAxisAlignment.spaceBetween,
               children: [
-                Row(
-                  children: [
-                    Container(
-                      width: 8,
-                      height: 8,
-                      decoration: const BoxDecoration(
-                        color: Color(0xFF10B981),
-                        shape: BoxShape.circle,
+                Flexible(
+                  child: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Container(
+                        width: 8,
+                        height: 8,
+                        decoration: const BoxDecoration(
+                          color: Color(0xFF10B981),
+                          shape: BoxShape.circle,
+                        ),
                       ),
-                    ),
-                    const SizedBox(width: 8),
-                    Text(
-                      '$activeMonthName Performance:',
-                      style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w600, color: Color(0xFF475569)),
-                    ),
-                  ],
+                      const SizedBox(width: 8),
+                      Flexible(
+                        child: Text(
+                          '$activeMonthName Performance:',
+                          style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w700, color: Color(0xFF475569)),
+                          overflow: TextOverflow.ellipsis,
+                        ),
+                      ),
+                    ],
+                  ),
                 ),
+                const SizedBox(width: 8),
                 Text(
                   _showSticksChart
                       ? 'Rev: ${formatCompactMoney(activeMonthRevenue)} · Exp: ${formatCompactMoney(activeMonthExpense)}'
@@ -1155,42 +1082,36 @@ class _DashboardAnalyticsState extends State<DashboardAnalytics> {
           const SizedBox(height: 10),
 
           // Month Selection Buttons Row on X-Axis
-          Row(
-            mainAxisAlignment: MainAxisAlignment.spaceBetween,
-            children: List.generate(12, (index) {
-              final isSelected = index == _selectedMonthIndex;
-              final monthName = _monthLabels[index];
+          SingleChildScrollView(
+            scrollDirection: Axis.horizontal,
+            child: Row(
+              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+              children: List.generate(12, (index) {
+                final isSelected = index == _selectedMonthIndex;
+                final monthName = _monthLabels[index];
 
-              return InkWell(
-                onTap: () => setState(() => _selectedMonthIndex = index),
-                borderRadius: BorderRadius.circular(4),
-                child: Padding(
-                  padding: const EdgeInsets.symmetric(horizontal: 2, vertical: 4),
-                  child: Column(
-                    children: [
-                      Text(
-                        monthName,
-                        style: TextStyle(
-                          fontSize: 11,
-                          fontWeight: isSelected ? FontWeight.w800 : FontWeight.w500,
-                          color: isSelected ? const Color(0xFF0F172A) : const Color(0xFF94A3B8),
-                        ),
+                return InkWell(
+                  onTap: () => setState(() => _selectedMonthIndex = index),
+                  borderRadius: BorderRadius.circular(8),
+                  child: AnimatedContainer(
+                    duration: const Duration(milliseconds: 160),
+                    margin: const EdgeInsets.symmetric(horizontal: 2),
+                    padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 4),
+                    decoration: isSelected
+                        ? AppTheme.neuPillDecoration(radius: 8, isActive: true, activeColor: AppColors.neuActiveDark)
+                        : null,
+                    child: Text(
+                      monthName,
+                      style: TextStyle(
+                        fontSize: 10.5,
+                        fontWeight: isSelected ? FontWeight.w800 : FontWeight.w600,
+                        color: isSelected ? Colors.white : const Color(0xFF64748B),
                       ),
-                      if (isSelected)
-                        Container(
-                          margin: const EdgeInsets.only(top: 2),
-                          width: 14,
-                          height: 2.5,
-                          decoration: BoxDecoration(
-                            color: const Color(0xFF0F172A),
-                            borderRadius: BorderRadius.circular(2),
-                          ),
-                        ),
-                    ],
+                    ),
                   ),
-                ),
-              );
-            }),
+                );
+              }),
+            ),
           ),
         ],
       ),
@@ -1205,30 +1126,13 @@ class _DashboardAnalyticsState extends State<DashboardAnalytics> {
   }) {
     return InkWell(
       onTap: onTap,
-      borderRadius: BorderRadius.circular(8),
+      borderRadius: BorderRadius.circular(10),
       child: AnimatedContainer(
         duration: const Duration(milliseconds: 160),
         padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
-        decoration: BoxDecoration(
-          gradient: selected
-              ? const LinearGradient(
-                  begin: Alignment.topLeft,
-                  end: Alignment.bottomRight,
-                  colors: [Color(0xFF3B82F6), Color(0xFF2563EB)],
-                )
-              : null,
-          color: selected ? null : Colors.transparent,
-          borderRadius: BorderRadius.circular(8),
-          boxShadow: selected
-              ? const [
-                  BoxShadow(
-                    color: Color(0x332563EB),
-                    blurRadius: 6,
-                    offset: Offset(0, 2),
-                  ),
-                ]
-              : null,
-        ),
+        decoration: selected
+            ? AppTheme.neuPillDecoration(radius: 9, isActive: true, activeColor: AppColors.neuActiveDark)
+            : BoxDecoration(borderRadius: BorderRadius.circular(9)),
         child: Row(
           mainAxisSize: MainAxisSize.min,
           children: [
@@ -1248,7 +1152,7 @@ class _DashboardAnalyticsState extends State<DashboardAnalytics> {
     );
   }
 
-  // 4. Bottom Section: Recent Invoices Table matching Behance image
+  // 4. Bottom Section: Recent Invoices Table & Neumorphic Pill Rows
   Widget _buildRecentInvoicesTableCard() {
     final allInvoices = widget.invoices ?? const [];
     final filtered = allInvoices.where((inv) {
@@ -1269,7 +1173,7 @@ class _DashboardAnalyticsState extends State<DashboardAnalytics> {
             alignment: WrapAlignment.spaceBetween,
             crossAxisAlignment: WrapCrossAlignment.center,
             spacing: 12,
-            runSpacing: 8,
+            runSpacing: 10,
             children: [
               const Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
@@ -1281,21 +1185,19 @@ class _DashboardAnalyticsState extends State<DashboardAnalytics> {
                   SizedBox(height: 2),
                   Text(
                     'Latest issued billing transactions & client status',
-                    style: TextStyle(fontSize: 11, color: Color(0xFF94A3B8)),
+                    style: TextStyle(fontSize: 11, color: Color(0xFF64748B)),
                   ),
                 ],
               ),
-              Row(
-                mainAxisSize: MainAxisSize.min,
+              Wrap(
+                spacing: 6,
+                runSpacing: 6,
+                crossAxisAlignment: WrapCrossAlignment.center,
                 children: [
                   _buildTableFilterChip('All'),
-                  const SizedBox(width: 6),
                   _buildTableFilterChip('Paid'),
-                  const SizedBox(width: 6),
                   _buildTableFilterChip('Pending'),
-                  const SizedBox(width: 6),
                   _buildTableFilterChip('Overdue'),
-                  const SizedBox(width: 10),
                   TextButton(
                     onPressed: () => widget.onViewInvoices('All'),
                     style: TextButton.styleFrom(
@@ -1310,7 +1212,7 @@ class _DashboardAnalyticsState extends State<DashboardAnalytics> {
           ),
           const SizedBox(height: 16),
 
-          // Responsive Content: Mobile Cards or Desktop Table
+          // Responsive Content: Mobile Neumorphic Pill Cards or Desktop Table
           LayoutBuilder(
             builder: (context, constraints) {
               final isMobile = constraints.maxWidth < 750;
@@ -1321,11 +1223,16 @@ class _DashboardAnalyticsState extends State<DashboardAnalytics> {
                   child: Center(
                     child: Column(
                       children: [
-                        const Icon(Icons.receipt_long_outlined, size: 36, color: Color(0xFF94A3B8)),
-                        const SizedBox(height: 8),
+                        Container(
+                          width: 48,
+                          height: 48,
+                          decoration: AppTheme.neuOrbDecoration(),
+                          child: const Icon(Icons.receipt_long_outlined, size: 22, color: Color(0xFF64748B)),
+                        ),
+                        const SizedBox(height: 10),
                         Text(
                           'No ${_recentInvoiceFilter.toLowerCase()} invoices found.',
-                          style: const TextStyle(fontSize: 12, color: Color(0xFF64748B), fontWeight: FontWeight.w500),
+                          style: const TextStyle(fontSize: 12, color: Color(0xFF64748B), fontWeight: FontWeight.w600),
                         ),
                       ],
                     ),
@@ -1342,71 +1249,73 @@ class _DashboardAnalyticsState extends State<DashboardAnalytics> {
                         : (inv.clientName.trim().isNotEmpty ? inv.clientName.trim() : 'Security Services');
                     final dateStr = inv.issueDate.isNotEmpty ? inv.issueDate : '12 Oct 2025';
 
-                    return InkWell(
-                      onTap: () => widget.onViewInvoices('All'),
-                      borderRadius: BorderRadius.circular(10),
-                      child: Container(
-                        margin: const EdgeInsets.only(bottom: 8),
-                        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
-                        decoration: BoxDecoration(
-                          color: const Color(0xFFF8FAFC),
-                          borderRadius: BorderRadius.circular(10),
-                          border: Border.all(color: const Color(0xFFE2E8F0)),
-                        ),
-                        child: Row(
-                          children: [
-                            Container(
-                              width: 38,
-                              height: 38,
-                              decoration: BoxDecoration(
-                                color: const Color(0xFFEFF6FF),
-                                borderRadius: BorderRadius.circular(10),
+                    return Padding(
+                      padding: const EdgeInsets.only(bottom: 10),
+                      child: InkWell(
+                        onTap: () => widget.onViewInvoices('All'),
+                        borderRadius: BorderRadius.circular(22),
+                        child: Container(
+                          padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+                          decoration: AppTheme.neuPillDecoration(radius: 22),
+                          child: Row(
+                            children: [
+                              Container(
+                                width: 40,
+                                height: 40,
+                                decoration: AppTheme.neuOrbDecoration(),
+                                child: const Icon(Icons.description_outlined, size: 19, color: Color(0xFF2563EB)),
                               ),
-                              child: const Icon(Icons.description_outlined, size: 20, color: Color(0xFF2563EB)),
-                            ),
-                            const SizedBox(width: 12),
-                            Expanded(
-                              child: Column(
-                                crossAxisAlignment: CrossAxisAlignment.start,
-                                children: [
-                                  Text(
-                                    clientOrService,
-                                    style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w700, color: Color(0xFF0F172A)),
-                                    maxLines: 1,
-                                    overflow: TextOverflow.ellipsis,
-                                  ),
-                                  const SizedBox(height: 2),
-                                  Text(
-                                    '${inv.invoiceNumber} • $dateStr',
-                                    style: const TextStyle(fontSize: 11, color: Color(0xFF64748B)),
-                                  ),
-                                ],
-                              ),
-                            ),
-                            const SizedBox(width: 8),
-                            Container(
-                              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
-                              decoration: BoxDecoration(
-                                color: isPaid ? const Color(0xFFDCFCE7) : const Color(0xFFFEF3C7),
-                                borderRadius: BorderRadius.circular(12),
-                              ),
-                              child: Text(
-                                isPaid ? 'Paid' : inv.status,
-                                style: TextStyle(
-                                  fontSize: 11,
-                                  fontWeight: FontWeight.w700,
-                                  color: isPaid ? const Color(0xFF15803D) : const Color(0xFFB45309),
+                              const SizedBox(width: 12),
+                              Expanded(
+                                child: Column(
+                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                  children: [
+                                    Text(
+                                      clientOrService,
+                                      style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w800, color: Color(0xFF1E293B)),
+                                      maxLines: 1,
+                                      overflow: TextOverflow.ellipsis,
+                                    ),
+                                    const SizedBox(height: 2),
+                                    Text(
+                                      '${inv.invoiceNumber} • $dateStr',
+                                      style: const TextStyle(fontSize: 11, color: Color(0xFF64748B), fontWeight: FontWeight.w600),
+                                      maxLines: 1,
+                                      overflow: TextOverflow.ellipsis,
+                                    ),
+                                  ],
                                 ),
                               ),
-                            ),
-                            const SizedBox(width: 10),
-                            Text(
-                              formatDashboardMoney(inv.total),
-                              style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w800, color: Color(0xFF0F172A)),
-                            ),
-                            const SizedBox(width: 4),
-                            const Icon(Icons.more_vert_rounded, size: 18, color: Color(0xFF94A3B8)),
-                          ],
+                              const SizedBox(width: 8),
+                              Container(
+                                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                                decoration: BoxDecoration(
+                                  color: isPaid ? const Color(0xFFDCFCE7) : const Color(0xFFFEF3C7),
+                                  borderRadius: BorderRadius.circular(12),
+                                ),
+                                child: Text(
+                                  isPaid ? 'Paid' : inv.status,
+                                  style: TextStyle(
+                                    fontSize: 10.5,
+                                    fontWeight: FontWeight.w800,
+                                    color: isPaid ? const Color(0xFF15803D) : const Color(0xFFB45309),
+                                  ),
+                                ),
+                              ),
+                              const SizedBox(width: 8),
+                              Text(
+                                formatDashboardMoney(inv.total),
+                                style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w800, color: Color(0xFF0F172A)),
+                              ),
+                              const SizedBox(width: 6),
+                              Container(
+                                width: 26,
+                                height: 26,
+                                decoration: AppTheme.neuOrbDecoration(),
+                                child: const Icon(Icons.chevron_right_rounded, size: 16, color: Color(0xFF64748B)),
+                              ),
+                            ],
+                          ),
                         ),
                       ),
                     );
@@ -1419,10 +1328,10 @@ class _DashboardAnalyticsState extends State<DashboardAnalytics> {
                 child: ConstrainedBox(
                   constraints: const BoxConstraints(minWidth: 860),
                   child: DataTable(
-                    headingRowColor: WidgetStateProperty.all(const Color(0xFFF8FAFC)),
+                    headingRowColor: WidgetStateProperty.all(AppColors.neuRecessed),
                     headingTextStyle: const TextStyle(
                       fontSize: 11,
-                      fontWeight: FontWeight.w700,
+                      fontWeight: FontWeight.w800,
                       color: Color(0xFF475569),
                       letterSpacing: 0.3,
                     ),
@@ -1480,12 +1389,15 @@ class _DashboardAnalyticsState extends State<DashboardAnalytics> {
                                 child: Row(
                                   mainAxisSize: MainAxisSize.min,
                                   children: [
-                                    CircleAvatar(
-                                      radius: 13,
-                                      backgroundColor: const Color(0xFFEEF2FF),
-                                      child: Text(
-                                        clientName.isNotEmpty ? clientName[0].toUpperCase() : 'C',
-                                        style: const TextStyle(fontSize: 11, fontWeight: FontWeight.bold, color: Color(0xFF6366F1)),
+                                    Container(
+                                      width: 28,
+                                      height: 28,
+                                      decoration: AppTheme.neuOrbDecoration(),
+                                      child: Center(
+                                        child: Text(
+                                          clientName.isNotEmpty ? clientName[0].toUpperCase() : 'C',
+                                          style: const TextStyle(fontSize: 11, fontWeight: FontWeight.w800, color: Color(0xFF2563EB)),
+                                        ),
                                       ),
                                     ),
                                     const SizedBox(width: 8),
@@ -1494,7 +1406,7 @@ class _DashboardAnalyticsState extends State<DashboardAnalytics> {
                                       child: Text(
                                         clientName,
                                         overflow: TextOverflow.ellipsis,
-                                        style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w600, color: Color(0xFF0F172A)),
+                                        style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w700, color: Color(0xFF0F172A)),
                                       ),
                                     ),
                                   ],
@@ -1508,7 +1420,7 @@ class _DashboardAnalyticsState extends State<DashboardAnalytics> {
                               child: Row(
                                 mainAxisSize: MainAxisSize.min,
                                 children: [
-                                  const Icon(Icons.inventory_2_outlined, size: 14, color: Color(0xFF94A3B8)),
+                                  const Icon(Icons.inventory_2_outlined, size: 14, color: Color(0xFF64748B)),
                                   const SizedBox(width: 6),
                                   Expanded(
                                     child: Text(
@@ -1579,48 +1491,20 @@ class _DashboardAnalyticsState extends State<DashboardAnalytics> {
     final selected = _recentInvoiceFilter == status;
     return InkWell(
       onTap: () => setState(() => _recentInvoiceFilter = status),
-      borderRadius: BorderRadius.circular(10),
+      borderRadius: BorderRadius.circular(14),
       child: AnimatedContainer(
         duration: const Duration(milliseconds: 160),
-        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-        decoration: BoxDecoration(
-          gradient: selected
-              ? const LinearGradient(
-                  begin: Alignment.topLeft,
-                  end: Alignment.bottomRight,
-                  colors: [Color(0xFF2563EB), Color(0xFF1E3A8A)],
-                )
-              : const LinearGradient(
-                  begin: Alignment.topLeft,
-                  end: Alignment.bottomRight,
-                  colors: [Colors.white, Color(0xFFF1F5F9)],
-                ),
-          borderRadius: BorderRadius.circular(10),
-          border: Border.all(
-            color: selected ? const Color(0xFF60A5FA) : const Color(0xFFE2E8F0),
-            width: 1,
-          ),
-          boxShadow: selected
-              ? const [
-                  BoxShadow(
-                    color: Color(0x331E3A8A),
-                    blurRadius: 8,
-                    offset: Offset(0, 3),
-                  ),
-                ]
-              : const [
-                  BoxShadow(
-                    color: Color(0x080F172A),
-                    blurRadius: 4,
-                    offset: Offset(0, 2),
-                  ),
-                ],
+        padding: const EdgeInsets.symmetric(horizontal: 13, vertical: 6),
+        decoration: AppTheme.neuPillDecoration(
+          radius: 14,
+          isActive: selected,
+          activeColor: AppColors.neuActiveDark,
         ),
         child: Text(
           status,
           style: TextStyle(
             fontSize: 11,
-            fontWeight: selected ? FontWeight.w800 : FontWeight.w600,
+            fontWeight: selected ? FontWeight.w800 : FontWeight.w700,
             color: selected ? Colors.white : const Color(0xFF475569),
           ),
         ),

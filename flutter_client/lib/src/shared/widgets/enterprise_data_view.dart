@@ -1,6 +1,7 @@
 import 'dart:math';
 import 'package:flutter/material.dart';
 
+import '../../theme/app_theme.dart';
 import 'app_card.dart';
 
 /// Interactive KPI summary card item matching Invoices design
@@ -26,7 +27,7 @@ class EnterpriseMetricCardItem {
   final VoidCallback? onTap;
 }
 
-/// Unified 4-KPI metrics strip with exact card styling and interactive filter-on-click
+/// Unified 4-KPI metrics strip with Neumorphic sculpted card styling and interactive filter-on-click
 class EnterpriseMetricsStrip extends StatelessWidget {
   const EnterpriseMetricsStrip({
     required this.metrics,
@@ -41,12 +42,12 @@ class EnterpriseMetricsStrip extends StatelessWidget {
       builder: (context, constraints) {
         final isWide = constraints.maxWidth > 700;
         final cardWidth = isWide
-            ? (constraints.maxWidth - (metrics.length - 1) * 12) / metrics.length
-            : (constraints.maxWidth - 12) / 2;
+            ? (constraints.maxWidth - (metrics.length - 1) * 14) / metrics.length
+            : (constraints.maxWidth - 14) / 2;
 
         return Wrap(
-          spacing: 12,
-          runSpacing: 10,
+          spacing: 14,
+          runSpacing: 14,
           children: metrics.map((m) {
             return SizedBox(
               width: cardWidth,
@@ -54,44 +55,33 @@ class EnterpriseMetricsStrip extends StatelessWidget {
                 color: Colors.transparent,
                 child: InkWell(
                   onTap: m.onTap,
-                  borderRadius: BorderRadius.circular(10),
+                  borderRadius: BorderRadius.circular(20),
                   child: AnimatedContainer(
                     duration: const Duration(milliseconds: 180),
-                    padding: const EdgeInsets.all(12),
-                    decoration: BoxDecoration(
-                      color: m.isSelected ? m.color.withValues(alpha: 0.06) : Colors.white,
-                      borderRadius: BorderRadius.circular(10),
-                      border: Border.all(
-                        color: m.isSelected ? m.color : const Color(0xFFE2E8F0),
-                        width: m.isSelected ? 1.6 : 1.0,
-                      ),
-                      boxShadow: m.isSelected
-                          ? [
-                              BoxShadow(
-                                color: m.color.withValues(alpha: 0.16),
-                                blurRadius: 6,
-                                offset: const Offset(0, 2),
-                              )
-                            ]
-                          : const [
-                              BoxShadow(
-                                color: Color(0x06000000),
-                                blurRadius: 2,
-                                offset: Offset(0, 1),
-                              )
-                            ],
+                    padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 13),
+                    decoration: AppTheme.neuCardDecoration(
+                      radius: 20,
+                      selected: m.isSelected,
+                      accentColor: m.color,
                     ),
                     child: Row(
                       children: [
                         Container(
-                          padding: const EdgeInsets.all(8),
-                          decoration: BoxDecoration(
-                            color: m.color.withValues(alpha: 0.1),
-                            borderRadius: BorderRadius.circular(8),
+                          width: 40,
+                          height: 40,
+                          decoration: AppTheme.neuOrbDecoration(
+                            active: m.isSelected,
+                            activeColor: m.color,
+                            shape: BoxShape.rectangle,
+                            radius: 13,
                           ),
-                          child: Icon(m.icon, color: m.color, size: 20),
+                          child: Icon(
+                            m.icon,
+                            color: m.isSelected ? Colors.white : m.color,
+                            size: 20,
+                          ),
                         ),
-                        const SizedBox(width: 10),
+                        const SizedBox(width: 12),
                         Expanded(
                           child: Column(
                             crossAxisAlignment: CrossAxisAlignment.start,
@@ -100,15 +90,20 @@ class EnterpriseMetricsStrip extends StatelessWidget {
                               Text(
                                 m.value,
                                 style: const TextStyle(
-                                  fontSize: 15,
-                                  fontWeight: FontWeight.bold,
-                                  color: Color(0xFF0F172A),
+                                  fontSize: 15.5,
+                                  fontWeight: FontWeight.w800,
+                                  color: Color(0xFF1E293B),
                                 ),
                                 overflow: TextOverflow.ellipsis,
                               ),
+                              const SizedBox(height: 2),
                               Text(
                                 m.label,
-                                style: const TextStyle(fontSize: 11, color: Color(0xFF64748B)),
+                                style: const TextStyle(
+                                  fontSize: 11.5,
+                                  fontWeight: FontWeight.w600,
+                                  color: Color(0xFF64748B),
+                                ),
                                 overflow: TextOverflow.ellipsis,
                               ),
                             ],
@@ -116,12 +111,12 @@ class EnterpriseMetricsStrip extends StatelessWidget {
                         ),
                         if (m.isSelected)
                           Container(
-                            padding: const EdgeInsets.all(3),
+                            padding: const EdgeInsets.all(4),
                             decoration: BoxDecoration(
                               color: m.color,
                               shape: BoxShape.circle,
                             ),
-                            child: const Icon(Icons.check, size: 9, color: Colors.white),
+                            child: const Icon(Icons.check, size: 10, color: Colors.white),
                           ),
                       ],
                     ),
@@ -541,12 +536,8 @@ class _EnterpriseDataViewState<T> extends State<EnterpriseDataView<T>> {
     final isCompact = screenWidth < 500;
 
     return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
-      decoration: BoxDecoration(
-        color: const Color(0xFFF8FAFC),
-        borderRadius: BorderRadius.circular(10),
-        border: Border.all(color: const Color(0xFFE2E8F0)),
-      ),
+      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+      decoration: AppTheme.neuCardDecoration(radius: 18),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
@@ -558,9 +549,9 @@ class _EnterpriseDataViewState<T> extends State<EnterpriseDataView<T>> {
                   child: Text(
                     widget.headerTitle!,
                     style: const TextStyle(
-                      fontSize: 14,
+                      fontSize: 14.5,
                       fontWeight: FontWeight.w800,
-                      color: Color(0xFF0F172A),
+                      color: Color(0xFF1E293B),
                     ),
                     maxLines: 1,
                     overflow: TextOverflow.ellipsis,
@@ -625,17 +616,14 @@ class _EnterpriseDataViewState<T> extends State<EnterpriseDataView<T>> {
                   const SizedBox(width: 2),
                 ],
                 Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
-                  decoration: BoxDecoration(
-                    color: const Color(0xFFE2E8F0),
-                    borderRadius: BorderRadius.circular(12),
-                  ),
+                  padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                  decoration: AppTheme.neuRecessedDecoration(radius: 12),
                   child: Text(
                     '$totalCount ${totalCount == 1 ? 'record' : 'records'}',
                     style: const TextStyle(
                       fontSize: 11,
                       color: Color(0xFF475569),
-                      fontWeight: FontWeight.w600,
+                      fontWeight: FontWeight.w700,
                     ),
                   ),
                 ),
@@ -653,11 +641,8 @@ class _EnterpriseDataViewState<T> extends State<EnterpriseDataView<T>> {
             children: [
               // 3-way Segmented Mode Switcher
               Container(
-                decoration: BoxDecoration(
-                  color: const Color(0xFFE2E8F0),
-                  borderRadius: BorderRadius.circular(8),
-                ),
-                padding: const EdgeInsets.all(2),
+                decoration: AppTheme.neuRecessedDecoration(radius: 12),
+                padding: const EdgeInsets.all(3),
                 child: Row(
                   mainAxisSize: MainAxisSize.min,
                   children: [
@@ -759,26 +744,39 @@ class _EnterpriseDataViewState<T> extends State<EnterpriseDataView<T>> {
   }) {
     return InkWell(
       onTap: onTap,
-      borderRadius: BorderRadius.circular(6),
-      child: Container(
+      borderRadius: BorderRadius.circular(9),
+      child: AnimatedContainer(
+        duration: const Duration(milliseconds: 160),
         padding: EdgeInsets.symmetric(
-          horizontal: isCompact ? 8 : 10,
+          horizontal: isCompact ? 9 : 11,
           vertical: isCompact ? 5 : 6,
         ),
-        decoration: BoxDecoration(
-          color: selected ? Colors.white : Colors.transparent,
-          borderRadius: BorderRadius.circular(6),
-          boxShadow: selected
-              ? const [BoxShadow(color: Color(0x10000000), blurRadius: 2, offset: Offset(0, 1))]
-              : null,
-        ),
+        decoration: selected
+            ? BoxDecoration(
+                color: AppColors.neuSurface,
+                borderRadius: BorderRadius.circular(9),
+                border: Border.all(color: Colors.white.withValues(alpha: 0.9)),
+                boxShadow: const [
+                  BoxShadow(
+                    color: AppColors.neuShadowDark,
+                    offset: Offset(2, 2),
+                    blurRadius: 5,
+                  ),
+                  BoxShadow(
+                    color: AppColors.neuShadowLight,
+                    offset: Offset(-2, -2),
+                    blurRadius: 5,
+                  ),
+                ],
+              )
+            : const BoxDecoration(color: Colors.transparent),
         child: Row(
           mainAxisSize: MainAxisSize.min,
           children: [
             Icon(
               icon,
               size: isCompact ? 13 : 15,
-              color: selected ? const Color(0xFF0284C7) : const Color(0xFF64748B),
+              color: selected ? const Color(0xFF2563EB) : const Color(0xFF64748B),
             ),
             SizedBox(width: isCompact ? 4 : 5),
             Text(
@@ -786,7 +784,7 @@ class _EnterpriseDataViewState<T> extends State<EnterpriseDataView<T>> {
               style: TextStyle(
                 fontSize: isCompact ? 11 : 12,
                 fontWeight: selected ? FontWeight.w700 : FontWeight.w600,
-                color: selected ? const Color(0xFF0F172A) : const Color(0xFF64748B),
+                color: selected ? const Color(0xFF1E293B) : const Color(0xFF64748B),
               ),
             ),
           ],

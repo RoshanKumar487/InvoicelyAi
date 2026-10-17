@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 
+import '../../../../theme/app_theme.dart';
 import '../../data/studio_section_model.dart';
 
 class InvoiceSectionAccordion extends StatelessWidget {
@@ -42,23 +43,10 @@ class InvoiceSectionAccordion extends StatelessWidget {
     final visible = section.visibleFieldCount;
 
     return Container(
-      margin: const EdgeInsets.only(bottom: 12),
-      decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(12),
-        border: Border.all(
-          color: isExpanded ? const Color(0xFF93C5FD) : const Color(0xFFE2E8F0),
-          width: isExpanded ? 1.4 : 1.0,
-        ),
-        boxShadow: isExpanded
-            ? const [
-                BoxShadow(
-                  color: Color(0x0A000000),
-                  blurRadius: 10,
-                  offset: Offset(0, 4),
-                ),
-              ]
-            : null,
+      margin: const EdgeInsets.only(bottom: 14),
+      decoration: AppTheme.neuCardDecoration(
+        radius: 20,
+        borderColor: isExpanded ? const Color(0xFF93C5FD) : Colors.white.withValues(alpha: 0.75),
       ),
       clipBehavior: Clip.antiAlias,
       child: Column(
@@ -71,22 +59,21 @@ class InvoiceSectionAccordion extends StatelessWidget {
               padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
               child: Row(
                 children: [
-                  // Icon badge in rounded square
+                  // Neumorphic circular icon orb
                   Container(
-                    width: 36,
-                    height: 36,
-                    decoration: BoxDecoration(
-                      color: enabled ? const Color(0xFFEFF6FF) : const Color(0xFFF1F5F9),
-                      borderRadius: BorderRadius.circular(8),
-                      border: Border.all(
-                        color: enabled ? const Color(0xFFBFDBFE) : const Color(0xFFE2E8F0),
-                      ),
+                    width: 40,
+                    height: 40,
+                    decoration: AppTheme.neuOrbDecoration(
+                      isActive: isExpanded && enabled,
+                      activeColor: const Color(0xFF2563EB),
                     ),
                     child: Center(
                       child: Icon(
                         section.icon,
-                        size: 20,
-                        color: enabled ? const Color(0xFF2563EB) : const Color(0xFF94A3B8),
+                        size: 19,
+                        color: (isExpanded && enabled)
+                            ? Colors.white
+                            : (enabled ? const Color(0xFF2563EB) : const Color(0xFF94A3B8)),
                       ),
                     ),
                   ),
@@ -101,7 +88,7 @@ class InvoiceSectionAccordion extends StatelessWidget {
                           section.title,
                           style: TextStyle(
                             fontSize: 14,
-                            fontWeight: FontWeight.w700,
+                            fontWeight: FontWeight.w800,
                             color: enabled ? const Color(0xFF0F172A) : const Color(0xFF64748B),
                           ),
                         ),
@@ -126,16 +113,10 @@ class InvoiceSectionAccordion extends StatelessWidget {
                       message: 'Formula & Daily Wage Auto-Calculation Settings',
                       child: InkWell(
                         onTap: onSectionFormula,
-                        borderRadius: BorderRadius.circular(10),
+                        borderRadius: BorderRadius.circular(12),
                         child: Container(
-                          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-                          decoration: BoxDecoration(
-                            gradient: const LinearGradient(
-                              colors: [Color(0xFFEFF6FF), Color(0xFFDBEAFE)],
-                            ),
-                            borderRadius: BorderRadius.circular(10),
-                            border: Border.all(color: const Color(0xFF93C5FD)),
-                          ),
+                          padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 5),
+                          decoration: AppTheme.neuPillDecoration(radius: 12),
                           child: const Row(
                             mainAxisSize: MainAxisSize.min,
                             children: [
@@ -160,17 +141,13 @@ class InvoiceSectionAccordion extends StatelessWidget {
                   // Field Count Badges
                   if (enabled) ...[
                     Container(
-                      padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 3),
-                      decoration: BoxDecoration(
-                        color: const Color(0xFFF1F5F9),
-                        borderRadius: BorderRadius.circular(12),
-                        border: Border.all(color: const Color(0xFFE2E8F0)),
-                      ),
+                      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3.5),
+                      decoration: AppTheme.neuRecessedDecoration(radius: 12),
                       child: Text(
                         '$total fields',
                         style: const TextStyle(
                           fontSize: 10.5,
-                          fontWeight: FontWeight.w600,
+                          fontWeight: FontWeight.w700,
                           color: Color(0xFF475569),
                         ),
                       ),
@@ -225,11 +202,16 @@ class InvoiceSectionAccordion extends StatelessWidget {
                     ),
                   ),
 
-                  // Chevron indicator
-                  Icon(
-                    isExpanded ? Icons.keyboard_arrow_up_rounded : Icons.keyboard_arrow_down_rounded,
-                    color: const Color(0xFF64748B),
-                    size: 20,
+                  // Chevron indicator in Neumorphic mini-orb
+                  Container(
+                    width: 26,
+                    height: 26,
+                    decoration: AppTheme.neuOrbDecoration(),
+                    child: Icon(
+                      isExpanded ? Icons.keyboard_arrow_up_rounded : Icons.keyboard_arrow_down_rounded,
+                      color: const Color(0xFF64748B),
+                      size: 18,
+                    ),
                   ),
                 ],
               ),
@@ -238,9 +220,9 @@ class InvoiceSectionAccordion extends StatelessWidget {
 
           // Expanded Content: Field Table
           if (isExpanded) ...[
-            const Divider(height: 1, color: Color(0xFFF1F5F9)),
+            const Divider(height: 1, color: Color(0xFFD5DCE6)),
             Container(
-              color: const Color(0xFFFAFAFA),
+              color: AppColors.neuRecessed,
               padding: const EdgeInsets.fromLTRB(14, 10, 14, 14),
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.stretch,

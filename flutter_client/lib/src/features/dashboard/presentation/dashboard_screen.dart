@@ -620,7 +620,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
       _ => 'Your business performance',
     };
     return Scaffold(
-      backgroundColor: const Color(0xFFF4F7FB),
+      backgroundColor: AppColors.background,
       body: SafeArea(
         bottom: false,
         child: LayoutBuilder(
@@ -629,7 +629,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
             return RefreshIndicator(
               onRefresh: _loadStatistics,
               child: ListView(
-                padding: EdgeInsets.fromLTRB(sidePadding, 12, sidePadding, 28),
+                padding: EdgeInsets.fromLTRB(sidePadding, 14, sidePadding, 28),
                 children: [
                   _DashboardHeader(
                     companyName: _isDeveloper ? 'Platform overview' : registeredName,
@@ -645,7 +645,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
                     onSearchChanged: (val) => setState(() => _searchQuery = val),
                     onRefresh: _isLoading ? null : _loadStatistics,
                   ),
-                  const SizedBox(height: 18),
+                  const SizedBox(height: 20),
                   _DashboardWelcomeRow(
                     userName: widget.session.user.fullName.trim().isNotEmpty
                         ? widget.session.user.fullName.trim()
@@ -655,14 +655,14 @@ class _DashboardScreenState extends State<DashboardScreen> {
                         ? widget.onCreateInvoice
                         : null,
                   ),
-                  const SizedBox(height: 16),
+                  const SizedBox(height: 18),
                   if (!_isDeveloper)
                     _AssistantBanner(onTap: widget.onOpenAiChat),
                   if (_usingCachedData) ...[
                     const SizedBox(height: 12),
                     const OfflineCacheBanner(),
                   ],
-                  const SizedBox(height: 16),
+                  const SizedBox(height: 18),
                   _DashboardShortcuts(
                     user: widget.session.user,
                     onViewInvoices: () => widget.onViewInvoices('All'),
@@ -671,7 +671,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
                     onOpenTemplates: widget.onOpenTemplates,
                     onOpenPayroll: widget.onOpenPayroll,
                   ),
-                  const SizedBox(height: 18),
+                  const SizedBox(height: 20),
                   if (_developerOverview != null) ...[
                     _DeveloperOverviewPanel(
                       overview: _developerOverview!,
@@ -766,45 +766,25 @@ class _DashboardHeader extends StatelessWidget {
 
     return Container(
       padding: EdgeInsets.symmetric(
-        horizontal: isDesktop ? 16 : 12,
-        vertical: isDesktop ? 10 : 10,
+        horizontal: isDesktop ? 18 : 14,
+        vertical: isDesktop ? 12 : 12,
       ),
-      decoration: BoxDecoration(
-        gradient: const LinearGradient(
-          begin: Alignment.topLeft,
-          end: Alignment.bottomRight,
-          colors: [Colors.white, Color(0xFFF8FAFC)],
-        ),
-        borderRadius: BorderRadius.circular(18),
-        border: Border.all(color: const Color(0xFFE2E8F0), width: 1.2),
-        boxShadow: const [
-          BoxShadow(
-            color: Color(0x0D0F172A),
-            blurRadius: 16,
-            offset: Offset(0, 6),
-          ),
-          BoxShadow(
-            color: Colors.white,
-            blurRadius: 2,
-            offset: Offset(-2, -2),
-          ),
-        ],
-      ),
+      decoration: AppTheme.neuCardDecoration(radius: 26),
       child: isDesktop
           ? Row(
               children: [
                 _buildCompanyTopNavBadge(isDesktop: true),
                 const Spacer(),
                 _buildSearchField(width: 240),
-                const SizedBox(width: 10),
+                const SizedBox(width: 12),
                 _buildFilterDropdown(context),
-                const SizedBox(width: 8),
-                _buildClayIconButton(
+                const SizedBox(width: 10),
+                _buildNeuIconButton(
                   tooltip: 'Sync dashboard',
                   icon: Icons.refresh_rounded,
                   onTap: onRefresh,
                 ),
-                const SizedBox(width: 8),
+                const SizedBox(width: 10),
                 _buildNotificationButton(),
                 const SizedBox(width: 10),
                 _buildUserAvatar(),
@@ -816,23 +796,23 @@ class _DashboardHeader extends StatelessWidget {
                 Row(
                   children: [
                     Expanded(child: _buildCompanyTopNavBadge(isDesktop: false)),
-                    const SizedBox(width: 6),
-                    _buildClayIconButton(
+                    const SizedBox(width: 8),
+                    _buildNeuIconButton(
                       tooltip: 'Sync dashboard',
                       icon: Icons.refresh_rounded,
                       onTap: onRefresh,
                     ),
-                    const SizedBox(width: 6),
+                    const SizedBox(width: 8),
                     _buildNotificationButton(),
                     const SizedBox(width: 8),
                     _buildUserAvatar(),
                   ],
                 ),
-                const SizedBox(height: 10),
+                const SizedBox(height: 12),
                 Row(
                   children: [
                     Expanded(child: _buildSearchField()),
-                    const SizedBox(width: 8),
+                    const SizedBox(width: 10),
                     _buildFilterDropdown(context),
                   ],
                 ),
@@ -849,16 +829,16 @@ class _DashboardHeader extends StatelessWidget {
           const Text(
             'Dashboard',
             style: TextStyle(
-              fontSize: 15,
+              fontSize: 15.5,
               fontWeight: FontWeight.w800,
-              color: Color(0xFF0F172A),
+              color: Color(0xFF1E293B),
               letterSpacing: -0.3,
             ),
           ),
           const Padding(
-            padding: EdgeInsets.symmetric(horizontal: 10),
+            padding: EdgeInsets.symmetric(horizontal: 12),
             child: SizedBox(
-              height: 16,
+              height: 18,
               child: VerticalDivider(width: 1, color: Color(0xFFCBD5E1)),
             ),
           ),
@@ -866,47 +846,16 @@ class _DashboardHeader extends StatelessWidget {
         Flexible(
           child: Container(
             padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-            decoration: BoxDecoration(
-              gradient: const LinearGradient(
-                begin: Alignment.topLeft,
-                end: Alignment.bottomRight,
-                colors: [Color(0xFFEFF6FF), Color(0xFFE0E7FF)],
-              ),
-              borderRadius: BorderRadius.circular(12),
-              border: Border.all(color: const Color(0xFFBFDBFE), width: 1.1),
-              boxShadow: const [
-                BoxShadow(
-                  color: Color(0x142563EB),
-                  blurRadius: 8,
-                  offset: Offset(0, 3),
-                ),
-                BoxShadow(
-                  color: Colors.white,
-                  blurRadius: 2,
-                  offset: Offset(-1, -1),
-                ),
-              ],
-            ),
+            decoration: AppTheme.neuPillDecoration(radius: 20),
             child: Row(
               mainAxisSize: MainAxisSize.min,
               children: [
                 Container(
-                  width: 22,
-                  height: 22,
-                  decoration: BoxDecoration(
-                    gradient: const LinearGradient(
-                      begin: Alignment.topLeft,
-                      end: Alignment.bottomRight,
-                      colors: [Color(0xFF2563EB), Color(0xFF1D4ED8)],
-                    ),
-                    borderRadius: BorderRadius.circular(7),
-                    boxShadow: const [
-                      BoxShadow(
-                        color: Color(0x332563EB),
-                        blurRadius: 4,
-                        offset: Offset(0, 2),
-                      ),
-                    ],
+                  width: 26,
+                  height: 26,
+                  decoration: AppTheme.neuOrbDecoration(
+                    active: true,
+                    activeColor: const Color(0xFF2B3548),
                   ),
                   child: const Icon(
                     Icons.business_rounded,
@@ -917,14 +866,14 @@ class _DashboardHeader extends StatelessWidget {
                 const SizedBox(width: 8),
                 Flexible(
                   child: ConstrainedBox(
-                    constraints: BoxConstraints(maxWidth: isDesktop ? 280 : 190),
+                    constraints: BoxConstraints(maxWidth: isDesktop ? 280 : 180),
                     child: Text(
                       companyName,
                       overflow: TextOverflow.ellipsis,
                       style: const TextStyle(
                         fontSize: 13,
                         fontWeight: FontWeight.w800,
-                        color: Color(0xFF1E3A8A),
+                        color: Color(0xFF1E293B),
                         letterSpacing: -0.2,
                       ),
                     ),
@@ -949,37 +898,29 @@ class _DashboardHeader extends StatelessWidget {
 
   Widget _buildSearchField({double? width}) {
     return Container(
-      height: 38,
+      height: 40,
       width: width,
-      decoration: BoxDecoration(
-        color: const Color(0xFFF1F5F9),
-        borderRadius: BorderRadius.circular(12),
-        border: Border.all(color: const Color(0xFFE2E8F0)),
-        boxShadow: const [
-          BoxShadow(
-            color: Colors.white,
-            blurRadius: 1,
-            offset: Offset(0, 1),
-          ),
-        ],
-      ),
+      decoration: AppTheme.neuRecessedDecoration(radius: 18),
       child: TextField(
         controller: searchController,
         onChanged: onSearchChanged,
-        style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w500),
+        style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w600, color: Color(0xFF1E293B)),
         decoration: const InputDecoration(
+          filled: false,
           hintText: 'Search invoices, clients...',
-          hintStyle: TextStyle(fontSize: 12, color: Color(0xFF94A3B8)),
-          prefixIcon: Icon(Icons.search_rounded, size: 18, color: Color(0xFF64748B)),
+          hintStyle: TextStyle(fontSize: 12, color: Color(0xFF64748B)),
+          prefixIcon: Icon(Icons.search_rounded, size: 18, color: Color(0xFF475569)),
           border: InputBorder.none,
+          enabledBorder: InputBorder.none,
+          focusedBorder: InputBorder.none,
           isDense: true,
-          contentPadding: EdgeInsets.symmetric(vertical: 9),
+          contentPadding: EdgeInsets.symmetric(vertical: 10),
         ),
       ),
     );
   }
 
-  Widget _buildClayIconButton({
+  Widget _buildNeuIconButton({
     required String tooltip,
     required IconData icon,
     required VoidCallback? onTap,
@@ -988,32 +929,12 @@ class _DashboardHeader extends StatelessWidget {
       message: tooltip,
       child: InkWell(
         onTap: onTap,
-        borderRadius: BorderRadius.circular(12),
+        borderRadius: BorderRadius.circular(20),
         child: Container(
-          width: 38,
-          height: 38,
-          decoration: BoxDecoration(
-            gradient: const LinearGradient(
-              begin: Alignment.topLeft,
-              end: Alignment.bottomRight,
-              colors: [Colors.white, Color(0xFFF1F5F9)],
-            ),
-            borderRadius: BorderRadius.circular(12),
-            border: Border.all(color: const Color(0xFFE2E8F0)),
-            boxShadow: const [
-              BoxShadow(
-                color: Color(0x0D0F172A),
-                blurRadius: 6,
-                offset: Offset(0, 3),
-              ),
-              BoxShadow(
-                color: Colors.white,
-                blurRadius: 2,
-                offset: Offset(-1, -1),
-              ),
-            ],
-          ),
-          child: Icon(icon, size: 19, color: const Color(0xFF475569)),
+          width: 40,
+          height: 40,
+          decoration: AppTheme.neuOrbDecoration(),
+          child: Icon(icon, size: 19, color: const Color(0xFF334155)),
         ),
       ),
     );
@@ -1023,7 +944,7 @@ class _DashboardHeader extends StatelessWidget {
     return Stack(
       clipBehavior: Clip.none,
       children: [
-        _buildClayIconButton(
+        _buildNeuIconButton(
           tooltip: 'Notifications',
           icon: Icons.notifications_none_rounded,
           onTap: onOpenNotifications,
@@ -1048,23 +969,11 @@ class _DashboardHeader extends StatelessWidget {
 
   Widget _buildUserAvatar() {
     return Container(
-      width: 38,
-      height: 38,
-      decoration: BoxDecoration(
-        gradient: const LinearGradient(
-          begin: Alignment.topLeft,
-          end: Alignment.bottomRight,
-          colors: [Color(0xFF3B82F6), Color(0xFF1D4ED8)],
-        ),
-        shape: BoxShape.circle,
-        border: Border.all(color: const Color(0xFF93C5FD), width: 1.2),
-        boxShadow: const [
-          BoxShadow(
-            color: Color(0x332563EB),
-            blurRadius: 8,
-            offset: Offset(0, 3),
-          ),
-        ],
+      width: 40,
+      height: 40,
+      decoration: AppTheme.neuOrbDecoration(
+        active: true,
+        activeColor: const Color(0xFF2B3548),
       ),
       child: Center(
         child: Text(
@@ -1094,10 +1003,10 @@ class _DashboardHeader extends StatelessWidget {
     return PopupMenuButton<String>(
       onSelected: onFilterChanged,
       shape: RoundedRectangleBorder(
-        borderRadius: BorderRadius.circular(14),
-        side: const BorderSide(color: Color(0xFFE2E8F0)),
+        borderRadius: BorderRadius.circular(18),
+        side: BorderSide(color: Colors.white.withValues(alpha: 0.9)),
       ),
-      color: Colors.white,
+      color: AppColors.neuSurface,
       elevation: 6,
       position: PopupMenuPosition.under,
       itemBuilder: (context) => options.map((opt) {
@@ -1109,7 +1018,7 @@ class _DashboardHeader extends StatelessWidget {
               Icon(
                 isSelected ? Icons.check_circle_rounded : Icons.calendar_today_outlined,
                 size: 15,
-                color: isSelected ? const Color(0xFF2563EB) : const Color(0xFF94A3B8),
+                color: isSelected ? const Color(0xFF2563EB) : const Color(0xFF64748B),
               ),
               const SizedBox(width: 8),
               Expanded(
@@ -1117,8 +1026,8 @@ class _DashboardHeader extends StatelessWidget {
                   opt,
                   style: TextStyle(
                     fontSize: 12.5,
-                    fontWeight: isSelected ? FontWeight.w700 : FontWeight.w500,
-                    color: isSelected ? const Color(0xFF2563EB) : const Color(0xFF1E293B),
+                    fontWeight: isSelected ? FontWeight.w800 : FontWeight.w600,
+                    color: isSelected ? const Color(0xFF1E293B) : const Color(0xFF475569),
                   ),
                 ),
               ),
@@ -1127,40 +1036,24 @@ class _DashboardHeader extends StatelessWidget {
         );
       }).toList(),
       child: Container(
-        height: 38,
-        padding: const EdgeInsets.symmetric(horizontal: 12),
-        decoration: BoxDecoration(
-          gradient: const LinearGradient(
-            begin: Alignment.topLeft,
-            end: Alignment.bottomRight,
-            colors: [Colors.white, Color(0xFFF1F5F9)],
-          ),
-          borderRadius: BorderRadius.circular(12),
-          border: Border.all(color: const Color(0xFFCBD5E1)),
-          boxShadow: const [
-            BoxShadow(
-              color: Color(0x0D0F172A),
-              blurRadius: 6,
-              offset: Offset(0, 3),
-            ),
-            BoxShadow(
-              color: Colors.white,
-              blurRadius: 2,
-              offset: Offset(-1, -1),
-            ),
-          ],
-        ),
+        height: 40,
+        padding: const EdgeInsets.symmetric(horizontal: 13),
+        decoration: AppTheme.neuPillDecoration(radius: 20),
         child: Row(
           mainAxisSize: MainAxisSize.min,
           children: [
-            const Icon(Icons.calendar_today_outlined, size: 13, color: Color(0xFF2563EB)),
+            const Icon(Icons.calendar_today_outlined, size: 13, color: Color(0xFF334155)),
             const SizedBox(width: 6),
-            Text(
-              selectedFilter,
-              style: const TextStyle(
-                fontSize: 12,
-                fontWeight: FontWeight.w700,
-                color: Color(0xFF1E293B),
+            ConstrainedBox(
+              constraints: const BoxConstraints(maxWidth: 118),
+              child: Text(
+                selectedFilter,
+                overflow: TextOverflow.ellipsis,
+                style: const TextStyle(
+                  fontSize: 12,
+                  fontWeight: FontWeight.w800,
+                  color: Color(0xFF1E293B),
+                ),
               ),
             ),
             const SizedBox(width: 4),
@@ -1193,55 +1086,41 @@ class _DashboardWelcomeRow extends StatelessWidget {
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
               Text(
-                'Welcome back, $userName!',
+                'Hello, $userName',
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
                 style: const TextStyle(
-                  fontSize: 22,
-                  fontWeight: FontWeight.w800,
-                  color: Color(0xFF0F172A),
+                  fontSize: 23,
+                  fontWeight: FontWeight.w900,
+                  color: Color(0xFF1E293B),
                   letterSpacing: -0.5,
                 ),
               ),
               const SizedBox(height: 3),
               Text(
                 subtitle,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
                 style: const TextStyle(
                   fontSize: 13,
-                  fontWeight: FontWeight.w500,
+                  fontWeight: FontWeight.w600,
                   color: Color(0xFF64748B),
                 ),
               ),
             ],
           ),
         ),
-        if (onCreateInvoice != null)
+        if (onCreateInvoice != null) ...[
+          const SizedBox(width: 10),
           InkWell(
             onTap: onCreateInvoice,
-            borderRadius: BorderRadius.circular(14),
+            borderRadius: BorderRadius.circular(24),
             child: Container(
-              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
-              decoration: BoxDecoration(
-                gradient: const LinearGradient(
-                  begin: Alignment.topLeft,
-                  end: Alignment.bottomRight,
-                  colors: [Color(0xFF3B82F6), Color(0xFF1D4ED8)],
-                ),
-                borderRadius: BorderRadius.circular(14),
-                border: Border.all(
-                  color: const Color(0xFF93C5FD).withValues(alpha: 0.6),
-                  width: 1.2,
-                ),
-                boxShadow: const [
-                  BoxShadow(
-                    color: Color(0x382563EB),
-                    blurRadius: 12,
-                    offset: Offset(0, 5),
-                  ),
-                  BoxShadow(
-                    color: Color(0x40FFFFFF),
-                    blurRadius: 2,
-                    offset: Offset(-1, -1),
-                  ),
-                ],
+              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 11),
+              decoration: AppTheme.neuPillDecoration(
+                radius: 24,
+                active: true,
+                activeColor: const Color(0xFF2B3548),
               ),
               child: const Row(
                 mainAxisSize: MainAxisSize.min,
@@ -1261,6 +1140,7 @@ class _DashboardWelcomeRow extends StatelessWidget {
               ),
             ),
           ),
+        ],
       ],
     );
   }
@@ -1273,143 +1153,89 @@ class _AssistantBanner extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final isCompact = MediaQuery.sizeOf(context).width < 520;
     return Container(
-      decoration: BoxDecoration(
-        gradient: const LinearGradient(
-          begin: Alignment.topLeft,
-          end: Alignment.bottomRight,
-          colors: [Color(0xFFF0F7FF), Color(0xFFE0EFFE)],
-        ),
-        borderRadius: BorderRadius.circular(20),
-        border: Border.all(color: const Color(0xFFBFDBFE), width: 1.3),
-        boxShadow: const [
-          BoxShadow(
-            color: Color(0x142563EB),
-            blurRadius: 16,
-            offset: Offset(0, 6),
-          ),
-          BoxShadow(
-            color: Colors.white,
-            blurRadius: 3,
-            offset: Offset(-2, -2),
-          ),
-        ],
-      ),
+      decoration: AppTheme.neuCardDecoration(radius: 24),
       padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 16),
       child: Row(
         crossAxisAlignment: CrossAxisAlignment.center,
         children: [
-          // Claymorphic Robot Icon Badge
           Container(
             width: 48,
             height: 48,
-            decoration: BoxDecoration(
-              gradient: const LinearGradient(
-                begin: Alignment.topLeft,
-                end: Alignment.bottomRight,
-                colors: [Colors.white, Color(0xFFDBEAFE)],
-              ),
-              borderRadius: BorderRadius.circular(15),
-              border: Border.all(color: Colors.white, width: 1.5),
-              boxShadow: const [
-                BoxShadow(
-                  color: Color(0x222563EB),
-                  blurRadius: 10,
-                  offset: Offset(0, 4),
-                ),
-              ],
-            ),
+            decoration: AppTheme.neuOrbDecoration(),
             child: const Icon(
-              Icons.smart_toy_outlined,
-              color: Color(0xFF2563EB),
-              size: 24,
-            ),
-          ),
-          const SizedBox(width: 16),
-
-          // Text Content
-          const Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  'AI INVOICE ASSISTANT',
-                  style: TextStyle(
-                    color: Color(0xFF2563EB),
-                    fontSize: 10,
-                    fontWeight: FontWeight.w800,
-                    letterSpacing: 0.6,
-                  ),
-                ),
-                SizedBox(height: 3),
-                Text(
-                  'Generate Invoices & insights in seconds',
-                  style: TextStyle(
-                    fontSize: 15,
-                    fontWeight: FontWeight.w800,
-                    color: Color(0xFF0F172A),
-                    letterSpacing: -0.3,
-                  ),
-                ),
-                SizedBox(height: 2),
-                Text(
-                  'Talk to our intelligent assistant to auto-fill line items, calculate taxes, and query financial metrics.',
-                  style: TextStyle(
-                    fontSize: 11.5,
-                    color: Color(0xFF475569),
-                    height: 1.35,
-                  ),
-                  maxLines: 2,
-                  overflow: TextOverflow.ellipsis,
-                ),
-              ],
+              Icons.auto_awesome_rounded,
+              color: Color(0xFF2B3548),
+              size: 23,
             ),
           ),
           const SizedBox(width: 14),
-
-          // Claymorphic Try Assistant button
-          InkWell(
-            onTap: onTap,
-            borderRadius: BorderRadius.circular(16),
-            child: Container(
-              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
-              decoration: BoxDecoration(
-                gradient: const LinearGradient(
-                  begin: Alignment.topLeft,
-                  end: Alignment.bottomRight,
-                  colors: [Color(0xFF3B82F6), Color(0xFF1D4ED8)],
-                ),
-                borderRadius: BorderRadius.circular(16),
-                border: Border.all(
-                  color: const Color(0xFF93C5FD).withValues(alpha: 0.65),
-                  width: 1.2,
-                ),
-                boxShadow: const [
-                  BoxShadow(
-                    color: Color(0x382563EB),
-                    blurRadius: 10,
-                    offset: Offset(0, 4),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                const Text(
+                  'AI INVOICE ASSISTANT',
+                  style: TextStyle(
+                    color: Color(0xFF475569),
+                    fontSize: 10,
+                    fontWeight: FontWeight.w800,
+                    letterSpacing: 0.7,
                   ),
-                  BoxShadow(
-                    color: Color(0x40FFFFFF),
-                    blurRadius: 2,
-                    offset: Offset(-1, -1),
+                ),
+                const SizedBox(height: 3),
+                const Text(
+                  'Generate invoices & insights in seconds',
+                  style: TextStyle(
+                    fontSize: 14.5,
+                    fontWeight: FontWeight.w800,
+                    color: Color(0xFF1E293B),
+                    letterSpacing: -0.3,
+                  ),
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                ),
+                if (!isCompact) ...[
+                  const SizedBox(height: 2),
+                  const Text(
+                    'Auto-fill security guard line items, calculate daily wages & GST, and query metrics.',
+                    style: TextStyle(
+                      fontSize: 11.5,
+                      color: Color(0xFF64748B),
+                      height: 1.35,
+                    ),
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
                   ),
                 ],
+              ],
+            ),
+          ),
+          const SizedBox(width: 12),
+          InkWell(
+            onTap: onTap,
+            borderRadius: BorderRadius.circular(22),
+            child: Container(
+              padding: EdgeInsets.symmetric(horizontal: isCompact ? 12 : 16, vertical: 10),
+              decoration: AppTheme.neuPillDecoration(
+                radius: 22,
+                active: true,
+                activeColor: const Color(0xFF2B3548),
               ),
-              child: const Row(
+              child: Row(
                 mainAxisSize: MainAxisSize.min,
                 children: [
                   Text(
-                    'Try Assistant',
-                    style: TextStyle(
+                    isCompact ? 'Open AI' : 'Try Assistant',
+                    style: const TextStyle(
                       color: Colors.white,
-                      fontSize: 12.5,
+                      fontSize: 12,
                       fontWeight: FontWeight.w800,
                     ),
                   ),
-                  SizedBox(width: 5),
-                  Icon(
+                  const SizedBox(width: 5),
+                  const Icon(
                     Icons.arrow_forward_rounded,
                     color: Colors.white,
                     size: 14,
@@ -1447,41 +1273,41 @@ class _DashboardShortcuts extends StatelessWidget {
       if (user.hasPermission('INVOICES'))
         _ModuleCardData(
           label: 'Invoices',
-          icon: Icons.description_outlined,
-          iconBg: const Color(0xFFEDE9FE),
-          iconColor: const Color(0xFF7C3AED),
+          icon: Icons.receipt_long_rounded,
+          iconBg: const Color(0xFF2B3548),
+          iconColor: const Color(0xFF2B3548),
           onTap: onViewInvoices,
         ),
       if (user.hasPermission('EXPENSES'))
         _ModuleCardData(
           label: 'Expenses',
-          icon: Icons.receipt_outlined,
-          iconBg: const Color(0xFFDCFCE7),
-          iconColor: const Color(0xFF16A34A),
+          icon: Icons.account_balance_wallet_rounded,
+          iconBg: const Color(0xFFEAEEF5),
+          iconColor: const Color(0xFF334155),
           onTap: onViewExpenses,
         ),
       if (onOpenPayroll != null)
         _ModuleCardData(
           label: 'Payroll',
-          icon: Icons.groups_outlined,
-          iconBg: const Color(0xFFE0F2FE),
-          iconColor: const Color(0xFF0284C7),
+          icon: Icons.groups_rounded,
+          iconBg: const Color(0xFFEAEEF5),
+          iconColor: const Color(0xFF334155),
           onTap: onOpenPayroll!,
         ),
       if (user.hasPermission('CLIENTS'))
         _ModuleCardData(
           label: 'Clients',
-          icon: Icons.people_alt_outlined,
-          iconBg: const Color(0xFFFCE7F3),
-          iconColor: const Color(0xFFE11D48),
+          icon: Icons.people_alt_rounded,
+          iconBg: const Color(0xFFEAEEF5),
+          iconColor: const Color(0xFF334155),
           onTap: onViewClients,
         ),
       if (user.hasPermission('INVOICES'))
         _ModuleCardData(
           label: 'Templates',
-          icon: Icons.article_outlined,
-          iconBg: const Color(0xFFEDE9FE),
-          iconColor: const Color(0xFF7C3AED),
+          icon: Icons.tune_rounded,
+          iconBg: const Color(0xFFEAEEF5),
+          iconColor: const Color(0xFF334155),
           onTap: onOpenTemplates,
         ),
     ];
@@ -1489,7 +1315,12 @@ class _DashboardShortcuts extends StatelessWidget {
     return Row(
       children: [
         for (int i = 0; i < items.length; i++) ...[
-          Expanded(child: _ClayModuleTile(item: items[i])),
+          Expanded(
+            child: _ClayModuleTile(
+              item: items[i],
+              isHighlighted: i == 0,
+            ),
+          ),
           if (i < items.length - 1) const SizedBox(width: 10),
         ],
       ],
@@ -1498,9 +1329,13 @@ class _DashboardShortcuts extends StatelessWidget {
 }
 
 class _ClayModuleTile extends StatefulWidget {
-  const _ClayModuleTile({required this.item});
+  const _ClayModuleTile({
+    required this.item,
+    this.isHighlighted = false,
+  });
 
   final _ModuleCardData item;
+  final bool isHighlighted;
 
   @override
   State<_ClayModuleTile> createState() => _ClayModuleTileState();
@@ -1512,6 +1347,7 @@ class _ClayModuleTileState extends State<_ClayModuleTile> {
   @override
   Widget build(BuildContext context) {
     final item = widget.item;
+    final activeDark = widget.isHighlighted || _hovered;
     return MouseRegion(
       onEnter: (_) => setState(() => _hovered = true),
       onExit: (_) => setState(() => _hovered = false),
@@ -1522,67 +1358,31 @@ class _ClayModuleTileState extends State<_ClayModuleTile> {
           duration: const Duration(milliseconds: 180),
           curve: Curves.easeOutCubic,
           transform: _hovered ? Matrix4.translationValues(0, -3, 0) : Matrix4.identity(),
-          padding: const EdgeInsets.symmetric(vertical: 14, horizontal: 8),
-          decoration: BoxDecoration(
-            gradient: const LinearGradient(
-              begin: Alignment.topLeft,
-              end: Alignment.bottomRight,
-              colors: [Colors.white, Color(0xFFF8FAFC)],
-            ),
-            borderRadius: BorderRadius.circular(18),
-            border: Border.all(
-              color: _hovered
-                  ? item.iconColor.withValues(alpha: 0.4)
-                  : const Color(0xFFE2E8F0),
-              width: _hovered ? 1.4 : 1.1,
-            ),
-            boxShadow: [
-              BoxShadow(
-                color: _hovered
-                    ? item.iconColor.withValues(alpha: 0.14)
-                    : const Color(0x0D0F172A),
-                blurRadius: _hovered ? 16 : 12,
-                offset: _hovered ? const Offset(0, 7) : const Offset(0, 4),
-              ),
-              const BoxShadow(
-                color: Colors.white,
-                blurRadius: 2,
-                offset: Offset(-2, -2),
-              ),
-            ],
-          ),
+          padding: const EdgeInsets.symmetric(vertical: 14, horizontal: 6),
+          decoration: activeDark
+              ? AppTheme.neuPillDecoration(
+                  radius: 22,
+                  active: true,
+                  activeColor: const Color(0xFF2B3548),
+                )
+              : AppTheme.neuCardDecoration(radius: 22),
           child: Column(
             mainAxisSize: MainAxisSize.min,
             children: [
               Container(
-                width: 42,
-                height: 42,
-                decoration: BoxDecoration(
-                  gradient: LinearGradient(
-                    begin: Alignment.topLeft,
-                    end: Alignment.bottomRight,
-                    colors: [
-                      Colors.white,
-                      item.iconBg,
-                    ],
-                  ),
-                  borderRadius: BorderRadius.circular(13),
-                  border: Border.all(
-                    color: item.iconColor.withValues(alpha: 0.18),
-                    width: 1,
-                  ),
-                  boxShadow: [
-                    BoxShadow(
-                      color: item.iconColor.withValues(alpha: 0.15),
-                      blurRadius: 8,
-                      offset: const Offset(0, 3),
-                    ),
-                  ],
-                ),
+                width: 40,
+                height: 40,
+                decoration: activeDark
+                    ? BoxDecoration(
+                        color: Colors.white.withValues(alpha: 0.14),
+                        shape: BoxShape.circle,
+                        border: Border.all(color: Colors.white.withValues(alpha: 0.25)),
+                      )
+                    : AppTheme.neuOrbDecoration(),
                 child: Icon(
                   item.icon,
-                  color: item.iconColor,
-                  size: 21,
+                  color: activeDark ? Colors.white : item.iconColor,
+                  size: 20,
                 ),
               ),
               const SizedBox(height: 9),
@@ -1590,10 +1390,10 @@ class _ClayModuleTileState extends State<_ClayModuleTile> {
                 item.label,
                 maxLines: 1,
                 overflow: TextOverflow.ellipsis,
-                style: const TextStyle(
-                  fontSize: 12.5,
+                style: TextStyle(
+                  fontSize: 12,
                   fontWeight: FontWeight.w800,
-                  color: Color(0xFF0F172A),
+                  color: activeDark ? Colors.white : const Color(0xFF1E293B),
                   letterSpacing: -0.2,
                 ),
               ),

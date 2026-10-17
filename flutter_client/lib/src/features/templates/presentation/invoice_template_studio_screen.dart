@@ -10,6 +10,7 @@ import 'package:share_plus/share_plus.dart';
 import '../../../core/api/api_client.dart';
 import '../../../core/storage/local_preferences.dart';
 import '../../../shared/widgets/signature_pad_dialog.dart';
+import '../../../theme/app_theme.dart';
 import '../../invoices/data/invoice.dart';
 import '../../invoices/data/invoice_docx_export.dart';
 import '../../invoices/data/invoice_pdf_export.dart';
@@ -157,6 +158,11 @@ class _InvoiceTemplateStudioScreenState
   // Automatic Daily Wage & Formula Calculation State
   String _itemCalculationFormula = 'monthly_salary_30';
   double _standardDutyDays = 30.0;
+
+  // Organization & Audit Metadata (Backend Persistence)
+  String _orgCode = '';
+  String _createdBy = '';
+  String _updatedBy = '';
 
   // Sections Model List
   late List<StudioSection> _sections;
@@ -369,7 +375,171 @@ class _InvoiceTemplateStudioScreenState
           }
         } catch (_) {}
       }
+
+      // Fetch organization-scoped template settings & section booleans from backend
+      await _fetchBackendTemplateSettings();
     } catch (_) {}
+  }
+
+  Future<void> _fetchBackendTemplateSettings() async {
+    try {
+      final response = await widget.apiClient.getJson('api/v1/templates/settings');
+      final rawData = response['data'] is Map<String, dynamic>
+          ? response['data'] as Map<String, dynamic>
+          : response;
+      if (rawData.isEmpty || !mounted) return;
+
+      setState(() {
+        final org = rawData['orgCode']?.toString();
+        if (org != null && org.isNotEmpty) _orgCode = org;
+        final created = rawData['createdBy']?.toString();
+        if (created != null && created.isNotEmpty) _createdBy = created;
+        final updated = rawData['updatedBy']?.toString();
+        if (updated != null && updated.isNotEmpty) _updatedBy = updated;
+
+        final settingsJsonStr = rawData['settingsJson']?.toString();
+        if (settingsJsonStr != null && settingsJsonStr.isNotEmpty) {
+          try {
+            final decodedMap = jsonDecode(settingsJsonStr);
+            if (decodedMap is Map<String, dynamic>) {
+              _applySettingsMap(decodedMap);
+            }
+          } catch (_) {}
+        }
+
+        final configJsonStr = rawData['configurationJson']?.toString();
+        if (configJsonStr != null && configJsonStr.isNotEmpty) {
+          try {
+            final decoded = jsonDecode(configJsonStr);
+            if (decoded is List<dynamic>) {
+              final parsed = decoded
+                  .whereType<Map<String, dynamic>>()
+                  .map(StudioSection.fromJson)
+                  .toList();
+              if (parsed.isNotEmpty) {
+                for (final s in parsed) {
+                  s.isExpanded = false;
+                }
+                _sections = parsed;
+              }
+            } else if (decoded is Map<String, dynamic>) {
+              _applySettingsMap(decoded);
+            }
+          } catch (_) {}
+        }
+
+        // Apply explicit boolean flags saved on the backend entity
+        _applyExplicitSectionBooleans(rawData);
+      });
+    } catch (_) {}
+  }
+
+  void _applySettingsMap(Map<String, dynamic> map) {
+    final preset = map['studio_preset']?.toString() ?? map['industryPreset']?.toString();
+    if (preset != null && preset.isNotEmpty && preset != 'SECURITY_SERVICES') {
+      _activePreset = preset;
+    }
+    final tplName = map['studio_template_name']?.toString() ?? map['templateName']?.toString();
+    if (tplName != null && tplName.isNotEmpty && tplName != 'Organization Default Template') {
+      _templateName = tplName;
+      _nameController.text = tplName;
+    }
+    final primaryHex = map['studio_primary_color']?.toString();
+    if (primaryHex != null && primaryHex.isNotEmpty) {
+      final parsed = int.tryParse(primaryHex.replaceFirst('#', ''), radix: 16);
+      if (parsed != null) _primaryColor = Color(0xFF000000 | parsed);
+    }
+    final headerHex = map['studio_table_header_text_color']?.toString();
+    if (headerHex != null && headerHex.isNotEmpty) {
+      final parsed = int.tryParse(headerHex.replaceFirst('#', ''), radix: 16);
+      if (parsed != null) _tableHeaderTextColor = Color(0xFF000000 | parsed);
+    }
+    final font = map['studio_font_family']?.toString();
+    if (font != null && font.isNotEmpty) _fontFamily = font;
+    final scale = double.tryParse(map['studio_font_scale']?.toString() ?? '');
+    if (scale != null && scale > 0) _fontScale = scale;
+    final border = map['studio_table_border']?.toString();
+    if (border != null && border.isNotEmpty) _tableBorderStyle = border;
+    final docTitle = map['customTitle']?.toString() ?? map['studio_doc_title']?.toString();
+    if (docTitle != null && docTitle.isNotEmpty) _documentTitle = docTitle;
+    if (map['studio_uppercase_headings'] is bool) {
+      _uppercaseHeadings = map['studio_uppercase_headings'] as bool;
+    }
+    if (map['showQrCode'] is bool) {
+      _showQrCode = map['showQrCode'] as bool;
+    }
+    if (map['letterhead_enabled'] is bool) {
+      _letterheadEnabled = map['letterhead_enabled'] as bool;
+    }
+    final lhStyle = map['letterhead_style_id']?.toString();
+    if (lhStyle != null && lhStyle.isNotEmpty) _letterheadStyleId = lhStyle;
+    final formula = map['itemCalculationFormula']?.toString();
+    if (formula != null && formula.isNotEmpty) _itemCalculationFormula = formula;
+    final stdDays = double.tryParse(map['standardDutyDays']?.toString() ?? '');
+    if (stdDays != null && stdDays > 0) _standardDutyDays = stdDays;
+
+    final sectionsRaw = map['studio_sections_json'];
+    if (sectionsRaw is String && sectionsRaw.isNotEmpty) {
+      try {
+        final decoded = jsonDecode(sectionsRaw) as List<dynamic>;
+        final parsed = decoded
+            .whereType<Map<String, dynamic>>()
+            .map(StudioSection.fromJson)
+            .toList();
+        if (parsed.isNotEmpty) {
+          for (final s in parsed) {
+            s.isExpanded = false;
+          }
+          _sections = parsed;
+        }
+      } catch (_) {}
+    } else if (map['sections'] is List<dynamic>) {
+      final parsed = (map['sections'] as List<dynamic>)
+          .whereType<Map<String, dynamic>>()
+          .map(StudioSection.fromJson)
+          .toList();
+      if (parsed.isNotEmpty) {
+        for (final s in parsed) {
+          s.isExpanded = false;
+        }
+        _sections = parsed;
+      }
+    }
+    _applyExplicitSectionBooleans(map);
+  }
+
+  void _applyExplicitSectionBooleans(Map<String, dynamic> source) {
+    final boolLookup = <String, String>{
+      'sec_branding': 'secBrandingEnabled',
+      'sec_invoice_details': 'secInvoiceDetailsEnabled',
+      'sec_bill_to': 'secBillToEnabled',
+      'sec_ship_to': 'secShipToEnabled',
+      'sec_services': 'secServicesEnabled',
+      'sec_tax_totals': 'secTaxTotalsEnabled',
+      'sec_bank_payment': 'secBankPaymentEnabled',
+      'sec_adjustments': 'secAdjustmentsEnabled',
+      'sec_terms_notes': 'secTermsNotesEnabled',
+      'sec_signature': 'secSignatureEnabled',
+    };
+    final nestedBooleans = source['sectionBooleans'] is Map
+        ? Map<String, dynamic>.from(source['sectionBooleans'] as Map)
+        : const <String, dynamic>{};
+
+    for (final sec in _sections) {
+      final camelKey = boolLookup[sec.id];
+      final rawVal = nestedBooleans[sec.id] ??
+          source[sec.id] ??
+          (camelKey != null ? source[camelKey] : null);
+      if (rawVal is bool) {
+        sec.enabled = rawVal;
+      }
+    }
+    if (source['letterheadEnabled'] is bool) {
+      _letterheadEnabled = source['letterheadEnabled'] as bool;
+    }
+    if (source['showQrCode'] is bool) {
+      _showQrCode = source['showQrCode'] as bool;
+    }
   }
 
   void _initFromInitialSettings() {
@@ -714,18 +884,63 @@ class _InvoiceTemplateStudioScreenState
     _autoSaveLocal();
   }
 
-  Future<void> _autoSaveLocal() async {
-    final sectionsJson =
-        jsonEncode(_sections.map((s) => s.toJson()).toList());
+  Map<String, bool> _buildSectionBooleanMap() {
+    final map = <String, bool>{
+      'sec_branding': true,
+      'sec_invoice_details': true,
+      'sec_bill_to': true,
+      'sec_ship_to': true,
+      'sec_services': true,
+      'sec_tax_totals': true,
+      'sec_bank_payment': true,
+      'sec_adjustments': true,
+      'sec_terms_notes': true,
+      'sec_signature': true,
+      'letterhead_enabled': _letterheadEnabled,
+      'showQrCode': _showQrCode,
+    };
+    for (final sec in _sections) {
+      map[sec.id] = sec.enabled;
+    }
+    return map;
+  }
+
+  Future<void> _autoSaveLocal({String statusOverride = 'PUBLISHED'}) async {
+    final sectionsList = _sections.map((s) => s.toJson()).toList();
+    final sectionsJson = jsonEncode(sectionsList);
+    final sectionBooleans = _buildSectionBooleanMap();
     final primaryHex =
         '#${_primaryColor.toARGB32().toRadixString(16).padLeft(8, '0').substring(2)}';
     final headerTextHex =
         '#${_tableHeaderTextColor.toARGB32().toRadixString(16).padLeft(8, '0').substring(2)}';
+    final orgCodeVal = _orgCode.isNotEmpty
+        ? _orgCode
+        : (widget.initialLocalSettings['companyCode']?.toString() ??
+            widget.initialLocalSettings['orgCode']?.toString() ??
+            '');
     final data = <String, Object?>{
       ...widget.initialLocalSettings,
+      'orgCode': orgCodeVal,
+      if (_createdBy.isNotEmpty) 'createdBy': _createdBy,
+      if (_updatedBy.isNotEmpty) 'updatedBy': _updatedBy,
       'studio_template_name': _templateName,
+      'templateName': _templateName,
       'studio_preset': _activePreset,
+      'industryPreset': _activePreset,
       'studio_sections_json': sectionsJson,
+      'sections': sectionsList,
+      'sectionBooleans': sectionBooleans,
+      'secBrandingEnabled': sectionBooleans['sec_branding'] ?? true,
+      'secInvoiceDetailsEnabled': sectionBooleans['sec_invoice_details'] ?? true,
+      'secBillToEnabled': sectionBooleans['sec_bill_to'] ?? true,
+      'secShipToEnabled': sectionBooleans['sec_ship_to'] ?? true,
+      'secServicesEnabled': sectionBooleans['sec_services'] ?? true,
+      'secTaxTotalsEnabled': sectionBooleans['sec_tax_totals'] ?? true,
+      'secBankPaymentEnabled': sectionBooleans['sec_bank_payment'] ?? true,
+      'secAdjustmentsEnabled': sectionBooleans['sec_adjustments'] ?? true,
+      'secTermsNotesEnabled': sectionBooleans['sec_terms_notes'] ?? true,
+      'secSignatureEnabled': sectionBooleans['sec_signature'] ?? true,
+      'letterheadEnabled': _letterheadEnabled,
       'studio_primary_color': primaryHex,
       'studio_table_header_text_color': headerTextHex,
       'studio_font_family': _fontFamily,
@@ -806,6 +1021,32 @@ class _InvoiceTemplateStudioScreenState
     if (_signeeTitle != null) {
       await _localPreferences.writeString('signeeTitle', _signeeTitle!);
     }
+
+    // Persist customized settings JSON + section boolean flags to backend (excluding raw docx template documents)
+    try {
+      final backendPayload = <String, Object?>{
+        ...data,
+        'status': statusOverride,
+        'configurationJson': sectionsJson,
+        'settingsJson': jsonEncode(data),
+      };
+      final response = await widget.apiClient.putJson('api/v1/templates/settings', backendPayload);
+      final savedMap = response['data'] is Map<String, dynamic>
+          ? response['data'] as Map<String, dynamic>
+          : response;
+      if (mounted && savedMap.isNotEmpty) {
+        setState(() {
+          final org = savedMap['orgCode']?.toString();
+          if (org != null && org.isNotEmpty) _orgCode = org;
+          final created = savedMap['createdBy']?.toString();
+          if (created != null && created.isNotEmpty) _createdBy = created;
+          final updated = savedMap['updatedBy']?.toString();
+          if (updated != null && updated.isNotEmpty) _updatedBy = updated;
+        });
+      }
+    } catch (_) {
+      // Offline / local fallback handled seamlessly
+    }
   }
 
   Future<void> _openSectionFormulaPopup(StudioSection section) async {
@@ -871,24 +1112,7 @@ class _InvoiceTemplateStudioScreenState
   Future<void> _saveDraft() async {
     setState(() => _saving = true);
     try {
-      final sectionsJson =
-          jsonEncode(_sections.map((s) => s.toJson()).toList());
-      final payload = {
-        'name': _templateName,
-        'title': _templateName,
-        'industryPreset': _activePreset,
-        'status': 'DRAFT',
-        'configurationJson': sectionsJson,
-        'businessCategory': _activePreset == 'security_agency' ? 'Security' : 'Corporate',
-      };
-
-      try {
-        await widget.apiClient.postJson('/api/v1/templates', payload);
-      } catch (_) {
-        // Fallback gracefully for offline/local resilience
-      }
-
-      await _autoSaveLocal();
+      await _autoSaveLocal(statusOverride: 'DRAFT');
       setState(() {
         _templateStatus = 'Draft';
         _saveMessage = 'Draft saved to server';
@@ -897,7 +1121,7 @@ class _InvoiceTemplateStudioScreenState
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(
-            content: Text('✓ Template draft saved successfully!'),
+            content: Text('✓ Template draft & section settings saved to backend!'),
             backgroundColor: Color(0xFF1E293B),
             behavior: SnackBarBehavior.floating,
           ),
@@ -911,24 +1135,7 @@ class _InvoiceTemplateStudioScreenState
   Future<void> _publishTemplate() async {
     setState(() => _saving = true);
     try {
-      final sectionsJson =
-          jsonEncode(_sections.map((s) => s.toJson()).toList());
-      final payload = {
-        'name': _templateName,
-        'title': _templateName,
-        'industryPreset': _activePreset,
-        'status': 'PUBLISHED',
-        'isDefault': true,
-        'configurationJson': sectionsJson,
-      };
-
-      try {
-        await widget.apiClient.postJson('/api/v1/templates', payload);
-      } catch (_) {
-        // Fallback for offline/local resilience
-      }
-
-      await _autoSaveLocal();
+      await _autoSaveLocal(statusOverride: 'PUBLISHED');
 
       // Notify parent template config
       widget.onSaveTemplate?.call(
@@ -937,8 +1144,8 @@ class _InvoiceTemplateStudioScreenState
           name: _templateName,
           title: _templateName,
           category: _activePreset,
-          color: '#2563EB',
-          font: 'Inter',
+          color: '#${_primaryColor.toARGB32().toRadixString(16).padLeft(8, '0').substring(2)}',
+          font: _fontFamily,
           itemHeader: 'Particulars',
           businessCategory: _activePreset == 'security_agency' ? 'Security' : 'Corporate',
           dutyHeader: 'Duty Days',
@@ -957,7 +1164,7 @@ class _InvoiceTemplateStudioScreenState
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(
-            content: Text('🚀 Template published and set as company default!'),
+            content: Text('🚀 Template published and saved to backend for your organization!'),
             backgroundColor: Color(0xFF15803D),
             behavior: SnackBarBehavior.floating,
           ),
@@ -2086,7 +2293,7 @@ class _InvoiceTemplateStudioScreenState
     final isDesktop = MediaQuery.of(context).size.width >= 1024;
 
     return Scaffold(
-      backgroundColor: const Color(0xFFF8FAFC),
+      backgroundColor: AppColors.background,
       body: SafeArea(
         child: Column(
           children: [
@@ -2107,7 +2314,7 @@ class _InvoiceTemplateStudioScreenState
                           width: 490,
                           child: _buildLeftAccordionEditor(),
                         ),
-                        const VerticalDivider(width: 1, color: Color(0xFFE2E8F0)),
+                        const VerticalDivider(width: 1, color: Color(0xFFD5DCE6)),
 
                         // Right Pane: A4 Document Canvas Workspace
                         Expanded(
@@ -2127,28 +2334,62 @@ class _InvoiceTemplateStudioScreenState
     return Column(
       children: [
         Container(
-          color: Colors.white,
+          color: AppColors.background,
           padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-          child: Row(
-            children: [
-              Expanded(
-                child: ChoiceChip(
-                  label: const Center(child: Text('Accordion Studio')),
-                  selected: !_previewOnlyOnMobile,
-                  onSelected: (val) => setState(() => _previewOnlyOnMobile = !val),
-                  selectedColor: const Color(0xFFEFF6FF),
+          child: Container(
+            padding: const EdgeInsets.all(4),
+            decoration: AppTheme.neuRecessedDecoration(radius: 16),
+            child: Row(
+              children: [
+                Expanded(
+                  child: InkWell(
+                    onTap: () => setState(() => _previewOnlyOnMobile = false),
+                    borderRadius: BorderRadius.circular(13),
+                    child: AnimatedContainer(
+                      duration: const Duration(milliseconds: 160),
+                      padding: const EdgeInsets.symmetric(vertical: 8),
+                      decoration: !_previewOnlyOnMobile
+                          ? AppTheme.neuPillDecoration(radius: 13, isActive: true, activeColor: AppColors.neuActiveDark)
+                          : null,
+                      child: Center(
+                        child: Text(
+                          'Accordion Studio',
+                          style: TextStyle(
+                            fontSize: 12.5,
+                            fontWeight: !_previewOnlyOnMobile ? FontWeight.w800 : FontWeight.w600,
+                            color: !_previewOnlyOnMobile ? Colors.white : const Color(0xFF475569),
+                          ),
+                        ),
+                      ),
+                    ),
+                  ),
                 ),
-              ),
-              const SizedBox(width: 8),
-              Expanded(
-                child: ChoiceChip(
-                  label: const Center(child: Text('A4 Preview')),
-                  selected: _previewOnlyOnMobile,
-                  onSelected: (val) => setState(() => _previewOnlyOnMobile = val),
-                  selectedColor: const Color(0xFFEFF6FF),
+                const SizedBox(width: 6),
+                Expanded(
+                  child: InkWell(
+                    onTap: () => setState(() => _previewOnlyOnMobile = true),
+                    borderRadius: BorderRadius.circular(13),
+                    child: AnimatedContainer(
+                      duration: const Duration(milliseconds: 160),
+                      padding: const EdgeInsets.symmetric(vertical: 8),
+                      decoration: _previewOnlyOnMobile
+                          ? AppTheme.neuPillDecoration(radius: 13, isActive: true, activeColor: AppColors.neuActiveDark)
+                          : null,
+                      child: Center(
+                        child: Text(
+                          'A4 Preview',
+                          style: TextStyle(
+                            fontSize: 12.5,
+                            fontWeight: _previewOnlyOnMobile ? FontWeight.w800 : FontWeight.w600,
+                            color: _previewOnlyOnMobile ? Colors.white : const Color(0xFF475569),
+                          ),
+                        ),
+                      ),
+                    ),
+                  ),
                 ),
-              ),
-            ],
+              ],
+            ),
           ),
         ),
         Expanded(
@@ -2164,257 +2405,314 @@ class _InvoiceTemplateStudioScreenState
   Widget _buildTopStudioBar() {
     return Container(
       height: 64,
-      padding: const EdgeInsets.symmetric(horizontal: 20),
-      decoration: const BoxDecoration(
-        color: Colors.white,
-        border: Border(bottom: BorderSide(color: Color(0xFFE2E8F0))),
+      padding: const EdgeInsets.symmetric(horizontal: 16),
+      decoration: BoxDecoration(
+        color: AppColors.neuSurface,
+        border: const Border(bottom: BorderSide(color: Color(0xFFD5DCE6))),
+        boxShadow: [
+          BoxShadow(
+            color: AppColors.neuShadowDark.withValues(alpha: 0.35),
+            blurRadius: 8,
+            offset: const Offset(0, 2),
+          ),
+        ],
       ),
-      child: Row(
-        children: [
-          // Back Button
-          IconButton(
-            icon: const Icon(Icons.arrow_back, color: Color(0xFF0F172A)),
-            tooltip: 'Back to settings',
-            onPressed: widget.onBack ?? () => Navigator.of(context).maybePop(),
-          ),
-          const SizedBox(width: 8),
-
-          // Studio Badge Icon (Blue rounded square)
-          Container(
-            width: 32,
-            height: 32,
-            decoration: BoxDecoration(
-              color: const Color(0xFF2563EB),
-              borderRadius: BorderRadius.circular(8),
-            ),
-            child: const Center(
-              child: Icon(Icons.auto_awesome_mosaic_rounded, size: 18, color: Colors.white),
-            ),
-          ),
-          const SizedBox(width: 10),
-
-          // Title
-          const Text(
-            'Invoice Template Studio',
-            style: TextStyle(
-              fontSize: 16,
-              fontWeight: FontWeight.w700,
-              color: Color(0xFF0F172A),
-            ),
-          ),
-          const SizedBox(width: 14),
-
-          // Separator Pipe
-          Container(width: 1.5, height: 18, color: const Color(0xFFCBD5E1)),
-          const SizedBox(width: 14),
-
-          // Template Selector Dropdown Pill
-          if (_isEditingName)
-            SizedBox(
-              width: 250,
-              child: TextField(
-                controller: _nameController,
-                autofocus: true,
-                style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w600, color: Color(0xFF1E293B)),
-                decoration: InputDecoration(
-                  isDense: true,
-                  contentPadding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
-                  border: OutlineInputBorder(borderRadius: BorderRadius.circular(6)),
-                ),
-                onSubmitted: (val) {
-                  setState(() {
-                    _templateName = val.trim().isNotEmpty ? val.trim() : _templateName;
-                    _isEditingName = false;
-                    _markSaved();
-                  });
-                },
-              ),
-            )
-          else
-            Row(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                InkWell(
-                  onTap: _showTemplateSelectorDialog,
-                  borderRadius: BorderRadius.circular(8),
-                  child: Container(
-                    padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
-                    decoration: BoxDecoration(
-                      color: const Color(0xFFF1F5F9),
-                      borderRadius: BorderRadius.circular(8),
-                      border: Border.all(color: const Color(0xFFCBD5E1)),
-                    ),
-                    child: Row(
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        const Icon(
-                          Icons.style_outlined,
-                          size: 15,
-                          color: Color(0xFF2563EB),
+      child: LayoutBuilder(
+        builder: (context, constraints) {
+          final isCompact = constraints.maxWidth < 960;
+          return SingleChildScrollView(
+            scrollDirection: Axis.horizontal,
+            child: ConstrainedBox(
+              constraints: BoxConstraints(minWidth: constraints.maxWidth),
+              child: Row(
+                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                children: [
+                  Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      // Back Button in Neumorphic Orb
+                      InkWell(
+                        onTap: widget.onBack ?? () => Navigator.of(context).maybePop(),
+                        borderRadius: BorderRadius.circular(18),
+                        child: Container(
+                          width: 36,
+                          height: 36,
+                          decoration: AppTheme.neuOrbDecoration(),
+                          child: const Icon(Icons.arrow_back, size: 18, color: Color(0xFF0F172A)),
                         ),
-                        const SizedBox(width: 7),
-                        ConstrainedBox(
-                          constraints: const BoxConstraints(maxWidth: 240),
-                          child: Text(
-                            _templateName,
-                            overflow: TextOverflow.ellipsis,
-                            style: const TextStyle(
-                              fontSize: 13.5,
-                              fontWeight: FontWeight.w600,
-                              color: Color(0xFF1E293B),
+                      ),
+                      const SizedBox(width: 10),
+
+                      // Studio Badge Icon
+                      Container(
+                        width: 34,
+                        height: 34,
+                        decoration: AppTheme.neuOrbDecoration(
+                          isActive: true,
+                          activeColor: const Color(0xFF2563EB),
+                        ),
+                        child: const Center(
+                          child: Icon(Icons.auto_awesome_mosaic_rounded, size: 17, color: Colors.white),
+                        ),
+                      ),
+                      const SizedBox(width: 10),
+
+                      // Title
+                      const Text(
+                        'Invoice Template Studio',
+                        style: TextStyle(
+                          fontSize: 15.5,
+                          fontWeight: FontWeight.w800,
+                          color: Color(0xFF0F172A),
+                        ),
+                      ),
+                      const SizedBox(width: 12),
+
+                      // Separator Pipe
+                      Container(width: 1.5, height: 18, color: const Color(0xFFCBD5E1)),
+                      const SizedBox(width: 12),
+
+                      // Template Selector Dropdown Pill
+                      if (_isEditingName)
+                        SizedBox(
+                          width: 220,
+                          child: TextField(
+                            controller: _nameController,
+                            autofocus: true,
+                            style: const TextStyle(fontSize: 13.5, fontWeight: FontWeight.w600, color: Color(0xFF1E293B)),
+                            decoration: InputDecoration(
+                              isDense: true,
+                              contentPadding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
+                              border: OutlineInputBorder(borderRadius: BorderRadius.circular(8)),
+                            ),
+                            onSubmitted: (val) {
+                              setState(() {
+                                _templateName = val.trim().isNotEmpty ? val.trim() : _templateName;
+                                _isEditingName = false;
+                                _markSaved();
+                              });
+                            },
+                          ),
+                        )
+                      else
+                        Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            InkWell(
+                              onTap: _showTemplateSelectorDialog,
+                              borderRadius: BorderRadius.circular(12),
+                              child: Container(
+                                padding: const EdgeInsets.symmetric(horizontal: 11, vertical: 6),
+                                decoration: AppTheme.neuPillDecoration(radius: 12),
+                                child: Row(
+                                  mainAxisSize: MainAxisSize.min,
+                                  children: [
+                                    const Icon(
+                                      Icons.style_outlined,
+                                      size: 15,
+                                      color: Color(0xFF2563EB),
+                                    ),
+                                    const SizedBox(width: 7),
+                                    ConstrainedBox(
+                                      constraints: BoxConstraints(maxWidth: isCompact ? 150 : 230),
+                                      child: Text(
+                                        _templateName,
+                                        overflow: TextOverflow.ellipsis,
+                                        style: const TextStyle(
+                                          fontSize: 13,
+                                          fontWeight: FontWeight.w700,
+                                          color: Color(0xFF1E293B),
+                                        ),
+                                      ),
+                                    ),
+                                    const SizedBox(width: 4),
+                                    const Icon(Icons.keyboard_arrow_down_rounded, size: 16, color: Color(0xFF64748B)),
+                                  ],
+                                ),
+                              ),
+                            ),
+                            const SizedBox(width: 4),
+                            IconButton(
+                              icon: const Icon(Icons.edit_outlined, size: 14, color: Color(0xFF64748B)),
+                              tooltip: 'Rename Template',
+                              onPressed: () => setState(() => _isEditingName = true),
+                              padding: EdgeInsets.zero,
+                              constraints: const BoxConstraints(minWidth: 26, minHeight: 26),
+                            ),
+                          ],
+                        ),
+                      const SizedBox(width: 8),
+
+                      // Default Template Pill or "Set Default" Action
+                      if (_companyDefaultTemplateId == _selectedTemplateId)
+                        Container(
+                          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3.5),
+                          decoration: BoxDecoration(
+                            color: const Color(0xFFFEF3C7),
+                            borderRadius: BorderRadius.circular(12),
+                            border: Border.all(color: const Color(0xFFFDE68A)),
+                          ),
+                          child: const Row(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              Icon(Icons.star_rounded, size: 13, color: Color(0xFFD97706)),
+                              SizedBox(width: 3),
+                              Text(
+                                'Default',
+                                style: TextStyle(fontSize: 10.5, fontWeight: FontWeight.bold, color: Color(0xFFD97706)),
+                              ),
+                            ],
+                          ),
+                        )
+                      else
+                        OutlinedButton.icon(
+                          icon: const Icon(Icons.star_border_rounded, size: 13, color: Color(0xFFD97706)),
+                          label: const Text('Set Default', style: TextStyle(fontSize: 11, fontWeight: FontWeight.w600, color: Color(0xFFB45309))),
+                          style: OutlinedButton.styleFrom(
+                            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                            side: const BorderSide(color: Color(0xFFFDE68A)),
+                            backgroundColor: const Color(0xFFFFFBEB),
+                            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                            minimumSize: Size.zero,
+                            tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                          ),
+                          onPressed: _setAsCompanyDefault,
+                        ),
+                      const SizedBox(width: 8),
+
+                      // Organization Code & Audit Badge
+                      if (_orgCode.isNotEmpty) ...[
+                        Tooltip(
+                          message: _updatedBy.isNotEmpty
+                              ? 'Org: $_orgCode • Last updated by $_updatedBy'
+                              : 'Org: $_orgCode',
+                          child: Container(
+                            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                            decoration: AppTheme.neuRecessedDecoration(radius: 10),
+                            child: Row(
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                const Icon(Icons.verified_user_outlined, size: 12, color: Color(0xFF2563EB)),
+                                const SizedBox(width: 4),
+                                Text(
+                                  _orgCode,
+                                  style: const TextStyle(
+                                    fontSize: 10.5,
+                                    fontWeight: FontWeight.w800,
+                                    color: Color(0xFF1E293B),
+                                  ),
+                                ),
+                              ],
                             ),
                           ),
                         ),
-                        const SizedBox(width: 4),
-                        const Icon(Icons.keyboard_arrow_down_rounded, size: 16, color: Color(0xFF64748B)),
+                        const SizedBox(width: 8),
                       ],
-                    ),
-                  ),
-                ),
-                const SizedBox(width: 4),
-                IconButton(
-                  icon: const Icon(Icons.edit_outlined, size: 14, color: Color(0xFF64748B)),
-                  tooltip: 'Rename Template',
-                  onPressed: () => setState(() => _isEditingName = true),
-                  padding: EdgeInsets.zero,
-                  constraints: const BoxConstraints(minWidth: 26, minHeight: 26),
-                ),
-              ],
-            ),
-          const SizedBox(width: 10),
 
-          // Default Template Pill or "Set Default" Action
-          if (_companyDefaultTemplateId == _selectedTemplateId)
-            Container(
-              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3.5),
-              decoration: BoxDecoration(
-                color: const Color(0xFFFEF3C7),
-                borderRadius: BorderRadius.circular(12),
-                border: Border.all(color: const Color(0xFFFDE68A)),
-              ),
-              child: const Row(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  Icon(Icons.star_rounded, size: 13, color: Color(0xFFD97706)),
-                  SizedBox(width: 3),
-                  Text(
-                    'Default',
-                    style: TextStyle(fontSize: 10.5, fontWeight: FontWeight.bold, color: Color(0xFFD97706)),
+                      // Draft / Published Status Badge
+                      Container(
+                        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2.5),
+                        decoration: BoxDecoration(
+                          color: _templateStatus == 'Published' ? const Color(0xFFECFDF5) : const Color(0xFFF1F5F9),
+                          borderRadius: BorderRadius.circular(12),
+                          border: Border.all(
+                            color: _templateStatus == 'Published' ? const Color(0xFFA7F3D0) : const Color(0xFFCBD5E1),
+                          ),
+                        ),
+                        child: Text(
+                          _templateStatus,
+                          style: TextStyle(
+                            fontSize: 11,
+                            fontWeight: FontWeight.w600,
+                            color: _templateStatus == 'Published' ? const Color(0xFF059669) : const Color(0xFF475569),
+                          ),
+                        ),
+                      ),
+                      const SizedBox(width: 8),
+
+                      // Save status indicator
+                      Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          const Icon(Icons.check_circle_rounded, size: 13, color: Color(0xFF16A34A)),
+                          const SizedBox(width: 4),
+                          Text(
+                            _saveMessage,
+                            style: const TextStyle(fontSize: 11, color: Color(0xFF16A34A), fontWeight: FontWeight.w600),
+                          ),
+                        ],
+                      ),
+                    ],
+                  ),
+                  const SizedBox(width: 12),
+
+                  // Right Action Buttons
+                  Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      OutlinedButton.icon(
+                        icon: const Icon(Icons.visibility_outlined, size: 15, color: Color(0xFF334155)),
+                        label: const Text('Preview', style: TextStyle(fontSize: 12.5, color: Color(0xFF334155), fontWeight: FontWeight.w700)),
+                        style: OutlinedButton.styleFrom(
+                          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 9),
+                          side: const BorderSide(color: Color(0xFFCBD5E1)),
+                          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                        ),
+                        onPressed: () {
+                          setState(() => _previewOnlyOnMobile = true);
+                        },
+                      ),
+                      const SizedBox(width: 8),
+
+                      OutlinedButton(
+                        style: OutlinedButton.styleFrom(
+                          padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 9),
+                          side: const BorderSide(color: Color(0xFF93C5FD)),
+                          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                        ),
+                        onPressed: _saving ? null : _saveDraft,
+                        child: _saving
+                            ? const SizedBox(width: 16, height: 16, child: CircularProgressIndicator(strokeWidth: 2))
+                            : const Text('Save Draft', style: TextStyle(fontSize: 12.5, fontWeight: FontWeight.w700, color: Color(0xFF2563EB))),
+                      ),
+                      const SizedBox(width: 8),
+
+                      ElevatedButton.icon(
+                        icon: const Icon(Icons.rocket_launch_rounded, size: 15, color: Colors.white),
+                        label: const Text('Publish', style: TextStyle(fontSize: 12.5, fontWeight: FontWeight.w700, color: Colors.white)),
+                        style: ElevatedButton.styleFrom(
+                          backgroundColor: AppColors.neuActiveDark,
+                          padding: const EdgeInsets.symmetric(horizontal: 15, vertical: 9),
+                          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                          elevation: 0,
+                        ),
+                        onPressed: _saving ? null : _publishTemplate,
+                      ),
+                      const SizedBox(width: 4),
+                      PopupMenuButton<String>(
+                        icon: const Icon(Icons.more_vert_rounded, color: Color(0xFF64748B)),
+                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+                        onSelected: (val) {
+                          if (val == 'reset') {
+                            setState(() => _sections = StudioSection.defaultSections(preset: _activePreset));
+                            ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Sections reset to default')));
+                          } else if (val == 'export') {
+                            _exportPdfDocument();
+                          }
+                        },
+                        itemBuilder: (ctx) => [
+                          const PopupMenuItem(value: 'export', child: Text('Export PDF Document')),
+                          const PopupMenuItem(value: 'duplicate', child: Text('Duplicate Template')),
+                          const PopupMenuItem(value: 'reset', child: Text('Reset to Preset Defaults')),
+                        ],
+                      ),
+                    ],
                   ),
                 ],
               ),
-            )
-          else
-            OutlinedButton.icon(
-              icon: const Icon(Icons.star_border_rounded, size: 13, color: Color(0xFFD97706)),
-              label: const Text('Set Default', style: TextStyle(fontSize: 11, fontWeight: FontWeight.w600, color: Color(0xFFB45309))),
-              style: OutlinedButton.styleFrom(
-                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-                side: const BorderSide(color: Color(0xFFFDE68A)),
-                backgroundColor: const Color(0xFFFFFBEB),
-                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-                minimumSize: Size.zero,
-                tapTargetSize: MaterialTapTargetSize.shrinkWrap,
-              ),
-              onPressed: _setAsCompanyDefault,
             ),
-          const SizedBox(width: 10),
-
-          // Draft / Published Status Badge
-          Container(
-            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2.5),
-            decoration: BoxDecoration(
-              color: _templateStatus == 'Published' ? const Color(0xFFECFDF5) : const Color(0xFFF1F5F9),
-              borderRadius: BorderRadius.circular(12),
-              border: Border.all(
-                color: _templateStatus == 'Published' ? const Color(0xFFA7F3D0) : const Color(0xFFCBD5E1),
-              ),
-            ),
-            child: Text(
-              _templateStatus,
-              style: TextStyle(
-                fontSize: 11,
-                fontWeight: FontWeight.w600,
-                color: _templateStatus == 'Published' ? const Color(0xFF059669) : const Color(0xFF475569),
-              ),
-            ),
-          ),
-          const SizedBox(width: 8),
-
-          // Save status indicator
-          Row(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              const Icon(Icons.check_circle_rounded, size: 13, color: Color(0xFF16A34A)),
-              const SizedBox(width: 4),
-              Text(
-                _saveMessage,
-                style: const TextStyle(fontSize: 11, color: Color(0xFF16A34A), fontWeight: FontWeight.w500),
-              ),
-            ],
-          ),
-
-          const Spacer(),
-
-          // Right Action Buttons
-          OutlinedButton.icon(
-            icon: const Icon(Icons.visibility_outlined, size: 15, color: Color(0xFF334155)),
-            label: const Text('Preview', style: TextStyle(fontSize: 13, color: Color(0xFF334155), fontWeight: FontWeight.w600)),
-            style: OutlinedButton.styleFrom(
-              padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
-              side: const BorderSide(color: Color(0xFFCBD5E1)),
-              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
-            ),
-            onPressed: () {
-              setState(() => _previewOnlyOnMobile = true);
-            },
-          ),
-          const SizedBox(width: 10),
-
-          OutlinedButton(
-            style: OutlinedButton.styleFrom(
-              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
-              side: const BorderSide(color: Color(0xFF93C5FD)),
-              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
-            ),
-            onPressed: _saving ? null : _saveDraft,
-            child: _saving
-                ? const SizedBox(width: 16, height: 16, child: CircularProgressIndicator(strokeWidth: 2))
-                : const Text('Save Draft', style: TextStyle(fontSize: 13, fontWeight: FontWeight.w600, color: Color(0xFF2563EB))),
-          ),
-          const SizedBox(width: 10),
-
-          ElevatedButton.icon(
-            icon: const Icon(Icons.rocket_launch_rounded, size: 15, color: Colors.white),
-            label: const Text('Publish', style: TextStyle(fontSize: 13, fontWeight: FontWeight.w600, color: Colors.white)),
-            style: ElevatedButton.styleFrom(
-              backgroundColor: const Color(0xFF2563EB),
-              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
-              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
-              elevation: 0,
-            ),
-            onPressed: _saving ? null : _publishTemplate,
-          ),
-          const SizedBox(width: 6),
-
-          PopupMenuButton<String>(
-            icon: const Icon(Icons.more_vert_rounded, color: Color(0xFF64748B)),
-            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
-            onSelected: (val) {
-              if (val == 'reset') {
-                setState(() => _sections = StudioSection.defaultSections(preset: _activePreset));
-                ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Sections reset to default')));
-              } else if (val == 'export') {
-                _exportPdfDocument();
-              }
-            },
-            itemBuilder: (ctx) => [
-              const PopupMenuItem(value: 'export', child: Text('Export PDF Document')),
-              const PopupMenuItem(value: 'duplicate', child: Text('Duplicate Template')),
-              const PopupMenuItem(value: 'reset', child: Text('Reset to Preset Defaults')),
-            ],
-          ),
-        ],
+          );
+        },
       ),
     );
   }
@@ -2425,8 +2723,8 @@ class _InvoiceTemplateStudioScreenState
       height: 46,
       padding: const EdgeInsets.symmetric(horizontal: 20),
       decoration: const BoxDecoration(
-        color: Colors.white,
-        border: Border(bottom: BorderSide(color: Color(0xFFE2E8F0))),
+        color: AppColors.neuSurface,
+        border: Border(bottom: BorderSide(color: Color(0xFFD5DCE6))),
       ),
       child: SingleChildScrollView(
         scrollDirection: Axis.horizontal,

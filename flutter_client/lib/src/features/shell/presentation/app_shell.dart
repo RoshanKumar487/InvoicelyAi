@@ -1,10 +1,12 @@
 import 'dart:async';
+import 'dart:convert';
 
 import 'package:flutter/material.dart';
 
 import '../../../core/api/api_client.dart';
 import '../../../core/storage/local_preferences.dart';
 import '../../../data/models/auth_models.dart';
+import '../../../theme/app_theme.dart';
 import '../../clients/data/clients_repository.dart';
 import '../../clients/presentation/clients_screen.dart';
 import '../../dashboard/data/dashboard_repository.dart';
@@ -28,11 +30,11 @@ import '../../payroll/presentation/payroll_screen.dart';
 import 'placeholder_screen.dart';
 
 enum _Destination {
-  dashboard('Dashboard', Icons.dashboard_outlined),
-  invoices('Invoices', Icons.receipt_long_outlined),
-  aiAgent('AI Agent', Icons.auto_awesome_outlined),
-  expenses('Expenses', Icons.payments_outlined),
-  menu('More', Icons.menu);
+  dashboard('Dashboard', Icons.grid_view_rounded),
+  invoices('Invoices', Icons.receipt_long_rounded),
+  aiAgent('AI Agent', Icons.auto_awesome_rounded),
+  expenses('Expenses', Icons.account_balance_wallet_rounded),
+  menu('More', Icons.tune_rounded);
 
   const _Destination(this.label, this.icon);
 
@@ -129,6 +131,50 @@ class _AppShellState extends State<AppShell> {
         }
       } catch (_) {}
 
+      // Fetch organization-scoped template settings & section boolean selections from backend
+      try {
+        final tplRes = await widget.apiClient.getJson('api/v1/templates/settings');
+        final tplData = tplRes['data'] is Map<String, dynamic>
+            ? tplRes['data'] as Map<String, dynamic>
+            : tplRes;
+        if (tplData.isNotEmpty) {
+          final settingsStr = tplData['settingsJson']?.toString();
+          if (settingsStr != null && settingsStr.isNotEmpty) {
+            try {
+              final parsedSettings = jsonDecode(settingsStr);
+              if (parsedSettings is Map<String, dynamic>) {
+                merged.addAll(parsedSettings);
+              }
+            } catch (_) {}
+          }
+          final configStr = tplData['configurationJson']?.toString();
+          if (configStr != null && configStr.isNotEmpty) {
+            merged['studio_sections_json'] = configStr;
+          }
+          if (tplData['orgCode'] != null) merged['orgCode'] = tplData['orgCode'];
+          if (tplData['createdBy'] != null) merged['createdBy'] = tplData['createdBy'];
+          if (tplData['updatedBy'] != null) merged['updatedBy'] = tplData['updatedBy'];
+          for (final key in const [
+            'secBrandingEnabled',
+            'secInvoiceDetailsEnabled',
+            'secBillToEnabled',
+            'secShipToEnabled',
+            'secServicesEnabled',
+            'secTaxTotalsEnabled',
+            'secBankPaymentEnabled',
+            'secAdjustmentsEnabled',
+            'secTermsNotesEnabled',
+            'secSignatureEnabled',
+            'letterheadEnabled',
+            'showQrCode',
+          ]) {
+            if (tplData[key] is bool) {
+              merged[key] = tplData[key];
+            }
+          }
+        }
+      } catch (_) {}
+
       // Default currency to INR if still unset
       merged.putIfAbsent('defaultCurrency', () => 'INR');
       merged.putIfAbsent('defaultCurrencySymbol', () => '₹');
@@ -198,25 +244,38 @@ class _AppShellState extends State<AppShell> {
           }
         },
         child: Scaffold(
+          backgroundColor: AppColors.background,
           body: page,
           bottomNavigationBar: showBottomBar
-              ? NavigationBar(
-                  selectedIndex: _destination.index,
-                  onDestinationSelected: (index) => setState(() {
-                    _destination = _Destination.values[index];
-                    _moreSection = null;
-                    _invoiceFullscreen = false;
-                    if (_destination == _Destination.invoices) {
-                      _invoiceStatusFilter = 'All';
-                    }
-                  }),
-                  destinations: [
-                    for (final item in _Destination.values)
-                      NavigationDestination(
-                        icon: Icon(item.icon),
-                        label: item.label,
-                      ),
-                  ],
+              ? Container(
+                  margin: const EdgeInsets.fromLTRB(12, 0, 12, 10),
+                  decoration: AppTheme.neuPillDecoration(radius: 26),
+                  child: ClipRRect(
+                    borderRadius: BorderRadius.circular(26),
+                    child: NavigationBar(
+                      height: 64,
+                      backgroundColor: AppColors.neuSurface,
+                      surfaceTintColor: Colors.transparent,
+                      indicatorColor: const Color(0xFF2B3548),
+                      selectedIndex: _destination.index,
+                      onDestinationSelected: (index) => setState(() {
+                        _destination = _Destination.values[index];
+                        _moreSection = null;
+                        _invoiceFullscreen = false;
+                        if (_destination == _Destination.invoices) {
+                          _invoiceStatusFilter = 'All';
+                        }
+                      }),
+                      destinations: [
+                        for (final item in _Destination.values)
+                          NavigationDestination(
+                            icon: Icon(item.icon, color: const Color(0xFF64748B)),
+                            selectedIcon: Icon(item.icon, color: Colors.white),
+                            label: item.label,
+                          ),
+                      ],
+                    ),
+                  ),
                 )
               : null,
         ),
@@ -224,63 +283,66 @@ class _AppShellState extends State<AppShell> {
     }
 
     return Scaffold(
+      backgroundColor: AppColors.background,
       body: Row(
         children: [
-          NavigationRail(
-            selectedIndex: _destination.index,
-            onDestinationSelected: (index) => setState(() {
-              _destination = _Destination.values[index];
-              _moreSection = null;
-              if (_destination == _Destination.invoices) {
-                _invoiceStatusFilter = 'All';
-              }
-            }),
-            labelType: NavigationRailLabelType.all,
-            leading: Padding(
-              padding: const EdgeInsets.only(top: 14, bottom: 8),
-              child: Container(
-                width: 44,
-                height: 44,
-                decoration: BoxDecoration(
-                  gradient: const LinearGradient(
-                    begin: Alignment.topLeft,
-                    end: Alignment.bottomRight,
-                    colors: [Color(0xFF2563EB), Color(0xFF1E3A8A)],
-                  ),
-                  borderRadius: BorderRadius.circular(14),
-                  border: Border.all(
-                    color: const Color(0xFF60A5FA).withValues(alpha: 0.45),
-                    width: 1.2,
-                  ),
-                  boxShadow: const [
-                    BoxShadow(
-                      color: Color(0x331E3A8A),
-                      blurRadius: 10,
-                      offset: Offset(0, 4),
-                    ),
-                    BoxShadow(
-                      color: Color(0x40FFFFFF),
-                      blurRadius: 2,
-                      offset: Offset(-1, -1),
-                    ),
-                  ],
+          Container(
+            margin: const EdgeInsets.fromLTRB(12, 12, 6, 12),
+            decoration: AppTheme.neuCardDecoration(radius: 26),
+            child: ClipRRect(
+              borderRadius: BorderRadius.circular(26),
+              child: NavigationRail(
+                backgroundColor: AppColors.neuSurface,
+                indicatorColor: const Color(0xFF2B3548),
+                selectedIconTheme: const IconThemeData(color: Colors.white, size: 22),
+                unselectedIconTheme: const IconThemeData(color: Color(0xFF64748B), size: 21),
+                selectedLabelTextStyle: const TextStyle(
+                  color: Color(0xFF1E293B),
+                  fontWeight: FontWeight.w800,
+                  fontSize: 11.5,
                 ),
-                child: const Icon(
-                  Icons.receipt_long_rounded,
-                  size: 24,
-                  color: Colors.white,
+                unselectedLabelTextStyle: const TextStyle(
+                  color: Color(0xFF64748B),
+                  fontWeight: FontWeight.w600,
+                  fontSize: 11,
                 ),
+                selectedIndex: _destination.index,
+                onDestinationSelected: (index) => setState(() {
+                  _destination = _Destination.values[index];
+                  _moreSection = null;
+                  if (_destination == _Destination.invoices) {
+                    _invoiceStatusFilter = 'All';
+                  }
+                }),
+                labelType: NavigationRailLabelType.all,
+                leading: Padding(
+                  padding: const EdgeInsets.only(top: 14, bottom: 10),
+                  child: Container(
+                    width: 46,
+                    height: 46,
+                    decoration: AppTheme.neuOrbDecoration(
+                      active: true,
+                      activeColor: const Color(0xFF2B3548),
+                      shape: BoxShape.rectangle,
+                      radius: 15,
+                    ),
+                    child: const Icon(
+                      Icons.receipt_long_rounded,
+                      size: 23,
+                      color: Colors.white,
+                    ),
+                  ),
+                ),
+                destinations: [
+                  for (final item in _Destination.values)
+                    NavigationRailDestination(
+                      icon: Icon(item.icon),
+                      label: Text(item.label),
+                    ),
+                ],
               ),
             ),
-            destinations: [
-              for (final item in _Destination.values)
-                NavigationRailDestination(
-                  icon: Icon(item.icon),
-                  label: Text(item.label),
-                ),
-            ],
           ),
-          const VerticalDivider(width: 1),
           Expanded(child: page),
         ],
       ),
@@ -478,54 +540,68 @@ class _MoreMenu extends StatelessWidget {
       ('Tax calculator', Icons.calculate_outlined),
     ];
     return Scaffold(
-      backgroundColor: const Color(0xFFF8FAFC),
+      backgroundColor: AppColors.background,
       appBar: AppBar(
         elevation: 0,
         scrolledUnderElevation: 0,
         backgroundColor: Colors.transparent,
         title: const Text(
-          'More',
+          'Workspace & Tools',
           style: TextStyle(
-            fontSize: 22,
-            fontWeight: FontWeight.w700,
-            color: Color(0xFF0F172A),
+            fontSize: 21,
+            fontWeight: FontWeight.w800,
+            color: Color(0xFF1E293B),
           ),
         ),
         actions: [
-          IconButton(
-            onPressed: onLogout,
-            tooltip: 'Sign out',
-            icon: const Icon(Icons.logout_rounded, color: Color(0xFF0F172A)),
+          Padding(
+            padding: const EdgeInsets.only(right: 12),
+            child: InkWell(
+              onTap: onLogout,
+              borderRadius: BorderRadius.circular(20),
+              child: Container(
+                width: 40,
+                height: 40,
+                decoration: AppTheme.neuOrbDecoration(),
+                child: const Icon(Icons.logout_rounded, color: Color(0xFF1E293B), size: 19),
+              ),
+            ),
           ),
         ],
       ),
       body: ListView(
-        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+        padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 10),
         children: [
           for (final section in sections)
             Container(
-              margin: const EdgeInsets.only(bottom: 10),
-              decoration: BoxDecoration(
-                color: const Color(0xFFF1F5F9).withValues(alpha: 0.5),
-                borderRadius: BorderRadius.circular(14),
-                border: Border.all(color: const Color(0xFFE2E8F0)),
-              ),
+              margin: const EdgeInsets.only(bottom: 14),
+              decoration: AppTheme.neuPillDecoration(radius: 26),
               child: ListTile(
-                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
-                contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 2),
-                leading: Icon(section.$2, color: const Color(0xFF334155), size: 22),
+                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(26)),
+                contentPadding: const EdgeInsets.symmetric(horizontal: 14, vertical: 4),
+                leading: Container(
+                  width: 40,
+                  height: 40,
+                  decoration: AppTheme.neuOrbDecoration(),
+                  child: Icon(section.$2, color: const Color(0xFF334155), size: 20),
+                ),
                 title: Text(
                   section.$1,
                   style: const TextStyle(
                     fontSize: 14.5,
-                    fontWeight: FontWeight.w500,
-                    color: Color(0xFF0F172A),
+                    fontWeight: FontWeight.w700,
+                    color: Color(0xFF1E293B),
                   ),
                 ),
-                trailing: const Icon(
-                  Icons.chevron_right_rounded,
-                  color: Color(0xFF64748B),
-                  size: 20,
+                trailing: Container(
+                  width: 32,
+                  height: 32,
+                  decoration: AppTheme.neuOrbDecoration(),
+                  child: const Icon(
+                    Icons.chevron_right_rounded,
+                    color: Color(0xFF475569),
+                    size: 18,
+                  ),
                 ),
                 onTap: () => onSelect(section.$1),
               ),
