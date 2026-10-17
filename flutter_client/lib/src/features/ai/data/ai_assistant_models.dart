@@ -1,3 +1,93 @@
+class SummaryCardDto {
+  const SummaryCardDto({
+    required this.id,
+    required this.title,
+    required this.value,
+    required this.subtitle,
+    required this.icon,
+    required this.color,
+  });
+
+  final String id;
+  final String title;
+  final String value;
+  final String subtitle;
+  final String icon;
+  final String color;
+
+  factory SummaryCardDto.fromJson(Map<String, dynamic> json) {
+    return SummaryCardDto(
+      id: json['id'] as String? ?? '',
+      title: json['title'] as String? ?? '',
+      value: json['value'] as String? ?? '',
+      subtitle: json['subtitle'] as String? ?? '',
+      icon: json['icon'] as String? ?? 'document',
+      color: json['color'] as String? ?? 'burgundy',
+    );
+  }
+}
+
+class InsightCardDto {
+  const InsightCardDto({
+    required this.title,
+    required this.message,
+    required this.actionLabel,
+    required this.actionType,
+    required this.actionTarget,
+  });
+
+  final String title;
+  final String message;
+  final String actionLabel;
+  final String actionType;
+  final String actionTarget;
+
+  factory InsightCardDto.fromJson(Map<String, dynamic> json) {
+    return InsightCardDto(
+      title: json['title'] as String? ?? '',
+      message: json['message'] as String? ?? '',
+      actionLabel: json['actionLabel'] as String? ?? '',
+      actionType: json['actionType'] as String? ?? '',
+      actionTarget: json['actionTarget'] as String? ?? '',
+    );
+  }
+}
+
+class RecordCardDto {
+  const RecordCardDto({
+    required this.id,
+    required this.recordType,
+    required this.title,
+    required this.subtitle,
+    required this.amount,
+    required this.status,
+    required this.statusColor,
+    required this.updatedAt,
+  });
+
+  final String id;
+  final String recordType;
+  final String title;
+  final String subtitle;
+  final String amount;
+  final String status;
+  final String statusColor;
+  final String updatedAt;
+
+  factory RecordCardDto.fromJson(Map<String, dynamic> json) {
+    return RecordCardDto(
+      id: json['id'] as String? ?? '',
+      recordType: json['recordType'] as String? ?? 'INVOICE',
+      title: json['title'] as String? ?? '',
+      subtitle: json['subtitle'] as String? ?? '',
+      amount: json['amount'] as String? ?? '',
+      status: json['status'] as String? ?? '',
+      statusColor: json['statusColor'] as String? ?? 'blue',
+      updatedAt: json['updatedAt'] as String? ?? '',
+    );
+  }
+}
+
 class AiChatResponse {
   const AiChatResponse({
     required this.answer,
@@ -7,6 +97,9 @@ class AiChatResponse {
     this.actionType,
     this.resourceType,
     this.resourceId,
+    this.summaryCards = const [],
+    this.insightCard,
+    this.recordCards = const [],
   });
 
   final String answer;
@@ -16,6 +109,9 @@ class AiChatResponse {
   final String? actionType;
   final String? resourceType;
   final int? resourceId;
+  final List<SummaryCardDto> summaryCards;
+  final InsightCardDto? insightCard;
+  final List<RecordCardDto> recordCards;
 
   factory AiChatResponse.fromJson(Map<String, dynamic> json) {
     final Object? sourcesValue = json['groundedSources'];
@@ -36,6 +132,29 @@ class AiChatResponse {
       throw const FormatException('The AI response is missing a valid "readOnly" value.');
     }
 
+    final summaryList = <SummaryCardDto>[];
+    if (json['summaryCards'] is List) {
+      for (final item in json['summaryCards'] as List) {
+        if (item is Map<String, dynamic>) {
+          summaryList.add(SummaryCardDto.fromJson(item));
+        }
+      }
+    }
+
+    InsightCardDto? insight;
+    if (json['insightCard'] is Map<String, dynamic>) {
+      insight = InsightCardDto.fromJson(json['insightCard'] as Map<String, dynamic>);
+    }
+
+    final recordsList = <RecordCardDto>[];
+    if (json['recordCards'] is List) {
+      for (final item in json['recordCards'] as List) {
+        if (item is Map<String, dynamic>) {
+          recordsList.add(RecordCardDto.fromJson(item));
+        }
+      }
+    }
+
     return AiChatResponse(
       answer: _requiredString(json, 'answer'),
       groundedSources: sources,
@@ -44,6 +163,9 @@ class AiChatResponse {
       actionType: _optionalString(json, 'actionType'),
       resourceType: _optionalString(json, 'resourceType'),
       resourceId: _optionalInt(json, 'resourceId'),
+      summaryCards: summaryList,
+      insightCard: insight,
+      recordCards: recordsList,
     );
   }
 }

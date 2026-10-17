@@ -198,7 +198,62 @@ public class AiAssistantService {
                 throw new ResponseStatusException(HttpStatus.BAD_GATEWAY,
                         "The AI provider returned an empty answer. Please try again.");
             }
-            return new AiChatResponse(answer, sources, true);
+
+            List<AiChatResponse.SummaryCard> summaryCards = new java.util.ArrayList<>();
+            if (canReadInvoices || canReadExpenses || canReadClients) {
+                String currSymbol = profile != null && profile.getDefaultCurrencySymbol() != null && !profile.getDefaultCurrencySymbol().isBlank()
+                        ? profile.getDefaultCurrencySymbol() : "₹";
+                String collVal = formatCurrencyTotals(collected);
+                if ("0".equals(collVal)) collVal = currSymbol + "0";
+
+                summaryCards.add(new AiChatResponse.SummaryCard(
+                        "invoices", "Invoices updated", String.valueOf(invoiceCount), "Invoices on record", "document", "burgundy"));
+                summaryCards.add(new AiChatResponse.SummaryCard(
+                        "collected", "Collected", collVal, "Total received", "wallet", "green"));
+
+                String overdueVal = overdueCount > 0 ? (overdueCount + " overdue") : (currSymbol + "0");
+                summaryCards.add(new AiChatResponse.SummaryCard(
+                        "overdue", "Overdue amount", overdueVal, overdueCount > 0 ? "Requires follow-up" : "All on schedule", "clock", "amber"));
+                summaryCards.add(new AiChatResponse.SummaryCard(
+                        "customers", "Customers to follow up", String.valueOf(clientCount), "Active accounts", "users", "blue"));
+            }
+
+            AiChatResponse.InsightCard insightCard = null;
+            if (overdueCount > 0) {
+                insightCard = new AiChatResponse.InsightCard(
+                        "Needs your attention",
+                        overdueCount + " invoice" + (overdueCount > 1 ? "s are" : " is") + " overdue. Review them before sending payment reminders.",
+                        "Review overdue invoices →",
+                        "NAVIGATE_OVERDUE",
+                        "invoices?status=Overdue");
+            } else if (invoiceCount == 0) {
+                insightCard = new AiChatResponse.InsightCard(
+                        "Get Started",
+                        "No invoices created yet. Create your first invoice or import clients to get started.",
+                        "Create invoice →",
+                        "NAVIGATE_CREATE_INVOICE",
+                        "invoices/new");
+            }
+
+            List<AiChatResponse.RecordCard> recordCards = new java.util.ArrayList<>();
+            String lowerMsg = message.toLowerCase(Locale.ROOT);
+            if (lowerMsg.contains("recent") || lowerMsg.contains("invoice") || lowerMsg.contains("list") || lowerMsg.contains("update") || lowerMsg.contains("show")) {
+                for (Invoice inv : invoices) {
+                    String color = "Paid".equalsIgnoreCase(inv.getStatus()) ? "green" : ("Overdue".equalsIgnoreCase(inv.getStatus()) ? "amber" : "blue");
+                    recordCards.add(new AiChatResponse.RecordCard(
+                            String.valueOf(inv.getId()),
+                            "INVOICE",
+                            inv.getInvoiceNumber() != null && !inv.getInvoiceNumber().isBlank() ? inv.getInvoiceNumber() : ("Invoice #" + inv.getId()),
+                            inv.getClientName() != null ? inv.getClientName() : "Client",
+                            (inv.getCurrencyCode() != null ? inv.getCurrencyCode() : "USD") + " " + (inv.getTotal() != null ? inv.getTotal() : "0.00"),
+                            inv.getStatus() != null ? inv.getStatus() : "Draft",
+                            color,
+                            inv.getCreatedAt() != null ? String.valueOf(inv.getCreatedAt()) : ""
+                    ));
+                }
+            }
+
+            return new AiChatResponse(answer, sources, true, null, null, null, null, summaryCards, insightCard, recordCards);
         }
         return proposeAction(type, modelResult.path("arguments"), sources, principal, permissions);
     }

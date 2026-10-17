@@ -9,9 +9,21 @@ import 'package:speech_to_text/speech_to_text.dart';
 
 import '../../../core/api/api_client.dart';
 import '../../../core/storage/token_storage.dart';
-import '../../../shared/widgets/app_card.dart';
 import '../data/ai_assistant_models.dart';
 import '../data/ai_assistant_repository.dart';
+
+// Premium White + Warm Cream + Classical Burgundy Design System
+const Color _kCreamBg = Color(0xFFFBF8F2);
+const Color _kCreamPill = Color(0xFFF4ECE1);
+const Color _kCreamPillBorder = Color(0xFFE6DCCE);
+const Color _kBurgundy = Color(0xFF6B1D2F);
+const Color _kUserBubble = Color(0xFFF5EAE7);
+const Color _kTextDark = Color(0xFF261A1D);
+const Color _kTextMuted = Color(0xFF78716C);
+const Color _kCardBorder = Color(0xFFEBE4DA);
+const Color _kGreenIcon = Color(0xFF16A34A);
+const Color _kAmberIcon = Color(0xFFD97706);
+const Color _kBlueIcon = Color(0xFF2563EB);
 
 class AiChatScreen extends StatefulWidget {
   const AiChatScreen({
@@ -29,10 +41,11 @@ class AiChatScreen extends StatefulWidget {
 
 class _AiChatScreenState extends State<AiChatScreen> {
   static const _suggestions = <String>[
+    'Overdue invoices',
+    'Monthly profit',
+    'Create invoice',
     'Summarize my recent invoices',
-    'What expenses were recorded recently?',
-    'Which invoices are overdue?',
-    'What is our total collected revenue?',
+    'Collected revenue',
   ];
 
   final _inputController = TextEditingController();
@@ -53,6 +66,10 @@ class _AiChatScreenState extends State<AiChatScreen> {
   bool _isSpeaking = false;
   bool _autoSpeak = true;
   bool _historyReady = false;
+
+  // Live Speech Capture state
+  bool _showSpeechLivePanel = false;
+  String _liveSpokenText = '';
 
   @override
   void initState() {
@@ -98,7 +115,6 @@ class _AiChatScreenState extends State<AiChatScreen> {
       if (mounted) setState(() => _isSpeaking = false);
       return;
     }
-    // Strip markdown formatting characters for clean spoken speech
     final clean = text
         .replaceAll(RegExp(r'[*_#`~\[\]]'), '')
         .replaceAll(RegExp(r'\{.*?\}'), '')
@@ -115,17 +131,17 @@ class _AiChatScreenState extends State<AiChatScreen> {
 
   Future<void> _restoreChatHistory() async {
     try {
-      final saved = await _historyStorage.readValue(_historyKey);
-      if (saved == null) {
+      final savedJson = await _historyStorage.readValue(_historyKey);
+      if (savedJson == null || savedJson.trim().isEmpty) {
         if (mounted) setState(() => _historyReady = true);
         return;
       }
-      final decoded = jsonDecode(saved);
+      final Object? decoded = jsonDecode(savedJson);
       if (decoded is! List<Object?>) {
-        throw const FormatException('Saved AI chat history is invalid.');
+        throw const FormatException('Saved AI chat history is not a list.');
       }
       final restored = <_ChatEntry>[];
-      for (final value in decoded.take(100)) {
+      for (final Object? value in decoded) {
         if (value is! Map<String, dynamic> ||
             value['text'] is! String ||
             value['isUser'] is! bool) {
@@ -190,13 +206,16 @@ class _AiChatScreenState extends State<AiChatScreen> {
           if (mounted) {
             setState(() {
               _isListening = false;
+              _showSpeechLivePanel = false;
               _errorMessage = 'Voice input failed: ${error.errorMsg}';
             });
           }
         },
         onStatus: (status) {
           if (mounted && status != 'listening' && _isListening) {
-            setState(() => _isListening = false);
+            setState(() {
+              _isListening = false;
+            });
           }
         },
       );
@@ -211,7 +230,11 @@ class _AiChatScreenState extends State<AiChatScreen> {
   Future<void> _toggleListening() async {
     if (_isListening) {
       await _speech.stop();
-      if (mounted) setState(() => _isListening = false);
+      if (mounted) {
+        setState(() {
+          _isListening = false;
+        });
+      }
       return;
     }
     try {
@@ -230,15 +253,18 @@ class _AiChatScreenState extends State<AiChatScreen> {
       setState(() {
         _errorMessage = null;
         _isListening = true;
+        _showSpeechLivePanel = true;
+        _liveSpokenText = _inputController.text;
       });
       await _speech.listen(
         listenOptions: SpeechListenOptions(
           listenFor: const Duration(minutes: 1),
-          pauseFor: const Duration(seconds: 5),
+          pauseFor: const Duration(seconds: 4),
         ),
         onResult: (result) {
           if (!mounted) return;
           setState(() {
+            _liveSpokenText = result.recognizedWords;
             _inputController.value = TextEditingValue(
               text: result.recognizedWords,
               selection: TextSelection.collapsed(
@@ -252,10 +278,44 @@ class _AiChatScreenState extends State<AiChatScreen> {
       if (mounted) {
         setState(() {
           _isListening = false;
+          _showSpeechLivePanel = false;
           _errorMessage = 'Could not start voice input: $error';
         });
       }
     }
+  }
+
+  String _refineSpeechForAi(String spoken) {
+    var text = spoken.trim();
+    if (text.isEmpty) return text;
+
+    final fillers = [
+      RegExp(r'\b(um|uh|er|ah|like|you know|basically|actually)\b', caseSensitive: false),
+      RegExp(r'\s+', caseSensitive: false),
+    ];
+    for (final filler in fillers) {
+      text = text.replaceAll(filler, ' ');
+    }
+
+    final replacements = <Pattern, String>{
+      RegExp(r'\bshow me (the )?overdue\b', caseSensitive: false): 'Which invoices are overdue?',
+      RegExp(r'\bhow much (money )?did we (make|collect|get)\b', caseSensitive: false): 'What is our total collected revenue?',
+      RegExp(r'\bwhat are (the )?expenses\b', caseSensitive: false): 'What expenses were recorded recently?',
+      RegExp(r'\bmake (a )?new invoice\b', caseSensitive: false): 'Create a draft invoice',
+      RegExp(r'\bshow my invoice updates\b', caseSensitive: false): 'Show my invoice updates and overdue payments this week',
+    };
+
+    for (final entry in replacements.entries) {
+      if (entry.key.allMatches(text).isNotEmpty) {
+        text = text.replaceAll(entry.key, entry.value);
+      }
+    }
+
+    text = text.trim();
+    if (text.isNotEmpty) {
+      text = text[0].toUpperCase() + text.substring(1);
+    }
+    return text;
   }
 
   Future<void> _submit({String? prompt}) async {
@@ -268,11 +328,18 @@ class _AiChatScreenState extends State<AiChatScreen> {
       return;
     }
 
+    if (_isListening) {
+      await _speech.stop();
+    }
+
     final makeInvoiceDraft = _invoiceDraftMode;
     setState(() {
       _errorMessage = null;
       _isLoading = true;
       _invoiceDraftMode = false;
+      _showSpeechLivePanel = false;
+      _isListening = false;
+      _liveSpokenText = '';
       _inputController.clear();
       _messages.add(_ChatEntry(
         text: text,
@@ -322,15 +389,12 @@ class _AiChatScreenState extends State<AiChatScreen> {
   }
 
   Future<void> _confirmCommand(String commandId) async {
-    if (_isLoading ||
-        _confirmingCommandId != null ||
-        _confirmedCommands.contains(commandId)) {
-      return;
-    }
+    if (_isLoading || _confirmingCommandId != null || !_historyReady) return;
     setState(() {
-      _confirmingCommandId = commandId;
       _errorMessage = null;
+      _confirmingCommandId = commandId;
     });
+
     try {
       final response = await _repository.confirmCommand(commandId);
       if (!mounted) return;
@@ -343,7 +407,9 @@ class _AiChatScreenState extends State<AiChatScreen> {
         ));
       });
       unawaited(_persistChatHistory());
-      _scrollToLatest();
+      if (_autoSpeak) {
+        unawaited(_speakText(response.answer));
+      }
     } catch (error) {
       if (mounted) {
         setState(() => _errorMessage = _errorText(error));
@@ -351,24 +417,26 @@ class _AiChatScreenState extends State<AiChatScreen> {
     } finally {
       if (mounted) {
         setState(() => _confirmingCommandId = null);
+        _scrollToLatest();
       }
     }
   }
 
   Future<void> _clearChat() async {
     if (_isLoading || _confirmingCommandId != null) return;
+    if (_isSpeaking) _stopSpeaking();
     setState(() {
       _messages.clear();
       _confirmedCommands.clear();
       _errorMessage = null;
-      _invoiceDraftMode = false;
+      _showSpeechLivePanel = false;
+      _liveSpokenText = '';
     });
     try {
       await _historyStorage.deleteValue(_historyKey);
     } catch (error) {
       if (mounted) {
-        setState(() =>
-            _errorMessage = 'Could not delete saved chat history: $error');
+        setState(() => _errorMessage = 'Could not clear chat history: $error');
       }
     }
   }
@@ -386,77 +454,65 @@ class _AiChatScreenState extends State<AiChatScreen> {
 
   String _errorText(Object error) => error.toString();
 
-  static IconData _getSuggestionIcon(String suggestion) {
-    final lower = suggestion.toLowerCase();
-    if (lower.contains('revenue') || lower.contains('collected')) {
-      return Icons.trending_up_rounded;
-    }
-    if (lower.contains('overdue')) {
-      return Icons.warning_amber_rounded;
-    }
-    if (lower.contains('expense')) {
-      return Icons.receipt_long_rounded;
-    }
-    return Icons.description_outlined;
-  }
-
   @override
   Widget build(BuildContext context) {
-    final colors = Theme.of(context).colorScheme;
     return Scaffold(
+      backgroundColor: _kCreamBg,
       appBar: AppBar(
+        elevation: 0,
+        scrolledUnderElevation: 0,
+        backgroundColor: _kCreamBg,
         title: Row(
           children: [
             Container(
-              padding: const EdgeInsets.all(7),
+              width: 38,
+              height: 38,
               decoration: BoxDecoration(
-                gradient: const LinearGradient(
-                  colors: [Color(0xFF10A37F), Color(0xFF0D8A6C)],
-                  begin: Alignment.topLeft,
-                  end: Alignment.bottomRight,
-                ),
+                color: _kBurgundy,
                 borderRadius: BorderRadius.circular(10),
+                boxShadow: [
+                  BoxShadow(
+                    color: _kBurgundy.withValues(alpha: 0.25),
+                    offset: const Offset(0, 2),
+                    blurRadius: 6,
+                  ),
+                ],
               ),
               child: const Icon(
                 Icons.auto_awesome,
-                size: 18,
+                size: 20,
                 color: Colors.white,
               ),
             ),
-            const SizedBox(width: 10),
+            const SizedBox(width: 12),
             Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               mainAxisSize: MainAxisSize.min,
               children: [
                 const Text(
-                  'Invoicely AI',
-                  style: TextStyle(fontSize: 16, fontWeight: FontWeight.w700),
+                  'AI Business Assistant',
+                  style: TextStyle(
+                    fontSize: 16.5,
+                    fontWeight: FontWeight.w700,
+                    color: _kTextDark,
+                    letterSpacing: -0.2,
+                  ),
                 ),
-                Row(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    Container(
-                      width: 7,
-                      height: 7,
-                      decoration: const BoxDecoration(
-                        color: Color(0xFF10A37F),
-                        shape: BoxShape.circle,
-                      ),
-                    ),
-                    const SizedBox(width: 5),
-                    Text(
-                      _isSpeaking
-                          ? 'Speaking…'
-                          : _isListening
-                              ? 'Listening…'
-                              : 'Online · Enterprise CFO',
-                      style: TextStyle(
-                        fontSize: 11,
-                        color: colors.onSurfaceVariant,
-                        fontWeight: FontWeight.w500,
-                      ),
-                    ),
-                  ],
+                Text(
+                  _isSpeaking
+                      ? 'Speaking answer…'
+                      : _isListening
+                          ? 'Listening to your voice…'
+                          : 'Your business data, explained simply',
+                  style: TextStyle(
+                    fontSize: 12,
+                    color: _isSpeaking || _isListening
+                        ? _kBurgundy
+                        : _kTextMuted,
+                    fontWeight: _isSpeaking || _isListening
+                        ? FontWeight.w600
+                        : FontWeight.normal,
+                  ),
                 ),
               ],
             ),
@@ -471,7 +527,7 @@ class _AiChatScreenState extends State<AiChatScreen> {
             },
             icon: Icon(
               _autoSpeak ? Icons.volume_up_rounded : Icons.volume_off_rounded,
-              color: _autoSpeak ? const Color(0xFF10A37F) : null,
+              color: _autoSpeak ? _kBurgundy : _kTextMuted,
             ),
           ),
           if (_isSpeaking)
@@ -480,199 +536,150 @@ class _AiChatScreenState extends State<AiChatScreen> {
               onPressed: _stopSpeaking,
               icon: const Icon(Icons.stop_circle_outlined, color: Colors.redAccent),
             ),
-          IconButton(
-            tooltip: 'Clear chat',
-            onPressed:
-                _isLoading || _confirmingCommandId != null ? null : _clearChat,
-            icon: const Icon(Icons.delete_sweep_outlined),
+          PopupMenuButton<String>(
+            tooltip: 'Options',
+            icon: const Icon(Icons.more_horiz_rounded, color: _kTextDark),
+            onSelected: (value) {
+              if (value == 'clear') _clearChat();
+            },
+            itemBuilder: (context) => [
+              const PopupMenuItem(
+                value: 'clear',
+                child: Row(
+                  children: [
+                    Icon(Icons.delete_sweep_outlined, size: 18, color: Colors.red),
+                    SizedBox(width: 8),
+                    Text('Clear conversation'),
+                  ],
+                ),
+              ),
+            ],
           ),
         ],
       ),
       body: SafeArea(
         child: Column(
           children: [
-            Expanded(
-              child: ListView(
-                controller: _scrollController,
-                padding: const EdgeInsets.fromLTRB(16, 8, 16, 16),
+            // SUGGESTED QUESTIONS bar
+            Container(
+              padding: const EdgeInsets.fromLTRB(16, 6, 16, 10),
+              color: _kCreamBg,
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                mainAxisSize: MainAxisSize.min,
                 children: [
-                  AppCard(
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
+                  const Text(
+                    'SUGGESTED QUESTIONS',
+                    style: TextStyle(
+                      fontSize: 11,
+                      fontWeight: FontWeight.w700,
+                      color: Color(0xFF8C827A),
+                      letterSpacing: 0.8,
+                    ),
+                  ),
+                  const SizedBox(height: 8),
+                  SingleChildScrollView(
+                    scrollDirection: Axis.horizontal,
+                    child: Row(
                       children: [
-                        Row(
-                          children: [
-                            Icon(Icons.auto_awesome, color: colors.primary),
-                            const SizedBox(width: 10),
-                            Expanded(
-                              child: Text(
-                                'Your business, in context',
-                                style: Theme.of(context).textTheme.titleMedium,
+                        for (final suggestion in _suggestions)
+                          Padding(
+                            padding: const EdgeInsets.only(right: 8),
+                            child: InkWell(
+                              onTap: _isLoading || _confirmingCommandId != null
+                                  ? null
+                                  : () => _submit(prompt: suggestion),
+                              borderRadius: BorderRadius.circular(18),
+                              child: Container(
+                                padding: const EdgeInsets.symmetric(
+                                  horizontal: 14,
+                                  vertical: 7,
+                                ),
+                                decoration: BoxDecoration(
+                                  color: _kCreamPill,
+                                  borderRadius: BorderRadius.circular(18),
+                                  border: Border.all(
+                                    color: _kCreamPillBorder,
+                                    width: 1,
+                                  ),
+                                ),
+                                child: Text(
+                                  suggestion,
+                                  style: const TextStyle(
+                                    fontSize: 13,
+                                    fontWeight: FontWeight.w500,
+                                    color: Color(0xFF362B2D),
+                                  ),
+                                ),
                               ),
                             ),
-                          ],
-                        ),
-                        const SizedBox(height: 8),
-                        Text(
-                          'Ask about business records you can access. Answers show their grounded sources and are read-only unless you review and confirm a proposed action.',
-                          style: Theme.of(context).textTheme.bodyMedium,
-                        ),
-                        const SizedBox(height: 8),
-                        const Text(
-                          'Chat history is stored securely on this account. Confirmations are not restored when reopening chat.',
-                          style: TextStyle(fontSize: 12),
-                        ),
+                          ),
                       ],
                     ),
                   ),
-                  if (_messages.isEmpty) ...[
-                    const SizedBox(height: 24),
-                    Center(
-                      child: Column(
-                        children: [
-                          Container(
-                            width: 56,
-                            height: 56,
-                            decoration: BoxDecoration(
-                              gradient: const LinearGradient(
-                                colors: [Color(0xFF10A37F), Color(0xFF0E7A60)],
-                                begin: Alignment.topLeft,
-                                end: Alignment.bottomRight,
-                              ),
-                              shape: BoxShape.circle,
-                              boxShadow: [
-                                BoxShadow(
-                                  color: const Color(0xFF10A37F).withValues(alpha: 0.3),
-                                  offset: const Offset(0, 4),
-                                  blurRadius: 10,
-                                ),
-                              ],
-                            ),
-                            child: const Icon(
-                              Icons.auto_awesome,
-                              color: Colors.white,
-                              size: 28,
-                            ),
-                          ),
-                          const SizedBox(height: 12),
-                          Text(
-                            'How can I help you today?',
-                            style: Theme.of(context).textTheme.titleMedium?.copyWith(
-                                  fontWeight: FontWeight.bold,
-                                ),
-                          ),
-                          const SizedBox(height: 4),
-                          Text(
-                            'Ask about invoices, expenses, revenue, or propose actions.',
-                            style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                                  color: colors.onSurfaceVariant,
-                                ),
-                          ),
-                        ],
-                      ),
-                    ),
-                    const SizedBox(height: 20),
-                    Text(
-                      'Suggested prompts',
-                      style: Theme.of(context).textTheme.labelMedium?.copyWith(
-                            fontWeight: FontWeight.w600,
-                            color: colors.onSurfaceVariant,
-                          ),
-                    ),
-                    const SizedBox(height: 10),
-                    for (final suggestion in _suggestions) ...[
-                      Padding(
-                        padding: const EdgeInsets.only(bottom: 8),
-                        child: InkWell(
-                          onTap: _isLoading || _confirmingCommandId != null
-                              ? null
-                              : () => _submit(prompt: suggestion),
-                          borderRadius: BorderRadius.circular(14),
-                          child: Container(
-                            padding: const EdgeInsets.symmetric(
-                              horizontal: 14,
-                              vertical: 11,
-                            ),
-                            decoration: BoxDecoration(
-                              color: Theme.of(context).brightness == Brightness.dark
-                                  ? const Color(0xFF1E293B)
-                                  : Colors.white,
-                              borderRadius: BorderRadius.circular(14),
-                              border: Border.all(
-                                color: Theme.of(context).brightness == Brightness.dark
-                                    ? const Color(0xFF334155)
-                                    : const Color(0xFFE2E8F0),
-                              ),
-                              boxShadow: [
-                                BoxShadow(
-                                  color: Colors.black.withValues(alpha: 0.03),
-                                  blurRadius: 4,
-                                  offset: const Offset(0, 1),
-                                ),
-                              ],
-                            ),
-                            child: Row(
-                              children: [
-                                Icon(
-                                  _getSuggestionIcon(suggestion),
-                                  size: 16,
-                                  color: const Color(0xFF10A37F),
-                                ),
-                                const SizedBox(width: 10),
-                                Expanded(
-                                  child: Text(
-                                    suggestion,
-                                    style: TextStyle(
-                                      fontSize: 13,
-                                      fontWeight: FontWeight.w500,
-                                      color: colors.onSurface,
-                                    ),
-                                  ),
-                                ),
-                                Icon(
-                                  Icons.arrow_forward_ios_rounded,
-                                  size: 12,
-                                  color: colors.onSurfaceVariant.withValues(alpha: 0.5),
-                                ),
-                              ],
-                            ),
-                          ),
-                        ),
-                      ),
-                    ],
-                  ],
+                ],
+              ),
+            ),
+            const Divider(height: 1, thickness: 1, color: _kCardBorder),
+            // Chat history stream
+            Expanded(
+              child: ListView(
+                controller: _scrollController,
+                padding: const EdgeInsets.fromLTRB(16, 12, 16, 16),
+                children: [
                   for (final message in _messages) ...[
-                    const SizedBox(height: 12),
+                    const SizedBox(height: 14),
                     _MessageBubble(
                       entry: message,
                       confirmingCommandId: _confirmingCommandId,
                       confirmedCommands: _confirmedCommands,
                       onConfirm: _confirmCommand,
                       onSpeak: _speakText,
+                      onSuggestionTap: (prompt) => _submit(prompt: prompt),
                     ),
                   ],
                   if (_isLoading)
-                    const Padding(
-                      padding: EdgeInsets.only(top: 16),
+                    Padding(
+                      padding: const EdgeInsets.only(top: 16),
                       child: Align(
                         alignment: Alignment.centerLeft,
-                        child: AppCard(
-                          padding: EdgeInsets.symmetric(
+                        child: Container(
+                          padding: const EdgeInsets.symmetric(
                             horizontal: 16,
                             vertical: 12,
                           ),
-                          child: Row(
+                          decoration: BoxDecoration(
+                            color: Colors.white,
+                            borderRadius: BorderRadius.circular(14),
+                            border: Border.all(color: _kCardBorder),
+                            boxShadow: [
+                              BoxShadow(
+                                color: Colors.black.withValues(alpha: 0.03),
+                                blurRadius: 6,
+                                offset: const Offset(0, 2),
+                              ),
+                            ],
+                          ),
+                          child: const Row(
                             mainAxisSize: MainAxisSize.min,
                             children: [
                               SizedBox(
-                                width: 18,
-                                height: 18,
+                                width: 16,
+                                height: 16,
                                 child: CircularProgressIndicator(
                                   strokeWidth: 2,
+                                  color: _kBurgundy,
                                 ),
                               ),
                               SizedBox(width: 12),
-                              Text('Thinking…'),
+                              Text(
+                                'Analyzing business records…',
+                                style: TextStyle(
+                                  fontSize: 13.5,
+                                  color: _kTextDark,
+                                  fontWeight: FontWeight.w500,
+                                ),
+                              ),
                             ],
                           ),
                         ),
@@ -688,6 +695,140 @@ class _AiChatScreenState extends State<AiChatScreen> {
                 ],
               ),
             ),
+
+            // Live Speech Capture & Prompt Correction Floating Panel
+            if (_showSpeechLivePanel)
+              Container(
+                margin: const EdgeInsets.fromLTRB(14, 0, 14, 8),
+                padding: const EdgeInsets.all(12),
+                decoration: BoxDecoration(
+                  color: Colors.white,
+                  borderRadius: BorderRadius.circular(16),
+                  border: Border.all(color: _kBurgundy.withValues(alpha: 0.3), width: 1.5),
+                  boxShadow: [
+                    BoxShadow(
+                      color: _kBurgundy.withValues(alpha: 0.08),
+                      blurRadius: 10,
+                      offset: const Offset(0, 3),
+                    ),
+                  ],
+                ),
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Row(
+                      children: [
+                        Container(
+                          width: 8,
+                          height: 8,
+                          decoration: BoxDecoration(
+                            color: _isListening ? Colors.red : _kBurgundy,
+                            shape: BoxShape.circle,
+                          ),
+                        ),
+                        const SizedBox(width: 8),
+                        Text(
+                          _isListening
+                              ? 'Live speech capturing… speak naturally'
+                              : 'Speech captured',
+                          style: TextStyle(
+                            fontSize: 12,
+                            fontWeight: FontWeight.w600,
+                            color: _isListening ? Colors.red : _kBurgundy,
+                          ),
+                        ),
+                        const Spacer(),
+                        InkWell(
+                          onTap: () {
+                            if (_isListening) _speech.stop();
+                            setState(() {
+                              _showSpeechLivePanel = false;
+                              _isListening = false;
+                            });
+                          },
+                          child: const Icon(Icons.close, size: 16, color: _kTextMuted),
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 8),
+                    Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+                      decoration: BoxDecoration(
+                        color: _kCreamBg,
+                        borderRadius: BorderRadius.circular(10),
+                        border: Border.all(color: _kCardBorder),
+                      ),
+                      child: Text(
+                        _liveSpokenText.isEmpty
+                            ? 'Listening… your speech will appear here'
+                            : _liveSpokenText,
+                        style: TextStyle(
+                          fontSize: 14,
+                          color: _liveSpokenText.isEmpty ? _kTextMuted : _kTextDark,
+                          fontStyle: _liveSpokenText.isEmpty
+                              ? FontStyle.italic
+                              : FontStyle.normal,
+                        ),
+                      ),
+                    ),
+                    const SizedBox(height: 8),
+                    Row(
+                      children: [
+                        // Refine / Polish Prompt button
+                        OutlinedButton.icon(
+                          onPressed: _liveSpokenText.trim().isEmpty
+                              ? null
+                              : () {
+                                  final polished = _refineSpeechForAi(_liveSpokenText);
+                                  setState(() {
+                                    _liveSpokenText = polished;
+                                    _inputController.text = polished;
+                                  });
+                                  ScaffoldMessenger.of(context).showSnackBar(
+                                    const SnackBar(
+                                      content: Text('Prompt refined for AI business query'),
+                                      duration: Duration(seconds: 1),
+                                    ),
+                                  );
+                                },
+                          icon: const Icon(Icons.auto_fix_high, size: 14, color: _kBurgundy),
+                          label: const Text(
+                            'Refine prompt',
+                            style: TextStyle(fontSize: 12, color: _kBurgundy),
+                          ),
+                          style: OutlinedButton.styleFrom(
+                            side: const BorderSide(color: _kBurgundy),
+                            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                            visualDensity: VisualDensity.compact,
+                          ),
+                        ),
+                        const Spacer(),
+                        // Send prompt to AI button
+                        FilledButton(
+                          onPressed: _liveSpokenText.trim().isEmpty
+                              ? null
+                              : () => _submit(prompt: _liveSpokenText),
+                          style: FilledButton.styleFrom(
+                            backgroundColor: _kBurgundy,
+                            padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 6),
+                            visualDensity: VisualDensity.compact,
+                            shape: RoundedRectangleBorder(
+                              borderRadius: BorderRadius.circular(8),
+                            ),
+                          ),
+                          child: const Text(
+                            'Send to AI →',
+                            style: TextStyle(fontSize: 12.5, fontWeight: FontWeight.bold),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ],
+                ),
+              ),
+
+            // Bottom Composer with voice icon positioned AFTER the send button arrow
             _Composer(
               controller: _inputController,
               isLoading:
@@ -728,6 +869,7 @@ class _MessageBubble extends StatelessWidget {
     required this.confirmedCommands,
     required this.onConfirm,
     this.onSpeak,
+    this.onSuggestionTap,
   });
 
   final _ChatEntry entry;
@@ -735,323 +877,533 @@ class _MessageBubble extends StatelessWidget {
   final Set<String> confirmedCommands;
   final ValueChanged<String> onConfirm;
   final ValueChanged<String>? onSpeak;
+  final ValueChanged<String>? onSuggestionTap;
 
   @override
   Widget build(BuildContext context) {
-    final colors = Theme.of(context).colorScheme;
-    final response = entry.chatResponse;
-    final content = <Widget>[];
-    if (!entry.isUser && response != null) {
-      content.add(_responseMetadata(response));
-    }
-    content.add(SelectableText(entry.text));
-    if (response != null && response.groundedSources.isNotEmpty) {
-      content.add(
-        Padding(
-          padding: const EdgeInsets.only(top: 12),
-          child: _GroundedSources(sources: response.groundedSources),
-        ),
-      );
-    }
-    final pendingId = response?.pendingCommandId;
-    if (pendingId != null) {
-      content.add(_pendingAction(context, pendingId));
-    }
-    final draft = entry.invoiceDraft;
-    if (draft != null) {
-      content.add(
-        Padding(
-          padding: const EdgeInsets.only(top: 12),
-          child: _InvoiceDraftCard(response: draft),
+    if (entry.isUser) {
+      // User bubble: warm cream-rose tinted bubble on the right
+      return Align(
+        alignment: Alignment.centerRight,
+        child: Container(
+          constraints: BoxConstraints(
+            maxWidth: MediaQuery.sizeOf(context).width * 0.85,
+          ),
+          decoration: BoxDecoration(
+            color: _kUserBubble,
+            borderRadius: const BorderRadius.only(
+              topLeft: Radius.circular(16),
+              topRight: Radius.circular(16),
+              bottomLeft: Radius.circular(16),
+              bottomRight: Radius.circular(4),
+            ),
+            border: Border.all(
+              color: const Color(0xFFEADBCE),
+              width: 1,
+            ),
+          ),
+          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+          child: SelectableText(
+            entry.text,
+            style: const TextStyle(
+              fontSize: 14.5,
+              fontWeight: FontWeight.w500,
+              color: _kTextDark,
+              height: 1.4,
+            ),
+          ),
         ),
       );
     }
 
-    Widget bubbleCard = Container(
-      decoration: BoxDecoration(
-        color: entry.isUser
-            ? const Color(0xFF2563EB)
-            : (Theme.of(context).brightness == Brightness.dark
-                ? const Color(0xFF1E293B)
-                : Colors.white),
-        borderRadius: BorderRadius.only(
-          topLeft: const Radius.circular(18),
-          topRight: const Radius.circular(18),
-          bottomLeft: Radius.circular(entry.isUser ? 18 : 4),
-          bottomRight: Radius.circular(entry.isUser ? 4 : 18),
+    // AI message: header + dynamic smart cards + insights + actions
+    final response = entry.chatResponse;
+    final summaryCards = response?.summaryCards ?? [];
+    final insight = response?.insightCard;
+    final recordCards = response?.recordCards ?? [];
+    final pendingId = response?.pendingCommandId;
+    final draft = entry.invoiceDraft;
+
+    return Align(
+      alignment: Alignment.centerLeft,
+      child: Container(
+        constraints: BoxConstraints(
+          maxWidth: MediaQuery.sizeOf(context).width * 0.95,
         ),
-        boxShadow: [
-          BoxShadow(
-            color: Colors.black.withValues(alpha: 0.05),
-            offset: const Offset(0, 2),
-            blurRadius: 6,
-          ),
-        ],
-        border: Border.all(
-          color: entry.isUser
-              ? Colors.transparent
-              : (Theme.of(context).brightness == Brightness.dark
-                  ? const Color(0xFF334155)
-                  : const Color(0xFFE2E8F0)),
-          width: 1,
-        ),
-      ),
-      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          ...content,
-          if (!entry.isUser)
-            Padding(
-              padding: const EdgeInsets.only(top: 8),
-              child: Row(
-                mainAxisSize: MainAxisSize.min,
-                children: [
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            // AI Header row: Burgundy square icon + title + subtitle
+            Row(
+              children: [
+                Container(
+                  width: 32,
+                  height: 32,
+                  decoration: BoxDecoration(
+                    color: _kBurgundy,
+                    borderRadius: BorderRadius.circular(8),
+                  ),
+                  child: const Icon(
+                    Icons.auto_awesome,
+                    size: 17,
+                    color: Colors.white,
+                  ),
+                ),
+                const SizedBox(width: 10),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      const Text(
+                        'Here is your business update',
+                        style: TextStyle(
+                          fontSize: 15.5,
+                          fontWeight: FontWeight.bold,
+                          color: _kTextDark,
+                        ),
+                      ),
+                      Text(
+                        'Based on the latest records available in your workspace.',
+                        style: TextStyle(
+                          fontSize: 12,
+                          color: _kTextMuted.withValues(alpha: 0.9),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 12),
+
+            // 1. Dynamic Summary Cards (2x2 Grid)
+            if (summaryCards.isNotEmpty) ...[
+              _buildSummaryCardsGrid(context, summaryCards),
+              const SizedBox(height: 12),
+            ],
+
+            // 2. "Needs your attention" Alert / Insight Card
+            if (insight != null) ...[
+              _buildInsightCard(context, insight),
+              const SizedBox(height: 12),
+            ],
+
+            // 3. Record Cards (if invoices / records were requested)
+            if (recordCards.isNotEmpty) ...[
+              _buildRecordCards(context, recordCards),
+              const SizedBox(height: 12),
+            ],
+
+            // 4. Action Confirmation Card (if pending action)
+            if (pendingId != null) ...[
+              _buildPendingAction(context, pendingId),
+              const SizedBox(height: 12),
+            ],
+
+            // 5. Invoice Draft Card (if invoice draft mode)
+            if (draft != null) ...[
+              _InvoiceDraftCard(response: draft),
+              const SizedBox(height: 12),
+            ],
+
+            // 6. Conversational explanation / Text Answer card
+            if (entry.text.isNotEmpty && summaryCards.isEmpty && recordCards.isEmpty && draft == null) ...[
+              Container(
+                decoration: BoxDecoration(
+                  color: Colors.white,
+                  borderRadius: BorderRadius.circular(14),
+                  border: Border.all(color: _kCardBorder),
+                  boxShadow: [
+                    BoxShadow(
+                      color: Colors.black.withValues(alpha: 0.02),
+                      blurRadius: 6,
+                      offset: const Offset(0, 2),
+                    ),
+                  ],
+                ),
+                padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+                child: SelectableText(
+                  entry.text,
+                  style: const TextStyle(
+                    fontSize: 14.5,
+                    height: 1.45,
+                    color: _kTextDark,
+                  ),
+                ),
+              ),
+              const SizedBox(height: 8),
+            ],
+
+            // Grounded sources tags & Action buttons (Copy & Speak)
+            Row(
+              children: [
+                if (response != null && response.groundedSources.isNotEmpty)
+                  Expanded(
+                    child: Wrap(
+                      spacing: 6,
+                      runSpacing: 4,
+                      children: [
+                        for (final src in response.groundedSources)
+                          Container(
+                            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                            decoration: BoxDecoration(
+                              color: _kCreamPill,
+                              borderRadius: BorderRadius.circular(10),
+                              border: Border.all(color: _kCreamPillBorder),
+                            ),
+                            child: Text(
+                              src,
+                              style: const TextStyle(
+                                fontSize: 11,
+                                color: _kTextMuted,
+                                fontWeight: FontWeight.w500,
+                              ),
+                            ),
+                          ),
+                      ],
+                    ),
+                  ),
+                IconButton(
+                  iconSize: 16,
+                  padding: EdgeInsets.zero,
+                  constraints: const BoxConstraints(minWidth: 28, minHeight: 28),
+                  tooltip: 'Copy answer',
+                  onPressed: () {
+                    Clipboard.setData(ClipboardData(text: entry.text));
+                    ScaffoldMessenger.of(context).showSnackBar(
+                      const SnackBar(
+                        content: Text('Copied to clipboard'),
+                        duration: Duration(seconds: 1),
+                      ),
+                    );
+                  },
+                  icon: const Icon(Icons.copy_rounded, color: _kTextMuted),
+                ),
+                if (onSpeak != null)
                   IconButton(
                     iconSize: 16,
                     padding: EdgeInsets.zero,
                     constraints: const BoxConstraints(minWidth: 28, minHeight: 28),
-                    tooltip: 'Copy answer',
-                    onPressed: () {
-                      Clipboard.setData(ClipboardData(text: entry.text));
-                      ScaffoldMessenger.of(context).showSnackBar(
-                        const SnackBar(
-                          content: Text('Copied to clipboard'),
-                          duration: Duration(seconds: 1),
-                        ),
-                      );
-                    },
-                    icon: Icon(
-                      Icons.copy_rounded,
-                      color: colors.onSurfaceVariant.withValues(alpha: 0.6),
-                    ),
+                    tooltip: 'Read aloud',
+                    onPressed: () => onSpeak!(entry.text),
+                    icon: const Icon(Icons.volume_up_outlined, color: _kTextMuted),
                   ),
-                  if (onSpeak != null)
-                    IconButton(
-                      iconSize: 16,
-                      padding: EdgeInsets.zero,
-                      constraints: const BoxConstraints(minWidth: 28, minHeight: 28),
-                      tooltip: 'Read aloud',
-                      onPressed: () => onSpeak!(entry.text),
-                      icon: Icon(
-                        Icons.volume_up_outlined,
-                        color: colors.onSurfaceVariant.withValues(alpha: 0.6),
-                      ),
-                    ),
-                ],
-              ),
-            ),
-        ],
-      ),
-    );
-
-    return Padding(
-      padding: const EdgeInsets.symmetric(vertical: 4),
-      child: Row(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        mainAxisAlignment:
-            entry.isUser ? MainAxisAlignment.end : MainAxisAlignment.start,
-        children: [
-          if (!entry.isUser) ...[
-            Container(
-              width: 32,
-              height: 32,
-              margin: const EdgeInsets.only(right: 8, top: 4),
-              decoration: BoxDecoration(
-                gradient: const LinearGradient(
-                  colors: [Color(0xFF10A37F), Color(0xFF0E7A60)],
-                  begin: Alignment.topLeft,
-                  end: Alignment.bottomRight,
-                ),
-                shape: BoxShape.circle,
-                boxShadow: [
-                  BoxShadow(
-                    color: const Color(0xFF10A37F).withValues(alpha: 0.25),
-                    offset: const Offset(0, 2),
-                    blurRadius: 4,
-                  ),
-                ],
-              ),
-              child: const Icon(
-                Icons.auto_awesome,
-                size: 16,
-                color: Colors.white,
-              ),
+              ],
             ),
           ],
-          Flexible(
-            child: ConstrainedBox(
-              constraints: BoxConstraints(
-                maxWidth: MediaQuery.sizeOf(context).width * 0.78,
-              ),
-              child: Theme(
-                data: Theme.of(context).copyWith(
-                  textTheme: Theme.of(context).textTheme.copyWith(
-                        bodyMedium: TextStyle(
-                          color: entry.isUser ? Colors.white : null,
-                          fontSize: 14.5,
-                          height: 1.45,
-                        ),
-                      ),
-                ),
-                child: DefaultTextStyle(
-                  style: TextStyle(
-                    color: entry.isUser
-                        ? Colors.white
-                        : Theme.of(context).textTheme.bodyMedium?.color,
-                    fontSize: 14.5,
-                    height: 1.45,
-                  ),
-                  child: bubbleCard,
-                ),
-              ),
-            ),
-          ),
-          if (entry.isUser) ...[
-            Container(
-              width: 30,
-              height: 30,
-              margin: const EdgeInsets.only(left: 8, top: 4),
-              decoration: BoxDecoration(
-                color: const Color(0xFF2B3548),
-                shape: BoxShape.circle,
-                boxShadow: [
-                  BoxShadow(
-                    color: Colors.black.withValues(alpha: 0.1),
-                    offset: const Offset(0, 1.5),
-                    blurRadius: 3,
-                  ),
-                ],
-              ),
-              child: const Icon(
-                Icons.person,
-                size: 16,
-                color: Colors.white,
-              ),
-            ),
-          ],
-        ],
-      ),
-    );
-  }
-
-  Widget _responseMetadata(AiChatResponse response) {
-    final String status;
-    final IconData icon;
-    if (response.resourceId != null) {
-      status = 'Action complete';
-      icon = Icons.check_circle_outline;
-    } else if (response.readOnly) {
-      status = 'Read-only answer';
-      icon = Icons.visibility_outlined;
-    } else {
-      status = 'Action proposal';
-      icon = Icons.edit_note_outlined;
-    }
-
-    final badges = <Widget>[_InfoBadge(icon: icon, label: status)];
-    final actionType = response.actionType;
-    if (actionType != null) {
-      badges.add(
-        _InfoBadge(
-          icon: Icons.bolt_outlined,
-          label: _formatAction(actionType),
         ),
-      );
-    }
-    return Padding(
-      padding: const EdgeInsets.only(bottom: 8),
-      child: Wrap(
-        spacing: 6,
-        runSpacing: 6,
-        children: badges,
       ),
     );
   }
 
-  Widget _pendingAction(BuildContext context, String commandId) {
-    return Padding(
-      padding: const EdgeInsets.only(top: 12),
+  // 2x2 Grid of Pure White Summary Cards
+  Widget _buildSummaryCardsGrid(BuildContext context, List<SummaryCardDto> cards) {
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        final cardWidth = (constraints.maxWidth - 12) / 2;
+        return Wrap(
+          spacing: 12,
+          runSpacing: 12,
+          children: [
+            for (final card in cards)
+              Container(
+                width: cardWidth,
+                padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 14),
+                decoration: BoxDecoration(
+                  color: Colors.white,
+                  borderRadius: BorderRadius.circular(14),
+                  border: Border.all(color: _kCardBorder, width: 1),
+                  boxShadow: [
+                    BoxShadow(
+                      color: Colors.black.withValues(alpha: 0.02),
+                      blurRadius: 4,
+                      offset: const Offset(0, 1),
+                    ),
+                  ],
+                ),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Icon(
+                      _getCardIcon(card.icon),
+                      size: 20,
+                      color: _getCardColor(card.color),
+                    ),
+                    const SizedBox(height: 10),
+                    Text(
+                      card.value,
+                      style: const TextStyle(
+                        fontSize: 22,
+                        fontWeight: FontWeight.bold,
+                        color: _kTextDark,
+                        letterSpacing: -0.5,
+                      ),
+                    ),
+                    const SizedBox(height: 2),
+                    Text(
+                      card.title,
+                      style: const TextStyle(
+                        fontSize: 12,
+                        color: _kTextMuted,
+                        fontWeight: FontWeight.w500,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+          ],
+        );
+      },
+    );
+  }
+
+  // Pure White "Needs your attention" Alert Card with Classical Burgundy CTA
+  Widget _buildInsightCard(BuildContext context, InsightCardDto insight) {
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(14),
+        border: Border.all(color: _kCardBorder, width: 1),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withValues(alpha: 0.02),
+            blurRadius: 6,
+            offset: const Offset(0, 2),
+          ),
+        ],
+      ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Text(
-            'Nothing is saved until you confirm this action.',
-            style: Theme.of(context).textTheme.bodySmall,
-          ),
-          const SizedBox(height: 8),
-          confirmedCommands.contains(commandId)
-              ? const _InfoBadge(
-                  icon: Icons.check_circle_outline,
-                  label: 'Confirmed',
-                )
-              : FilledButton.tonalIcon(
-                  onPressed: confirmingCommandId == null
-                      ? () => onConfirm(commandId)
-                      : null,
-                  icon: confirmingCommandId == commandId
-                      ? const SizedBox(
-                          width: 16,
-                          height: 16,
-                          child: CircularProgressIndicator(strokeWidth: 2),
-                        )
-                      : const Icon(Icons.check),
-                  label: Text(
-                    confirmingCommandId == commandId
-                        ? 'Confirming…'
-                        : 'Confirm action',
-                  ),
+          Row(
+            children: [
+              const Icon(
+                Icons.error_outline_rounded,
+                size: 18,
+                color: _kAmberIcon,
+              ),
+              const SizedBox(width: 8),
+              Text(
+                insight.title,
+                style: const TextStyle(
+                  fontSize: 14.5,
+                  fontWeight: FontWeight.bold,
+                  color: _kTextDark,
                 ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 6),
+          Text(
+            insight.message,
+            style: const TextStyle(
+              fontSize: 13,
+              color: Color(0xFF57534E),
+              height: 1.4,
+            ),
+          ),
+          const SizedBox(height: 12),
+          SizedBox(
+            width: double.infinity,
+            child: FilledButton(
+              onPressed: () {
+                if (onSuggestionTap != null) {
+                  onSuggestionTap!('Show overdue invoices');
+                }
+              },
+              style: FilledButton.styleFrom(
+                backgroundColor: _kBurgundy,
+                foregroundColor: Colors.white,
+                padding: const EdgeInsets.symmetric(vertical: 12),
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(10),
+                ),
+                elevation: 0,
+              ),
+              child: Text(
+                insight.actionLabel,
+                style: const TextStyle(
+                  fontSize: 13.5,
+                  fontWeight: FontWeight.w600,
+                  letterSpacing: -0.1,
+                ),
+              ),
+            ),
+          ),
         ],
       ),
     );
   }
 
-  static String _formatAction(String action) {
-    return action
-        .replaceAll('_', ' ')
-        .toLowerCase()
-        .split(' ')
-        .map((word) => word.isEmpty
-            ? word
-            : '${word[0].toUpperCase()}${word.substring(1)}')
-        .join(' ');
-  }
-}
-
-class _GroundedSources extends StatelessWidget {
-  const _GroundedSources({required this.sources});
-
-  final List<String> sources;
-
-  @override
-  Widget build(BuildContext context) {
+  // Record cards list
+  Widget _buildRecordCards(BuildContext context, List<RecordCardDto> records) {
     return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        const Divider(height: 20),
-        Text(
-          'Grounded sources',
-          style: Theme.of(context).textTheme.labelMedium,
-        ),
-        const SizedBox(height: 4),
-        for (final source in sources)
-          Padding(
-            padding: const EdgeInsets.only(top: 3),
+        for (final rec in records)
+          Container(
+            margin: const EdgeInsets.only(bottom: 8),
+            padding: const EdgeInsets.all(14),
+            decoration: BoxDecoration(
+              color: Colors.white,
+              borderRadius: BorderRadius.circular(12),
+              border: Border.all(color: _kCardBorder),
+            ),
             child: Row(
-              crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                const Padding(
-                  padding: EdgeInsets.only(top: 2),
-                  child: Icon(Icons.source_outlined, size: 15),
+                Container(
+                  padding: const EdgeInsets.all(8),
+                  decoration: BoxDecoration(
+                    color: _kCreamPill,
+                    borderRadius: BorderRadius.circular(8),
+                  ),
+                  child: const Icon(
+                    Icons.receipt_outlined,
+                    size: 18,
+                    color: _kBurgundy,
+                  ),
                 ),
-                const SizedBox(width: 6),
-                Expanded(child: Text(source)),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        rec.title,
+                        style: const TextStyle(
+                          fontSize: 14,
+                          fontWeight: FontWeight.bold,
+                          color: _kTextDark,
+                        ),
+                      ),
+                      Text(
+                        rec.subtitle,
+                        style: const TextStyle(fontSize: 12, color: _kTextMuted),
+                      ),
+                    ],
+                  ),
+                ),
+                Column(
+                  crossAxisAlignment: CrossAxisAlignment.end,
+                  children: [
+                    Text(
+                      rec.amount,
+                      style: const TextStyle(
+                        fontSize: 14,
+                        fontWeight: FontWeight.bold,
+                        color: _kTextDark,
+                      ),
+                    ),
+                    const SizedBox(height: 2),
+                    Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                      decoration: BoxDecoration(
+                        color: rec.status.toLowerCase() == 'paid'
+                            ? const Color(0xFFDCFCE7)
+                            : (rec.status.toLowerCase() == 'overdue'
+                                ? const Color(0xFFFEF3C7)
+                                : const Color(0xFFDBEAFE)),
+                        borderRadius: BorderRadius.circular(6),
+                      ),
+                      child: Text(
+                        rec.status,
+                        style: TextStyle(
+                          fontSize: 11,
+                          fontWeight: FontWeight.w600,
+                          color: rec.status.toLowerCase() == 'paid'
+                              ? const Color(0xFF15803D)
+                              : (rec.status.toLowerCase() == 'overdue'
+                                  ? const Color(0xFFB45309)
+                                  : const Color(0xFF1D4ED8)),
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
               ],
             ),
           ),
       ],
     );
+  }
+
+  // Pending action draft confirmation
+  Widget _buildPendingAction(BuildContext context, String commandId) {
+    return Container(
+      padding: const EdgeInsets.all(14),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: _kBurgundy.withValues(alpha: 0.3)),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          const Text(
+            'Action proposal ready for your approval:',
+            style: TextStyle(fontSize: 12.5, color: _kTextMuted),
+          ),
+          const SizedBox(height: 10),
+          confirmedCommands.contains(commandId)
+              ? const Row(
+                  children: [
+                    Icon(Icons.check_circle, color: _kGreenIcon, size: 18),
+                    SizedBox(width: 8),
+                    Text(
+                      'Action Confirmed & Executed',
+                      style: TextStyle(
+                        fontSize: 13,
+                        fontWeight: FontWeight.bold,
+                        color: _kGreenIcon,
+                      ),
+                    ),
+                  ],
+                )
+              : SizedBox(
+                  width: double.infinity,
+                  child: FilledButton(
+                    onPressed: confirmingCommandId == null
+                        ? () => onConfirm(commandId)
+                        : null,
+                    style: FilledButton.styleFrom(
+                      backgroundColor: _kBurgundy,
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(10),
+                      ),
+                    ),
+                    child: Text(
+                      confirmingCommandId == commandId
+                          ? 'Confirming…'
+                          : 'Confirm and execute action →',
+                      style: const TextStyle(
+                        fontSize: 13.5,
+                        fontWeight: FontWeight.bold,
+                      ),
+                    ),
+                  ),
+                ),
+        ],
+      ),
+    );
+  }
+
+  static IconData _getCardIcon(String icon) {
+    return switch (icon.toLowerCase()) {
+      'wallet' => Icons.account_balance_wallet_outlined,
+      'clock' => Icons.access_time_rounded,
+      'users' => Icons.people_outline_rounded,
+      _ => Icons.description_outlined,
+    };
+  }
+
+  static Color _getCardColor(String color) {
+    return switch (color.toLowerCase()) {
+      'green' => _kGreenIcon,
+      'amber' => _kAmberIcon,
+      'blue' => _kBlueIcon,
+      _ => _kBurgundy,
+    };
   }
 }
 
@@ -1064,65 +1416,97 @@ class _InvoiceDraftCard extends StatelessWidget {
   Widget build(BuildContext context) {
     final invoice = response.invoice;
     if (invoice == null) {
-      return const _InfoBadge(
-        icon: Icons.info_outline,
-        label: 'No invoice draft was returned',
+      return Container(
+        padding: const EdgeInsets.all(14),
+        decoration: BoxDecoration(
+          color: Colors.white,
+          borderRadius: BorderRadius.circular(12),
+          border: Border.all(color: _kCardBorder),
+        ),
+        child: SelectableText(response.message),
       );
     }
-    return AppCard(
-      padding: const EdgeInsets.all(14),
+
+    return Container(
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(14),
+        border: Border.all(color: _kCardBorder),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withValues(alpha: 0.02),
+            blurRadius: 6,
+            offset: const Offset(0, 2),
+          ),
+        ],
+      ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          const Row(
+          Row(
             children: [
-              Icon(Icons.receipt_long_outlined, size: 18),
-              SizedBox(width: 8),
-              Expanded(child: Text('Invoice draft · not saved')),
+              const Icon(Icons.receipt_long, color: _kBurgundy, size: 20),
+              const SizedBox(width: 8),
+              const Text(
+                'Draft Invoice Preview',
+                style: TextStyle(
+                  fontSize: 15,
+                  fontWeight: FontWeight.bold,
+                  color: _kTextDark,
+                ),
+              ),
+              const Spacer(),
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                decoration: BoxDecoration(
+                  color: const Color(0xFFDBEAFE),
+                  borderRadius: BorderRadius.circular(6),
+                ),
+                child: Text(
+                  invoice.status,
+                  style: const TextStyle(
+                    fontSize: 11,
+                    fontWeight: FontWeight.w600,
+                    color: Color(0xFF1D4ED8),
+                  ),
+                ),
+              ),
             ],
           ),
-          const SizedBox(height: 10),
-          _DraftField(label: 'Client', value: invoice.clientName),
-          if (invoice.clientCompany.isNotEmpty)
-            _DraftField(label: 'Company', value: invoice.clientCompany),
-          _DraftField(
-            label: 'Invoice',
-            value: invoice.invoiceNumber.isEmpty
-                ? 'Not assigned'
-                : invoice.invoiceNumber,
-          ),
-          _DraftField(
-            label: 'Dates',
-            value:
-                '${_orUnset(invoice.issueDate)} → ${_orUnset(invoice.dueDate)}',
-          ),
-          _DraftField(
-            label: 'Currency',
-            value: invoice.currencyCode,
-          ),
-          if (invoice.itemsJson.isNotEmpty && invoice.itemsJson != '[]')
-            _DraftField(label: 'Line items (JSON)', value: invoice.itemsJson),
-          if (invoice.taxRate != 0)
-            _DraftField(label: 'Tax rate', value: '${invoice.taxRate}%'),
-          if (invoice.discountPercent != 0)
-            _DraftField(
-              label: 'Discount',
-              value: '${invoice.discountPercent}%',
+          const SizedBox(height: 12),
+          _draftRow('Client', invoice.clientName),
+          _draftRow('Currency', invoice.currencyCode),
+          _draftRow('Dates', '${_orUnset(invoice.issueDate)} → ${_orUnset(invoice.dueDate)}'),
+          if (invoice.taxRate != 0) _draftRow('Tax', '${invoice.taxRate}%'),
+          if (invoice.notes.isNotEmpty) _draftRow('Notes', invoice.notes),
+        ],
+      ),
+    );
+  }
+
+  Widget _draftRow(String label, String value) {
+    return Padding(
+      padding: const EdgeInsets.only(top: 6),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          SizedBox(
+            width: 85,
+            child: Text(
+              label,
+              style: const TextStyle(fontSize: 12.5, color: _kTextMuted),
             ),
-          if (invoice.shippingFee != 0)
-            _DraftField(
-              label: 'Shipping',
-              value: '${invoice.currencyCode} ${invoice.shippingFee}',
+          ),
+          Expanded(
+            child: SelectableText(
+              value,
+              style: const TextStyle(
+                fontSize: 13,
+                fontWeight: FontWeight.w500,
+                color: _kTextDark,
+              ),
             ),
-          _DraftField(label: 'Status', value: invoice.status),
-          if (invoice.notes.isNotEmpty)
-            _DraftField(label: 'Notes', value: invoice.notes),
-          if (invoice.terms.isNotEmpty)
-            _DraftField(label: 'Terms', value: invoice.terms),
-          const SizedBox(height: 4),
-          Text(
-            'Review these editable details in the invoice workflow before saving.',
-            style: Theme.of(context).textTheme.bodySmall,
           ),
         ],
       ),
@@ -1130,50 +1514,6 @@ class _InvoiceDraftCard extends StatelessWidget {
   }
 
   static String _orUnset(String value) => value.isEmpty ? 'Not set' : value;
-}
-
-class _DraftField extends StatelessWidget {
-  const _DraftField({required this.label, required this.value});
-
-  final String label;
-  final String value;
-
-  @override
-  Widget build(BuildContext context) {
-    return Padding(
-      padding: const EdgeInsets.only(top: 6),
-      child: Row(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          SizedBox(
-            width: 105,
-            child: Text(
-              label,
-              style: Theme.of(context).textTheme.labelMedium,
-            ),
-          ),
-          Expanded(child: SelectableText(value)),
-        ],
-      ),
-    );
-  }
-}
-
-class _InfoBadge extends StatelessWidget {
-  const _InfoBadge({required this.icon, required this.label});
-
-  final IconData icon;
-  final String label;
-
-  @override
-  Widget build(BuildContext context) {
-    return Chip(
-      avatar: Icon(icon, size: 16),
-      label: Text(label),
-      visualDensity: VisualDensity.compact,
-      padding: EdgeInsets.zero,
-    );
-  }
 }
 
 class _ErrorCard extends StatelessWidget {
@@ -1184,31 +1524,28 @@ class _ErrorCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final colors = Theme.of(context).colorScheme;
-    return AppCard(
+    return Container(
       padding: const EdgeInsets.all(14),
+      decoration: BoxDecoration(
+        color: const Color(0xFFFEF2F2),
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: const Color(0xFFFECACA)),
+      ),
       child: Row(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Icon(Icons.error_outline, color: colors.error),
+          const Icon(Icons.error_outline, color: Color(0xFFDC2626), size: 20),
           const SizedBox(width: 10),
           Expanded(
             child: Text(
               message,
-              style: TextStyle(color: colors.error),
+              style: const TextStyle(color: Color(0xFFDC2626), fontSize: 13),
             ),
           ),
           if (onDismiss != null)
-            Padding(
-              padding: const EdgeInsets.only(left: 8),
-              child: InkWell(
-                onTap: onDismiss,
-                borderRadius: BorderRadius.circular(12),
-                child: Padding(
-                  padding: const EdgeInsets.all(4),
-                  child: Icon(Icons.close, size: 18, color: colors.error),
-                ),
-              ),
+            InkWell(
+              onTap: onDismiss,
+              child: const Icon(Icons.close, size: 16, color: Color(0xFFDC2626)),
             ),
         ],
       ),
@@ -1216,6 +1553,7 @@ class _ErrorCard extends StatelessWidget {
   }
 }
 
+// Bottom Composer with Voice Icon Positioned AFTER the Send Button Arrow
 class _Composer extends StatefulWidget {
   const _Composer({
     required this.controller,
@@ -1266,233 +1604,157 @@ class _ComposerState extends State<_Composer> {
 
   @override
   Widget build(BuildContext context) {
-    final isDark = Theme.of(context).brightness == Brightness.dark;
-    final colors = Theme.of(context).colorScheme;
-
     return Container(
-      decoration: BoxDecoration(
-        color: isDark ? const Color(0xFF0F172A) : const Color(0xFFF8FAFC),
-        border: Border(
-          top: BorderSide(
-            color: isDark ? const Color(0xFF1E293B) : const Color(0xFFE2E8F0),
-            width: 1,
-          ),
-        ),
-      ),
+      color: _kCreamBg,
       child: SafeArea(
         top: false,
         child: Padding(
           padding: const EdgeInsets.fromLTRB(14, 8, 14, 12),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              if (widget.isListening)
-                Container(
-                  margin: const EdgeInsets.only(bottom: 8),
-                  padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-                  decoration: BoxDecoration(
-                    color: Colors.red.withValues(alpha: 0.1),
-                    borderRadius: BorderRadius.circular(20),
-                    border: Border.all(color: Colors.red.withValues(alpha: 0.3)),
-                  ),
-                  child: Row(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      Container(
-                        width: 8,
-                        height: 8,
-                        decoration: const BoxDecoration(
-                          color: Colors.red,
-                          shape: BoxShape.circle,
-                        ),
-                      ),
-                      const SizedBox(width: 8),
-                      const Text(
-                        'Listening to voice… speak now',
-                        style: TextStyle(
-                          fontSize: 12,
-                          color: Colors.red,
-                          fontWeight: FontWeight.w600,
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
-              // ChatGPT pill input container
-              Container(
-                decoration: BoxDecoration(
-                  color: isDark ? const Color(0xFF1E293B) : Colors.white,
-                  borderRadius: BorderRadius.circular(26),
-                  border: Border.all(
-                    color: widget.invoiceDraftMode
-                        ? const Color(0xFF10A37F)
-                        : (isDark ? const Color(0xFF334155) : const Color(0xFFCBD5E1)),
-                    width: widget.invoiceDraftMode ? 1.5 : 1,
-                  ),
-                  boxShadow: [
-                    BoxShadow(
-                      color: Colors.black.withValues(alpha: isDark ? 0.2 : 0.05),
-                      offset: const Offset(0, 3),
-                      blurRadius: 8,
-                    ),
-                  ],
-                ),
-                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-                child: Row(
-                  crossAxisAlignment: CrossAxisAlignment.end,
-                  children: [
-                    // Invoice draft quick mode toggle
-                    IconButton(
-                      tooltip: widget.invoiceDraftMode
-                          ? 'Exit invoice draft mode'
-                          : 'Prepare invoice draft mode',
-                      padding: const EdgeInsets.all(8),
-                      constraints: const BoxConstraints(minWidth: 36, minHeight: 36),
-                      onPressed: widget.isLoading
-                          ? null
-                          : () => widget.onInvoiceDraftModeChanged(!widget.invoiceDraftMode),
-                      icon: Icon(
-                        widget.invoiceDraftMode
-                            ? Icons.receipt_long
-                            : Icons.receipt_long_outlined,
-                        size: 20,
-                        color: widget.invoiceDraftMode
-                            ? const Color(0xFF10A37F)
-                            : colors.onSurfaceVariant.withValues(alpha: 0.7),
-                      ),
-                    ),
-                    // Text input
-                    Expanded(
-                      child: Padding(
-                        padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 6),
-                        child: TextField(
-                          controller: widget.controller,
-                          enabled: !widget.isLoading,
-                          minLines: 1,
-                          maxLines: 4,
-                          maxLength: 2000,
-                          textCapitalization: TextCapitalization.sentences,
-                          textInputAction: TextInputAction.send,
-                          onSubmitted: (_) {
-                            if (!widget.isLoading) widget.onSubmit();
-                          },
-                          decoration: InputDecoration(
-                            isDense: true,
-                            contentPadding: const EdgeInsets.symmetric(vertical: 4),
-                            border: InputBorder.none,
-                            focusedBorder: InputBorder.none,
-                            enabledBorder: InputBorder.none,
-                            errorBorder: InputBorder.none,
-                            disabledBorder: InputBorder.none,
-                            counterText: '',
-                            hintText: widget.invoiceDraftMode
-                                ? 'Describe invoice to draft (e.g. Acme Corp 20 hours)…'
-                                : 'Ask Invoicely AI or say a command…',
-                            hintStyle: TextStyle(
-                              fontSize: 14,
-                              color: colors.onSurfaceVariant.withValues(alpha: 0.6),
-                            ),
-                          ),
-                          style: const TextStyle(fontSize: 14.5),
-                        ),
-                      ),
-                    ),
-                    // Voice mic button
-                    IconButton(
-                      tooltip: widget.isListening ? 'Stop voice input' : 'Voice input',
-                      padding: const EdgeInsets.all(8),
-                      constraints: const BoxConstraints(minWidth: 36, minHeight: 36),
-                      onPressed: widget.isLoading ? null : () => widget.onToggleListening(),
-                      icon: Container(
-                        padding: const EdgeInsets.all(4),
-                        decoration: BoxDecoration(
-                          color: widget.isListening
-                              ? Colors.red
-                              : Colors.transparent,
-                          shape: BoxShape.circle,
-                        ),
-                        child: Icon(
-                          widget.isListening ? Icons.mic : Icons.mic_none_rounded,
-                          size: 20,
-                          color: widget.isListening
-                              ? Colors.white
-                              : (widget.speechAvailable
-                                  ? colors.onSurfaceVariant.withValues(alpha: 0.8)
-                                  : colors.onSurfaceVariant.withValues(alpha: 0.3)),
-                        ),
-                      ),
-                    ),
-                    const SizedBox(width: 4),
-                    // ChatGPT-style circular send button
-                    GestureDetector(
-                      onTap: (!widget.isLoading && _hasText)
-                          ? () => widget.onSubmit()
-                          : null,
-                      child: AnimatedContainer(
-                        duration: const Duration(milliseconds: 150),
-                        width: 34,
-                        height: 34,
-                        margin: const EdgeInsets.only(bottom: 2, right: 2),
-                        decoration: BoxDecoration(
-                          color: _hasText && !widget.isLoading
-                              ? const Color(0xFF10A37F)
-                              : (isDark ? const Color(0xFF334155) : const Color(0xFFE2E8F0)),
-                          shape: BoxShape.circle,
-                          boxShadow: _hasText && !widget.isLoading
-                              ? [
-                                  BoxShadow(
-                                    color: const Color(0xFF10A37F).withValues(alpha: 0.35),
-                                    offset: const Offset(0, 2),
-                                    blurRadius: 4,
-                                  ),
-                                ]
-                              : null,
-                        ),
-                        child: widget.isLoading
-                            ? const Padding(
-                                padding: EdgeInsets.all(8),
-                                child: CircularProgressIndicator(
-                                  strokeWidth: 2,
-                                  color: Colors.white,
-                                ),
-                              )
-                            : Icon(
-                                Icons.arrow_upward_rounded,
-                                size: 18,
-                                color: _hasText
-                                    ? Colors.white
-                                    : (isDark
-                                        ? const Color(0xFF64748B)
-                                        : const Color(0xFF94A3B8)),
-                              ),
-                      ),
-                    ),
-                  ],
-                ),
+          child: Container(
+            decoration: BoxDecoration(
+              color: Colors.white,
+              borderRadius: BorderRadius.circular(28),
+              border: Border.all(
+                color: widget.invoiceDraftMode
+                    ? _kBurgundy
+                    : const Color(0xFFE5DDD1),
+                width: widget.invoiceDraftMode ? 1.5 : 1,
               ),
-              if (widget.invoiceDraftMode)
-                Padding(
-                  padding: const EdgeInsets.only(top: 6),
-                  child: Row(
-                    mainAxisAlignment: MainAxisAlignment.center,
-                    children: [
-                      Icon(
-                        Icons.info_outline,
-                        size: 13,
-                        color: colors.onSurfaceVariant.withValues(alpha: 0.7),
-                      ),
-                      const SizedBox(width: 4),
-                      Text(
-                        'Invoice draft mode is active: Response will format as a complete draft.',
-                        style: TextStyle(
-                          fontSize: 11.5,
-                          color: colors.onSurfaceVariant.withValues(alpha: 0.7),
-                        ),
-                      ),
-                    ],
+              boxShadow: [
+                BoxShadow(
+                  color: Colors.black.withValues(alpha: 0.04),
+                  offset: const Offset(0, 2),
+                  blurRadius: 8,
+                ),
+              ],
+            ),
+            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+            child: Row(
+              crossAxisAlignment: CrossAxisAlignment.center,
+              children: [
+                // Left: Attachment / Invoice draft toggle icon
+                IconButton(
+                  tooltip: widget.invoiceDraftMode
+                      ? 'Exit draft mode'
+                      : 'Prepare invoice draft mode',
+                  padding: const EdgeInsets.all(8),
+                  constraints: const BoxConstraints(minWidth: 36, minHeight: 36),
+                  onPressed: widget.isLoading
+                      ? null
+                      : () => widget.onInvoiceDraftModeChanged(!widget.invoiceDraftMode),
+                  icon: Icon(
+                    Icons.attach_file_rounded,
+                    size: 20,
+                    color: widget.invoiceDraftMode
+                        ? _kBurgundy
+                        : const Color(0xFF8C827A),
                   ),
                 ),
-            ],
+
+                // Center: Text Input
+                Expanded(
+                  child: TextField(
+                    controller: widget.controller,
+                    enabled: !widget.isLoading,
+                    minLines: 1,
+                    maxLines: 4,
+                    maxLength: 2000,
+                    textCapitalization: TextCapitalization.sentences,
+                    textInputAction: TextInputAction.send,
+                    onSubmitted: (_) {
+                      if (!widget.isLoading) widget.onSubmit();
+                    },
+                    decoration: InputDecoration(
+                      isDense: true,
+                      contentPadding: const EdgeInsets.symmetric(
+                        horizontal: 6,
+                        vertical: 10,
+                      ),
+                      border: InputBorder.none,
+                      counterText: '',
+                      hintText: widget.invoiceDraftMode
+                          ? 'Describe invoice to draft…'
+                          : 'Ask about your business…',
+                      hintStyle: const TextStyle(
+                        fontSize: 14,
+                        color: Color(0xFF9E958C),
+                      ),
+                    ),
+                    style: const TextStyle(
+                      fontSize: 14.5,
+                      color: _kTextDark,
+                    ),
+                  ),
+                ),
+
+                // 1. Classical Burgundy Send Button Arrow
+                GestureDetector(
+                  onTap: (!widget.isLoading && _hasText)
+                      ? () => widget.onSubmit()
+                      : null,
+                  child: Container(
+                    width: 36,
+                    height: 36,
+                    decoration: BoxDecoration(
+                      color: _hasText && !widget.isLoading
+                          ? _kBurgundy
+                          : _kBurgundy.withValues(alpha: 0.75),
+                      borderRadius: BorderRadius.circular(8),
+                      boxShadow: [
+                        BoxShadow(
+                          color: _kBurgundy.withValues(alpha: 0.25),
+                          offset: const Offset(0, 2),
+                          blurRadius: 4,
+                        ),
+                      ],
+                    ),
+                    child: widget.isLoading
+                        ? const Padding(
+                            padding: EdgeInsets.all(9),
+                            child: CircularProgressIndicator(
+                              strokeWidth: 2,
+                              color: Colors.white,
+                            ),
+                          )
+                        : const Icon(
+                            Icons.arrow_upward_rounded,
+                            size: 19,
+                            color: Colors.white,
+                          ),
+                  ),
+                ),
+                const SizedBox(width: 6),
+
+                // 2. Voice Mic Icon Placed AFTER the Send Button Arrow!
+                IconButton(
+                  tooltip: widget.isListening ? 'Stop voice input' : 'Voice input',
+                  padding: const EdgeInsets.all(6),
+                  constraints: const BoxConstraints(minWidth: 36, minHeight: 36),
+                  onPressed: widget.isLoading ? null : () => widget.onToggleListening(),
+                  icon: Container(
+                    padding: const EdgeInsets.all(6),
+                    decoration: BoxDecoration(
+                      color: widget.isListening
+                          ? Colors.red
+                          : _kCreamPill,
+                      shape: BoxShape.circle,
+                      border: Border.all(
+                        color: widget.isListening
+                            ? Colors.red
+                            : _kCreamPillBorder,
+                      ),
+                    ),
+                    child: Icon(
+                      widget.isListening ? Icons.mic : Icons.mic_none_rounded,
+                      size: 18,
+                      color: widget.isListening
+                          ? Colors.white
+                          : _kBurgundy,
+                    ),
+                  ),
+                ),
+              ],
+            ),
           ),
         ),
       ),
