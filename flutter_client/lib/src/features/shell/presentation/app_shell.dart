@@ -296,7 +296,7 @@ class _AppShellState extends State<AppShell> {
                 height: 64,
                 backgroundColor: AppColors.neuSurface,
                 surfaceTintColor: Colors.transparent,
-                indicatorColor: const Color(0xFF2B3548),
+                indicatorColor: const Color(0xFFE2E8F0),
                 selectedIndex: _destination.index,
                 onDestinationSelected: (index) => setState(() {
                   _destination = _Destination.values[index];
@@ -310,7 +310,7 @@ class _AppShellState extends State<AppShell> {
                   for (final item in _Destination.values)
                     NavigationDestination(
                       icon: Icon(item.icon, color: const Color(0xFF64748B)),
-                      selectedIcon: Icon(item.icon, color: Colors.white),
+                      selectedIcon: Icon(item.icon, color: const Color(0xFF0F172A)),
                       label: item.label,
                     ),
                 ],
@@ -332,8 +332,8 @@ class _AppShellState extends State<AppShell> {
               borderRadius: BorderRadius.circular(26),
               child: NavigationRail(
                 backgroundColor: AppColors.neuSurface,
-                indicatorColor: const Color(0xFF2B3548),
-                selectedIconTheme: const IconThemeData(color: Colors.white, size: 22),
+                indicatorColor: const Color(0xFFE2E8F0),
+                selectedIconTheme: const IconThemeData(color: Color(0xFF0F172A), size: 22),
                 unselectedIconTheme: const IconThemeData(color: Color(0xFF64748B), size: 21),
                 selectedLabelTextStyle: const TextStyle(
                   color: Color(0xFF1E293B),
@@ -361,14 +361,14 @@ class _AppShellState extends State<AppShell> {
                     height: 46,
                     decoration: AppTheme.neuOrbDecoration(
                       active: true,
-                      activeColor: const Color(0xFF2B3548),
+                      activeColor: const Color(0xFFE2E8F0),
                       shape: BoxShape.rectangle,
                       radius: 15,
                     ),
                     child: const Icon(
                       Icons.receipt_long_rounded,
                       size: 23,
-                      color: Colors.white,
+                      color: Color(0xFF0F172A),
                     ),
                   ),
                 ),
@@ -398,13 +398,13 @@ class _AppShellState extends State<AppShell> {
                                 height: 42,
                                 decoration: AppTheme.neuOrbDecoration(
                                   active: _destination == _Destination.menu && _moreSection == 'Business Settings',
-                                  activeColor: const Color(0xFF2B3548),
+                                  activeColor: const Color(0xFFE2E8F0),
                                 ),
                                 child: Icon(
                                   Icons.settings_outlined,
                                   size: 20,
                                   color: (_destination == _Destination.menu && _moreSection == 'Business Settings')
-                                      ? Colors.white
+                                      ? const Color(0xFF0F172A)
                                       : const Color(0xFF475569),
                                 ),
                               ),
@@ -439,6 +439,7 @@ class _AppShellState extends State<AppShell> {
           ),
           Expanded(
             child: Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
               children: [
                 if (_destination != _Destination.dashboard)
                   _buildDesktopTopNavBar(),
@@ -621,8 +622,12 @@ class _AppShellState extends State<AppShell> {
 
     final unreadCount = _shellNotifications.where((n) => !n.isRead).length;
 
+    final screenWidth = MediaQuery.sizeOf(context).width;
+    final sideMargin = screenWidth > 900 ? 24.0 : 16.0;
+
     return Container(
-      margin: const EdgeInsets.fromLTRB(6, 12, 16, 8),
+      width: double.infinity,
+      margin: EdgeInsets.fromLTRB(sideMargin, 12, sideMargin, 8),
       padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 12),
       decoration: AppTheme.neuCardDecoration(radius: 26),
       child: Row(
@@ -657,12 +662,12 @@ class _AppShellState extends State<AppShell> {
                     height: 26,
                     decoration: AppTheme.neuOrbDecoration(
                       active: true,
-                      activeColor: const Color(0xFF2B3548),
+                      activeColor: const Color(0xFFE2E8F0),
                     ),
                     child: const Icon(
                       Icons.business_rounded,
                       size: 13,
-                      color: Colors.white,
+                      color: Color(0xFF0F172A),
                     ),
                   ),
                   const SizedBox(width: 8),
@@ -801,13 +806,13 @@ class _AppShellState extends State<AppShell> {
                 height: 40,
                 decoration: AppTheme.neuOrbDecoration(
                   active: true,
-                  activeColor: const Color(0xFF2B3548),
+                  activeColor: const Color(0xFFE2E8F0),
                 ),
                 child: Center(
                   child: Text(
                     userInitial,
                     style: const TextStyle(
-                      color: Colors.white,
+                      color: Color(0xFF0F172A),
                       fontSize: 15,
                       fontWeight: FontWeight.w800,
                     ),

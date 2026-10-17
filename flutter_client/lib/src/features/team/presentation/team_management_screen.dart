@@ -470,6 +470,277 @@ class _TeamManagementScreenState extends State<TeamManagementScreen> {
     }
   }
 
+  void _showRoleMatrixDialog() {
+    showDialog<void>(
+      context: context,
+      builder: (ctx) => Dialog(
+        backgroundColor: Colors.transparent,
+        insetPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 24),
+        child: Container(
+          constraints: const BoxConstraints(maxWidth: 620),
+          decoration: AppTheme.neuCardDecoration(radius: 24),
+          clipBehavior: Clip.antiAlias,
+          child: SingleChildScrollView(
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 16),
+                  decoration: const BoxDecoration(
+                    color: Color(0xFF0F172A),
+                    border: Border(bottom: BorderSide(color: Color(0xFF1E293B))),
+                  ),
+                  child: Row(
+                    children: [
+                      Container(
+                        width: 36,
+                        height: 36,
+                        decoration: BoxDecoration(
+                          color: const Color(0xFF1E3A8A),
+                          borderRadius: BorderRadius.circular(10),
+                        ),
+                        child: const Icon(Icons.security_rounded, color: Colors.white, size: 20),
+                      ),
+                      const SizedBox(width: 12),
+                      const Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text(
+                              'Role Capability & Permissions Matrix',
+                              style: TextStyle(fontSize: 15, fontWeight: FontWeight.w800, color: Colors.white),
+                            ),
+                            SizedBox(height: 2),
+                            Text(
+                              'Enterprise access controls & security boundaries',
+                              style: TextStyle(fontSize: 11, color: Color(0xFF94A3B8)),
+                            ),
+                          ],
+                        ),
+                      ),
+                      IconButton(
+                        icon: const Icon(Icons.close_rounded, color: Color(0xFF94A3B8), size: 20),
+                        onPressed: () => Navigator.of(ctx).pop(),
+                      ),
+                    ],
+                  ),
+                ),
+                Padding(
+                  padding: const EdgeInsets.all(20),
+                  child: Column(
+                    children: [
+                      _buildRoleRow(
+                        role: 'ADMIN',
+                        title: 'Administrator / Owner',
+                        badgeColor: const Color(0xFFDC2626),
+                        description: 'Full unconstrained access to all company data, billing, settings, staff, team invites, and audit logs.',
+                        capabilities: ['All Modules', 'Company Settings', 'Role Management', 'Audit Trail'],
+                      ),
+                      const SizedBox(height: 12),
+                      _buildRoleRow(
+                        role: 'ACCOUNTANT',
+                        title: 'Finance & Accountant',
+                        badgeColor: const Color(0xFF2563EB),
+                        description: 'Manages invoices, creates & updates expenses, views financial reports and ledger balance sheets.',
+                        capabilities: ['Invoices', 'Expenses', 'Reports', 'Clients Ledger'],
+                      ),
+                      const SizedBox(height: 12),
+                      _buildRoleRow(
+                        role: 'MANAGER',
+                        title: 'Operations Manager / Supervisor',
+                        badgeColor: const Color(0xFFD97706),
+                        description: 'Supervises field guard workforce, reviews client site schedules, monitors attendance and timesheets.',
+                        capabilities: ['Workforce Biodata', 'Client Sites', 'Invoice Drafts', 'Reports'],
+                      ),
+                      const SizedBox(height: 12),
+                      _buildRoleRow(
+                        role: 'STAFF',
+                        title: 'Staff Member / Security Guard',
+                        badgeColor: const Color(0xFF059669),
+                        description: 'Standard personnel access to assigned documents, self profile, and personal monthly payslips.',
+                        capabilities: ['Assigned Invoices', 'Personal Biodata', 'Self Payslip'],
+                      ),
+                    ],
+                  ),
+                ),
+                Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
+                  decoration: const BoxDecoration(
+                    color: Color(0xFFF1F5F9),
+                    border: Border(top: BorderSide(color: Color(0xFFE2E8F0))),
+                  ),
+                  child: Align(
+                    alignment: Alignment.centerRight,
+                    child: FilledButton(
+                      style: FilledButton.styleFrom(
+                        backgroundColor: AppColors.neuActiveDark,
+                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+                      ),
+                      onPressed: () => Navigator.of(ctx).pop(),
+                      child: const Text('Close'),
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildRoleRow({
+    required String role,
+    required String title,
+    required Color badgeColor,
+    required String description,
+    required List<String> capabilities,
+  }) {
+    return Container(
+      padding: const EdgeInsets.all(14),
+      decoration: BoxDecoration(
+        color: const Color(0xFFF8FAFC),
+        borderRadius: BorderRadius.circular(14),
+        border: Border.all(color: const Color(0xFFE2E8F0)),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                decoration: BoxDecoration(
+                  color: badgeColor.withValues(alpha: 0.12),
+                  borderRadius: BorderRadius.circular(8),
+                  border: Border.all(color: badgeColor.withValues(alpha: 0.35)),
+                ),
+                child: Text(
+                  role,
+                  style: TextStyle(fontSize: 10.5, fontWeight: FontWeight.w800, color: badgeColor),
+                ),
+              ),
+              const SizedBox(width: 8),
+              Expanded(
+                child: Text(
+                  title,
+                  style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w800, color: Color(0xFF0F172A)),
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 6),
+          Text(description, style: const TextStyle(fontSize: 11, color: Color(0xFF64748B))),
+          const SizedBox(height: 8),
+          Wrap(
+            spacing: 6,
+            runSpacing: 4,
+            children: capabilities.map((cap) => Container(
+              padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 2.5),
+              decoration: BoxDecoration(
+                color: Colors.white,
+                borderRadius: BorderRadius.circular(6),
+                border: Border.all(color: const Color(0xFFCBD5E1)),
+              ),
+              child: Text(
+                '✓ $cap',
+                style: const TextStyle(fontSize: 10, fontWeight: FontWeight.w600, color: Color(0xFF334155)),
+              ),
+            )).toList(),
+          ),
+        ],
+      ),
+    );
+  }
+
+  void _showInviteMemberDialog() {
+    final emailCtrl = TextEditingController();
+    String selectedRole = 'STAFF';
+
+    showDialog<void>(
+      context: context,
+      builder: (ctx) => StatefulBuilder(
+        builder: (context, setModalState) => AlertDialog(
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+          title: const Row(
+            children: [
+              Icon(Icons.person_add_alt_1_rounded, color: Color(0xFF2563EB)),
+              SizedBox(width: 8),
+              Text('Invite Team Member', style: TextStyle(fontSize: 16, fontWeight: FontWeight.w800)),
+            ],
+          ),
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              const Text(
+                'Send an invitation to join your workspace with pre-configured role permissions.',
+                style: TextStyle(fontSize: 12, color: Color(0xFF64748B)),
+              ),
+              const SizedBox(height: 14),
+              TextField(
+                controller: emailCtrl,
+                keyboardType: TextInputType.emailAddress,
+                decoration: InputDecoration(
+                  labelText: 'Email Address or Mobile Number',
+                  hintText: 'e.g. staff@company.com',
+                  border: OutlineInputBorder(borderRadius: BorderRadius.circular(10)),
+                  isDense: true,
+                ),
+              ),
+              const SizedBox(height: 14),
+              const Text('Assigned Role:', style: TextStyle(fontSize: 12, fontWeight: FontWeight.w700, color: Color(0xFF334155))),
+              const SizedBox(height: 6),
+              DropdownButtonFormField<String>(
+                value: selectedRole,
+                decoration: InputDecoration(
+                  border: OutlineInputBorder(borderRadius: BorderRadius.circular(10)),
+                  isDense: true,
+                ),
+                items: const [
+                  DropdownMenuItem(value: 'ADMIN', child: Text('Admin (Full Control)')),
+                  DropdownMenuItem(value: 'ACCOUNTANT', child: Text('Accountant (Billing & Reports)')),
+                  DropdownMenuItem(value: 'MANAGER', child: Text('Manager (Workforce & Operations)')),
+                  DropdownMenuItem(value: 'STAFF', child: Text('Staff (Assigned Documents)')),
+                ],
+                onChanged: (val) {
+                  if (val != null) setModalState(() => selectedRole = val);
+                },
+              ),
+            ],
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.of(ctx).pop(),
+              child: const Text('Cancel'),
+            ),
+            FilledButton.icon(
+              style: FilledButton.styleFrom(
+                backgroundColor: AppColors.neuActiveDark,
+                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+              ),
+              icon: const Icon(Icons.send_rounded, size: 15),
+              label: const Text('Send Invite Link'),
+              onPressed: () async {
+                final target = emailCtrl.text.trim();
+                final code = _company['companyCode']?.toString() ?? '';
+                final companyName = _resolvedCompanyName();
+                final inviteText = 'You have been invited to join $companyName as $selectedRole on Invoicely!\nOrg Code: $code\nJoin: https://invoicelyai.onrender.com/join?code=$code&role=$selectedRole';
+
+                await Clipboard.setData(ClipboardData(text: inviteText));
+                if (ctx.mounted) Navigator.of(ctx).pop();
+                if (mounted) {
+                  _showError('✓ Invite link for $target copied to clipboard!');
+                }
+              },
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     final companyName = _resolvedCompanyName();
@@ -483,6 +754,16 @@ class _TeamManagementScreenState extends State<TeamManagementScreen> {
               ),
         title: const Text('User Management & Roles'),
         actions: [
+          IconButton(
+            onPressed: _showRoleMatrixDialog,
+            tooltip: 'Role Capability Matrix',
+            icon: const Icon(Icons.security_rounded),
+          ),
+          IconButton(
+            onPressed: _showInviteMemberDialog,
+            tooltip: 'Invite Member',
+            icon: const Icon(Icons.person_add_alt_1_rounded),
+          ),
           IconButton(
             onPressed: _loading ? null : _load,
             tooltip: 'Refresh team',

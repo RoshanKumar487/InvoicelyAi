@@ -397,6 +397,14 @@ class _ItemCustomizerModalState extends State<ItemCustomizerModal> {
               value: tempSettings['showItemTax'] != false,
               onChanged: (val) => setState(() => tempSettings['showItemTax'] = val),
             ),
+            SwitchListTile(
+              dense: true,
+              contentPadding: EdgeInsets.zero,
+              title: const Text('Reverse Charge Mechanism (RCM)', style: TextStyle(fontSize: 13, fontWeight: FontWeight.w700)),
+              subtitle: const Text('GST is payable by recipient directly to government on reverse charge basis', style: TextStyle(fontSize: 11)),
+              value: tempSettings['isRcmApplicable'] == true,
+              onChanged: (val) => setState(() => tempSettings['isRcmApplicable'] = val),
+            ),
             const SizedBox(height: 16),
             const Text(
               'Daily Wage & Duty Calculation Formula',
