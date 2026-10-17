@@ -86,27 +86,21 @@ class AppTheme {
   }) {
     final isSelected = active || isActive;
     if (isSelected) {
-      final fill = activeColor ?? const Color(0xFF334155);
+      final fill = activeColor ?? const Color(0xFF111827); // Rich pitch-slate black
       return BoxDecoration(
-        gradient: LinearGradient(
-          begin: Alignment.topLeft,
-          end: Alignment.bottomRight,
-          colors: [
-            fill,
-            Color.lerp(fill, Colors.black, 0.18) ?? fill,
-          ],
-        ),
+        color: fill,
         borderRadius: BorderRadius.circular(radius),
+        border: Border.all(color: Colors.white.withValues(alpha: 0.18), width: 1.1),
         boxShadow: [
           BoxShadow(
-            color: fill.withValues(alpha: 0.32),
-            offset: const Offset(4, 5),
-            blurRadius: 12,
+            color: Colors.black.withValues(alpha: 0.35),
+            offset: const Offset(3, 4),
+            blurRadius: 10,
           ),
           const BoxShadow(
             color: AppColors.neuShadowLight,
-            offset: Offset(-3, -3),
-            blurRadius: 8,
+            offset: Offset(-2, -2),
+            blurRadius: 6,
           ),
         ],
       );
@@ -141,7 +135,7 @@ class AppTheme {
   }) {
     final isSelected = active || isActive;
     final fill = isSelected
-        ? (activeColor ?? const Color(0xFF334155))
+        ? (activeColor ?? const Color(0xFF111827))
         : (color ?? AppColors.neuSurface);
     return BoxDecoration(
       color: fill,
@@ -149,22 +143,35 @@ class AppTheme {
       borderRadius: shape == BoxShape.circle ? null : BorderRadius.circular(radius),
       border: Border.all(
         color: isSelected
-            ? Colors.white.withValues(alpha: 0.22)
+            ? Colors.white.withValues(alpha: 0.25)
             : Colors.white.withValues(alpha: 0.90),
         width: 1.1,
       ),
-      boxShadow: const [
-        BoxShadow(
-          color: AppColors.neuShadowDark,
-          offset: Offset(4, 4),
-          blurRadius: 9,
-        ),
-        BoxShadow(
-          color: AppColors.neuShadowLight,
-          offset: Offset(-4, -4),
-          blurRadius: 9,
-        ),
-      ],
+      boxShadow: isSelected
+          ? [
+              BoxShadow(
+                color: Colors.black.withValues(alpha: 0.35),
+                offset: const Offset(3, 4),
+                blurRadius: 8,
+              ),
+              const BoxShadow(
+                color: AppColors.neuShadowLight,
+                offset: Offset(-2, -2),
+                blurRadius: 5,
+              ),
+            ]
+          : const [
+              BoxShadow(
+                color: AppColors.neuShadowDark,
+                offset: Offset(4, 4),
+                blurRadius: 9,
+              ),
+              BoxShadow(
+                color: AppColors.neuShadowLight,
+                offset: Offset(-4, -4),
+                blurRadius: 9,
+              ),
+            ],
     );
   }
 
