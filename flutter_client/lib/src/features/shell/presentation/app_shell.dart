@@ -68,6 +68,8 @@ class _AppShellState extends State<AppShell> {
   TemplateConfig? _preferredTemplate;
   Map<String, Object?> _invoiceLocalSettings = <String, Object?>{};
   bool _invoiceFullscreen = false;
+  final TextEditingController _globalSearchController = TextEditingController();
+  String _selectedDateFilter = 'FY 2025-26';
   final List<DashboardNotificationItem> _shellNotifications = [
     DashboardNotificationItem(
       id: '1',
@@ -115,6 +117,12 @@ class _AppShellState extends State<AppShell> {
         widget.session.user.email;
     _localPreferences = LocalPreferences(scope: '$accountScope');
     unawaited(_loadLocalSettings());
+  }
+
+  @override
+  void dispose() {
+    _globalSearchController.dispose();
+    super.dispose();
   }
 
   Future<void> _loadLocalSettings() async {
@@ -598,14 +606,6 @@ class _AppShellState extends State<AppShell> {
   }
 
   Widget _buildDesktopTopNavBar() {
-    final title = switch (_destination) {
-      _Destination.dashboard => 'Dashboard',
-      _Destination.invoices => 'Invoices',
-      _Destination.aiAgent => 'AI Agent',
-      _Destination.expenses => 'Expenses',
-      _Destination.menu => _moreSection ?? 'More Features',
-    };
-
     final registeredName = _invoiceLocalSettings['businessName']?.toString().trim().isNotEmpty == true
         ? _invoiceLocalSettings['businessName']!.toString().trim()
         : (_invoiceLocalSettings['companyName']?.toString().trim().isNotEmpty == true
@@ -618,7 +618,7 @@ class _AppShellState extends State<AppShell> {
         ? widget.session.user.fullName.trim()[0].toUpperCase()
         : (widget.session.user.email.isNotEmpty
             ? widget.session.user.email[0].toUpperCase()
-            : 'U');
+            : 'R');
 
     final unreadCount = _shellNotifications.where((n) => !n.isRead).length;
 
@@ -627,87 +627,81 @@ class _AppShellState extends State<AppShell> {
 
     return Container(
       width: double.infinity,
-      margin: EdgeInsets.fromLTRB(sideMargin, 12, sideMargin, 8),
-      padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 12),
-      decoration: AppTheme.neuCardDecoration(radius: 26),
+      margin: EdgeInsets.fromLTRB(sideMargin, 14, sideMargin, 8),
+      padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 10),
+      decoration: AppTheme.neuCardDecoration(radius: 20),
       child: Row(
         children: [
-          // Page Title
-          Text(
-            title,
-            style: const TextStyle(
-              fontSize: 15.5,
-              fontWeight: FontWeight.w800,
-              color: Color(0xFF1E293B),
-              letterSpacing: -0.3,
+          // Company Name TOTALLY on the left
+          Container(
+            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 7),
+            decoration: BoxDecoration(
+              color: const Color(0xFFF8FAFC),
+              borderRadius: BorderRadius.circular(20),
+              border: Border.all(color: const Color(0xFFE2E8F0), width: 1.0),
             ),
-          ),
-          const Padding(
-            padding: EdgeInsets.symmetric(horizontal: 12),
-            child: SizedBox(
-              height: 18,
-              child: VerticalDivider(width: 1, color: Color(0xFFCBD5E1)),
-            ),
-          ),
-          // Company Badge
-          Flexible(
-            child: Container(
-              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-              decoration: AppTheme.neuPillDecoration(radius: 20),
-              child: Row(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  Container(
-                    width: 26,
-                    height: 26,
-                    decoration: AppTheme.neuOrbDecoration(
-                      active: true,
-                      activeColor: const Color(0xFFE2E8F0),
-                    ),
-                    child: const Icon(
-                      Icons.business_rounded,
-                      size: 13,
+            child: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Container(
+                  width: 26,
+                  height: 26,
+                  decoration: BoxDecoration(
+                    color: const Color(0xFF0B1736),
+                    borderRadius: BorderRadius.circular(8),
+                  ),
+                  child: const Icon(
+                    Icons.apartment_rounded,
+                    size: 14,
+                    color: Colors.white,
+                  ),
+                ),
+                const SizedBox(width: 8),
+                ConstrainedBox(
+                  constraints: const BoxConstraints(maxWidth: 240),
+                  child: Text(
+                    registeredName,
+                    overflow: TextOverflow.ellipsis,
+                    style: const TextStyle(
+                      fontSize: 13,
+                      fontWeight: FontWeight.w700,
                       color: Color(0xFF0F172A),
+                      letterSpacing: -0.2,
                     ),
                   ),
-                  const SizedBox(width: 8),
-                  Flexible(
-                    child: ConstrainedBox(
-                      constraints: const BoxConstraints(maxWidth: 260),
-                      child: Text(
-                        registeredName,
-                        overflow: TextOverflow.ellipsis,
-                        style: const TextStyle(
-                          fontSize: 13,
-                          fontWeight: FontWeight.w800,
-                          color: Color(0xFF1E293B),
-                          letterSpacing: -0.2,
-                        ),
-                      ),
-                    ),
+                ),
+                const SizedBox(width: 7),
+                Container(
+                  width: 7,
+                  height: 7,
+                  decoration: const BoxDecoration(
+                    color: Color(0xFF10B981),
+                    shape: BoxShape.circle,
                   ),
-                  const SizedBox(width: 6),
-                  Container(
-                    width: 7,
-                    height: 7,
-                    decoration: const BoxDecoration(
-                      color: Color(0xFF10B981),
-                      shape: BoxShape.circle,
-                    ),
-                  ),
-                ],
-              ),
+                ),
+                const SizedBox(width: 4),
+                const Icon(
+                  Icons.keyboard_arrow_down_rounded,
+                  size: 16,
+                  color: Color(0xFF64748B),
+                ),
+              ],
             ),
           ),
-          const Spacer(),
-          // Sub-section back button
+
+          // Sub-section back button if in More submenu
           if (_destination == _Destination.menu && _moreSection != null) ...[
+            const SizedBox(width: 10),
             InkWell(
               onTap: () => setState(() => _moreSection = null),
               borderRadius: BorderRadius.circular(16),
               child: Container(
                 padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 7),
-                decoration: AppTheme.neuPillDecoration(radius: 16),
+                decoration: BoxDecoration(
+                  color: const Color(0xFFF1F5F9),
+                  borderRadius: BorderRadius.circular(16),
+                  border: Border.all(color: const Color(0xFFCBD5E1)),
+                ),
                 child: const Row(
                   mainAxisSize: MainAxisSize.min,
                   children: [
@@ -725,23 +719,112 @@ class _AppShellState extends State<AppShell> {
                 ),
               ),
             ),
-            const SizedBox(width: 10),
           ],
-          // Refresh Icon
-          Tooltip(
-            message: 'Refresh view',
-            child: InkWell(
-              onTap: () => setState(() {}),
+
+          // SPACER to push all actions TOTALLY to the right!
+          const Spacer(),
+
+          // Search Field
+          Container(
+            height: 38,
+            width: 270,
+            decoration: BoxDecoration(
+              color: const Color(0xFFF8FAFC),
               borderRadius: BorderRadius.circular(20),
-              child: Container(
-                width: 40,
-                height: 40,
-                decoration: AppTheme.neuOrbDecoration(),
-                child: const Icon(Icons.refresh_rounded, size: 19, color: Color(0xFF334155)),
+              border: Border.all(color: const Color(0xFFE2E8F0), width: 1.0),
+            ),
+            padding: const EdgeInsets.symmetric(horizontal: 12),
+            child: Row(
+              children: [
+                const Icon(Icons.search_rounded, size: 16, color: Color(0xFF64748B)),
+                const SizedBox(width: 8),
+                Expanded(
+                  child: TextField(
+                    controller: _globalSearchController,
+                    onSubmitted: (query) {
+                      if (query.trim().isNotEmpty) {
+                        setState(() {
+                          _destination = _Destination.invoices;
+                          _invoiceStatusFilter = 'All';
+                        });
+                      }
+                    },
+                    style: const TextStyle(fontSize: 13, color: Color(0xFF0F172A)),
+                    decoration: const InputDecoration(
+                      hintText: 'Search invoices, clients, etc...',
+                      hintStyle: TextStyle(fontSize: 12.5, color: Color(0xFF94A3B8)),
+                      border: InputBorder.none,
+                      isDense: true,
+                      contentPadding: EdgeInsets.symmetric(vertical: 8),
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ),
+          const SizedBox(width: 12),
+
+          // FY Dropdown
+          PopupMenuButton<String>(
+            tooltip: 'Fiscal Year Filter',
+            initialValue: _selectedDateFilter,
+            onSelected: (val) => setState(() => _selectedDateFilter = val),
+            itemBuilder: (context) => const [
+              PopupMenuItem(value: 'FY 2025-26', child: Text('FY 2025-26 (Apr 2025 - Mar 2026)')),
+              PopupMenuItem(value: 'FY 2024-25', child: Text('FY 2024-25 (Apr 2024 - Mar 2025)')),
+              PopupMenuItem(value: 'Last 30 Days', child: Text('Last 30 Days')),
+              PopupMenuItem(value: 'This Month', child: Text('This Month')),
+              PopupMenuItem(value: 'All Time', child: Text('All Time')),
+            ],
+            child: Container(
+              height: 38,
+              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+              decoration: BoxDecoration(
+                color: const Color(0xFFF8FAFC),
+                borderRadius: BorderRadius.circular(20),
+                border: Border.all(color: const Color(0xFFE2E8F0), width: 1.0),
+              ),
+              child: Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  const Icon(Icons.calendar_today_outlined, size: 14, color: Color(0xFF64748B)),
+                  const SizedBox(width: 6),
+                  Text(
+                    _selectedDateFilter,
+                    style: const TextStyle(
+                      fontSize: 12.5,
+                      fontWeight: FontWeight.w600,
+                      color: Color(0xFF0F172A),
+                    ),
+                  ),
+                  const SizedBox(width: 4),
+                  const Icon(Icons.keyboard_arrow_down_rounded, size: 16, color: Color(0xFF64748B)),
+                ],
               ),
             ),
           ),
           const SizedBox(width: 10),
+
+          // Refresh Button
+          Tooltip(
+            message: 'Sync view',
+            child: InkWell(
+              onTap: () => setState(() {}),
+              borderRadius: BorderRadius.circular(20),
+              child: Container(
+                width: 38,
+                height: 38,
+                decoration: BoxDecoration(
+                  color: const Color(0xFFF8FAFC),
+                  shape: BoxShape.circle,
+                  border: Border.all(color: const Color(0xFFE2E8F0)),
+                ),
+                child: const Icon(Icons.refresh_rounded, size: 18, color: Color(0xFF334155)),
+              ),
+            ),
+          ),
+          const SizedBox(width: 10),
+
           // Notifications Bell
           Stack(
             clipBehavior: Clip.none,
@@ -761,12 +844,16 @@ class _AppShellState extends State<AppShell> {
                   ),
                   borderRadius: BorderRadius.circular(20),
                   child: Container(
-                    width: 40,
-                    height: 40,
-                    decoration: AppTheme.neuOrbDecoration(),
+                    width: 38,
+                    height: 38,
+                    decoration: BoxDecoration(
+                      color: const Color(0xFFF8FAFC),
+                      shape: BoxShape.circle,
+                      border: Border.all(color: const Color(0xFFE2E8F0)),
+                    ),
                     child: const Icon(
                       Icons.notifications_none_rounded,
-                      size: 19,
+                      size: 18,
                       color: Color(0xFF334155),
                     ),
                   ),
@@ -777,8 +864,8 @@ class _AppShellState extends State<AppShell> {
                   top: 7,
                   right: 7,
                   child: Container(
-                    width: 8.5,
-                    height: 8.5,
+                    width: 8,
+                    height: 8,
                     decoration: BoxDecoration(
                       color: const Color(0xFFEF4444),
                       shape: BoxShape.circle,
@@ -789,6 +876,7 @@ class _AppShellState extends State<AppShell> {
             ],
           ),
           const SizedBox(width: 10),
+
           // User Profile Avatar
           Tooltip(
             message: 'View profile details',
@@ -802,18 +890,19 @@ class _AppShellState extends State<AppShell> {
               ),
               borderRadius: BorderRadius.circular(20),
               child: Container(
-                width: 40,
-                height: 40,
-                decoration: AppTheme.neuOrbDecoration(
-                  active: true,
-                  activeColor: const Color(0xFFE2E8F0),
+                width: 38,
+                height: 38,
+                decoration: BoxDecoration(
+                  color: const Color(0xFFEFF6FF),
+                  shape: BoxShape.circle,
+                  border: Border.all(color: const Color(0xFFBFDBFE)),
                 ),
                 child: Center(
                   child: Text(
                     userInitial,
                     style: const TextStyle(
-                      color: Color(0xFF0F172A),
-                      fontSize: 15,
+                      color: Color(0xFF1D4ED8),
+                      fontSize: 14,
                       fontWeight: FontWeight.w800,
                     ),
                   ),

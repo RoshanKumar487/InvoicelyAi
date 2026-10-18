@@ -51,4 +51,8 @@ class TeamRepository {
       },
     );
   }
+
+  Future<void> deleteEmployee(int employeeId) async {
+    await _apiClient.deleteJson('api/v1/employees/$employeeId');
+  }
 }

@@ -49,6 +49,10 @@ public class AiAssistantService {
 
     private static final Logger LOGGER = LoggerFactory.getLogger(AiAssistantService.class);
     private static final int MAX_CONTEXT_RECORDS = 12;
+    private static final Map<String, CachedResponse> RESPONSE_CACHE = new java.util.concurrent.ConcurrentHashMap<>();
+    private static final long CACHE_TTL_MS = 10 * 60 * 1000L; // 10 minutes cache to minimize AI token usage
+
+    private record CachedResponse(AiChatResponse response, long timestampMs) {}
     private final InvoiceRepository invoiceRepository;
     private final ExpenseRepository expenseRepository;
     private final ClientRepository clientRepository;
@@ -116,6 +120,16 @@ public class AiAssistantService {
         }
 
         Long companyId = principal.getCompanyId();
+
+        // 1. Check Token-Saving Server Response Cache
+        String normalizedMsg = message.trim().toLowerCase(Locale.ROOT);
+        String cacheKey = companyId + ":" + normalizedMsg;
+        CachedResponse cached = RESPONSE_CACHE.get(cacheKey);
+        if (cached != null && (System.currentTimeMillis() - cached.timestampMs()) < CACHE_TTL_MS) {
+            LOGGER.info("Serving response from server token cache for company {}: {}", companyId, normalizedMsg);
+            return cached.response();
+        }
+
         Long employeeId = principal.getRole() == Role.EMPLOYEE ? principal.getId() : null;
         Set<String> permissions = Arrays.stream(principal.getPermissions().split(","))
                 .map(String::trim)
@@ -253,7 +267,10 @@ public class AiAssistantService {
                 }
             }
 
-            return new AiChatResponse(answer, sources, true, null, null, null, null, summaryCards, insightCard, recordCards);
+            AiChatResponse response = new AiChatResponse(answer, sources, true, null, null, null, null, summaryCards, insightCard, recordCards);
+            // Cache informative answer to conserve AI tokens
+            RESPONSE_CACHE.put(cacheKey, new CachedResponse(response, System.currentTimeMillis()));
+            return response;
         }
         return proposeAction(type, modelResult.path("arguments"), sources, principal, permissions);
     }
@@ -573,6 +590,8 @@ public class AiAssistantService {
     }
 
     private Long executeAction(String type, JsonNode payload, UserPrincipal principal) throws Exception {
+        // Invalidate company cache when actions are executed to ensure fresh business numbers
+        RESPONSE_CACHE.keySet().removeIf(k -> k.startsWith(principal.getCompanyId() + ":"));
         Client client;
         switch (type) {
             case "CREATE_CLIENT" -> {
@@ -875,6 +894,14 @@ public class AiAssistantService {
                 1. Act like a trusted, top-tier executive colleague. Speak warmly, intelligently, decisively, and concisely.
                 2. Be proactive! Provide smart financial insights and actionable suggestions when relevant (e.g. noticing overdue invoices, suggesting follow-ups, recommending expense categorizations, or pointing out margin opportunities).
                 3. Clean Spoken Voice: Format your responses with natural, clean phrasing that sounds crisp, human, and professional when read aloud by Text-To-Speech. Avoid raw JSON, markdown tables, or excessive symbols in conversational text.
+                4. Indian Accent & Hinglish Language Adaptation:
+                   - If the user writes or speaks in Hindi or Romanized Hindi / Hinglish (e.g. "mera revenue kitna hai", "overdue bills dikhao", "kya haal hai", "invoice bana do", "payment kab aayegi", "kaise ho", "kuch update hai?"):
+                     ALWAYS reply in fluent, natural Hinglish (conversational Hindi written in clean Roman English script, blended naturally with standard English business & accounting terminology like invoice, client, revenue, payment, amount, due date, tax, GST).
+                     Keep the voice light, polite, respectful ("ji", "aapka", "zarur"), and NOT overly deep or archaic.
+                     Example: "Aapka total collected revenue ₹15.42 Lakh hai aur abhi 2 overdue invoices pending hain. Kya main unko reminder bhej doon?"
+                   - If the user communicates in English:
+                     Reply in fluent, natural Indian English corporate cadence, warm, crisp, and helpful.
+                   - Never output complex symbols, raw JSON, or markdown tables that sound confusing when read out loud by text-to-speech.
                 
                 Action Capabilities:
                 Return exactly one JSON object with keys "type", "answer", and "arguments".
