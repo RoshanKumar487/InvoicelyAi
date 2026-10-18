@@ -179,6 +179,7 @@ class EnterpriseDataView<T> extends StatefulWidget {
     this.onFilterChipSelected,
     this.filterWidget,
     this.topTrailing,
+    this.expandedFilterExtra,
     this.headerTitle,
     this.metrics,
     this.metricsStrip,
@@ -218,6 +219,7 @@ class EnterpriseDataView<T> extends StatefulWidget {
   final Widget? filterWidget;
 
   final Widget? topTrailing;
+  final Widget? expandedFilterExtra;
   final String? headerTitle;
   final List<EnterpriseMetricCardItem>? metrics;
   final Widget? metricsStrip;
@@ -239,7 +241,7 @@ class _EnterpriseDataViewState<T> extends State<EnterpriseDataView<T>> {
   late final TextEditingController _internalSearchController;
   TextEditingController get _searchController => widget.searchController ?? _internalSearchController;
 
-  String? _userSelectedMode; // 'table', 'grouped', 'cards'
+  bool _isFilterExpanded = false;
   late int _pageSize;
   int _currentPage = 0;
   final Map<String, bool> _expandedGroups = {};
@@ -252,9 +254,6 @@ class _EnterpriseDataViewState<T> extends State<EnterpriseDataView<T>> {
     super.initState();
     _internalSearchController = TextEditingController();
     _pageSize = widget.pageSize;
-    if (widget.initialMode != null) {
-      _userSelectedMode = widget.initialMode;
-    }
   }
 
   @override
@@ -266,9 +265,10 @@ class _EnterpriseDataViewState<T> extends State<EnterpriseDataView<T>> {
   }
 
   String _resolveActiveMode(double screenWidth) {
-    if (_userSelectedMode != null) return _userSelectedMode!;
-    // Default to Cards view on mobile (< 700px), Table on desktop (>= 700px)
-    return screenWidth < 700 ? 'cards' : 'table';
+    // Automatically determined:
+    // Mobile & small tablet screen (< 760px): Cards view list
+    // Desktop / laptop screen (>= 760px): Table view
+    return screenWidth < 760 ? 'cards' : 'table';
   }
 
   List<T> get _filteredItems {
@@ -300,22 +300,6 @@ class _EnterpriseDataViewState<T> extends State<EnterpriseDataView<T>> {
     setState(() {
       final current = _expandedGroups[key] ?? true;
       _expandedGroups[key] = !current;
-    });
-  }
-
-  void _expandAll(List<String> keys) {
-    setState(() {
-      for (final k in keys) {
-        _expandedGroups[k] = true;
-      }
-    });
-  }
-
-  void _collapseAll(List<String> keys) {
-    setState(() {
-      for (final k in keys) {
-        _expandedGroups[k] = false;
-      }
     });
   }
 
@@ -455,7 +439,7 @@ class _EnterpriseDataViewState<T> extends State<EnterpriseDataView<T>> {
             widget.filterWidget!,
           ],
 
-          // Horizontal Filter ChoiceChips
+          // Horizontal Filter ChoiceChips with Icons
           if (widget.filterChips != null && widget.filterChips!.isNotEmpty) ...[
             if (widget.showSearchBar || widget.filterWidget != null) const SizedBox(height: 10),
             SingleChildScrollView(
@@ -466,6 +450,13 @@ class _EnterpriseDataViewState<T> extends State<EnterpriseDataView<T>> {
                     Padding(
                       padding: const EdgeInsets.only(right: 8),
                       child: ChoiceChip(
+                        avatar: Icon(
+                          getStatusIcon(chip),
+                          size: 13,
+                          color: widget.selectedFilterChip == chip
+                              ? const Color(0xFF0F172A)
+                              : const Color(0xFF64748B),
+                        ),
                         label: Text(
                           chip,
                           style: TextStyle(
@@ -497,6 +488,36 @@ class _EnterpriseDataViewState<T> extends State<EnterpriseDataView<T>> {
     );
   }
 
+  static IconData getStatusIcon(String status) {
+    switch (status.trim().toLowerCase()) {
+      case 'all':
+        return Icons.apps_rounded;
+      case 'draft':
+        return Icons.edit_note_rounded;
+      case 'sent':
+        return Icons.send_rounded;
+      case 'paid':
+        return Icons.check_circle_rounded;
+      case 'overdue':
+        return Icons.warning_amber_rounded;
+      case 'cancelled':
+      case 'canceled':
+        return Icons.cancel_outlined;
+      case 'active':
+        return Icons.check_circle_outline_rounded;
+      case 'inactive':
+        return Icons.pause_circle_outline_rounded;
+      case 'pending':
+        return Icons.hourglass_top_rounded;
+      case 'approved':
+        return Icons.verified_rounded;
+      case 'rejected':
+        return Icons.block_rounded;
+      default:
+        return Icons.label_outline_rounded;
+    }
+  }
+
   Widget _buildSearchField() {
     return TextField(
       controller: _searchController,
@@ -525,15 +546,349 @@ class _EnterpriseDataViewState<T> extends State<EnterpriseDataView<T>> {
     );
   }
 
-  Future<void> _openFilterDialog() async {
-    await showDialog<void>(
+  bool _isPresetActive(String preset) {
+    if (widget.dateRange == null) {
+      return preset == 'All Dates';
+    }
+    final now = DateTime.now();
+    final start = widget.dateRange!.start;
+    final end = widget.dateRange!.end;
+    switch (preset) {
+      case 'Today':
+        return start.year == now.year && start.month == now.month && start.day == now.day &&
+            end.year == now.year && end.month == now.month && end.day == now.day;
+      case 'This Week':
+        final startOfWeek = now.subtract(Duration(days: now.weekday - 1));
+        return start.year == startOfWeek.year && start.month == startOfWeek.month && start.day == startOfWeek.day;
+      case 'This Month':
+        return start.year == now.year && start.month == now.month && start.day == 1;
+      case 'This FY':
+        final fyStartYear = now.month >= 4 ? now.year : now.year - 1;
+        return start.year == fyStartYear && start.month == 4 && start.day == 1;
+      case 'Custom':
+        return !_isPresetActive('Today') && !_isPresetActive('This Week') && !_isPresetActive('This Month') && !_isPresetActive('This FY');
+      default:
+        return false;
+    }
+  }
+
+  void _applyDatePreset(String preset) {
+    final now = DateTime.now();
+    DateTimeRange? range;
+    switch (preset) {
+      case 'All Dates':
+        range = null;
+        break;
+      case 'Today':
+        range = DateTimeRange(
+          start: DateTime(now.year, now.month, now.day),
+          end: DateTime(now.year, now.month, now.day, 23, 59, 59),
+        );
+        break;
+      case 'This Week':
+        final startOfWeek = now.subtract(Duration(days: now.weekday - 1));
+        range = DateTimeRange(
+          start: DateTime(startOfWeek.year, startOfWeek.month, startOfWeek.day),
+          end: DateTime(now.year, now.month, now.day, 23, 59, 59),
+        );
+        break;
+      case 'This Month':
+        range = DateTimeRange(
+          start: DateTime(now.year, now.month, 1),
+          end: DateTime(now.year, now.month + 1, 0, 23, 59, 59),
+        );
+        break;
+      case 'This FY':
+        final fyStartYear = now.month >= 4 ? now.year : now.year - 1;
+        range = DateTimeRange(
+          start: DateTime(fyStartYear, 4, 1),
+          end: DateTime(fyStartYear + 1, 3, 31, 23, 59, 59),
+        );
+        break;
+      case 'Custom':
+        _pickCustomDateRange();
+        return;
+    }
+    widget.onDateRangeChanged?.call(range);
+  }
+
+  Future<void> _pickCustomDateRange() async {
+    final now = DateTime.now();
+    final picked = await showDateRangePicker(
       context: context,
-      builder: (ctx) => EnterpriseFilterDialog(
-        currentRange: widget.dateRange,
-        onApplyDateRange: (range) => widget.onDateRangeChanged?.call(range),
-        statusOptions: widget.filterChips,
-        selectedStatus: widget.selectedFilterChip,
-        onStatusSelected: (status) => widget.onFilterChipSelected?.call(status),
+      firstDate: DateTime(2020),
+      lastDate: DateTime(2035),
+      initialDateRange: widget.dateRange ?? DateTimeRange(
+        start: DateTime(now.year, now.month, 1),
+        end: now,
+      ),
+      builder: (context, child) {
+        return Theme(
+          data: Theme.of(context).copyWith(
+            colorScheme: const ColorScheme.light(
+              primary: Color(0xFF1D68F0),
+              onPrimary: Colors.white,
+              surface: Colors.white,
+              onSurface: Color(0xFF1E293B),
+            ),
+          ),
+          child: child!,
+        );
+      },
+    );
+    if (picked != null) {
+      widget.onDateRangeChanged?.call(picked);
+    }
+  }
+
+  Widget _buildFilterPresetPill({
+    required IconData icon,
+    required String label,
+    required bool isSelected,
+    required VoidCallback onTap,
+  }) {
+    return InkWell(
+      onTap: onTap,
+      borderRadius: BorderRadius.circular(8),
+      child: AnimatedContainer(
+        duration: const Duration(milliseconds: 150),
+        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
+        decoration: BoxDecoration(
+          color: isSelected ? const Color(0xFF1D68F0) : const Color(0xFFF1F5F9),
+          borderRadius: BorderRadius.circular(8),
+          border: Border.all(
+            color: isSelected ? const Color(0xFF1D68F0) : const Color(0xFFCBD5E1),
+          ),
+        ),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Icon(
+              icon,
+              size: 13,
+              color: isSelected ? Colors.white : const Color(0xFF475569),
+            ),
+            const SizedBox(width: 5),
+            Text(
+              label,
+              style: TextStyle(
+                fontSize: 11.5,
+                fontWeight: isSelected ? FontWeight.w800 : FontWeight.w600,
+                color: isSelected ? Colors.white : const Color(0xFF334155),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildInlineFilterDrawer(double screenWidth) {
+    final now = DateTime.now();
+    final fyStartYear = now.month >= 4 ? now.year : now.year - 1;
+    final fyLabel = 'FY ${fyStartYear.toString().substring(2)}-${(fyStartYear + 1).toString().substring(2)}';
+
+    final hasActiveFilter = widget.dateRange != null ||
+        (widget.selectedFilterChip != null && widget.selectedFilterChip != 'All');
+
+    return Container(
+      margin: const EdgeInsets.only(top: 10),
+      padding: const EdgeInsets.all(14),
+      decoration: BoxDecoration(
+        color: const Color(0xFFF8FAFC),
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: const Color(0xFFE2E8F0)),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          // Sub-header row
+          Row(
+            children: [
+              Container(
+                padding: const EdgeInsets.all(4),
+                decoration: BoxDecoration(
+                  color: const Color(0xFF1D68F0).withValues(alpha: 0.12),
+                  borderRadius: BorderRadius.circular(6),
+                ),
+                child: const Icon(Icons.tune_rounded, size: 14, color: Color(0xFF1D68F0)),
+              ),
+              const SizedBox(width: 8),
+              const Text(
+                'Filter & Date Presets',
+                style: TextStyle(
+                  fontSize: 12.5,
+                  fontWeight: FontWeight.w800,
+                  color: Color(0xFF0F172A),
+                ),
+              ),
+              const Spacer(),
+              if (hasActiveFilter) ...[
+                InkWell(
+                  onTap: () {
+                    widget.onDateRangeChanged?.call(null);
+                    if (widget.filterChips != null && widget.filterChips!.isNotEmpty) {
+                      widget.onFilterChipSelected?.call('All');
+                    }
+                  },
+                  borderRadius: BorderRadius.circular(6),
+                  child: const Padding(
+                    padding: EdgeInsets.symmetric(horizontal: 6, vertical: 3),
+                    child: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Icon(Icons.refresh_rounded, size: 13, color: Color(0xFF64748B)),
+                        SizedBox(width: 4),
+                        Text(
+                          'Reset All',
+                          style: TextStyle(
+                            fontSize: 11,
+                            fontWeight: FontWeight.w700,
+                            color: Color(0xFF64748B),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+                const SizedBox(width: 8),
+              ],
+              InkWell(
+                onTap: () => setState(() => _isFilterExpanded = false),
+                borderRadius: BorderRadius.circular(6),
+                child: const Padding(
+                  padding: EdgeInsets.symmetric(horizontal: 6, vertical: 3),
+                  child: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Icon(Icons.close_rounded, size: 13, color: Color(0xFF94A3B8)),
+                      SizedBox(width: 2),
+                      Text(
+                        'Close',
+                        style: TextStyle(fontSize: 11, color: Color(0xFF94A3B8)),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 12),
+
+          // Date presets row
+          if (widget.onDateRangeChanged != null) ...[
+            Row(
+              children: [
+                const Icon(Icons.calendar_today_rounded, size: 12, color: Color(0xFF0284C7)),
+                const SizedBox(width: 6),
+                const Text(
+                  'DATE RANGE:',
+                  style: TextStyle(
+                    fontSize: 10.5,
+                    fontWeight: FontWeight.w800,
+                    color: Color(0xFF64748B),
+                    letterSpacing: 0.5,
+                  ),
+                ),
+                if (widget.dateRange != null) ...[
+                  const SizedBox(width: 8),
+                  Text(
+                    '${widget.dateRange!.start.toIso8601String().substring(0, 10)} - ${widget.dateRange!.end.toIso8601String().substring(0, 10)}',
+                    style: const TextStyle(fontSize: 11, fontWeight: FontWeight.bold, color: Color(0xFF0284C7)),
+                  ),
+                ],
+              ],
+            ),
+            const SizedBox(height: 8),
+            Wrap(
+              spacing: 8,
+              runSpacing: 8,
+              children: [
+                _buildFilterPresetPill(
+                  icon: Icons.all_inclusive_rounded,
+                  label: 'All Dates',
+                  isSelected: _isPresetActive('All Dates'),
+                  onTap: () => _applyDatePreset('All Dates'),
+                ),
+                _buildFilterPresetPill(
+                  icon: Icons.bolt_rounded,
+                  label: 'Today',
+                  isSelected: _isPresetActive('Today'),
+                  onTap: () => _applyDatePreset('Today'),
+                ),
+                _buildFilterPresetPill(
+                  icon: Icons.view_week_rounded,
+                  label: 'This Week',
+                  isSelected: _isPresetActive('This Week'),
+                  onTap: () => _applyDatePreset('This Week'),
+                ),
+                _buildFilterPresetPill(
+                  icon: Icons.calendar_view_month_rounded,
+                  label: 'This Month',
+                  isSelected: _isPresetActive('This Month'),
+                  onTap: () => _applyDatePreset('This Month'),
+                ),
+                _buildFilterPresetPill(
+                  icon: Icons.account_balance_rounded,
+                  label: fyLabel,
+                  isSelected: _isPresetActive('This FY'),
+                  onTap: () => _applyDatePreset('This FY'),
+                ),
+                _buildFilterPresetPill(
+                  icon: Icons.edit_calendar_rounded,
+                  label: 'Custom Range...',
+                  isSelected: _isPresetActive('Custom'),
+                  onTap: () => _applyDatePreset('Custom'),
+                ),
+              ],
+            ),
+            const SizedBox(height: 12),
+          ],
+
+          // Status Options row
+          if (widget.filterChips != null && widget.filterChips!.isNotEmpty) ...[
+            const Row(
+              children: [
+                Icon(Icons.flag_rounded, size: 12, color: Color(0xFF0284C7)),
+                SizedBox(width: 6),
+                Text(
+                  'STATUS:',
+                  style: TextStyle(
+                    fontSize: 10.5,
+                    fontWeight: FontWeight.w800,
+                    color: Color(0xFF64748B),
+                    letterSpacing: 0.5,
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 8),
+            Wrap(
+              spacing: 8,
+              runSpacing: 8,
+              children: [
+                for (final chip in widget.filterChips!)
+                  _buildFilterPresetPill(
+                    icon: getStatusIcon(chip),
+                    label: chip,
+                    isSelected: widget.selectedFilterChip == chip,
+                    onTap: () {
+                      if (widget.onFilterChipSelected != null) {
+                        setState(() => _currentPage = 0);
+                        widget.onFilterChipSelected!(chip);
+                      }
+                    },
+                  ),
+              ],
+            ),
+          ],
+
+          // Extra filters (e.g. Scope / Creator)
+          if (widget.expandedFilterExtra != null) ...[
+            const SizedBox(height: 12),
+            widget.expandedFilterExtra!,
+          ],
+        ],
       ),
     );
   }
@@ -544,263 +899,146 @@ class _EnterpriseDataViewState<T> extends State<EnterpriseDataView<T>> {
     required List<String> groupedKeys,
     required double screenWidth,
   }) {
-    final hasGrouping = widget.groupBy != null;
     final isCompact = screenWidth < 500;
+    final isFiltered = widget.dateRange != null ||
+        (widget.selectedFilterChip != null && widget.selectedFilterChip != 'All');
 
     return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-      decoration: AppTheme.neuCardDecoration(radius: 18),
+      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+      decoration: AppTheme.neuCardDecoration(radius: 16),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          // Dedicated Header Title Row with auto-truncation and record badge
-          if (widget.headerTitle != null) ...[
-            Row(
-              children: [
-                Expanded(
-                  child: Text(
-                    widget.headerTitle!,
-                    style: const TextStyle(
-                      fontSize: 14.5,
-                      fontWeight: FontWeight.w800,
-                      color: Color(0xFF1E293B),
-                    ),
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
+          Row(
+            children: [
+              if (widget.headerTitle != null) ...[
+                Text(
+                  widget.headerTitle!,
+                  style: const TextStyle(
+                    fontSize: 14.5,
+                    fontWeight: FontWeight.w800,
+                    color: Color(0xFF1E293B),
                   ),
                 ),
                 const SizedBox(width: 8),
-                if (widget.dateRange != null) ...[
-                  Container(
-                    padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+              ],
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                decoration: AppTheme.neuRecessedDecoration(radius: 10),
+                child: Text(
+                  '$totalCount ${totalCount == 1 ? 'record' : 'records'}',
+                  style: const TextStyle(
+                    fontSize: 11,
+                    color: Color(0xFF475569),
+                    fontWeight: FontWeight.w700,
+                  ),
+                ),
+              ),
+              const Spacer(),
+              if (widget.dateRange != null) ...[
+                Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                  decoration: BoxDecoration(
+                    color: const Color(0xFFE0F2FE),
+                    borderRadius: BorderRadius.circular(10),
+                    border: Border.all(color: const Color(0xFFBAE6FD)),
+                  ),
+                  child: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      const Icon(Icons.calendar_today_rounded, size: 11, color: Color(0xFF0284C7)),
+                      const SizedBox(width: 4),
+                      Text(
+                        '${widget.dateRange!.start.toIso8601String().substring(0, 10)} - ${widget.dateRange!.end.toIso8601String().substring(0, 10)}',
+                        style: const TextStyle(fontSize: 11, fontWeight: FontWeight.bold, color: Color(0xFF0369A1)),
+                      ),
+                      const SizedBox(width: 4),
+                      InkWell(
+                        onTap: () => widget.onDateRangeChanged?.call(null),
+                        child: const Icon(Icons.close_rounded, size: 12, color: Color(0xFF0284C7)),
+                      ),
+                    ],
+                  ),
+                ),
+                const SizedBox(width: 6),
+              ],
+              if (widget.onDateRangeChanged != null || (widget.filterChips != null && widget.filterChips!.isNotEmpty) || widget.expandedFilterExtra != null) ...[
+                InkWell(
+                  onTap: () => setState(() => _isFilterExpanded = !_isFilterExpanded),
+                  borderRadius: BorderRadius.circular(8),
+                  child: AnimatedContainer(
+                    duration: const Duration(milliseconds: 180),
+                    padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 5),
                     decoration: BoxDecoration(
-                      color: const Color(0xFFE0F2FE),
-                      borderRadius: BorderRadius.circular(12),
-                      border: Border.all(color: const Color(0xFFBAE6FD)),
+                      color: _isFilterExpanded
+                          ? const Color(0xFF1D68F0)
+                          : (isFiltered ? const Color(0xFFE0F2FE) : Colors.transparent),
+                      borderRadius: BorderRadius.circular(8),
+                      border: Border.all(
+                        color: _isFilterExpanded
+                            ? const Color(0xFF1D68F0)
+                            : (isFiltered ? const Color(0xFFBAE6FD) : const Color(0xFFCBD5E1)),
+                      ),
                     ),
                     child: Row(
                       mainAxisSize: MainAxisSize.min,
                       children: [
-                        const Icon(Icons.date_range_rounded, size: 12, color: Color(0xFF0284C7)),
-                        const SizedBox(width: 4),
-                        Text(
-                          '${widget.dateRange!.start.toIso8601String().substring(0, 10)} - ${widget.dateRange!.end.toIso8601String().substring(0, 10)}',
-                          style: const TextStyle(fontSize: 11, fontWeight: FontWeight.bold, color: Color(0xFF0369A1)),
+                        Icon(
+                          _isFilterExpanded || isFiltered ? Icons.filter_alt_rounded : Icons.filter_alt_outlined,
+                          size: 15,
+                          color: _isFilterExpanded
+                              ? Colors.white
+                              : (isFiltered ? const Color(0xFF0284C7) : const Color(0xFF64748B)),
                         ),
-                        const SizedBox(width: 4),
-                        InkWell(
-                          onTap: () => widget.onDateRangeChanged?.call(null),
-                          child: const Icon(Icons.close_rounded, size: 12, color: Color(0xFF0284C7)),
-                        ),
+                        if (!isCompact) ...[
+                          const SizedBox(width: 4),
+                          Text(
+                            _isFilterExpanded ? 'Hide Filters' : 'Filters',
+                            style: TextStyle(
+                              fontSize: 11.5,
+                              fontWeight: FontWeight.w700,
+                              color: _isFilterExpanded
+                                  ? Colors.white
+                                  : (isFiltered ? const Color(0xFF0369A1) : const Color(0xFF475569)),
+                            ),
+                          ),
+                          const SizedBox(width: 2),
+                          Icon(
+                            _isFilterExpanded ? Icons.keyboard_arrow_up_rounded : Icons.keyboard_arrow_down_rounded,
+                            size: 14,
+                            color: _isFilterExpanded ? Colors.white : const Color(0xFF64748B),
+                          ),
+                        ],
                       ],
                     ),
                   ),
-                  const SizedBox(width: 6),
-                ],
-                if (widget.onDateRangeChanged != null || (widget.filterChips != null && widget.filterChips!.isNotEmpty)) ...[
-                  IconButton(
-                    icon: Icon(
-                      (widget.dateRange != null || (widget.selectedFilterChip != null && widget.selectedFilterChip != 'All'))
-                          ? Icons.filter_alt_rounded
-                          : Icons.filter_alt_outlined,
-                      size: 18,
-                      color: (widget.dateRange != null || (widget.selectedFilterChip != null && widget.selectedFilterChip != 'All'))
-                          ? const Color(0xFF0284C7)
-                          : const Color(0xFF64748B),
-                    ),
-                    tooltip: 'Filter records',
-                    visualDensity: VisualDensity.compact,
-                    onPressed: _openFilterDialog,
-                  ),
-                  const SizedBox(width: 2),
-                ],
-                if (widget.onDownloadReport != null) ...[
-                  IconButton(
-                    icon: const Icon(Icons.file_download_outlined, size: 18, color: Color(0xFF0284C7)),
-                    tooltip: 'Download report',
-                    visualDensity: VisualDensity.compact,
-                    onPressed: widget.onDownloadReport,
-                  ),
-                  const SizedBox(width: 2),
-                ],
-                if (widget.directoryActions != null) ...[
-                  ...widget.directoryActions!,
-                  const SizedBox(width: 2),
-                ],
-                Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
-                  decoration: AppTheme.neuRecessedDecoration(radius: 12),
-                  child: Text(
-                    '$totalCount ${totalCount == 1 ? 'record' : 'records'}',
-                    style: const TextStyle(
-                      fontSize: 11,
-                      color: Color(0xFF475569),
-                      fontWeight: FontWeight.w700,
-                    ),
-                  ),
                 ),
+                const SizedBox(width: 6),
               ],
-            ),
-            const SizedBox(height: 8),
-          ],
-
-          // Controls Row: Mode Switcher + Grouping Actions + optional record count
-          Wrap(
-            alignment: WrapAlignment.spaceBetween,
-            crossAxisAlignment: WrapCrossAlignment.center,
-            spacing: 10,
-            runSpacing: 8,
-            children: [
-              // 3-way Segmented Mode Switcher
-              Container(
-                decoration: AppTheme.neuRecessedDecoration(radius: 12),
-                padding: const EdgeInsets.all(3),
-                child: Row(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    _buildModeChip(
-                      icon: Icons.table_chart_rounded,
-                      label: 'Table',
-                      selected: activeMode == 'table',
-                      isCompact: isCompact,
-                      onTap: () => setState(() => _userSelectedMode = 'table'),
-                    ),
-                    if (hasGrouping)
-                      _buildModeChip(
-                        icon: Icons.folder_copy_rounded,
-                        label: 'Grouped',
-                        selected: activeMode == 'grouped',
-                        isCompact: isCompact,
-                        onTap: () => setState(() => _userSelectedMode = 'grouped'),
-                      ),
-                    _buildModeChip(
-                      icon: Icons.grid_view_rounded,
-                      label: 'Cards',
-                      selected: activeMode == 'cards',
-                      isCompact: isCompact,
-                      onTap: () => setState(() => _userSelectedMode = 'cards'),
-                    ),
-                  ],
+              if (widget.onDownloadReport != null) ...[
+                IconButton(
+                  icon: const Icon(Icons.file_download_outlined, size: 18, color: Color(0xFF0284C7)),
+                  tooltip: 'Download report',
+                  visualDensity: VisualDensity.compact,
+                  onPressed: widget.onDownloadReport,
                 ),
-              ),
-
-              // Expand / Collapse quick actions in grouped mode
-              if (activeMode == 'grouped' && groupedKeys.isNotEmpty)
-                Row(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    InkWell(
-                      onTap: () => _expandAll(groupedKeys),
-                      borderRadius: BorderRadius.circular(6),
-                      child: const Padding(
-                        padding: EdgeInsets.symmetric(horizontal: 6, vertical: 4),
-                        child: Text(
-                          'Expand All',
-                          style: TextStyle(fontSize: 11, color: Color(0xFF0284C7), fontWeight: FontWeight.w600),
-                        ),
-                      ),
-                    ),
-                    const SizedBox(width: 4),
-                    InkWell(
-                      onTap: () => _collapseAll(groupedKeys),
-                      borderRadius: BorderRadius.circular(6),
-                      child: const Padding(
-                        padding: EdgeInsets.symmetric(horizontal: 6, vertical: 4),
-                        child: Text(
-                          'Collapse All',
-                          style: TextStyle(fontSize: 11, color: Color(0xFF64748B), fontWeight: FontWeight.w600),
-                        ),
-                      ),
-                    ),
-                  ],
-                ),
-
-              // If no headerTitle, show count & action icons here
-              if (widget.headerTitle == null)
-                Row(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    if (widget.onDateRangeChanged != null)
-                      IconButton(
-                        icon: const Icon(Icons.filter_alt_outlined, size: 18, color: Color(0xFF64748B)),
-                        tooltip: 'Filter date range',
-                        visualDensity: VisualDensity.compact,
-                        onPressed: _openFilterDialog,
-                      ),
-                    if (widget.onDownloadReport != null)
-                      IconButton(
-                        icon: const Icon(Icons.file_download_outlined, size: 18, color: Color(0xFF0284C7)),
-                        tooltip: 'Download report',
-                        visualDensity: VisualDensity.compact,
-                        onPressed: widget.onDownloadReport,
-                      ),
-                    Text(
-                      '$totalCount ${totalCount == 1 ? 'record' : 'records'}',
-                      style: const TextStyle(fontSize: 12, color: Color(0xFF64748B), fontWeight: FontWeight.w600),
-                    ),
-                  ],
-                ),
+                const SizedBox(width: 4),
+              ],
+              if (widget.directoryActions != null) ...[
+                ...widget.directoryActions!,
+              ],
             ],
           ),
-        ],
-      ),
-    );
-  }
 
-  Widget _buildModeChip({
-    required IconData icon,
-    required String label,
-    required bool selected,
-    required bool isCompact,
-    required VoidCallback onTap,
-  }) {
-    return InkWell(
-      onTap: onTap,
-      borderRadius: BorderRadius.circular(9),
-      child: AnimatedContainer(
-        duration: const Duration(milliseconds: 160),
-        padding: EdgeInsets.symmetric(
-          horizontal: isCompact ? 9 : 11,
-          vertical: isCompact ? 5 : 6,
-        ),
-        decoration: selected
-            ? BoxDecoration(
-                color: AppColors.neuSurface,
-                borderRadius: BorderRadius.circular(9),
-                border: Border.all(color: Colors.white.withValues(alpha: 0.9)),
-                boxShadow: const [
-                  BoxShadow(
-                    color: AppColors.neuShadowDark,
-                    offset: Offset(2, 2),
-                    blurRadius: 5,
-                  ),
-                  BoxShadow(
-                    color: AppColors.neuShadowLight,
-                    offset: Offset(-2, -2),
-                    blurRadius: 5,
-                  ),
-                ],
-              )
-            : const BoxDecoration(color: Colors.transparent),
-        child: Row(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Icon(
-              icon,
-              size: isCompact ? 13 : 15,
-              color: selected ? const Color(0xFF2563EB) : const Color(0xFF64748B),
-            ),
-            SizedBox(width: isCompact ? 4 : 5),
-            Text(
-              label,
-              style: TextStyle(
-                fontSize: isCompact ? 11 : 12,
-                fontWeight: selected ? FontWeight.w700 : FontWeight.w600,
-                color: selected ? const Color(0xFF1E293B) : const Color(0xFF64748B),
-              ),
-            ),
-          ],
-        ),
+          // Inline Filter Drawer
+          AnimatedSize(
+            duration: const Duration(milliseconds: 240),
+            curve: Curves.easeInOut,
+            child: _isFilterExpanded
+                ? _buildInlineFilterDrawer(screenWidth)
+                : const SizedBox.shrink(),
+          ),
+        ],
       ),
     );
   }

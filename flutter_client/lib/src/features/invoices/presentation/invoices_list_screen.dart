@@ -550,37 +550,6 @@ class _InvoicesListScreenState extends State<InvoicesListScreen> {
                   const SizedBox(height: 12),
                 ],
 
-                if (_showCreatorFilter) ...[
-                  Container(
-                    margin: const EdgeInsets.only(bottom: 12),
-                    padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
-                    decoration: BoxDecoration(
-                      color: const Color(0xFFF0F9FF),
-                      borderRadius: BorderRadius.circular(10),
-                      border: Border.all(color: const Color(0xFFBAE6FD)),
-                    ),
-                    child: Row(
-                      children: [
-                        const Icon(Icons.person_pin_circle_rounded, size: 18, color: Color(0xFF0284C7)),
-                        const SizedBox(width: 8),
-                        const Text(
-                          'Filter by Creator:',
-                          style: TextStyle(fontWeight: FontWeight.bold, fontSize: 13, color: Color(0xFF0369A1)),
-                        ),
-                        const Spacer(),
-                        SegmentedButton<String>(
-                          segments: const [
-                            ButtonSegment(value: 'All', label: Text('All Creators')),
-                            ButtonSegment(value: 'Me', label: Text('Created by Me')),
-                          ],
-                          selected: {_creatorFilter},
-                          onSelectionChanged: (set) => setState(() => _creatorFilter = set.first),
-                        ),
-                      ],
-                    ),
-                  ),
-                ],
-
                 if (_loading && _invoices.isEmpty)
                   const Padding(
                     padding: EdgeInsets.all(48),
@@ -658,13 +627,89 @@ class _InvoicesListScreenState extends State<InvoicesListScreen> {
                         ),
                       ],
                     ],
-                    topTrailing: SegmentedButton<String>(
-                      segments: const [
-                        ButtonSegment(value: 'All', label: Text('All')),
-                        ButtonSegment(value: 'Me', label: Text('Created by Me')),
+                    expandedFilterExtra: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        const Icon(Icons.person_pin_rounded, size: 12, color: Color(0xFF0284C7)),
+                        const SizedBox(width: 6),
+                        const Text(
+                          'CREATOR:',
+                          style: TextStyle(
+                            fontSize: 10.5,
+                            fontWeight: FontWeight.w800,
+                            color: Color(0xFF64748B),
+                            letterSpacing: 0.5,
+                          ),
+                        ),
+                        const SizedBox(width: 8),
+                        InkWell(
+                          onTap: () => setState(() => _creatorFilter = 'All'),
+                          borderRadius: BorderRadius.circular(8),
+                          child: Container(
+                            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
+                            decoration: BoxDecoration(
+                              color: _creatorFilter == 'All' ? const Color(0xFF1D68F0) : const Color(0xFFF1F5F9),
+                              borderRadius: BorderRadius.circular(8),
+                              border: Border.all(
+                                color: _creatorFilter == 'All' ? const Color(0xFF1D68F0) : const Color(0xFFCBD5E1),
+                              ),
+                            ),
+                            child: Row(
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                Icon(
+                                  Icons.layers_outlined,
+                                  size: 13,
+                                  color: _creatorFilter == 'All' ? Colors.white : const Color(0xFF475569),
+                                ),
+                                const SizedBox(width: 5),
+                                Text(
+                                  'All Invoices',
+                                  style: TextStyle(
+                                    fontSize: 11.5,
+                                    fontWeight: _creatorFilter == 'All' ? FontWeight.w800 : FontWeight.w600,
+                                    color: _creatorFilter == 'All' ? Colors.white : const Color(0xFF334155),
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ),
+                        ),
+                        const SizedBox(width: 6),
+                        InkWell(
+                          onTap: () => setState(() => _creatorFilter = 'Me'),
+                          borderRadius: BorderRadius.circular(8),
+                          child: Container(
+                            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
+                            decoration: BoxDecoration(
+                              color: _creatorFilter == 'Me' ? const Color(0xFF1D68F0) : const Color(0xFFF1F5F9),
+                              borderRadius: BorderRadius.circular(8),
+                              border: Border.all(
+                                color: _creatorFilter == 'Me' ? const Color(0xFF1D68F0) : const Color(0xFFCBD5E1),
+                              ),
+                            ),
+                            child: Row(
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                Icon(
+                                  Icons.person_outline_rounded,
+                                  size: 13,
+                                  color: _creatorFilter == 'Me' ? Colors.white : const Color(0xFF475569),
+                                ),
+                                const SizedBox(width: 5),
+                                Text(
+                                  'Created by Me',
+                                  style: TextStyle(
+                                    fontSize: 11.5,
+                                    fontWeight: _creatorFilter == 'Me' ? FontWeight.w800 : FontWeight.w600,
+                                    color: _creatorFilter == 'Me' ? Colors.white : const Color(0xFF334155),
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ),
+                        ),
                       ],
-                      selected: {_creatorFilter},
-                      onSelectionChanged: (set) => setState(() => _creatorFilter = set.first),
                     ),
                     groupBy: (inv) => inv.status.toUpperCase(),
                     groupLabelBuilder: (status, items) {
