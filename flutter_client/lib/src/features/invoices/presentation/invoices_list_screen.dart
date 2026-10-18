@@ -1,5 +1,6 @@
 import 'dart:async';
 import 'package:flutter/material.dart';
+import 'package:url_launcher/url_launcher.dart';
 
 import '../../../core/api/api_exception.dart';
 import '../../../shared/utils/table_export_helper.dart';
@@ -219,6 +220,23 @@ class _InvoicesListScreenState extends State<InvoicesListScreen> {
     await _load();
   }
 
+  Future<void> _shareInvoiceWhatsApp(Invoice invoice) async {
+    final client = invoice.clientName.isNotEmpty ? invoice.clientName : 'Customer';
+    final invNum = invoice.invoiceNumber.isNotEmpty ? invoice.invoiceNumber : 'Invoice';
+    final amount = _money(invoice.total, invoice.currencySymbol);
+    final balance = _money(invoice.balanceDue, invoice.currencySymbol);
+    final isPaid = invoice.status.toLowerCase() == 'paid';
+
+    final message = isPaid
+        ? 'Hello *$client*, thank you for your payment! Here is your receipt confirmation for invoice *$invNum* ($amount). Status: *PAID* ✅.'
+        : 'Hello *$client*, here is the billing reminder for invoice *$invNum*.\nTotal: *$amount*\nBalance Due: *$balance*\nDue Date: *${invoice.dueDate}*.\nPlease let us know once transferred. Thank you!';
+
+    final url = Uri.parse('https://wa.me/?text=${Uri.encodeComponent(message)}');
+    if (await canLaunchUrl(url)) {
+      await launchUrl(url, mode: LaunchMode.externalApplication);
+    }
+  }
+
   List<EnterpriseTableColumn<Invoice>> _invoiceTableColumns() {
     return [
       EnterpriseTableColumn<Invoice>(
@@ -310,10 +328,15 @@ class _InvoicesListScreenState extends State<InvoicesListScreen> {
       ),
       EnterpriseTableColumn<Invoice>(
         title: 'Actions',
-        width: 125,
+        width: 165,
         cellBuilder: (ctx, inv) => Row(
           mainAxisSize: MainAxisSize.min,
           children: [
+            IconButton(
+              icon: const Icon(Icons.chat_bubble_outline_rounded, size: 17, color: Color(0xFF10B981)),
+              tooltip: 'Share via WhatsApp',
+              onPressed: () => _shareInvoiceWhatsApp(inv),
+            ),
             if (inv.status.toLowerCase() != 'paid')
               IconButton(
                 icon: const Icon(Icons.payments_outlined, size: 18, color: Color(0xFF16A34A)),
@@ -329,6 +352,7 @@ class _InvoicesListScreenState extends State<InvoicesListScreen> {
               icon: const Icon(Icons.more_vert, size: 18),
               tooltip: 'More actions',
               onSelected: (action) {
+                if (action == 'whatsapp') _shareInvoiceWhatsApp(inv);
                 if (action == 'settle') _recordPayment(inv);
                 if (action == 'recurring') _setupRecurring(inv);
                 if (action == 'edit') widget.onEdit(inv);
@@ -337,6 +361,7 @@ class _InvoicesListScreenState extends State<InvoicesListScreen> {
                 if (action == 'mark_sent') _setStatus(inv, 'Sent');
               },
               itemBuilder: (context) => [
+                const PopupMenuItem(value: 'whatsapp', child: Text('Share via WhatsApp')),
                 const PopupMenuItem(value: 'edit', child: Text('Edit Invoice')),
                 if (inv.status.toLowerCase() != 'paid')
                   const PopupMenuItem(value: 'settle', child: Text('Record Settlement')),
@@ -445,46 +470,52 @@ class _InvoicesListScreenState extends State<InvoicesListScreen> {
       return matchesStatus && matchesSearch && matchesCreator;
     }).toList();
 
+    final isDesktop = MediaQuery.sizeOf(context).width >= 760;
+
     return Scaffold(
-      appBar: AppBar(
-        title: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            if (_usingCachedData) const OfflineCacheBanner(),
-            Text(
-              'Invoices',
-              style: Theme.of(context).textTheme.titleLarge?.copyWith(
-                    fontWeight: FontWeight.w800,
+      appBar: isDesktop
+          ? null
+          : AppBar(
+              title: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  if (_usingCachedData) const OfflineCacheBanner(),
+                  Text(
+                    'Invoices',
+                    style: Theme.of(context).textTheme.titleLarge?.copyWith(
+                          fontWeight: FontWeight.w800,
+                        ),
                   ),
+                  Text(
+                    'Create, track and manage billing',
+                    style: Theme.of(context).textTheme.bodySmall,
+                  ),
+                ],
+              ),
+              actions: [
+                IconButton(
+                  tooltip: _showCreatorFilter ? 'Hide creator filter' : 'Filter by creator',
+                  onPressed: () => setState(() => _showCreatorFilter = !_showCreatorFilter),
+                  icon: Icon(
+                    Icons.filter_list_rounded,
+                    color: _creatorFilter != 'All' || _showCreatorFilter ? const Color(0xFF0284C7) : null,
+                  ),
+                ),
+                IconButton(
+                  tooltip: 'Refresh invoices',
+                  onPressed: _loading ? null : _load,
+                  icon: const Icon(Icons.sync),
+                ),
+                const SizedBox(width: 16),
+              ],
             ),
-            Text(
-              'Create, track and manage billing',
-              style: Theme.of(context).textTheme.bodySmall,
+      floatingActionButton: isDesktop
+          ? null
+          : FloatingActionButton.extended(
+              onPressed: widget.onCreate,
+              icon: const Icon(Icons.add),
+              label: const Text('New invoice'),
             ),
-          ],
-        ),
-        actions: [
-          IconButton(
-            tooltip: _showCreatorFilter ? 'Hide creator filter' : 'Filter by creator',
-            onPressed: () => setState(() => _showCreatorFilter = !_showCreatorFilter),
-            icon: Icon(
-              Icons.filter_list_rounded,
-              color: _creatorFilter != 'All' || _showCreatorFilter ? const Color(0xFF0284C7) : null,
-            ),
-          ),
-          IconButton(
-            tooltip: 'Refresh invoices',
-            onPressed: _loading ? null : _load,
-            icon: const Icon(Icons.sync),
-          ),
-          const SizedBox(width: 16),
-        ],
-      ),
-      floatingActionButton: FloatingActionButton.extended(
-        onPressed: widget.onCreate,
-        icon: const Icon(Icons.add),
-        label: const Text('New invoice'),
-      ),
       body: LayoutBuilder(
         builder: (context, constraints) {
           final horizontalPadding = constraints.maxWidth > 900 ? 24.0 : 16.0;
@@ -492,7 +523,7 @@ class _InvoicesListScreenState extends State<InvoicesListScreen> {
           return RefreshIndicator(
             onRefresh: _load,
             child: ListView(
-              padding: EdgeInsets.fromLTRB(horizontalPadding, 8, horizontalPadding, 100),
+              padding: EdgeInsets.fromLTRB(horizontalPadding, isDesktop ? 6 : 8, horizontalPadding, 100),
               children: [
                 if (_error != null) ...[
                   AppCard(
@@ -612,6 +643,21 @@ class _InvoicesListScreenState extends State<InvoicesListScreen> {
                       ),
                     ],
                     onRowTap: (inv) => widget.onOpen(inv),
+                    directoryActions: [
+                      if (isDesktop) ...[
+                        FilledButton.icon(
+                          style: FilledButton.styleFrom(
+                            backgroundColor: const Color(0xFF1D68F0),
+                            foregroundColor: Colors.white,
+                            padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
+                            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+                          ),
+                          onPressed: widget.onCreate,
+                          icon: const Icon(Icons.add, size: 16),
+                          label: const Text('Create Invoice', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 12.5)),
+                        ),
+                      ],
+                    ],
                     topTrailing: SegmentedButton<String>(
                       segments: const [
                         ButtonSegment(value: 'All', label: Text('All')),
@@ -637,6 +683,7 @@ class _InvoicesListScreenState extends State<InvoicesListScreen> {
                       onStatusChanged: (status) => _setStatus(invoice, status),
                       onRecordPayment: () => _recordPayment(invoice),
                       onScheduleRecurring: () => _setupRecurring(invoice),
+                      onShareWhatsApp: () => _shareInvoiceWhatsApp(invoice),
                     ),
                     columns: _invoiceTableColumns(),
                   ),
@@ -660,6 +707,7 @@ class _InvoiceCard extends StatelessWidget {
     required this.onStatusChanged,
     required this.onRecordPayment,
     required this.onScheduleRecurring,
+    required this.onShareWhatsApp,
   });
 
   final Invoice invoice;
@@ -669,6 +717,7 @@ class _InvoiceCard extends StatelessWidget {
   final ValueChanged<String> onStatusChanged;
   final VoidCallback onRecordPayment;
   final VoidCallback onScheduleRecurring;
+  final VoidCallback onShareWhatsApp;
 
   @override
   Widget build(BuildContext context) {
@@ -807,6 +856,27 @@ class _InvoiceCard extends StatelessWidget {
                     ),
                     const SizedBox(width: 8),
                   ],
+                  InkWell(
+                    onTap: onShareWhatsApp,
+                    borderRadius: BorderRadius.circular(10),
+                    child: Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 5),
+                      decoration: BoxDecoration(
+                        color: const Color(0xFFDCFCE7),
+                        borderRadius: BorderRadius.circular(10),
+                        border: Border.all(color: const Color(0xFFBBF7D0)),
+                      ),
+                      child: const Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Icon(Icons.chat_bubble_outline_rounded, size: 14, color: Color(0xFF15803D)),
+                          SizedBox(width: 4),
+                          Text('Share', style: TextStyle(fontSize: 11.5, fontWeight: FontWeight.w700, color: Color(0xFF15803D))),
+                        ],
+                      ),
+                    ),
+                  ),
+                  const SizedBox(width: 8),
                   PopupMenuButton<String>(
                     tooltip: 'Change status',
                     onSelected: onStatusChanged,

@@ -379,25 +379,28 @@ class _AuditLogsScreenState extends State<AuditLogsScreen> {
   @override
   Widget build(BuildContext context) {
     final isAdmin = widget.session.user.role.toUpperCase() == 'ADMIN';
+    final isDesktop = MediaQuery.sizeOf(context).width >= 760;
 
     return Scaffold(
-      appBar: AppBar(
-        leading: widget.onBack == null
-            ? null
-            : IconButton(
-                icon: const Icon(Icons.arrow_back),
-                onPressed: widget.onBack,
-              ),
-        title: const Text('Activity & Audit Trail'),
-        actions: [
-          IconButton(
-            tooltip: 'Refresh audit logs',
-            icon: const Icon(Icons.refresh),
-            onPressed: _loadLogs,
-          ),
-          const SizedBox(width: 8),
-        ],
-      ),
+      appBar: isDesktop
+          ? null
+          : AppBar(
+              leading: widget.onBack == null
+                  ? null
+                  : IconButton(
+                      icon: const Icon(Icons.arrow_back),
+                      onPressed: widget.onBack,
+                    ),
+              title: const Text('Activity & Audit Trail'),
+              actions: [
+                IconButton(
+                  tooltip: 'Refresh audit logs',
+                  icon: const Icon(Icons.refresh),
+                  onPressed: _loadLogs,
+                ),
+                const SizedBox(width: 8),
+              ],
+            ),
       body: LayoutBuilder(
         builder: (context, constraints) {
           final horizontalPadding = constraints.maxWidth > 900 ? 24.0 : 16.0;
@@ -405,7 +408,7 @@ class _AuditLogsScreenState extends State<AuditLogsScreen> {
           return RefreshIndicator(
             onRefresh: _loadLogs,
             child: ListView(
-              padding: EdgeInsets.fromLTRB(horizontalPadding, 12, horizontalPadding, 80),
+              padding: EdgeInsets.fromLTRB(horizontalPadding, isDesktop ? 6 : 12, horizontalPadding, 80),
               children: [
                 if (_error != null) ...[
                   Container(

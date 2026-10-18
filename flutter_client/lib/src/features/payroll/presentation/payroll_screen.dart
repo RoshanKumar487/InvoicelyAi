@@ -445,44 +445,49 @@ class _PayrollScreenState extends State<PayrollScreen> {
   @override
   Widget build(BuildContext context) {
     final filtered = _filteredEntries;
+    final isDesktop = MediaQuery.sizeOf(context).width >= 760;
 
     return Scaffold(
-      appBar: AppBar(
-        title: const Text('Employee Payroll & Disbursal'),
-        leading: widget.onBack == null
-            ? null
-            : IconButton(
-                tooltip: 'Back',
-                onPressed: widget.onBack,
-                icon: const Icon(Icons.arrow_back),
-              ),
-        actions: [
-          IconButton(
-            tooltip: 'Statutory & Wage Calculator',
-            onPressed: () => showDialog<void>(
-              context: context,
-              builder: (ctx) => const StatutoryWageCalculatorDialog(),
+      appBar: isDesktop
+          ? null
+          : AppBar(
+              title: const Text('Employee Payroll & Disbursal'),
+              leading: widget.onBack == null
+                  ? null
+                  : IconButton(
+                      tooltip: 'Back',
+                      onPressed: widget.onBack,
+                      icon: const Icon(Icons.arrow_back),
+                    ),
+              actions: [
+                IconButton(
+                  tooltip: 'Statutory & Wage Calculator',
+                  onPressed: () => showDialog<void>(
+                    context: context,
+                    builder: (ctx) => const StatutoryWageCalculatorDialog(),
+                  ),
+                  icon: const Icon(Icons.calculate_outlined),
+                ),
+                IconButton(
+                  tooltip: 'Run Batch Payroll',
+                  onPressed: _generateNewPayrollRun,
+                  icon: const Icon(Icons.play_circle_outline),
+                ),
+                IconButton(
+                  tooltip: 'Refresh',
+                  onPressed: _isLoading ? null : () => _loadData(),
+                  icon: const Icon(Icons.sync),
+                ),
+                const SizedBox(width: 8),
+              ],
             ),
-            icon: const Icon(Icons.calculate_outlined),
-          ),
-          IconButton(
-            tooltip: 'Run Batch Payroll',
-            onPressed: _generateNewPayrollRun,
-            icon: const Icon(Icons.play_circle_outline),
-          ),
-          IconButton(
-            tooltip: 'Refresh',
-            onPressed: _isLoading ? null : () => _loadData(),
-            icon: const Icon(Icons.sync),
-          ),
-          const SizedBox(width: 8),
-        ],
-      ),
-      floatingActionButton: FloatingActionButton.extended(
-        onPressed: () => _openDynamicSalaryAdjustment(),
-        icon: const Icon(Icons.add_circle_outline),
-        label: const Text('Add Salary Line'),
-      ),
+      floatingActionButton: isDesktop
+          ? null
+          : FloatingActionButton.extended(
+              onPressed: () => _openDynamicSalaryAdjustment(),
+              icon: const Icon(Icons.add_circle_outline),
+              label: const Text('Add Salary Line'),
+            ),
       body: LayoutBuilder(
         builder: (context, constraints) {
           final horizontalPadding = constraints.maxWidth > 900 ? 24.0 : 16.0;
@@ -490,7 +495,7 @@ class _PayrollScreenState extends State<PayrollScreen> {
           return RefreshIndicator(
             onRefresh: () => _loadData(),
             child: ListView(
-              padding: EdgeInsets.fromLTRB(horizontalPadding, 12, horizontalPadding, 100),
+              padding: EdgeInsets.fromLTRB(horizontalPadding, isDesktop ? 6 : 12, horizontalPadding, 100),
               children: [
                 if (_usingCachedData) const OfflineCacheBanner(),
                 if (_error != null) ...[

@@ -328,37 +328,43 @@ class _ClientsScreenState extends State<ClientsScreen> {
 
   @override
   Widget build(BuildContext context) {
+    final isDesktop = MediaQuery.sizeOf(context).width >= 760;
+
     return Scaffold(
-      appBar: AppBar(
-        title: const Text('Clients & Accounts'),
-        leading: widget.onBack == null
-            ? null
-            : IconButton(
-                tooltip: 'Back',
-                onPressed: widget.onBack,
-                icon: const Icon(Icons.arrow_back),
-              ),
-        actions: [
-          IconButton(
-            tooltip: 'Refresh clients',
-            onPressed: _isLoading ? null : _loadClients,
-            icon: const Icon(Icons.sync),
-          ),
-          const SizedBox(width: 8),
-        ],
-      ),
-      floatingActionButton: FloatingActionButton.extended(
-        onPressed: _createClient,
-        icon: const Icon(Icons.person_add_alt_1),
-        label: const Text('Add client'),
-      ),
+      appBar: isDesktop
+          ? null
+          : AppBar(
+              title: const Text('Clients & Accounts'),
+              leading: widget.onBack == null
+                  ? null
+                  : IconButton(
+                      tooltip: 'Back',
+                      onPressed: widget.onBack,
+                      icon: const Icon(Icons.arrow_back),
+                    ),
+              actions: [
+                IconButton(
+                  tooltip: 'Refresh clients',
+                  onPressed: _isLoading ? null : _loadClients,
+                  icon: const Icon(Icons.sync),
+                ),
+                const SizedBox(width: 8),
+              ],
+            ),
+      floatingActionButton: isDesktop
+          ? null
+          : FloatingActionButton.extended(
+              onPressed: _createClient,
+              icon: const Icon(Icons.person_add_alt_1),
+              label: const Text('Add client'),
+            ),
       body: LayoutBuilder(
         builder: (context, constraints) {
           final horizontalPadding = constraints.maxWidth > 900 ? 24.0 : 16.0;
           return RefreshIndicator(
             onRefresh: _loadClients,
             child: ListView(
-              padding: EdgeInsets.fromLTRB(horizontalPadding, 8, horizontalPadding, 100),
+              padding: EdgeInsets.fromLTRB(horizontalPadding, isDesktop ? 6 : 8, horizontalPadding, 100),
               children: [
                 if (_usingCachedData) const OfflineCacheBanner(),
                 if (_error != null) ...[
@@ -378,6 +384,21 @@ class _ClientsScreenState extends State<ClientsScreen> {
                     dateRange: _dateRange,
                     onDateRangeChanged: (range) => setState(() => _dateRange = range),
                     onDownloadReport: () => _downloadClientsReport(_visibleClients),
+                    directoryActions: [
+                      if (isDesktop) ...[
+                        FilledButton.icon(
+                          style: FilledButton.styleFrom(
+                            backgroundColor: const Color(0xFF1D68F0),
+                            foregroundColor: Colors.white,
+                            padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
+                            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+                          ),
+                          onPressed: _createClient,
+                          icon: const Icon(Icons.person_add_alt_1_rounded, size: 16),
+                          label: const Text('Add Client', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 12.5)),
+                        ),
+                      ],
+                    ],
                     idGetter: (c) => c.id?.toString() ?? c.name,
                     selectedIds: _selectedIds,
                     onToggleSelect: (id) {

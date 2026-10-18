@@ -421,47 +421,53 @@ class _ExpensesScreenState extends State<ExpensesScreen> {
   @override
   Widget build(BuildContext context) {
     final visibleExpenses = _visibleExpenses;
+    final isDesktop = MediaQuery.sizeOf(context).width >= 760;
+
     return Scaffold(
-      appBar: AppBar(
-        title: const Text('Expenses & Bills'),
-        actions: [
-          if (_isScanningReceipt)
-            const Padding(
-              padding: EdgeInsets.symmetric(horizontal: 16),
-              child: Center(
-                child: SizedBox(
-                  width: 20,
-                  height: 20,
-                  child: CircularProgressIndicator(strokeWidth: 2),
+      appBar: isDesktop
+          ? null
+          : AppBar(
+              title: const Text('Expenses & Bills'),
+              actions: [
+                if (_isScanningReceipt)
+                  const Padding(
+                    padding: EdgeInsets.symmetric(horizontal: 16),
+                    child: Center(
+                      child: SizedBox(
+                        width: 20,
+                        height: 20,
+                        child: CircularProgressIndicator(strokeWidth: 2),
+                      ),
+                    ),
+                  )
+                else
+                  IconButton(
+                    tooltip: 'Scan receipt',
+                    onPressed: _scanReceipt,
+                    icon: const Icon(Icons.document_scanner_outlined),
+                  ),
+                IconButton(
+                  tooltip: 'Refresh expenses',
+                  onPressed: _isLoading || _isScanningReceipt ? null : _loadExpenses,
+                  icon: const Icon(Icons.sync),
                 ),
-              ),
-            )
-          else
-            IconButton(
-              tooltip: 'Scan receipt',
-              onPressed: _scanReceipt,
-              icon: const Icon(Icons.document_scanner_outlined),
+                const SizedBox(width: 16),
+              ],
             ),
-          IconButton(
-            tooltip: 'Refresh expenses',
-            onPressed: _isLoading || _isScanningReceipt ? null : _loadExpenses,
-            icon: const Icon(Icons.sync),
-          ),
-          const SizedBox(width: 16),
-        ],
-      ),
-      floatingActionButton: FloatingActionButton.extended(
-        onPressed: _createExpense,
-        icon: const Icon(Icons.add),
-        label: const Text('Add expense'),
-      ),
+      floatingActionButton: isDesktop
+          ? null
+          : FloatingActionButton.extended(
+              onPressed: _createExpense,
+              icon: const Icon(Icons.add),
+              label: const Text('Add expense'),
+            ),
       body: LayoutBuilder(
         builder: (context, constraints) {
           final horizontalPadding = constraints.maxWidth > 900 ? 24.0 : 16.0;
           return RefreshIndicator(
             onRefresh: _loadExpenses,
             child: ListView(
-              padding: EdgeInsets.fromLTRB(horizontalPadding, 8, horizontalPadding, 100),
+              padding: EdgeInsets.fromLTRB(horizontalPadding, isDesktop ? 6 : 8, horizontalPadding, 100),
               children: [
                 if (_usingCachedData) const OfflineCacheBanner(),
                 if (_error != null) ...[
@@ -481,6 +487,35 @@ class _ExpensesScreenState extends State<ExpensesScreen> {
                     dateRange: _dateRange,
                     onDateRangeChanged: (range) => setState(() => _dateRange = range),
                     onDownloadReport: () => _downloadExpensesReport(visibleExpenses),
+                    directoryActions: [
+                      if (isDesktop) ...[
+                        OutlinedButton.icon(
+                          style: OutlinedButton.styleFrom(
+                            foregroundColor: const Color(0xFF1D68F0),
+                            side: const BorderSide(color: Color(0xFF93C5FD)),
+                            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+                          ),
+                          onPressed: _isScanningReceipt ? null : _scanReceipt,
+                          icon: _isScanningReceipt
+                              ? const SizedBox(width: 14, height: 14, child: CircularProgressIndicator(strokeWidth: 2))
+                              : const Icon(Icons.document_scanner_outlined, size: 16),
+                          label: Text(_isScanningReceipt ? 'Scanning...' : 'Scan Bill OCR', style: const TextStyle(fontSize: 12.5, fontWeight: FontWeight.bold)),
+                        ),
+                        const SizedBox(width: 8),
+                        FilledButton.icon(
+                          style: FilledButton.styleFrom(
+                            backgroundColor: const Color(0xFF1D68F0),
+                            foregroundColor: Colors.white,
+                            padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
+                            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+                          ),
+                          onPressed: _createExpense,
+                          icon: const Icon(Icons.add, size: 16),
+                          label: const Text('Add Expense', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 12.5)),
+                        ),
+                      ],
+                    ],
                     searchController: _searchController,
                     searchHint: 'Search title, vendor or category...',
                     filterChips: _categories,

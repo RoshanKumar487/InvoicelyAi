@@ -265,11 +265,14 @@ class _EmailSchedulerSettingsScreenState extends State<EmailSchedulerSettingsScr
     final activeSenderEmail = _useProfileEmail && _businessProfileEmail.isNotEmpty
         ? _businessProfileEmail
         : _fromEmail.text.trim();
+    final isDesktop = MediaQuery.sizeOf(context).width >= 760;
 
     return Scaffold(
       backgroundColor: const Color(0xFFF8FAFC),
-      appBar: AppBar(
-        title: const Column(
+      appBar: isDesktop
+          ? null
+          : AppBar(
+              title: const Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             Text('Email & Scheduler Settings', style: TextStyle(fontSize: 17, fontWeight: FontWeight.w700)),
@@ -305,6 +308,30 @@ class _EmailSchedulerSettingsScreenState extends State<EmailSchedulerSettingsScr
         child: ListView(
           padding: const EdgeInsets.all(20),
           children: [
+            if (isDesktop) ...[
+              Row(
+                children: [
+                  const Text(
+                    'Email & Scheduler Settings',
+                    style: TextStyle(fontSize: 18, fontWeight: FontWeight.w800, color: Color(0xFF0F172A)),
+                  ),
+                  const Spacer(),
+                  FilledButton.icon(
+                    style: FilledButton.styleFrom(
+                      backgroundColor: const Color(0xFF1D68F0),
+                      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+                    ),
+                    onPressed: _isSaving ? null : _saveSettings,
+                    icon: _isSaving
+                        ? const SizedBox(width: 14, height: 14, child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white))
+                        : const Icon(Icons.save_rounded, size: 16),
+                    label: const Text('Save Settings', style: TextStyle(fontWeight: FontWeight.bold)),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 14),
+            ],
             // 1. SENDER EMAIL & BUSINESS IDENTITY (No technical mail server setup for customer)
             AppCard(
               padding: const EdgeInsets.all(20),

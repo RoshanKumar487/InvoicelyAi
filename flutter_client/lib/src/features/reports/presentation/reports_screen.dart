@@ -1156,13 +1156,16 @@ class _ReportsScreenState extends State<ReportsScreen> {
     }
 
     final filtered = _filteredRows;
+    final isDesktop = MediaQuery.sizeOf(context).width >= 760;
 
     return Scaffold(
       backgroundColor: const Color(0xFFF8FAFC),
-      appBar: AppBar(
-        backgroundColor: Colors.white,
-        elevation: 0,
-        surfaceTintColor: Colors.transparent,
+      appBar: isDesktop
+          ? null
+          : AppBar(
+              backgroundColor: Colors.white,
+              elevation: 0,
+              surfaceTintColor: Colors.transparent,
         leading: widget.onBack == null
             ? null
             : IconButton(
