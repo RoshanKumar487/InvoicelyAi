@@ -1,4 +1,4 @@
-import 'package:flutter/material.dart';
+ import 'package:flutter/material.dart';
 
 import '../../../../data/models/auth_models.dart';
 import '../../../../theme/app_theme.dart';
@@ -43,15 +43,15 @@ class DashboardTopHeader extends StatelessWidget {
     return Container(
       padding: EdgeInsets.symmetric(
         horizontal: isDesktop ? 18 : 14,
-        vertical: isDesktop ? 12 : 12,
+        vertical: isDesktop ? 10 : 12,
       ),
-      decoration: AppTheme.neuCardDecoration(radius: 26),
+      decoration: AppTheme.neuCardDecoration(radius: 20),
       child: isDesktop
           ? Row(
               children: [
                 _buildCompanyTopNavBadge(isDesktop: true),
                 const Spacer(),
-                _buildSearchField(width: 240),
+                _buildSearchField(width: 270),
                 const SizedBox(width: 12),
                 _buildFilterDropdown(context),
                 const SizedBox(width: 10),
@@ -84,11 +84,11 @@ class DashboardTopHeader extends StatelessWidget {
                     _buildUserAvatar(context),
                   ],
                 ),
-                const SizedBox(height: 12),
+                const SizedBox(height: 10),
                 Row(
                   children: [
                     Expanded(child: _buildSearchField()),
-                    const SizedBox(width: 10),
+                    const SizedBox(width: 8),
                     _buildFilterDropdown(context),
                   ],
                 ),
@@ -98,101 +98,88 @@ class DashboardTopHeader extends StatelessWidget {
   }
 
   Widget _buildCompanyTopNavBadge({required bool isDesktop}) {
-    return Row(
-      mainAxisSize: MainAxisSize.min,
-      children: [
-        if (isDesktop) ...[
-          const Text(
-            'Dashboard',
-            style: TextStyle(
-              fontSize: 15.5,
-              fontWeight: FontWeight.w800,
-              color: Color(0xFF1E293B),
-              letterSpacing: -0.3,
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 7),
+      decoration: BoxDecoration(
+        color: const Color(0xFFF8FAFC),
+        borderRadius: BorderRadius.circular(20),
+        border: Border.all(color: const Color(0xFFE2E8F0), width: 1.0),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Container(
+            width: 26,
+            height: 26,
+            decoration: BoxDecoration(
+              color: const Color(0xFF0B1736),
+              borderRadius: BorderRadius.circular(8),
+            ),
+            child: const Icon(
+              Icons.apartment_rounded,
+              size: 14,
+              color: Colors.white,
             ),
           ),
-          const Padding(
-            padding: EdgeInsets.symmetric(horizontal: 12),
-            child: SizedBox(
-              height: 18,
-              child: VerticalDivider(width: 1, color: Color(0xFFCBD5E1)),
+          const SizedBox(width: 8),
+          ConstrainedBox(
+            constraints: BoxConstraints(maxWidth: isDesktop ? 240 : 160),
+            child: Text(
+              companyName,
+              overflow: TextOverflow.ellipsis,
+              style: const TextStyle(
+                fontSize: 13,
+                fontWeight: FontWeight.w700,
+                color: Color(0xFF0F172A),
+                letterSpacing: -0.2,
+              ),
             ),
+          ),
+          const SizedBox(width: 7),
+          Container(
+            width: 7,
+            height: 7,
+            decoration: const BoxDecoration(
+              color: Color(0xFF10B981),
+              shape: BoxShape.circle,
+            ),
+          ),
+          const SizedBox(width: 4),
+          const Icon(
+            Icons.keyboard_arrow_down_rounded,
+            size: 16,
+            color: Color(0xFF64748B),
           ),
         ],
-        Flexible(
-          child: Container(
-            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-            decoration: AppTheme.neuPillDecoration(radius: 20),
-            child: Row(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                Container(
-                  width: 26,
-                  height: 26,
-                  decoration: AppTheme.neuOrbDecoration(
-                    active: true,
-                    activeColor: const Color(0xFF2B3548),
-                  ),
-                  child: const Icon(
-                    Icons.business_rounded,
-                    size: 13,
-                    color: Colors.white,
-                  ),
-                ),
-                const SizedBox(width: 8),
-                Flexible(
-                  child: ConstrainedBox(
-                    constraints: BoxConstraints(maxWidth: isDesktop ? 280 : 180),
-                    child: Text(
-                      companyName,
-                      overflow: TextOverflow.ellipsis,
-                      style: const TextStyle(
-                        fontSize: 13,
-                        fontWeight: FontWeight.w800,
-                        color: Color(0xFF1E293B),
-                        letterSpacing: -0.2,
-                      ),
-                    ),
-                  ),
-                ),
-                const SizedBox(width: 6),
-                Container(
-                  width: 7,
-                  height: 7,
-                  decoration: const BoxDecoration(
-                    color: Color(0xFF10B981),
-                    shape: BoxShape.circle,
-                  ),
-                ),
-              ],
-            ),
-          ),
-        ),
-      ],
+      ),
     );
   }
 
   Widget _buildSearchField({double? width}) {
     return Container(
-      height: 40,
+      height: 38,
       width: width,
-      decoration: AppTheme.neuRecessedDecoration(radius: 18),
+      decoration: BoxDecoration(
+        color: const Color(0xFFF8FAFC),
+        borderRadius: BorderRadius.circular(20),
+        border: Border.all(color: const Color(0xFFE2E8F0), width: 1.0),
+      ),
       child: TextField(
         controller: searchController,
         onChanged: onSearchChanged,
         style: const TextStyle(
-            fontSize: 13, fontWeight: FontWeight.w600, color: Color(0xFF1E293B)),
+            fontSize: 12.5, fontWeight: FontWeight.w600, color: Color(0xFF0F172A)),
         decoration: const InputDecoration(
           filled: false,
-          hintText: 'Search invoices, clients...',
-          hintStyle: TextStyle(fontSize: 12, color: Color(0xFF64748B)),
+          hintText: 'Search invoices, clients, etc...',
+          hintStyle: TextStyle(fontSize: 12, color: Color(0xFF94A3B8)),
           prefixIcon:
-              Icon(Icons.search_rounded, size: 18, color: Color(0xFF475569)),
+              Icon(Icons.search_rounded, size: 17, color: Color(0xFF94A3B8)),
           border: InputBorder.none,
           enabledBorder: InputBorder.none,
           focusedBorder: InputBorder.none,
           isDense: true,
-          contentPadding: EdgeInsets.symmetric(vertical: 10),
+          contentPadding: EdgeInsets.symmetric(vertical: 9),
         ),
       ),
     );
@@ -209,10 +196,14 @@ class DashboardTopHeader extends StatelessWidget {
         onTap: onTap,
         borderRadius: BorderRadius.circular(20),
         child: Container(
-          width: 40,
-          height: 40,
-          decoration: AppTheme.neuOrbDecoration(),
-          child: Icon(icon, size: 19, color: const Color(0xFF334155)),
+          width: 38,
+          height: 38,
+          decoration: BoxDecoration(
+            color: const Color(0xFFF8FAFC),
+            shape: BoxShape.circle,
+            border: Border.all(color: const Color(0xFFE2E8F0), width: 1.0),
+          ),
+          child: Icon(icon, size: 18, color: const Color(0xFF475569)),
         ),
       ),
     );
@@ -232,8 +223,8 @@ class DashboardTopHeader extends StatelessWidget {
             top: 7,
             right: 7,
             child: Container(
-              width: 8.5,
-              height: 8.5,
+              width: 8,
+              height: 8,
               decoration: BoxDecoration(
                 color: const Color(0xFFEF4444),
                 shape: BoxShape.circle,
@@ -259,18 +250,19 @@ class DashboardTopHeader extends StatelessWidget {
         },
         borderRadius: BorderRadius.circular(20),
         child: Container(
-          width: 40,
-          height: 40,
-          decoration: AppTheme.neuOrbDecoration(
-            active: true,
-            activeColor: const Color(0xFFE2E8F0),
+          width: 38,
+          height: 38,
+          decoration: BoxDecoration(
+            color: const Color(0xFFE0E7FF),
+            shape: BoxShape.circle,
+            border: Border.all(color: const Color(0xFFC7D2FE), width: 1.0),
           ),
           child: Center(
             child: Text(
               userInitial,
               style: const TextStyle(
-                color: Color(0xFF0F172A),
-                fontSize: 15,
+                color: Color(0xFF1E3A8A),
+                fontSize: 14.5,
                 fontWeight: FontWeight.w800,
               ),
             ),
@@ -295,10 +287,10 @@ class DashboardTopHeader extends StatelessWidget {
     return PopupMenuButton<String>(
       onSelected: onFilterChanged,
       shape: RoundedRectangleBorder(
-        borderRadius: BorderRadius.circular(18),
-        side: BorderSide(color: Colors.white.withValues(alpha: 0.9)),
+        borderRadius: BorderRadius.circular(16),
+        side: const BorderSide(color: Color(0xFFE2E8F0)),
       ),
-      color: AppColors.neuSurface,
+      color: Colors.white,
       elevation: 6,
       position: PopupMenuPosition.under,
       itemBuilder: (context) => options.map((opt) {
@@ -313,7 +305,7 @@ class DashboardTopHeader extends StatelessWidget {
                     : Icons.calendar_today_outlined,
                 size: 15,
                 color: isSelected
-                    ? const Color(0xFF2563EB)
+                    ? const Color(0xFF1D68F0)
                     : const Color(0xFF64748B),
               ),
               const SizedBox(width: 8),
@@ -324,7 +316,7 @@ class DashboardTopHeader extends StatelessWidget {
                     fontSize: 12.5,
                     fontWeight: isSelected ? FontWeight.w800 : FontWeight.w600,
                     color: isSelected
-                        ? const Color(0xFF1E293B)
+                        ? const Color(0xFF0F172A)
                         : const Color(0xFF475569),
                   ),
                 ),
@@ -334,30 +326,34 @@ class DashboardTopHeader extends StatelessWidget {
         );
       }).toList(),
       child: Container(
-        height: 40,
-        padding: const EdgeInsets.symmetric(horizontal: 13),
-        decoration: AppTheme.neuPillDecoration(radius: 20),
+        height: 38,
+        padding: const EdgeInsets.symmetric(horizontal: 12),
+        decoration: BoxDecoration(
+          color: const Color(0xFFF8FAFC),
+          borderRadius: BorderRadius.circular(20),
+          border: Border.all(color: const Color(0xFFE2E8F0), width: 1.0),
+        ),
         child: Row(
           mainAxisSize: MainAxisSize.min,
           children: [
             const Icon(Icons.calendar_today_outlined,
-                size: 13, color: Color(0xFF334155)),
+                size: 13, color: Color(0xFF475569)),
             const SizedBox(width: 6),
             ConstrainedBox(
-              constraints: const BoxConstraints(maxWidth: 118),
+              constraints: const BoxConstraints(maxWidth: 110),
               child: Text(
                 selectedFilter,
                 overflow: TextOverflow.ellipsis,
                 style: const TextStyle(
                   fontSize: 12,
-                  fontWeight: FontWeight.w800,
-                  color: Color(0xFF1E293B),
+                  fontWeight: FontWeight.w700,
+                  color: Color(0xFF0F172A),
                 ),
               ),
             ),
             const SizedBox(width: 4),
             const Icon(Icons.keyboard_arrow_down_rounded,
-                size: 16, color: Color(0xFF64748B)),
+                size: 15, color: Color(0xFF64748B)),
           ],
         ),
       ),
@@ -382,6 +378,22 @@ class DashboardWelcomeRow extends StatelessWidget {
     return Row(
       crossAxisAlignment: CrossAxisAlignment.center,
       children: [
+        // Waving Hand Emoji
+        Container(
+          width: 44,
+          height: 44,
+          decoration: BoxDecoration(
+            color: const Color(0xFFFEF3C7),
+            borderRadius: BorderRadius.circular(14),
+          ),
+          child: const Center(
+            child: Text(
+              '👋',
+              style: TextStyle(fontSize: 22),
+            ),
+          ),
+        ),
+        const SizedBox(width: 14),
         Expanded(
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
@@ -391,20 +403,20 @@ class DashboardWelcomeRow extends StatelessWidget {
                 maxLines: 1,
                 overflow: TextOverflow.ellipsis,
                 style: const TextStyle(
-                  fontSize: 23,
+                  fontSize: 22,
                   fontWeight: FontWeight.w900,
-                  color: Color(0xFF1E293B),
-                  letterSpacing: -0.5,
+                  color: Color(0xFF0F172A),
+                  letterSpacing: -0.4,
                 ),
               ),
-              const SizedBox(height: 3),
+              const SizedBox(height: 2),
               Text(
                 subtitle,
                 maxLines: 1,
                 overflow: TextOverflow.ellipsis,
                 style: const TextStyle(
                   fontSize: 13,
-                  fontWeight: FontWeight.w600,
+                  fontWeight: FontWeight.w500,
                   color: Color(0xFF64748B),
                 ),
               ),
@@ -412,29 +424,36 @@ class DashboardWelcomeRow extends StatelessWidget {
           ),
         ),
         if (onCreateInvoice != null) ...[
-          const SizedBox(width: 10),
+          const SizedBox(width: 12),
           InkWell(
             onTap: onCreateInvoice,
-            borderRadius: BorderRadius.circular(24),
+            borderRadius: BorderRadius.circular(16),
             child: Container(
-              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 11),
-              decoration: AppTheme.neuPillDecoration(
-                radius: 24,
-                active: true,
-                activeColor: const Color(0xFF2B3548),
+              padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 11),
+              decoration: BoxDecoration(
+                gradient: const LinearGradient(
+                  colors: [Color(0xFF1D68F0), Color(0xFF2563EB)],
+                ),
+                borderRadius: BorderRadius.circular(14),
+                boxShadow: const [
+                  BoxShadow(
+                    color: Color(0x381D68F0),
+                    offset: Offset(0, 4),
+                    blurRadius: 12,
+                  ),
+                ],
               ),
               child: const Row(
                 mainAxisSize: MainAxisSize.min,
                 children: [
-                  Icon(Icons.add_circle_outline_rounded,
-                      size: 17, color: Colors.white),
-                  SizedBox(width: 7),
+                  Icon(Icons.post_add_rounded, size: 18, color: Colors.white),
+                  SizedBox(width: 8),
                   Text(
                     'New Invoice',
                     style: TextStyle(
                       color: Colors.white,
-                      fontSize: 13,
-                      fontWeight: FontWeight.w800,
+                      fontSize: 13.5,
+                      fontWeight: FontWeight.w700,
                       letterSpacing: -0.2,
                     ),
                   ),
@@ -455,24 +474,54 @@ class DashboardAssistantBanner extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final isCompact = MediaQuery.sizeOf(context).width < 520;
+    final isCompact = MediaQuery.sizeOf(context).width < 620;
     return Container(
-      decoration: AppTheme.neuCardDecoration(radius: 24),
-      padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 16),
+      decoration: BoxDecoration(
+        gradient: const LinearGradient(
+          begin: Alignment.topLeft,
+          end: Alignment.bottomRight,
+          colors: [
+            Color(0xFFEFF6FF), // Soft icy blue
+            Color(0xFFF5F3FF), // Soft lavender
+            Color(0xFFFDF4FF), // Soft violet-pink
+          ],
+        ),
+        borderRadius: BorderRadius.circular(20),
+        border: Border.all(color: const Color(0xFFE0E7FF), width: 1.2),
+        boxShadow: const [
+          BoxShadow(
+            color: Color(0x060F172A),
+            offset: Offset(0, 3),
+            blurRadius: 10,
+          ),
+        ],
+      ),
+      padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 16),
       child: Row(
         crossAxisAlignment: CrossAxisAlignment.center,
         children: [
+          // Sparkle Orb
           Container(
             width: 48,
             height: 48,
-            decoration: AppTheme.neuOrbDecoration(),
+            decoration: BoxDecoration(
+              color: Colors.white.withValues(alpha: 0.9),
+              shape: BoxShape.circle,
+              boxShadow: const [
+                BoxShadow(
+                  color: Color(0x104F46E5),
+                  offset: Offset(0, 2),
+                  blurRadius: 8,
+                ),
+              ],
+            ),
             child: const Icon(
               Icons.auto_awesome_rounded,
-              color: Color(0xFF2B3548),
-              size: 23,
+              color: Color(0xFF1D68F0),
+              size: 24,
             ),
           ),
-          const SizedBox(width: 14),
+          const SizedBox(width: 16),
           Expanded(
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
@@ -480,30 +529,30 @@ class DashboardAssistantBanner extends StatelessWidget {
                 const Text(
                   'AI INVOICE ASSISTANT',
                   style: TextStyle(
-                    color: Color(0xFF475569),
-                    fontSize: 10,
+                    color: Color(0xFF4F46E5),
+                    fontSize: 10.5,
                     fontWeight: FontWeight.w800,
-                    letterSpacing: 0.7,
+                    letterSpacing: 0.8,
                   ),
                 ),
                 const SizedBox(height: 3),
                 const Text(
                   'Generate invoices & insights in seconds',
                   style: TextStyle(
-                    fontSize: 14.5,
+                    fontSize: 15.5,
                     fontWeight: FontWeight.w800,
-                    color: Color(0xFF1E293B),
+                    color: Color(0xFF0F172A),
                     letterSpacing: -0.3,
                   ),
                   maxLines: 1,
                   overflow: TextOverflow.ellipsis,
                 ),
                 if (!isCompact) ...[
-                  const SizedBox(height: 2),
+                  const SizedBox(height: 3),
                   const Text(
                     'Auto-fill security guard line items, calculate daily wages & GST, and query metrics.',
                     style: TextStyle(
-                      fontSize: 11.5,
+                      fontSize: 12,
                       color: Color(0xFF64748B),
                       height: 1.35,
                     ),
@@ -514,30 +563,40 @@ class DashboardAssistantBanner extends StatelessWidget {
               ],
             ),
           ),
-          const SizedBox(width: 12),
+          const SizedBox(width: 14),
           InkWell(
             onTap: onTap,
-            borderRadius: BorderRadius.circular(22),
+            borderRadius: BorderRadius.circular(20),
             child: Container(
               padding: EdgeInsets.symmetric(
-                  horizontal: isCompact ? 12 : 16, vertical: 10),
-              decoration: AppTheme.neuPillDecoration(
-                radius: 22,
-                active: true,
-                activeColor: const Color(0xFF2B3548),
+                horizontal: isCompact ? 14 : 18,
+                vertical: 10,
+              ),
+              decoration: BoxDecoration(
+                gradient: const LinearGradient(
+                  colors: [Color(0xFF4F46E5), Color(0xFF3B82F6)],
+                ),
+                borderRadius: BorderRadius.circular(20),
+                boxShadow: const [
+                  BoxShadow(
+                    color: Color(0x354F46E5),
+                    offset: Offset(0, 4),
+                    blurRadius: 10,
+                  ),
+                ],
               ),
               child: Row(
                 mainAxisSize: MainAxisSize.min,
                 children: [
                   Text(
-                    isCompact ? 'Open AI' : 'Try Assistant',
+                    isCompact ? 'Try AI' : 'Try Assistant',
                     style: const TextStyle(
                       color: Colors.white,
-                      fontSize: 12,
-                      fontWeight: FontWeight.w800,
+                      fontSize: 12.5,
+                      fontWeight: FontWeight.w700,
                     ),
                   ),
-                  const SizedBox(width: 5),
+                  const SizedBox(width: 6),
                   const Icon(
                     Icons.arrow_forward_rounded,
                     color: Colors.white,
