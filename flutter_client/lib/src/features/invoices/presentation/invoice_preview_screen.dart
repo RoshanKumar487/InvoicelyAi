@@ -6,6 +6,7 @@ import 'package:share_plus/share_plus.dart';
 
 import '../../../core/api/api_exception.dart';
 import '../../../core/storage/local_preferences.dart';
+import '../../../shared/utils/file_download_helper.dart';
 import '../../../shared/widgets/signature_pad_dialog.dart';
 import '../../../shared/widgets/whatsapp_icon.dart';
 import '../../settings/data/settings_repository.dart';
@@ -445,12 +446,14 @@ class _InvoicePreviewScreenState extends State<InvoicePreviewScreen> {
     try {
       final bytes = await _generatePdfBytes();
       final pdfName = 'Invoice_$_safeFileName.pdf';
-      await Printing.sharePdf(
+      await FileDownloadHelper.downloadFile(
         bytes: bytes,
         filename: pdfName,
+        mimeType: 'application/pdf',
       );
+      if (mounted) _showMessage('✓ Saved $pdfName to Downloads');
     } catch (error) {
-      if (mounted) _showMessage('Could not export PDF: $error');
+      if (mounted) _showMessage('Could not download PDF: $error');
     } finally {
       if (mounted) setState(() => _busy = false);
     }
@@ -466,25 +469,15 @@ class _InvoicePreviewScreenState extends State<InvoicePreviewScreen> {
         businessProfile: _profile,
       );
       final name = 'Invoice_$_safeFileName.docx';
-      final result = await SharePlus.instance.share(
-        ShareParams(
-          files: [
-            XFile.fromData(
-              bytes,
-              mimeType:
-                  'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
-              name: name,
-            ),
-          ],
-          fileNameOverrides: [name],
-          subject: 'Invoice ${_invoice.invoiceNumber}',
-        ),
+      await FileDownloadHelper.downloadFile(
+        bytes: bytes,
+        filename: name,
+        mimeType:
+            'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
       );
-      if (mounted && result.status == ShareResultStatus.unavailable) {
-        _showMessage('File sharing is unavailable on this platform.');
-      }
+      if (mounted) _showMessage('✓ Saved $name to Downloads');
     } catch (error) {
-      if (mounted) _showMessage('Could not share DOCX: $error');
+      if (mounted) _showMessage('Could not download DOCX: $error');
     } finally {
       if (mounted) setState(() => _busy = false);
     }

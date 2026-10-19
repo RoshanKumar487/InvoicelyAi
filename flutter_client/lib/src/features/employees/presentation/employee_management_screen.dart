@@ -322,10 +322,29 @@ class _EmployeeManagementScreenState extends State<EmployeeManagementScreen> {
     ];
   }
 
+  void _handleDownloadEmployees(List<Employee> currentList) {
+    if (_selectedIds.isNotEmpty) {
+      final selectedList = <Employee>[];
+      for (final e in currentList) {
+        final idStr = e.id?.toString() ?? e.employeeCode;
+        if (_selectedIds.contains(idStr) || _selectedIds.contains(e.employeeCode)) {
+          selectedList.add(e);
+        }
+      }
+      _downloadEmployeesReport(selectedList);
+    } else {
+      _downloadEmployeesReport(currentList);
+    }
+  }
+
   void _downloadEmployeesReport(List<Employee> list) {
+    final isSubset = _selectedIds.isNotEmpty && list.length == _selectedIds.length;
+    final title = isSubset
+        ? 'Employee Workforce (${list.length} Selected)'
+        : 'Employee Workforce';
     TableExportHelper.showExportMenu(
       context: context,
-      title: 'Employee Workforce',
+      title: title,
       headers: [
         'Code',
         'Full Name',
@@ -461,7 +480,7 @@ class _EmployeeManagementScreenState extends State<EmployeeManagementScreen> {
                     metrics: _buildMetrics(),
                     dateRange: _dateRange,
                     onDateRangeChanged: (range) => setState(() => _dateRange = range),
-                    onDownloadReport: () => _downloadEmployeesReport(filtered),
+                    onDownloadReport: () => _handleDownloadEmployees(filtered),
                     idGetter: (emp) => emp.id?.toString() ?? emp.employeeCode,
                     selectedIds: _selectedIds,
                     onToggleSelect: (id) {

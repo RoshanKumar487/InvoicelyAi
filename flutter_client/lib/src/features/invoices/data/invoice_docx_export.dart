@@ -47,6 +47,13 @@ class InvoiceDocxExport {
         ? presetStr
         : () {
             final cat = (template?.category ?? '').toLowerCase();
+            final id = (template?.id ?? '').toLowerCase();
+            if (id.contains('creative') || cat.contains('creative')) return 'creative_vibrant';
+            if (id.contains('construction') || cat.contains('construction')) return 'construction_contractor';
+            if (id.contains('healthcare') || cat.contains('healthcare')) return 'healthcare_clinic';
+            if (id.contains('logistics') || cat.contains('logistics')) return 'logistics_freight';
+            if (id.contains('legal') || cat.contains('legal')) return 'legal_counsel';
+            if (id.contains('hospitality') || cat.contains('hospitality')) return 'hospitality_catering';
             if (cat.contains('gst')) return 'gst_service';
             if (cat.contains('consult')) return 'consulting';
             if (cat.contains('retail')) return 'retail';

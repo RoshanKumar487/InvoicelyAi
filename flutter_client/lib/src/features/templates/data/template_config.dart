@@ -30,6 +30,7 @@ class TemplateConfig {
     this.showTaxBreakdown = true,
     this.showPaymentInstructions = true,
     this.showSignature = true,
+    this.layoutStyle = 'modern_split',
     this.footer =
         'This is a computer generated invoice and does not require physical signature unless specified.',
   });
@@ -62,6 +63,7 @@ class TemplateConfig {
   final bool showTaxBreakdown;
   final bool showPaymentInstructions;
   final bool showSignature;
+  final String layoutStyle;
   final String footer;
 
   Map<String, Object?> toJson() => {
@@ -93,6 +95,7 @@ class TemplateConfig {
         'showTaxBreakdown': showTaxBreakdown,
         'showPaymentInstructions': showPaymentInstructions,
         'showSignature': showSignature,
+        'layoutStyle': layoutStyle,
         'footer': footer,
       };
 
@@ -128,6 +131,7 @@ class TemplateConfig {
         showPaymentInstructions:
             json['showPaymentInstructions'] as bool? ?? true,
         showSignature: json['showSignature'] as bool? ?? true,
+        layoutStyle: json['layoutStyle'] as String? ?? 'modern_split',
         footer: json['footer'] as String? ??
             'This is a computer generated invoice and does not require physical signature unless specified.',
       );
@@ -172,6 +176,7 @@ class TemplateConfig {
     bool? showTaxBreakdown,
     bool? showPaymentInstructions,
     bool? showSignature,
+    String? layoutStyle,
     String? footer,
   }) =>
       TemplateConfig(
@@ -204,6 +209,7 @@ class TemplateConfig {
         showPaymentInstructions:
             showPaymentInstructions ?? this.showPaymentInstructions,
         showSignature: showSignature ?? this.showSignature,
+        layoutStyle: layoutStyle ?? this.layoutStyle,
         footer: footer ?? this.footer,
       );
 }
@@ -698,5 +704,147 @@ const templatePresets = <TemplateConfig>[
     color: '#0F172A',
     font: 'Times New Roman',
     itemHeader: 'Particulars / Service Scope',
+  ),
+
+  // ===========================================================================
+  // 6. CREATIVE & DIGITAL AGENCY PRESETS
+  // ===========================================================================
+  TemplateConfig(
+    id: 'creative_vibrant',
+    name: 'Creative Agency & Design Studio',
+    title: 'CREATIVE SERVICES INVOICE',
+    category: 'Creative',
+    businessCategory: 'Creative & Marketing',
+    designStyle: 'Modern',
+    color: '#7C3AED',
+    secondaryColor: '#EC4899',
+    font: 'Calibri',
+    itemHeader: 'Campaign Deliverable / Creative Asset',
+    quantityHeader: 'Milestone / Qty',
+    rateHeader: 'Unit Price',
+    amountHeader: 'Total Amount',
+    showQrCode: true,
+    showSignature: true,
+    headerLayout: 'modern',
+    tableStyle: 'clean',
+  ),
+
+  // ===========================================================================
+  // 7. CONSTRUCTION & CIVIL CONTRACTING PRESETS
+  // ===========================================================================
+  TemplateConfig(
+    id: 'construction_contractor',
+    name: 'Contractor & Construction Milestone',
+    title: 'CONTRACTOR TAX INVOICE & RA BILL',
+    category: 'Construction',
+    businessCategory: 'Construction & Real Estate',
+    designStyle: 'Corporate',
+    color: '#EA580C',
+    secondaryColor: '#0F172A',
+    font: 'Arial',
+    itemHeader: 'Work Description / Scope / BOQ Item',
+    quantityHeader: 'Measurement / Qty',
+    dutyHeader: 'Labor Shifts / Days',
+    rateHeader: 'BOQ Rate',
+    amountHeader: 'Amount (INR)',
+    showDuty: true,
+    showQrCode: true,
+    showSignature: true,
+    headerLayout: 'corporate',
+    tableStyle: 'bordered',
+  ),
+
+  // ===========================================================================
+  // 8. HEALTHCARE, DOCTORS & CLINICS PRESETS
+  // ===========================================================================
+  TemplateConfig(
+    id: 'healthcare_clinic',
+    name: 'Healthcare Clinic & Diagnostic Bill',
+    title: 'MEDICAL & CONSULTATION BILL',
+    category: 'Healthcare',
+    businessCategory: 'Medical & Healthcare',
+    designStyle: 'Smart',
+    color: '#059669',
+    secondaryColor: '#0284C7',
+    font: 'Calibri',
+    itemHeader: 'Medical Consultation / Treatment / Test',
+    quantityHeader: 'Visits / Count',
+    rateHeader: 'Consultation Fee',
+    amountHeader: 'Net Payable',
+    showQrCode: true,
+    showSignature: true,
+    headerLayout: 'smart',
+    tableStyle: 'clean',
+  ),
+
+  // ===========================================================================
+  // 9. LOGISTICS, FREIGHT & TRANSPORT PRESETS
+  // ===========================================================================
+  TemplateConfig(
+    id: 'logistics_freight',
+    name: 'Logistics, Cargo & Freight Consignment',
+    title: 'FREIGHT TAX INVOICE & LR BILL',
+    category: 'Logistics',
+    businessCategory: 'Transport & Logistics',
+    designStyle: 'Industry',
+    color: '#1E40AF',
+    secondaryColor: '#D97706',
+    font: 'Arial',
+    itemHeader: 'Consignment (LR) / Origin - Destination / Cargo',
+    quantityHeader: 'Trips / Consignments',
+    dutyHeader: 'Tonnage / Weight',
+    rateHeader: 'Freight Rate',
+    amountHeader: 'Total Freight',
+    showDuty: true,
+    showQrCode: true,
+    showSignature: true,
+    headerLayout: 'industry',
+    tableStyle: 'bordered',
+  ),
+
+  // ===========================================================================
+  // 10. LEGAL, CA & FINANCIAL ADVISORY PRESETS
+  // ===========================================================================
+  TemplateConfig(
+    id: 'legal_counsel',
+    name: 'Legal Counsel & CA Advisory',
+    title: 'PROFESSIONAL FEE STATEMENT',
+    category: 'Legal & Advisory',
+    businessCategory: 'Legal & Chartered Accounting',
+    designStyle: 'Classic',
+    color: '#451A03',
+    secondaryColor: '#B45309',
+    font: 'Times New Roman',
+    itemHeader: 'Case Matter / Professional Retainer / Scope',
+    quantityHeader: 'Hours / Retainer',
+    rateHeader: 'Counsel Fee',
+    amountHeader: 'Amount Due',
+    showQrCode: true,
+    showSignature: true,
+    headerLayout: 'classic',
+    tableStyle: 'bordered',
+  ),
+
+  // ===========================================================================
+  // 11. HOSPITALITY & CATERING PRESETS
+  // ===========================================================================
+  TemplateConfig(
+    id: 'hospitality_catering',
+    name: 'Hospitality, Banquets & Catering',
+    title: 'BANQUET & CATERING TAX INVOICE',
+    category: 'Hospitality',
+    businessCategory: 'Hospitality & Events',
+    designStyle: 'Modern',
+    color: '#BE185D',
+    secondaryColor: '#D97706',
+    font: 'Calibri',
+    itemHeader: 'Event Package / Menu / Hospitality Service',
+    quantityHeader: 'Pax / Guests',
+    rateHeader: 'Rate per Plate / Unit',
+    amountHeader: 'Total Billed',
+    showQrCode: true,
+    showSignature: true,
+    headerLayout: 'modern',
+    tableStyle: 'clean',
   ),
 ];

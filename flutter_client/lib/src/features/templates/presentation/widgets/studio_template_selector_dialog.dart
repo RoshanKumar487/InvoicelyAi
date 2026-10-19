@@ -7,6 +7,7 @@ class StudioTemplateOption {
     required this.presetKey,
     required this.description,
     required this.primaryColor,
+    this.layoutStyle = 'modern_split',
     this.isWasm = false,
   });
 
@@ -15,6 +16,7 @@ class StudioTemplateOption {
   final String presetKey;
   final String description;
   final Color primaryColor;
+  final String layoutStyle;
   final bool isWasm;
 }
 

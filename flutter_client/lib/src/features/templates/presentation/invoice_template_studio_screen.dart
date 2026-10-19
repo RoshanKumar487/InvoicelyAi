@@ -5,10 +5,10 @@ import 'package:flutter/material.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:printing/printing.dart';
 import 'package:pdf/pdf.dart';
-import 'package:share_plus/share_plus.dart';
 
 import '../../../core/api/api_client.dart';
 import '../../../core/storage/local_preferences.dart';
+import '../../../shared/utils/file_download_helper.dart';
 import '../../../shared/widgets/signature_pad_dialog.dart';
 import '../../../theme/app_theme.dart';
 import '../../invoices/data/invoice.dart';
@@ -78,6 +78,7 @@ class _InvoiceTemplateStudioScreenState
       presetKey: 'security_agency',
       description: 'Optimized for security agencies: Guard counts, Duty days, shifts & GST.',
       primaryColor: Color(0xFF1E3A8A),
+      layoutStyle: 'modern_split',
     ),
     StudioTemplateOption(
       id: 'gst_service',
@@ -85,6 +86,55 @@ class _InvoiceTemplateStudioScreenState
       presetKey: 'gst_service',
       description: 'SAC codes, professional service billing, CGST/SGST/IGST breakdown.',
       primaryColor: Color(0xFF2563EB),
+      layoutStyle: 'modern_split',
+    ),
+    StudioTemplateOption(
+      id: 'creative_agency',
+      name: 'Creative & Digital Agency Studio',
+      presetKey: 'creative_vibrant',
+      description: 'Design studios, advertising, campaign milestones, media deliverables & licensing.',
+      primaryColor: Color(0xFF7C3AED),
+      layoutStyle: 'minimal_asymmetric',
+    ),
+    StudioTemplateOption(
+      id: 'construction',
+      name: 'Contractor & Civil Engineering RA Bill',
+      presetKey: 'construction_contractor',
+      description: 'Material supply, BOQ measurement units, labor shifts, site addresses & retainage.',
+      primaryColor: Color(0xFFEA580C),
+      layoutStyle: 'compact_grid',
+    ),
+    StudioTemplateOption(
+      id: 'healthcare',
+      name: 'Healthcare Clinic & Diagnostic Bill',
+      presetKey: 'healthcare_clinic',
+      description: 'Doctor consultations, medical diagnostics, hospital treatments & pharmacy billing.',
+      primaryColor: Color(0xFF059669),
+      layoutStyle: 'executive_banner',
+    ),
+    StudioTemplateOption(
+      id: 'logistics',
+      name: 'Logistics, Cargo & Freight Consignment',
+      presetKey: 'logistics_freight',
+      description: 'Consignment (LR) numbers, origin-destination routes, cargo tonnage & freight charges.',
+      primaryColor: Color(0xFF1E40AF),
+      layoutStyle: 'compact_grid',
+    ),
+    StudioTemplateOption(
+      id: 'legal',
+      name: 'Legal Counsel & CA Advisory Statement',
+      presetKey: 'legal_counsel',
+      description: 'Chartered accountants, legal retainers, court appearances & advisory scopes.',
+      primaryColor: Color(0xFF451A03),
+      layoutStyle: 'classic_bordered',
+    ),
+    StudioTemplateOption(
+      id: 'hospitality',
+      name: 'Hospitality, Banquets & Catering',
+      presetKey: 'hospitality_catering',
+      description: 'Events, banquets, guest pax counts, menu packages & hospitality service.',
+      primaryColor: Color(0xFFBE185D),
+      layoutStyle: 'executive_banner',
     ),
     StudioTemplateOption(
       id: 'consulting',
@@ -92,13 +142,15 @@ class _InvoiceTemplateStudioScreenState
       presetKey: 'consulting',
       description: 'Deliverables, retainer fees, advisory hours and professional disbursements.',
       primaryColor: Color(0xFF0F172A),
+      layoutStyle: 'sidebar_accent',
     ),
     StudioTemplateOption(
       id: 'retail',
       name: 'Standard Retail Store Invoice',
       presetKey: 'retail',
       description: 'Inventory items, SKU numbers, MRP, discounts and counter checkout.',
-      primaryColor: Color(0xFF059669),
+      primaryColor: Color(0xFF0D9488),
+      layoutStyle: 'compact_grid',
     ),
     StudioTemplateOption(
       id: 'modern',
@@ -106,6 +158,47 @@ class _InvoiceTemplateStudioScreenState
       presetKey: 'modern',
       description: 'Minimalist high-contrast layout for executive billing and tech contractors.',
       primaryColor: Color(0xFF4F46E5),
+      layoutStyle: 'minimal_asymmetric',
+    ),
+    StudioTemplateOption(
+      id: 'executive_enterprise_hero',
+      name: 'Executive Enterprise Hero Banner',
+      presetKey: 'gst_service',
+      description: 'Full-bleed executive hero band with embedded document pills & dual corporate cards.',
+      primaryColor: Color(0xFF0F172A),
+      layoutStyle: 'executive_banner',
+    ),
+    StudioTemplateOption(
+      id: 'civil_matrix_ledger',
+      name: 'Heavy Civil & Material Matrix Ledger',
+      presetKey: 'construction_contractor',
+      description: '4-Quadrant formal matrix grid with HSN, unit dispatch notes & ledger borders.',
+      primaryColor: Color(0xFFC2410C),
+      layoutStyle: 'compact_grid',
+    ),
+    StudioTemplateOption(
+      id: 'nordic_sidebar_pro',
+      name: 'Nordic Executive Dual-Column Sidebar',
+      presetKey: 'consulting',
+      description: 'Dedicated left vertical panel for invoice metadata, bank QR and stamp.',
+      primaryColor: Color(0xFF0284C7),
+      layoutStyle: 'sidebar_accent',
+    ),
+    StudioTemplateOption(
+      id: 'legal_chamber_bordered',
+      name: 'Chamber Legal & CA Classical Bordered',
+      presetKey: 'legal_counsel',
+      description: 'Classical perimeter frame, centered decorative heading & formal bilateral declaration.',
+      primaryColor: Color(0xFF3B0764),
+      layoutStyle: 'classic_bordered',
+    ),
+    StudioTemplateOption(
+      id: 'vanguard_tech_asym',
+      name: 'Vanguard Modernist Asymmetric Clean',
+      presetKey: 'creative_vibrant',
+      description: 'Modern asymmetrical aesthetic with electric accent dot, 3-column metadata & borderless rows.',
+      primaryColor: Color(0xFF4338CA),
+      layoutStyle: 'minimal_asymmetric',
     ),
   ];
 
@@ -117,6 +210,7 @@ class _InvoiceTemplateStudioScreenState
   Color _primaryColor = const Color(0xFF1E3A8A);
   Color _tableHeaderTextColor = Colors.white;
   String _tableBorderStyle = 'boxed'; // 'boxed', 'lines', 'striped'
+  String _layoutStyle = 'modern_split'; // 'modern_split', 'executive_banner', 'compact_grid', 'minimal_asymmetric', 'sidebar_accent', 'classic_bordered'
   bool _showQrCode = true;
   String _watermark = 'None';
   String _pageMargin = 'Standard (16mm)';
@@ -245,6 +339,10 @@ class _InvoiceTemplateStudioScreenState
       final savedBorder = await _localPreferences.readString('studio_table_border');
       if (savedBorder != null && savedBorder.isNotEmpty && mounted) {
         setState(() => _tableBorderStyle = savedBorder);
+      }
+      final savedLayout = await _localPreferences.readString('studio_layout_style');
+      if (savedLayout != null && savedLayout.isNotEmpty && mounted) {
+        setState(() => _layoutStyle = savedLayout);
       }
       final savedTitle = await _localPreferences.readString('studio_doc_title');
       if (savedTitle != null && savedTitle.isNotEmpty && mounted) {
@@ -673,15 +771,37 @@ class _InvoiceTemplateStudioScreenState
       _templateName = matched.name;
       _nameController.text = _templateName;
       _primaryColor = matched.primaryColor;
+      _layoutStyle = matched.layoutStyle;
 
       if (presetKey == 'security_agency') {
         _tableBorderStyle = 'boxed';
         _sampleDataset = 'Security Agency (Northstar)';
       } else if (presetKey == 'gst_service') {
+        _tableBorderStyle = 'lines';
         _sampleDataset = 'GST Service Tech';
+      } else if (presetKey == 'creative_vibrant') {
+        _tableBorderStyle = 'lines';
+        _sampleDataset = 'Creative Studio';
+      } else if (presetKey == 'construction_contractor') {
+        _tableBorderStyle = 'boxed';
+        _sampleDataset = 'Civil Infrastructure';
+      } else if (presetKey == 'healthcare_clinic') {
+        _tableBorderStyle = 'lines';
+        _sampleDataset = 'MediCare Clinic';
+      } else if (presetKey == 'logistics_freight') {
+        _tableBorderStyle = 'boxed';
+        _sampleDataset = 'Express Logistics';
+      } else if (presetKey == 'legal_counsel') {
+        _tableBorderStyle = 'boxed';
+        _sampleDataset = 'Apex Legal & Advisory';
+      } else if (presetKey == 'hospitality_catering') {
+        _tableBorderStyle = 'lines';
+        _sampleDataset = 'Grand Banquet';
       } else if (presetKey == 'consulting') {
+        _tableBorderStyle = 'lines';
         _sampleDataset = 'Apex Consulting';
       } else {
+        _tableBorderStyle = 'lines';
         _sampleDataset = 'Retail Mart';
       }
 
@@ -697,6 +817,7 @@ class _InvoiceTemplateStudioScreenState
   void _selectTemplate(StudioTemplateOption t) {
     setState(() {
       _selectedTemplateId = t.id;
+      _layoutStyle = t.layoutStyle;
     });
     _switchPreset(t.presetKey);
   }
@@ -934,6 +1055,7 @@ class _InvoiceTemplateStudioScreenState
       'studio_font_family': _fontFamily,
       'studio_font_scale': _fontScale.toString(),
       'studio_table_border': _tableBorderStyle,
+      'studio_layout_style': _layoutStyle,
       'studio_uppercase_headings': _uppercaseHeadings,
       'studio_watermark': _watermark,
       'studio_page_margin': _pageMargin,
@@ -977,6 +1099,7 @@ class _InvoiceTemplateStudioScreenState
     await _localPreferences.writeString('studio_font_family', _fontFamily);
     await _localPreferences.writeString('studio_font_scale', _fontScale.toString());
     await _localPreferences.writeString('studio_table_border', _tableBorderStyle);
+    await _localPreferences.writeString('studio_layout_style', _layoutStyle);
     await _localPreferences.writeString('studio_doc_title', _documentTitle);
     await _localPreferences.writeString('studio_uppercase_headings', _uppercaseHeadings.toString());
     await _localPreferences.writeString('studio_watermark', _watermark);
@@ -1493,19 +1616,21 @@ class _InvoiceTemplateStudioScreenState
       sampleInv,
       localSettings: settings,
     );
-    await SharePlus.instance.share(
-      ShareParams(
-        files: [
-          XFile.fromData(
-            bytes,
-            mimeType:
-                'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
-            name: '${_templateName.replaceAll(RegExp(r'\s+'), '_')}.docx',
-          ),
-        ],
-        subject: '$_templateName - Word Template',
-      ),
+    final filename = '${_templateName.replaceAll(RegExp(r'\s+'), '_')}.docx';
+    await FileDownloadHelper.downloadFile(
+      bytes: bytes,
+      filename: filename,
+      mimeType:
+          'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
     );
+    if (mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('✓ Saved $filename to Downloads'),
+          backgroundColor: const Color(0xFF047857),
+        ),
+      );
+    }
   }
 
   @override
@@ -2801,7 +2926,7 @@ class _InvoiceTemplateStudioScreenState
             child: SwitchListTile(
               dense: true,
               value: _isRcmApplicable,
-              activeColor: const Color(0xFF2563EB),
+              activeThumbColor: const Color(0xFF2563EB),
               title: const Text(
                 'Enable Reverse Charge Mechanism (RCM) by Default',
                 style: TextStyle(fontSize: 12.5, fontWeight: FontWeight.w700, color: Color(0xFF0F172A)),
@@ -2984,6 +3109,7 @@ class _InvoiceTemplateStudioScreenState
         ),
         const SizedBox(height: 10),
 
+        // Industry Preset Chips
         SingleChildScrollView(
           scrollDirection: Axis.horizontal,
           child: Row(
@@ -2991,6 +3117,18 @@ class _InvoiceTemplateStudioScreenState
               _buildPresetChip('security_agency', 'Security Agency', Icons.security_rounded),
               const SizedBox(width: 8),
               _buildPresetChip('gst_service', 'GST Service', Icons.apartment_rounded),
+              const SizedBox(width: 8),
+              _buildPresetChip('creative_vibrant', 'Creative Agency', Icons.palette_outlined),
+              const SizedBox(width: 8),
+              _buildPresetChip('construction_contractor', 'Contractor RA', Icons.construction_rounded),
+              const SizedBox(width: 8),
+              _buildPresetChip('healthcare_clinic', 'Healthcare', Icons.medical_services_outlined),
+              const SizedBox(width: 8),
+              _buildPresetChip('logistics_freight', 'Logistics', Icons.local_shipping_outlined),
+              const SizedBox(width: 8),
+              _buildPresetChip('legal_counsel', 'Legal & CA', Icons.gavel_rounded),
+              const SizedBox(width: 8),
+              _buildPresetChip('hospitality_catering', 'Hospitality', Icons.restaurant_rounded),
               const SizedBox(width: 8),
               _buildPresetChip('consulting', 'Consulting', Icons.person_outline_rounded),
               const SizedBox(width: 8),
@@ -3015,7 +3153,94 @@ class _InvoiceTemplateStudioScreenState
             ],
           ),
         ),
+        const SizedBox(height: 10),
+
+        // Invoice Layout Structure Picker
+        Container(
+          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 7),
+          decoration: BoxDecoration(
+            color: const Color(0xFFF8FAFC),
+            borderRadius: BorderRadius.circular(10),
+            border: Border.all(color: const Color(0xFFE2E8F0)),
+          ),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              const Row(
+                children: [
+                  Icon(Icons.dashboard_customize_outlined, size: 14, color: Color(0xFF2563EB)),
+                  SizedBox(width: 6),
+                  Text(
+                    'Invoice Layout Structure (Design):',
+                    style: TextStyle(fontSize: 11, fontWeight: FontWeight.w700, color: Color(0xFF334155)),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 6),
+              SingleChildScrollView(
+                scrollDirection: Axis.horizontal,
+                child: Row(
+                  children: [
+                    _buildLayoutChip('modern_split', 'Modern Split Cards', Icons.splitscreen_rounded),
+                    const SizedBox(width: 6),
+                    _buildLayoutChip('executive_banner', 'Executive Hero Banner', Icons.view_headline_rounded),
+                    const SizedBox(width: 6),
+                    _buildLayoutChip('compact_grid', 'Compact Matrix Ledger', Icons.grid_view_rounded),
+                    const SizedBox(width: 6),
+                    _buildLayoutChip('minimal_asymmetric', 'Creative Minimalist', Icons.auto_awesome_mosaic_rounded),
+                    const SizedBox(width: 6),
+                    _buildLayoutChip('sidebar_accent', 'Nordic Left Sidebar', Icons.view_sidebar_rounded),
+                    const SizedBox(width: 6),
+                    _buildLayoutChip('classic_bordered', 'Classic Chamber Frame', Icons.crop_square_rounded),
+                  ],
+                ),
+              ),
+            ],
+          ),
+        ),
       ],
+    );
+  }
+
+  Widget _buildLayoutChip(String key, String label, IconData icon) {
+    final isSelected = _layoutStyle == key;
+    return InkWell(
+      onTap: () {
+        setState(() => _layoutStyle = key);
+        _markSaved();
+        _autoSaveLocal();
+      },
+      borderRadius: BorderRadius.circular(16),
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
+        decoration: BoxDecoration(
+          color: isSelected ? const Color(0xFFEFF6FF) : Colors.white,
+          borderRadius: BorderRadius.circular(16),
+          border: Border.all(
+            color: isSelected ? const Color(0xFF2563EB) : const Color(0xFFCBD5E1),
+            width: isSelected ? 1.5 : 1,
+          ),
+        ),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Icon(
+              icon,
+              size: 12,
+              color: isSelected ? const Color(0xFF1E3A8A) : const Color(0xFF64748B),
+            ),
+            const SizedBox(width: 5),
+            Text(
+              label,
+              style: TextStyle(
+                fontSize: 11,
+                fontWeight: isSelected ? FontWeight.w800 : FontWeight.w600,
+                color: isSelected ? const Color(0xFF1E3A8A) : const Color(0xFF334155),
+              ),
+            ),
+          ],
+        ),
+      ),
     );
   }
 
@@ -3321,6 +3546,7 @@ class _InvoiceTemplateStudioScreenState
     Color color = const Color(0xFF1E293B),
     FontStyle fontStyle = FontStyle.normal,
     double? letterSpacing,
+    double? height,
   }) {
     return TextStyle(
       fontFamily: _fontFamily,
@@ -3329,6 +3555,7 @@ class _InvoiceTemplateStudioScreenState
       color: color,
       fontStyle: fontStyle,
       letterSpacing: letterSpacing,
+      height: height,
     );
   }
 
@@ -3466,118 +3693,12 @@ class _InvoiceTemplateStudioScreenState
           ],
         ],
 
-        // B. Document Title & Details
-        if (identitySection.enabled) ...[
-          Row(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            mainAxisAlignment: MainAxisAlignment.spaceBetween,
-            children: [
-              Text(
-                _uppercaseHeadings ? _documentTitle.toUpperCase() : _documentTitle,
-                style: _docStyle(
-                  fontSize: 22,
-                  fontWeight: FontWeight.w900,
-                  letterSpacing: 0.5,
-                  color: const Color(0xFF0F172A),
-                ),
-              ),
-              Table(
-                defaultColumnWidth: const IntrinsicColumnWidth(),
-                children: [
-                  if (_isFieldVisible(identitySection, 'f_doc_number'))
-                    _metaRow('Invoice No.', 'INV-2025-0148'),
-                  if (_isFieldVisible(identitySection, 'f_doc_issue'))
-                    _metaRow('Issue Date', '15 Apr 2025'),
-                  if (_isFieldVisible(identitySection, 'f_doc_due'))
-                    _metaRow('Due Date', '30 Apr 2025'),
-                  if (_isFieldVisible(identitySection, 'f_doc_po'))
-                    _metaRow('PO No.', 'PO-4587/2025'),
-                ],
-              ),
-            ],
-          ),
-          const SizedBox(height: 16),
-        ],
-
-        // C. Bill To & Service Location Boxes
-        if (clientSection.enabled) ...[
-          Row(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              // Bill To Box
-              Expanded(
-                flex: 5,
-                child: Container(
-                  padding: const EdgeInsets.all(12),
-                  decoration: BoxDecoration(
-                    color: const Color(0xFFF8FAFC),
-                    borderRadius: BorderRadius.circular(6),
-                    border: Border.all(color: const Color(0xFFE2E8F0)),
-                  ),
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text(
-                        _uppercaseHeadings ? 'BILL TO' : 'Bill To',
-                        style: _docStyle(fontSize: 10.5, fontWeight: FontWeight.bold, color: const Color(0xFF475569)),
-                      ),
-                      const SizedBox(height: 4),
-                      if (_isFieldVisible(clientSection, 'f_cli_name'))
-                        Text('ABC Industries Pvt. Ltd.', style: _docStyle(fontSize: 11.5, fontWeight: FontWeight.bold, color: const Color(0xFF0F172A))),
-                      const SizedBox(height: 2),
-                      if (_isFieldVisible(clientSection, 'f_cli_addr')) ...[
-                        Text('101, Business Tower, MG Road,', style: _docStyle(fontSize: 10, color: const Color(0xFF475569))),
-                        Text('Bengaluru, Karnataka - 560001', style: _docStyle(fontSize: 10, color: const Color(0xFF475569))),
-                      ],
-                      const SizedBox(height: 2),
-                      if (_isFieldVisible(clientSection, 'f_cli_gstin'))
-                        Text('GSTIN: 29AABCA1234B1Z2', style: _docStyle(fontSize: 10, color: const Color(0xFF475569))),
-                      if (_isFieldVisible(clientSection, 'f_cli_contact'))
-                        Text('Contact: Mr. Rahul Sharma', style: _docStyle(fontSize: 10, color: const Color(0xFF475569))),
-                      if (_isFieldVisible(clientSection, 'f_cli_phone'))
-                        Text('Phone: +91 98800 11223', style: _docStyle(fontSize: 10, color: const Color(0xFF475569))),
-                    ],
-                  ),
-                ),
-              ),
-              const SizedBox(width: 14),
-
-              // Service Location Box
-              if (_isFieldVisible(servicesSection, 'f_srv_loc') || _isFieldVisible(servicesSection, 'f_srv_period')) ...[
-                Expanded(
-                  flex: 5,
-                  child: Container(
-                    padding: const EdgeInsets.all(12),
-                    decoration: BoxDecoration(
-                      color: const Color(0xFFF8FAFC),
-                      borderRadius: BorderRadius.circular(6),
-                      border: Border.all(color: const Color(0xFFE2E8F0)),
-                    ),
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        if (_isFieldVisible(servicesSection, 'f_srv_loc')) ...[
-                          Text(_uppercaseHeadings ? 'SERVICE LOCATION' : 'Service Location', style: _docStyle(fontSize: 10, color: const Color(0xFF64748B))),
-                          const SizedBox(height: 2),
-                          Text('Tech Park, Whitefield', style: _docStyle(fontSize: 10.5, fontWeight: FontWeight.w600, color: const Color(0xFF1E293B))),
-                          Text('Bengaluru, Karnataka - 560066', style: _docStyle(fontSize: 10, color: const Color(0xFF475569))),
-                          const SizedBox(height: 8),
-                        ],
-                        if (_isFieldVisible(servicesSection, 'f_srv_period')) ...[
-                          Text(_uppercaseHeadings ? 'BILLING PERIOD' : 'Billing Period', style: _docStyle(fontSize: 10, color: const Color(0xFF64748B))),
-                          const SizedBox(height: 2),
-                          Text('01 Apr 2025 - 30 Apr 2025', style: _docStyle(fontSize: 10.5, fontWeight: FontWeight.w600, color: const Color(0xFF1E293B))),
-                          Text('(30 Days)', style: _docStyle(fontSize: 9.5, color: const Color(0xFF64748B))),
-                        ],
-                      ],
-                    ),
-                  ),
-                ),
-              ],
-            ],
-          ),
-          const SizedBox(height: 16),
-        ],
+        // B & C. Document Identity & Client/Service Boxes (Layout Structure Driven)
+        _buildIdentityAndClientByLayout(
+          identitySection: identitySection,
+          clientSection: clientSection,
+          servicesSection: servicesSection,
+        ),
 
         // D. Duty & Line Items Table (Dynamic Presets & Boxed Layout)
         if (servicesSection.enabled) ...[
@@ -3845,6 +3966,710 @@ class _InvoiceTemplateStudioScreenState
             ],
           ),
         ],
+      ],
+    );
+  }
+
+  Widget _buildIdentityAndClientByLayout({
+    required StudioSection identitySection,
+    required StudioSection clientSection,
+    required StudioSection servicesSection,
+  }) {
+    switch (_layoutStyle) {
+      case 'executive_banner':
+        return _buildExecutiveBannerLayout(identitySection, clientSection, servicesSection);
+      case 'compact_grid':
+        return _buildCompactGridLayout(identitySection, clientSection, servicesSection);
+      case 'minimal_asymmetric':
+        return _buildMinimalAsymmetricLayout(identitySection, clientSection, servicesSection);
+      case 'sidebar_accent':
+        return _buildSidebarAccentLayout(identitySection, clientSection, servicesSection);
+      case 'classic_bordered':
+        return _buildClassicBorderedLayout(identitySection, clientSection, servicesSection);
+      case 'modern_split':
+      default:
+        return _buildModernSplitLayout(identitySection, clientSection, servicesSection);
+    }
+  }
+
+  Widget _heroPill(IconData icon, String text) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3.5),
+      decoration: BoxDecoration(
+        color: Colors.white.withValues(alpha: 0.18),
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: Colors.white.withValues(alpha: 0.25)),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(icon, size: 11, color: Colors.white),
+          const SizedBox(width: 4),
+          Text(text, style: const TextStyle(fontSize: 10, fontWeight: FontWeight.bold, color: Colors.white)),
+        ],
+      ),
+    );
+  }
+
+  Widget _ledgerRow(String label, String value) {
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 2),
+      child: Row(
+        children: [
+          SizedBox(
+            width: 72,
+            child: Text(
+              '$label:',
+              style: _docStyle(fontSize: 8.8, fontWeight: FontWeight.bold, color: const Color(0xFF64748B)),
+            ),
+          ),
+          Expanded(
+            child: Text(
+              value,
+              style: _docStyle(fontSize: 9, fontWeight: FontWeight.bold, color: const Color(0xFF0F172A)),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildModernSplitLayout(
+    StudioSection identitySection,
+    StudioSection clientSection,
+    StudioSection servicesSection,
+  ) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        if (identitySection.enabled) ...[
+          Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            children: [
+              Text(
+                _uppercaseHeadings ? _documentTitle.toUpperCase() : _documentTitle,
+                style: _docStyle(
+                  fontSize: 22,
+                  fontWeight: FontWeight.w900,
+                  letterSpacing: 0.5,
+                  color: const Color(0xFF0F172A),
+                ),
+              ),
+              Table(
+                defaultColumnWidth: const IntrinsicColumnWidth(),
+                children: [
+                  if (_isFieldVisible(identitySection, 'f_doc_number'))
+                    _metaRow('Invoice No.', 'INV-2025-0148'),
+                  if (_isFieldVisible(identitySection, 'f_doc_issue'))
+                    _metaRow('Issue Date', '15 Apr 2025'),
+                  if (_isFieldVisible(identitySection, 'f_doc_due'))
+                    _metaRow('Due Date', '30 Apr 2025'),
+                  if (_isFieldVisible(identitySection, 'f_doc_po'))
+                    _metaRow('PO No.', 'PO-4587/2025'),
+                ],
+              ),
+            ],
+          ),
+          const SizedBox(height: 16),
+        ],
+        if (clientSection.enabled) ...[
+          Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Expanded(
+                flex: 5,
+                child: Container(
+                  padding: const EdgeInsets.all(12),
+                  decoration: BoxDecoration(
+                    color: const Color(0xFFF8FAFC),
+                    borderRadius: BorderRadius.circular(6),
+                    border: Border.all(color: const Color(0xFFE2E8F0)),
+                  ),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        _uppercaseHeadings ? 'BILL TO' : 'Bill To',
+                        style: _docStyle(fontSize: 10.5, fontWeight: FontWeight.bold, color: const Color(0xFF475569)),
+                      ),
+                      const SizedBox(height: 4),
+                      if (_isFieldVisible(clientSection, 'f_cli_name'))
+                        Text('ABC Industries Pvt. Ltd.', style: _docStyle(fontSize: 11.5, fontWeight: FontWeight.bold, color: const Color(0xFF0F172A))),
+                      const SizedBox(height: 2),
+                      if (_isFieldVisible(clientSection, 'f_cli_addr')) ...[
+                        Text('101, Business Tower, MG Road,', style: _docStyle(fontSize: 10, color: const Color(0xFF475569))),
+                        Text('Bengaluru, Karnataka - 560001', style: _docStyle(fontSize: 10, color: const Color(0xFF475569))),
+                      ],
+                      const SizedBox(height: 2),
+                      if (_isFieldVisible(clientSection, 'f_cli_gstin'))
+                        Text('GSTIN: 29AABCA1234B1Z2', style: _docStyle(fontSize: 10, color: const Color(0xFF475569))),
+                      if (_isFieldVisible(clientSection, 'f_cli_contact'))
+                        Text('Contact: Mr. Rahul Sharma', style: _docStyle(fontSize: 10, color: const Color(0xFF475569))),
+                      if (_isFieldVisible(clientSection, 'f_cli_phone'))
+                        Text('Phone: +91 98800 11223', style: _docStyle(fontSize: 10, color: const Color(0xFF475569))),
+                    ],
+                  ),
+                ),
+              ),
+              const SizedBox(width: 14),
+              if (_isFieldVisible(servicesSection, 'f_srv_loc') || _isFieldVisible(servicesSection, 'f_srv_period')) ...[
+                Expanded(
+                  flex: 5,
+                  child: Container(
+                    padding: const EdgeInsets.all(12),
+                    decoration: BoxDecoration(
+                      color: const Color(0xFFF8FAFC),
+                      borderRadius: BorderRadius.circular(6),
+                      border: Border.all(color: const Color(0xFFE2E8F0)),
+                    ),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        if (_isFieldVisible(servicesSection, 'f_srv_loc')) ...[
+                          Text(_uppercaseHeadings ? 'SERVICE LOCATION' : 'Service Location', style: _docStyle(fontSize: 10, color: const Color(0xFF64748B))),
+                          const SizedBox(height: 2),
+                          Text('Tech Park, Whitefield', style: _docStyle(fontSize: 10.5, fontWeight: FontWeight.w600, color: const Color(0xFF1E293B))),
+                          Text('Bengaluru, Karnataka - 560066', style: _docStyle(fontSize: 10, color: const Color(0xFF475569))),
+                          const SizedBox(height: 8),
+                        ],
+                        if (_isFieldVisible(servicesSection, 'f_srv_period')) ...[
+                          Text(_uppercaseHeadings ? 'BILLING PERIOD' : 'Billing Period', style: _docStyle(fontSize: 10, color: const Color(0xFF64748B))),
+                          const SizedBox(height: 2),
+                          Text('01 Apr 2025 - 30 Apr 2025', style: _docStyle(fontSize: 10.5, fontWeight: FontWeight.w600, color: const Color(0xFF1E293B))),
+                          Text('(30 Days)', style: _docStyle(fontSize: 9.5, color: const Color(0xFF64748B))),
+                        ],
+                      ],
+                    ),
+                  ),
+                ),
+              ],
+            ],
+          ),
+          const SizedBox(height: 16),
+        ],
+      ],
+    );
+  }
+
+  Widget _buildExecutiveBannerLayout(
+    StudioSection identitySection,
+    StudioSection clientSection,
+    StudioSection servicesSection,
+  ) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        if (identitySection.enabled) ...[
+          Container(
+            margin: const EdgeInsets.only(bottom: 16),
+            padding: const EdgeInsets.fromLTRB(18, 14, 18, 14),
+            decoration: BoxDecoration(
+              gradient: LinearGradient(
+                colors: [_primaryColor, _primaryColor.withValues(alpha: 0.85)],
+                begin: Alignment.topLeft,
+                end: Alignment.bottomRight,
+              ),
+              borderRadius: BorderRadius.circular(8),
+              boxShadow: const [
+                BoxShadow(color: Color(0x14000000), blurRadius: 10, offset: Offset(0, 3)),
+              ],
+            ),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                  children: [
+                    Text(
+                      _uppercaseHeadings ? _documentTitle.toUpperCase() : _documentTitle,
+                      style: const TextStyle(
+                        fontSize: 22,
+                        fontWeight: FontWeight.w900,
+                        color: Colors.white,
+                        letterSpacing: 1.2,
+                      ),
+                    ),
+                    Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                      decoration: BoxDecoration(
+                        color: Colors.white.withValues(alpha: 0.2),
+                        borderRadius: BorderRadius.circular(12),
+                        border: Border.all(color: Colors.white.withValues(alpha: 0.3)),
+                      ),
+                      child: const Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Icon(Icons.verified_rounded, size: 12, color: Colors.white),
+                          SizedBox(width: 4),
+                          Text('ORIGINAL BILL', style: TextStyle(fontSize: 9.5, fontWeight: FontWeight.w800, color: Colors.white)),
+                        ],
+                      ),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 10),
+                Wrap(
+                  spacing: 8,
+                  runSpacing: 6,
+                  children: [
+                    _heroPill(Icons.tag_rounded, 'Inv: INV-2025-0148'),
+                    _heroPill(Icons.calendar_today_rounded, 'Issued: 15 Apr 2025'),
+                    _heroPill(Icons.event_available_rounded, 'Due: 30 Apr 2025'),
+                    _heroPill(Icons.receipt_long_rounded, 'PO Ref: PO-4587/2025'),
+                  ],
+                ),
+              ],
+            ),
+          ),
+        ],
+        if (clientSection.enabled) ...[
+          Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Expanded(
+                child: Container(
+                  decoration: BoxDecoration(
+                    color: Colors.white,
+                    borderRadius: BorderRadius.circular(6),
+                    border: Border.all(color: const Color(0xFFCBD5E1)),
+                    boxShadow: const [BoxShadow(color: Color(0x08000000), blurRadius: 6, offset: Offset(0, 2))],
+                  ),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Container(
+                        height: 3.5,
+                        decoration: BoxDecoration(
+                          color: _primaryColor,
+                          borderRadius: const BorderRadius.vertical(top: Radius.circular(5)),
+                        ),
+                      ),
+                      Padding(
+                        padding: const EdgeInsets.all(12),
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text(
+                              _uppercaseHeadings ? 'BILLED TO (CLIENT)' : 'Billed To (Client)',
+                              style: _docStyle(fontSize: 9.5, fontWeight: FontWeight.w800, color: _primaryColor, letterSpacing: 0.5),
+                            ),
+                            const SizedBox(height: 5),
+                            Text('ABC Industries Pvt. Ltd.', style: _docStyle(fontSize: 11.5, fontWeight: FontWeight.bold, color: const Color(0xFF0F172A))),
+                            const SizedBox(height: 2),
+                            Text('101, Business Tower, MG Road, Bengaluru - 560001', style: _docStyle(fontSize: 9.5, color: const Color(0xFF475569))),
+                            Text('GSTIN: 29AABCA1234B1Z2 · Phone: +91 98800 11223', style: _docStyle(fontSize: 9, color: const Color(0xFF475569))),
+                          ],
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+              const SizedBox(width: 14),
+              Expanded(
+                child: Container(
+                  decoration: BoxDecoration(
+                    color: Colors.white,
+                    borderRadius: BorderRadius.circular(6),
+                    border: Border.all(color: const Color(0xFFCBD5E1)),
+                    boxShadow: const [BoxShadow(color: Color(0x08000000), blurRadius: 6, offset: Offset(0, 2))],
+                  ),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Container(
+                        height: 3.5,
+                        decoration: const BoxDecoration(
+                          color: Color(0xFF0D9488),
+                          borderRadius: BorderRadius.vertical(top: Radius.circular(5)),
+                        ),
+                      ),
+                      Padding(
+                        padding: const EdgeInsets.all(12),
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text(
+                              _uppercaseHeadings ? 'SERVICE LOCATION & PERIOD' : 'Service Location & Period',
+                              style: _docStyle(fontSize: 9.5, fontWeight: FontWeight.w800, color: const Color(0xFF0D9488), letterSpacing: 0.5),
+                            ),
+                            const SizedBox(height: 5),
+                            Text('Tech Park, Whitefield, Bengaluru - 560066', style: _docStyle(fontSize: 10.5, fontWeight: FontWeight.bold, color: const Color(0xFF0F172A))),
+                            const SizedBox(height: 2),
+                            Text('Billing Period: 01 Apr 2025 - 30 Apr 2025 (30 Days)', style: _docStyle(fontSize: 9.5, color: const Color(0xFF475569))),
+                            Text('PSARA Verified Deployment Schedule', style: _docStyle(fontSize: 9, color: const Color(0xFF64748B))),
+                          ],
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 16),
+        ],
+      ],
+    );
+  }
+
+  Widget _buildCompactGridLayout(
+    StudioSection identitySection,
+    StudioSection clientSection,
+    StudioSection servicesSection,
+  ) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        Container(
+          margin: const EdgeInsets.only(bottom: 14),
+          decoration: BoxDecoration(
+            border: Border.all(color: const Color(0xFF0F172A), width: 1.2),
+            borderRadius: BorderRadius.circular(3),
+          ),
+          child: Column(
+            children: [
+              Row(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Expanded(
+                    flex: 6,
+                    child: Container(
+                      padding: const EdgeInsets.all(10),
+                      decoration: const BoxDecoration(
+                        border: Border(
+                          right: BorderSide(color: Color(0xFF0F172A), width: 1),
+                          bottom: BorderSide(color: Color(0xFF0F172A), width: 1),
+                        ),
+                      ),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text('1. SUPPLIER / CONSIGNOR DETAILS', style: _docStyle(fontSize: 8.8, fontWeight: FontWeight.bold, color: const Color(0xFF475569))),
+                          const SizedBox(height: 3),
+                          Text('Northstar Security Services Ltd.', style: _docStyle(fontSize: 11, fontWeight: FontWeight.bold, color: const Color(0xFF0F172A))),
+                          Text('#12, 3rd Floor, Green Park, Bengaluru - 560076', style: _docStyle(fontSize: 9, color: const Color(0xFF475569))),
+                          Text('GSTIN: 29ABCDE1234F1Z5 · PAN: ABCDE1234F', style: _docStyle(fontSize: 9, fontWeight: FontWeight.bold, color: const Color(0xFF1E293B))),
+                        ],
+                      ),
+                    ),
+                  ),
+                  Expanded(
+                    flex: 4,
+                    child: Container(
+                      padding: const EdgeInsets.all(10),
+                      decoration: const BoxDecoration(
+                        border: Border(bottom: BorderSide(color: Color(0xFF0F172A), width: 1)),
+                      ),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text('TAX INVOICE & DISPATCH REF', style: _docStyle(fontSize: 8.8, fontWeight: FontWeight.bold, color: const Color(0xFF475569))),
+                          const SizedBox(height: 3),
+                          _ledgerRow('Invoice No.', 'INV-2025-0148'),
+                          _ledgerRow('Date', '15 Apr 2025'),
+                          _ledgerRow('Due Date', '30 Apr 2025'),
+                          _ledgerRow('PO Ref', 'PO-4587/2025'),
+                          _ledgerRow('State Code', '29 (Karnataka)'),
+                        ],
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+              Row(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Expanded(
+                    flex: 6,
+                    child: Container(
+                      padding: const EdgeInsets.all(10),
+                      decoration: const BoxDecoration(
+                        border: Border(right: BorderSide(color: Color(0xFF0F172A), width: 1)),
+                      ),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text('2. BUYER / BILLED TO', style: _docStyle(fontSize: 8.8, fontWeight: FontWeight.bold, color: const Color(0xFF475569))),
+                          const SizedBox(height: 3),
+                          Text('ABC Industries Pvt. Ltd.', style: _docStyle(fontSize: 11, fontWeight: FontWeight.bold, color: const Color(0xFF0F172A))),
+                          Text('101, Business Tower, MG Road, Bengaluru - 560001', style: _docStyle(fontSize: 9, color: const Color(0xFF475569))),
+                          Text('GSTIN: 29AABCA1234B1Z2 · State: 29', style: _docStyle(fontSize: 9, fontWeight: FontWeight.w600, color: const Color(0xFF1E293B))),
+                        ],
+                      ),
+                    ),
+                  ),
+                  Expanded(
+                    flex: 4,
+                    child: Container(
+                      padding: const EdgeInsets.all(10),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text('3. CONSIGNEE / SHIPPED TO', style: _docStyle(fontSize: 8.8, fontWeight: FontWeight.bold, color: const Color(0xFF475569))),
+                          const SizedBox(height: 3),
+                          Text('Tech Park, Whitefield', style: _docStyle(fontSize: 10.5, fontWeight: FontWeight.bold, color: const Color(0xFF0F172A))),
+                          Text('Bengaluru - 560066', style: _docStyle(fontSize: 9, color: const Color(0xFF475569))),
+                          Text('Period: 01 Apr - 30 Apr 2025', style: _docStyle(fontSize: 9, color: const Color(0xFF475569))),
+                        ],
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ],
+          ),
+        ),
+      ],
+    );
+  }
+
+  Widget _buildMinimalAsymmetricLayout(
+    StudioSection identitySection,
+    StudioSection clientSection,
+    StudioSection servicesSection,
+  ) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Row(
+          crossAxisAlignment: CrossAxisAlignment.baseline,
+          textBaseline: TextBaseline.alphabetic,
+          children: [
+            Text(
+              _uppercaseHeadings ? 'INVOICE' : 'Invoice',
+              style: _docStyle(fontSize: 28, fontWeight: FontWeight.w900, color: const Color(0xFF0F172A), letterSpacing: -0.5),
+            ),
+            const SizedBox(width: 8),
+            Container(
+              width: 8,
+              height: 8,
+              decoration: BoxDecoration(color: _primaryColor, shape: BoxShape.circle),
+            ),
+            const SizedBox(width: 14),
+            Text(
+              '//  INV-2025-0148',
+              style: _docStyle(fontSize: 16, fontWeight: FontWeight.w300, color: const Color(0xFF64748B)),
+            ),
+            const Spacer(),
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+              decoration: BoxDecoration(
+                color: const Color(0xFFEFF6FF),
+                borderRadius: BorderRadius.circular(14),
+                border: Border.all(color: const Color(0xFFBFDBFE)),
+              ),
+              child: Text('ISSUED: 15 APR 2025', style: _docStyle(fontSize: 9.5, fontWeight: FontWeight.bold, color: const Color(0xFF1E40AF))),
+            ),
+          ],
+        ),
+        const SizedBox(height: 10),
+        const Divider(height: 1, color: Color(0xFFE2E8F0)),
+        const SizedBox(height: 12),
+        Row(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text('BILLED TO', style: _docStyle(fontSize: 8.8, fontWeight: FontWeight.bold, color: const Color(0xFF94A3B8), letterSpacing: 0.8)),
+                  const SizedBox(height: 4),
+                  Text('ABC Industries Pvt. Ltd.', style: _docStyle(fontSize: 11, fontWeight: FontWeight.bold, color: const Color(0xFF0F172A))),
+                  Text('101, Business Tower, MG Road\nBengaluru - 560001', style: _docStyle(fontSize: 9.5, color: const Color(0xFF64748B), height: 1.3)),
+                  Text('GST: 29AABCA1234B1Z2', style: _docStyle(fontSize: 9, color: const Color(0xFF64748B))),
+                ],
+              ),
+            ),
+            Container(width: 1, height: 60, color: const Color(0xFFE2E8F0), margin: const EdgeInsets.symmetric(horizontal: 14)),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text('SERVICE SCOPE', style: _docStyle(fontSize: 8.8, fontWeight: FontWeight.bold, color: const Color(0xFF94A3B8), letterSpacing: 0.8)),
+                  const SizedBox(height: 4),
+                  Text('Tech Park, Whitefield', style: _docStyle(fontSize: 10.5, fontWeight: FontWeight.w700, color: const Color(0xFF0F172A))),
+                  Text('Period: 01 Apr - 30 Apr 2025\n30 Operating Days', style: _docStyle(fontSize: 9.5, color: const Color(0xFF64748B), height: 1.3)),
+                ],
+              ),
+            ),
+            Container(width: 1, height: 60, color: const Color(0xFFE2E8F0), margin: const EdgeInsets.symmetric(horizontal: 14)),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text('PAYMENT TERMS', style: _docStyle(fontSize: 8.8, fontWeight: FontWeight.bold, color: const Color(0xFF94A3B8), letterSpacing: 0.8)),
+                  const SizedBox(height: 4),
+                  Text('Net 15 Days', style: _docStyle(fontSize: 10.5, fontWeight: FontWeight.w700, color: const Color(0xFF0F172A))),
+                  Text('Due: 30 Apr 2025\nPO: PO-4587/2025', style: _docStyle(fontSize: 9.5, color: const Color(0xFF64748B), height: 1.3)),
+                ],
+              ),
+            ),
+          ],
+        ),
+        const SizedBox(height: 16),
+      ],
+    );
+  }
+
+  Widget _buildSidebarAccentLayout(
+    StudioSection identitySection,
+    StudioSection clientSection,
+    StudioSection servicesSection,
+  ) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        Row(
+          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+          children: [
+            Row(
+              children: [
+                Container(width: 4, height: 24, color: _primaryColor),
+                const SizedBox(width: 8),
+                Text(
+                  _uppercaseHeadings ? _documentTitle.toUpperCase() : _documentTitle,
+                  style: _docStyle(fontSize: 20, fontWeight: FontWeight.w900, color: const Color(0xFF0F172A)),
+                ),
+              ],
+            ),
+            Row(
+              children: [
+                _heroPill(Icons.confirmation_number_outlined, 'INV-2025-0148'),
+                const SizedBox(width: 6),
+                _heroPill(Icons.event_outlined, '15 Apr 2025'),
+              ],
+            ),
+          ],
+        ),
+        const SizedBox(height: 12),
+        Row(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Expanded(
+              flex: 5,
+              child: Container(
+                padding: const EdgeInsets.all(12),
+                decoration: BoxDecoration(
+                  color: Colors.white,
+                  borderRadius: BorderRadius.circular(6),
+                  border: Border(
+                    left: BorderSide(color: _primaryColor, width: 4),
+                    top: const BorderSide(color: Color(0xFFE2E8F0)),
+                    right: const BorderSide(color: Color(0xFFE2E8F0)),
+                    bottom: const BorderSide(color: Color(0xFFE2E8F0)),
+                  ),
+                ),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text('CLIENT & BILLING ADDRESS', style: _docStyle(fontSize: 9.5, fontWeight: FontWeight.w800, color: _primaryColor)),
+                    const SizedBox(height: 4),
+                    Text('ABC Industries Pvt. Ltd.', style: _docStyle(fontSize: 11, fontWeight: FontWeight.bold, color: const Color(0xFF0F172A))),
+                    Text('101, Business Tower, MG Road, Bengaluru - 560001', style: _docStyle(fontSize: 9.5, color: const Color(0xFF475569))),
+                    Text('GSTIN: 29AABCA1234B1Z2', style: _docStyle(fontSize: 9, color: const Color(0xFF475569))),
+                  ],
+                ),
+              ),
+            ),
+            const SizedBox(width: 14),
+            Expanded(
+              flex: 5,
+              child: Container(
+                padding: const EdgeInsets.all(12),
+                decoration: BoxDecoration(
+                  color: const Color(0xFFF8FAFC),
+                  borderRadius: BorderRadius.circular(6),
+                  border: Border.all(color: const Color(0xFFE2E8F0)),
+                ),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text('SERVICE DEPLOYMENT & PERIOD', style: _docStyle(fontSize: 9.5, fontWeight: FontWeight.w800, color: const Color(0xFF475569))),
+                    const SizedBox(height: 4),
+                    Text('Tech Park, Whitefield, Bengaluru - 560066', style: _docStyle(fontSize: 10.5, fontWeight: FontWeight.bold, color: const Color(0xFF0F172A))),
+                    Text('Period: 01 Apr 2025 - 30 Apr 2025 (30 Days)', style: _docStyle(fontSize: 9.5, color: const Color(0xFF475569))),
+                    Text('PO: PO-4587/2025 · Due: 30 Apr 2025', style: _docStyle(fontSize: 9, color: const Color(0xFF64748B))),
+                  ],
+                ),
+              ),
+            ),
+          ],
+        ),
+        const SizedBox(height: 16),
+      ],
+    );
+  }
+
+  Widget _buildClassicBorderedLayout(
+    StudioSection identitySection,
+    StudioSection clientSection,
+    StudioSection servicesSection,
+  ) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        Center(
+          child: Column(
+            children: [
+              Text(
+                '—  ✦  ${_uppercaseHeadings ? _documentTitle.toUpperCase() : _documentTitle}  ✦  —',
+                style: _docStyle(
+                  fontSize: 18,
+                  fontWeight: FontWeight.bold,
+                  letterSpacing: 2.0,
+                  color: const Color(0xFF0F172A),
+                ),
+              ),
+              const SizedBox(height: 4),
+              Text(
+                'Issued under Goods & Services Tax Act · Duplicate for Transporter',
+                style: _docStyle(fontSize: 8.5, color: const Color(0xFF64748B), fontStyle: FontStyle.italic),
+              ),
+              const SizedBox(height: 10),
+            ],
+          ),
+        ),
+        Container(
+          padding: const EdgeInsets.all(10),
+          decoration: BoxDecoration(
+            border: Border.all(color: const Color(0xFF334155), width: 1),
+            borderRadius: BorderRadius.circular(4),
+          ),
+          child: Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Expanded(
+                flex: 5,
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text('BILLED TO (RECIPIENT):', style: _docStyle(fontSize: 9.5, fontWeight: FontWeight.bold, color: const Color(0xFF1E293B))),
+                    const SizedBox(height: 3),
+                    Text('ABC Industries Pvt. Ltd.', style: _docStyle(fontSize: 11, fontWeight: FontWeight.bold, color: const Color(0xFF0F172A))),
+                    Text('101, Business Tower, MG Road, Bengaluru - 560001', style: _docStyle(fontSize: 9, color: const Color(0xFF475569))),
+                    Text('GSTIN: 29AABCA1234B1Z2 · State: 29', style: _docStyle(fontSize: 9, color: const Color(0xFF475569))),
+                  ],
+                ),
+              ),
+              Container(width: 1, height: 56, color: const Color(0xFFCBD5E1), margin: const EdgeInsets.symmetric(horizontal: 10)),
+              Expanded(
+                flex: 5,
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    _ledgerRow('Invoice No.', 'INV-2025-0148'),
+                    _ledgerRow('Dated', '15 Apr 2025'),
+                    _ledgerRow('Payment Due', '30 Apr 2025'),
+                    _ledgerRow('Site / Place', 'Tech Park, Whitefield (560066)'),
+                  ],
+                ),
+              ),
+            ],
+          ),
+        ),
+        const SizedBox(height: 16),
       ],
     );
   }

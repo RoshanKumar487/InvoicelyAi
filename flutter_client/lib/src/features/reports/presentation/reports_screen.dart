@@ -3,6 +3,7 @@ import 'package:share_plus/share_plus.dart';
 
 import '../../../core/api/api_client.dart';
 import '../../../core/api/api_exception.dart';
+import '../../../shared/utils/file_download_helper.dart';
 import '../../../shared/widgets/offline_cache_banner.dart';
 import '../../clients/data/client.dart';
 import '../../clients/data/clients_repository.dart';
@@ -430,32 +431,24 @@ class _ReportsScreenState extends State<ReportsScreen> {
         ExportFormat.csv => 'text/csv',
       };
 
-      final file = XFile.fromData(
-        bytes,
+      await FileDownloadHelper.downloadFile(
+        bytes: bytes,
+        filename: filename,
         mimeType: mimeType,
-        name: filename,
-      );
-
-      await SharePlus.instance.share(
-        ShareParams(
-          files: [file],
-          subject: 'Invoicely Ledger Report ($selectionTag)',
-          text: 'Export of company financial and operational records',
-        ),
       );
 
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
             backgroundColor: const Color(0xFF10B981),
-            content: Text('✓ Successfully exported $filename'),
+            content: Text('✓ Saved $filename to Downloads'),
           ),
         );
       }
     } catch (error) {
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Could not export reports: $error')),
+        SnackBar(content: Text('Could not download report: $error')),
       );
     } finally {
       if (mounted) setState(() => _exporting = false);
@@ -507,9 +500,19 @@ class _ReportsScreenState extends State<ReportsScreen> {
             ),
             const Divider(height: 24),
             ListTile(
+              leading: const Icon(Icons.description_outlined, color: Color(0xFF0284C7)),
+              title: const Text('Download CSV (.csv)'),
+              subtitle: const Text('Save filtered records directly as CSV spreadsheet'),
+              contentPadding: EdgeInsets.zero,
+              onTap: () {
+                Navigator.pop(ctx);
+                _export(format: ExportFormat.csv);
+              },
+            ),
+            ListTile(
               leading: const Icon(Icons.table_view_rounded, color: Color(0xFF107C41)),
-              title: const Text('Export as Excel Workbook (.xlsx)'),
-              subtitle: const Text('Includes styled worksheets and formulas'),
+              title: const Text('Download Excel Workbook (.xlsx)'),
+              subtitle: const Text('Save styled Microsoft Excel workbook file'),
               contentPadding: EdgeInsets.zero,
               onTap: () {
                 Navigator.pop(ctx);
@@ -518,22 +521,12 @@ class _ReportsScreenState extends State<ReportsScreen> {
             ),
             ListTile(
               leading: const Icon(Icons.picture_as_pdf_rounded, color: Color(0xFFDC2626)),
-              title: const Text('Export as PDF Document (.pdf)'),
-              subtitle: const Text('Professional printable ledger format'),
+              title: const Text('Download PDF Document (.pdf)'),
+              subtitle: const Text('Save formatted printable PDF document'),
               contentPadding: EdgeInsets.zero,
               onTap: () {
                 Navigator.pop(ctx);
                 _export(format: ExportFormat.pdf);
-              },
-            ),
-            ListTile(
-              leading: const Icon(Icons.receipt_long_rounded, color: Color(0xFF0284C7)),
-              title: const Text('Export as CSV Spreadsheet (.csv)'),
-              subtitle: const Text('Compatible with Google Sheets, Excel, & Accounting tools'),
-              contentPadding: EdgeInsets.zero,
-              onTap: () {
-                Navigator.pop(ctx);
-                _export(format: ExportFormat.csv);
               },
             ),
             const SizedBox(height: 10),
@@ -960,17 +953,12 @@ class _ReportsScreenState extends State<ReportsScreen> {
       try {
         final invoice = Invoice.fromJson(row);
         final pdfBytes = await InvoicePdfExport.build(invoice);
-        final file = XFile.fromData(
-          pdfBytes,
+        await FileDownloadHelper.downloadOrShare(
+          bytes: pdfBytes,
+          filename: 'invoice-${invoice.invoiceNumber}.pdf',
           mimeType: 'application/pdf',
-          name: 'invoice-${invoice.invoiceNumber}.pdf',
-        );
-        await SharePlus.instance.share(
-          ShareParams(
-            files: [file],
-            subject: 'Invoice ${invoice.invoiceNumber}',
-            text: 'Here is invoice ${invoice.invoiceNumber} for ${companyNameFromRow(row)}.',
-          ),
+          subject: 'Invoice ${invoice.invoiceNumber}',
+          text: 'Here is invoice ${invoice.invoiceNumber} for ${companyNameFromRow(row)}.',
         );
       } catch (e) {
         if (mounted) {

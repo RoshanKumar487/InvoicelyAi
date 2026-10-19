@@ -486,7 +486,7 @@ class _ExpensesScreenState extends State<ExpensesScreen> {
                     metrics: _buildMetrics(_expenses),
                     dateRange: _dateRange,
                     onDateRangeChanged: (range) => setState(() => _dateRange = range),
-                    onDownloadReport: () => _downloadExpensesReport(visibleExpenses),
+                    onDownloadReport: () => _handleDownloadExpenses(visibleExpenses),
                     directoryActions: [
                       if (isDesktop) ...[
                         OutlinedButton.icon(
@@ -655,10 +655,29 @@ class _ExpensesScreenState extends State<ExpensesScreen> {
     ];
   }
 
+  void _handleDownloadExpenses(List<Expense> currentList) {
+    if (_selectedIds.isNotEmpty) {
+      final selectedList = <Expense>[];
+      for (final exp in currentList) {
+        final idStr = exp.id?.toString() ?? exp.title;
+        if (_selectedIds.contains(idStr) || _selectedIds.contains(exp.title)) {
+          selectedList.add(exp);
+        }
+      }
+      _downloadExpensesReport(selectedList);
+    } else {
+      _downloadExpensesReport(currentList);
+    }
+  }
+
   void _downloadExpensesReport(List<Expense> list) {
+    final isSubset = _selectedIds.isNotEmpty && list.length == _selectedIds.length;
+    final title = isSubset
+        ? 'Expenses Ledger (${list.length} Selected)'
+        : 'Expenses Ledger';
     TableExportHelper.showExportMenu(
       context: context,
-      title: 'Expenses Ledger',
+      title: title,
       headers: ['Title', 'Vendor', 'Category', 'Date', 'Amount', 'Payment Method', 'Tax Deductible', 'Status'],
       rows: list.map((e) => [
         e.title,

@@ -912,12 +912,15 @@ class _EnterpriseDataViewState<T> extends State<EnterpriseDataView<T>> {
           Row(
             children: [
               if (widget.headerTitle != null) ...[
-                Text(
-                  widget.headerTitle!,
-                  style: const TextStyle(
-                    fontSize: 14.5,
-                    fontWeight: FontWeight.w800,
-                    color: Color(0xFF1E293B),
+                Flexible(
+                  child: Text(
+                    widget.headerTitle!,
+                    style: const TextStyle(
+                      fontSize: 14.5,
+                      fontWeight: FontWeight.w800,
+                      color: Color(0xFF1E293B),
+                    ),
+                    overflow: TextOverflow.ellipsis,
                   ),
                 ),
                 const SizedBox(width: 8),
@@ -947,11 +950,13 @@ class _EnterpriseDataViewState<T> extends State<EnterpriseDataView<T>> {
                     mainAxisSize: MainAxisSize.min,
                     children: [
                       const Icon(Icons.calendar_today_rounded, size: 11, color: Color(0xFF0284C7)),
-                      const SizedBox(width: 4),
-                      Text(
-                        '${widget.dateRange!.start.toIso8601String().substring(0, 10)} - ${widget.dateRange!.end.toIso8601String().substring(0, 10)}',
-                        style: const TextStyle(fontSize: 11, fontWeight: FontWeight.bold, color: Color(0xFF0369A1)),
-                      ),
+                      if (screenWidth >= 620) ...[
+                        const SizedBox(width: 4),
+                        Text(
+                          '${widget.dateRange!.start.toIso8601String().substring(0, 10)} - ${widget.dateRange!.end.toIso8601String().substring(0, 10)}',
+                          style: const TextStyle(fontSize: 11, fontWeight: FontWeight.bold, color: Color(0xFF0369A1)),
+                        ),
+                      ],
                       const SizedBox(width: 4),
                       InkWell(
                         onTap: () => widget.onDateRangeChanged?.call(null),
@@ -1017,8 +1022,15 @@ class _EnterpriseDataViewState<T> extends State<EnterpriseDataView<T>> {
               ],
               if (widget.onDownloadReport != null) ...[
                 IconButton(
-                  icon: const Icon(Icons.file_download_outlined, size: 18, color: Color(0xFF0284C7)),
-                  tooltip: 'Download report',
+                  icon: Badge(
+                    isLabelVisible: widget.selectedIds != null && widget.selectedIds!.isNotEmpty,
+                    label: Text('${widget.selectedIds?.length ?? 0}'),
+                    backgroundColor: const Color(0xFF1D68F0),
+                    child: const Icon(Icons.file_download_outlined, size: 18, color: Color(0xFF0284C7)),
+                  ),
+                  tooltip: (widget.selectedIds != null && widget.selectedIds!.isNotEmpty)
+                      ? 'Download selected (${widget.selectedIds!.length})'
+                      : 'Download all records',
                   visualDensity: VisualDensity.compact,
                   onPressed: widget.onDownloadReport,
                 ),

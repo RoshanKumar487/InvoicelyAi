@@ -58,6 +58,62 @@ const List<LetterheadPreset> kLetterheadPresets = [
     secondaryColor: Color(0xFF2563EB),
   ),
   LetterheadPreset(
+    id: 'tech_gradient_wave',
+    name: 'Tech Electric Gradient Wave',
+    description:
+        'Vibrant indigo & violet flowing gradient wave, illuminated monogram badge & tech contact matrix.',
+    accentColor: Color(0xFF4338CA),
+    secondaryColor: Color(0xFF8B5CF6),
+  ),
+  LetterheadPreset(
+    id: 'luxury_gold_crest',
+    name: 'Prestige Onyx & Champagne Gold',
+    description:
+        'Luxurious obsidian dark slate background with champagne gold framing, serif crest & regal divider.',
+    accentColor: Color(0xFF18181B),
+    secondaryColor: Color(0xFFF59E0B),
+  ),
+  LetterheadPreset(
+    id: 'industrial_blueprint',
+    name: 'Industrial Blueprint & Technical Grid',
+    description:
+        'Precision steel blue blueprint grid, safety amber accent bar, ISO compliance stamp box.',
+    accentColor: Color(0xFF0369A1),
+    secondaryColor: Color(0xFFF97316),
+  ),
+  LetterheadPreset(
+    id: 'crimson_chevron',
+    name: 'Crimson Dynamic Chevron (Logistics)',
+    description:
+        'High-energy crimson red & graphite dual diagonal chevrons, speed badge & quick dispatch contacts.',
+    accentColor: Color(0xFFBE123C),
+    secondaryColor: Color(0xFFEF4444),
+  ),
+  LetterheadPreset(
+    id: 'nordic_sidebar_accent',
+    name: 'Nordic Clean Asymmetric Stripe',
+    description:
+        'Clean Scandinavian layout with a bold vertical primary color bar, airy layout & modern sans-serif typography.',
+    accentColor: Color(0xFF0284C7),
+    secondaryColor: Color(0xFF0EA5E9),
+  ),
+  LetterheadPreset(
+    id: 'botanical_sage_eco',
+    name: 'Botanical Sage & Forest (Eco/Wellness)',
+    description:
+        'Organic pine green & soft sage duo-tone header with leaf badge, sustainability footer.',
+    accentColor: Color(0xFF14532D),
+    secondaryColor: Color(0xFF22C55E),
+  ),
+  LetterheadPreset(
+    id: 'monochrome_bauhaus',
+    name: 'Bauhaus Modernist Monogram',
+    description:
+        'Swiss high-contrast black & white geometric frame with punchy typography, boxed metadata grid.',
+    accentColor: Color(0xFF09090B),
+    secondaryColor: Color(0xFF71717A),
+  ),
+  LetterheadPreset(
     id: 'classic_traditional',
     name: 'Classic Invoice Header',
     description:
@@ -316,15 +372,72 @@ class CompanyLetterheadWidgets {
       (p) => p.id == config.styleId,
       orElse: () => kLetterheadPresets.first,
     );
-    final primary = overridePrimaryColor ?? _parseHex(config.primaryColorHex, preset.accentColor);
+    final primary = (config.styleId == 'modern_ribbon' ||
+            config.styleId == 'executive_navy_bar' ||
+            config.styleId == 'royal_minimal_split')
+        ? (overridePrimaryColor ?? _parseHex(config.primaryColorHex, preset.accentColor))
+        : preset.accentColor;
     final secondary = preset.secondaryColor;
-    final isDarkBanner = config.styleId == 'executive_navy_bar';
-    final bgColor = isDarkBanner ? primary : Colors.white;
-    final titleColor = isDarkBanner ? Colors.white : const Color(0xFF0F2942);
-    final subColor = isDarkBanner ? const Color(0xFFCBD5E1) : const Color(0xFF475569);
+    final isDarkBanner = config.styleId == 'executive_navy_bar' ||
+        config.styleId == 'tech_gradient_wave' ||
+        config.styleId == 'luxury_gold_crest' ||
+        config.styleId == 'monochrome_bauhaus';
+
+    Color bgColor = Colors.white;
+    BoxBorder customBorder = Border.all(
+      color: isDarkBanner ? primary : const Color(0xFFE2E8F0),
+      width: 1,
+    );
+
+    if (config.styleId == 'executive_navy_bar') {
+      bgColor = primary;
+      customBorder = Border.all(color: primary, width: 1);
+    } else if (config.styleId == 'tech_gradient_wave') {
+      bgColor = const Color(0xFF1E1B4B);
+      customBorder = Border.all(color: const Color(0xFF6366F1), width: 1.2);
+    } else if (config.styleId == 'luxury_gold_crest') {
+      bgColor = const Color(0xFF18181B);
+      customBorder = Border.all(color: const Color(0xFFF59E0B), width: 1.5);
+    } else if (config.styleId == 'industrial_blueprint') {
+      bgColor = const Color(0xFFF0F9FF);
+      customBorder = Border.all(color: const Color(0xFF0284C7), width: 1.2);
+    } else if (config.styleId == 'nordic_sidebar_accent') {
+      bgColor = Colors.white;
+      customBorder = Border(
+        left: BorderSide(color: primary, width: 6),
+        top: const BorderSide(color: Color(0xFFE2E8F0)),
+        right: const BorderSide(color: Color(0xFFE2E8F0)),
+        bottom: const BorderSide(color: Color(0xFFE2E8F0)),
+      );
+    } else if (config.styleId == 'botanical_sage_eco') {
+      bgColor = const Color(0xFFF0FDF4);
+      customBorder = Border.all(color: const Color(0xFF86EFAC), width: 1.2);
+    } else if (config.styleId == 'monochrome_bauhaus') {
+      bgColor = Colors.white;
+      customBorder = Border.all(color: Colors.black, width: 2.0);
+    }
+
+    Color titleColor = isDarkBanner ? Colors.white : const Color(0xFF0F2942);
+    Color subColor = isDarkBanner ? const Color(0xFFCBD5E1) : const Color(0xFF475569);
+    if (config.styleId == 'monochrome_bauhaus') {
+      titleColor = Colors.black;
+      subColor = const Color(0xFF333333);
+    } else if (config.styleId == 'luxury_gold_crest') {
+      titleColor = const Color(0xFFFEF3C7);
+      subColor = const Color(0xFFFDE68A);
+    } else if (config.styleId == 'botanical_sage_eco') {
+      titleColor = const Color(0xFF14532D);
+      subColor = const Color(0xFF166534);
+    } else if (config.styleId == 'industrial_blueprint') {
+      titleColor = const Color(0xFF0C4A6E);
+      subColor = const Color(0xFF0369A1);
+    }
+
     final dividerColor = isDarkBanner
         ? Colors.white.withValues(alpha: 0.22)
-        : const Color(0xFFCBD5E1);
+        : (config.styleId == 'industrial_blueprint'
+            ? const Color(0xFFBAE6FD)
+            : const Color(0xFFCBD5E1));
     final logoBytes = _decodeLogo(config.logoBase64);
 
     return Container(
@@ -332,10 +445,7 @@ class CompanyLetterheadWidgets {
       decoration: BoxDecoration(
         color: bgColor,
         borderRadius: BorderRadius.circular(8),
-        border: Border.all(
-          color: isDarkBanner ? primary : const Color(0xFFE2E8F0),
-          width: 1,
-        ),
+        border: customBorder,
         boxShadow: const [
           BoxShadow(
             color: Color(0x0D000000),
@@ -348,7 +458,7 @@ class CompanyLetterheadWidgets {
         borderRadius: BorderRadius.circular(7),
         child: Stack(
           children: [
-            // Decorative left & right geometric ribbons (like NY Solutions screenshot)
+            // Decorative left & right geometric ribbons
             if (config.styleId == 'modern_ribbon' || config.styleId == 'emerald_corporate') ...[
               Positioned(
                 left: -26,
@@ -403,6 +513,88 @@ class CompanyLetterheadWidgets {
                       color: secondary.withValues(alpha: 0.45),
                       borderRadius: BorderRadius.circular(8),
                     ),
+                  ),
+                ),
+              ),
+            ] else if (config.styleId == 'tech_gradient_wave') ...[
+              Positioned(
+                top: 0,
+                left: 0,
+                right: 0,
+                height: 3,
+                child: Container(
+                  decoration: BoxDecoration(
+                    gradient: LinearGradient(
+                      colors: [secondary, primary, const Color(0xFF06B6D4)],
+                    ),
+                  ),
+                ),
+              ),
+              Positioned(
+                right: -30,
+                top: -30,
+                child: Container(
+                  width: 110,
+                  height: 110,
+                  decoration: BoxDecoration(
+                    shape: BoxShape.circle,
+                    gradient: RadialGradient(
+                      colors: [secondary.withValues(alpha: 0.35), Colors.transparent],
+                    ),
+                  ),
+                ),
+              ),
+            ] else if (config.styleId == 'luxury_gold_crest') ...[
+              Positioned(
+                top: 0,
+                left: 0,
+                right: 0,
+                height: 2.5,
+                child: Container(color: const Color(0xFFF59E0B)),
+              ),
+              Positioned(
+                bottom: 0,
+                left: 0,
+                right: 0,
+                height: 1,
+                child: Container(color: const Color(0xFFF59E0B).withValues(alpha: 0.5)),
+              ),
+            ] else if (config.styleId == 'industrial_blueprint') ...[
+              Positioned(
+                top: 0,
+                left: 0,
+                right: 0,
+                height: 4,
+                child: Container(color: const Color(0xFFF97316)),
+              ),
+            ] else if (config.styleId == 'crimson_chevron') ...[
+              Positioned(
+                right: -20,
+                top: -15,
+                bottom: -15,
+                child: Transform.rotate(
+                  angle: -0.4,
+                  child: Row(
+                    children: [
+                      Container(width: 14, color: const Color(0xFFBE123C).withValues(alpha: 0.3)),
+                      const SizedBox(width: 6),
+                      Container(width: 24, color: const Color(0xFFBE123C)),
+                      const SizedBox(width: 6),
+                      Container(width: 8, color: const Color(0xFFEF4444)),
+                    ],
+                  ),
+                ),
+              ),
+            ] else if (config.styleId == 'botanical_sage_eco') ...[
+              Positioned(
+                left: -20,
+                bottom: -20,
+                child: Container(
+                  width: 70,
+                  height: 70,
+                  decoration: BoxDecoration(
+                    color: const Color(0xFF22C55E).withValues(alpha: 0.15),
+                    borderRadius: BorderRadius.circular(35),
                   ),
                 ),
               ),
@@ -662,23 +854,71 @@ class CompanyLetterheadWidgets {
       (p) => p.id == config.styleId,
       orElse: () => kLetterheadPresets.first,
     );
-    final primary = overridePrimaryColor ?? _parseHex(config.primaryColorHex, preset.accentColor);
+    final primary = (config.styleId == 'modern_ribbon' ||
+            config.styleId == 'executive_navy_bar' ||
+            config.styleId == 'royal_minimal_split')
+        ? (overridePrimaryColor ?? _parseHex(config.primaryColorHex, preset.accentColor))
+        : preset.accentColor;
     final secondary = preset.secondaryColor;
-    final isDarkBanner = config.styleId == 'executive_navy_bar';
-    final bgColor = isDarkBanner ? primary : Colors.white;
-    final textColor = isDarkBanner ? Colors.white : const Color(0xFF1E293B);
+    final isDarkBanner = config.styleId == 'executive_navy_bar' ||
+        config.styleId == 'tech_gradient_wave' ||
+        config.styleId == 'luxury_gold_crest' ||
+        config.styleId == 'monochrome_bauhaus';
+
+    Color bgColor = Colors.white;
+    BoxBorder customBorder = Border.all(
+      color: isDarkBanner ? primary : const Color(0xFFE2E8F0),
+    );
+
+    if (config.styleId == 'executive_navy_bar') {
+      bgColor = primary;
+      customBorder = Border.all(color: primary);
+    } else if (config.styleId == 'tech_gradient_wave') {
+      bgColor = const Color(0xFF1E1B4B);
+      customBorder = Border.all(color: const Color(0xFF6366F1));
+    } else if (config.styleId == 'luxury_gold_crest') {
+      bgColor = const Color(0xFF18181B);
+      customBorder = Border.all(color: const Color(0xFFF59E0B));
+    } else if (config.styleId == 'industrial_blueprint') {
+      bgColor = const Color(0xFFF0F9FF);
+      customBorder = Border.all(color: const Color(0xFF0284C7));
+    } else if (config.styleId == 'nordic_sidebar_accent') {
+      bgColor = Colors.white;
+      customBorder = Border(
+        left: BorderSide(color: primary, width: 6),
+        top: const BorderSide(color: Color(0xFFE2E8F0)),
+        right: const BorderSide(color: Color(0xFFE2E8F0)),
+        bottom: const BorderSide(color: Color(0xFFE2E8F0)),
+      );
+    } else if (config.styleId == 'botanical_sage_eco') {
+      bgColor = const Color(0xFFF0FDF4);
+      customBorder = Border.all(color: const Color(0xFF86EFAC));
+    } else if (config.styleId == 'monochrome_bauhaus') {
+      bgColor = Colors.white;
+      customBorder = Border.all(color: Colors.black, width: 2.0);
+    }
+
+    Color textColor = isDarkBanner ? Colors.white : const Color(0xFF1E293B);
+    if (config.styleId == 'monochrome_bauhaus') {
+      textColor = Colors.black;
+    } else if (config.styleId == 'luxury_gold_crest') {
+      textColor = const Color(0xFFFEF3C7);
+    } else if (config.styleId == 'botanical_sage_eco') {
+      textColor = const Color(0xFF14532D);
+    }
+
     final dividerColor = isDarkBanner
         ? Colors.white.withValues(alpha: 0.25)
-        : const Color(0xFFCBD5E1);
+        : (config.styleId == 'industrial_blueprint'
+            ? const Color(0xFFBAE6FD)
+            : const Color(0xFFCBD5E1));
 
     return Container(
       margin: const EdgeInsets.only(top: 10),
       decoration: BoxDecoration(
         color: bgColor,
         borderRadius: BorderRadius.circular(8),
-        border: Border.all(
-          color: isDarkBanner ? primary : const Color(0xFFE2E8F0),
-        ),
+        border: customBorder,
         boxShadow: const [
           BoxShadow(
             color: Color(0x0A000000),
@@ -723,6 +963,50 @@ class CompanyLetterheadWidgets {
                       ),
                       borderRadius: BorderRadius.circular(10),
                     ),
+                  ),
+                ),
+              ),
+            ] else if (config.styleId == 'tech_gradient_wave') ...[
+              Positioned(
+                top: 0,
+                left: 0,
+                right: 0,
+                height: 2,
+                child: Container(
+                  decoration: BoxDecoration(
+                    gradient: LinearGradient(colors: [secondary, primary]),
+                  ),
+                ),
+              ),
+            ] else if (config.styleId == 'luxury_gold_crest') ...[
+              Positioned(
+                top: 0,
+                left: 0,
+                right: 0,
+                height: 1.5,
+                child: Container(color: const Color(0xFFF59E0B)),
+              ),
+            ] else if (config.styleId == 'industrial_blueprint') ...[
+              Positioned(
+                top: 0,
+                left: 0,
+                right: 0,
+                height: 2.5,
+                child: Container(color: const Color(0xFFF97316)),
+              ),
+            ] else if (config.styleId == 'crimson_chevron') ...[
+              Positioned(
+                right: -10,
+                top: -10,
+                bottom: -10,
+                child: Transform.rotate(
+                  angle: -0.4,
+                  child: Row(
+                    children: [
+                      Container(width: 8, color: const Color(0xFFBE123C)),
+                      const SizedBox(width: 4),
+                      Container(width: 5, color: const Color(0xFFEF4444)),
+                    ],
                   ),
                 ),
               ),
@@ -903,16 +1187,80 @@ class CompanyLetterheadPdf {
     double scale = 1.0,
     bool showGstBadges = true,
   }) {
-    final isDarkBanner = config.styleId == 'executive_navy_bar';
-    final primary = overridePrimary ?? _parsePdfHex(config.primaryColorHex, 0xFF1E3A8A);
-    final secondary = config.styleId == 'emerald_corporate'
-        ? const PdfColor.fromInt(0xFF10B981)
-        : const PdfColor.fromInt(0xFF06B6D4);
-    final bgColor = isDarkBanner ? primary : PdfColors.white;
-    final titleColor = isDarkBanner ? PdfColors.white : const PdfColor.fromInt(0xFF0F2942);
-    final subColor = isDarkBanner
+    final isDarkBanner = config.styleId == 'executive_navy_bar' ||
+        config.styleId == 'tech_gradient_wave' ||
+        config.styleId == 'luxury_gold_crest' ||
+        config.styleId == 'monochrome_bauhaus';
+    final primary = (config.styleId == 'modern_ribbon' ||
+            config.styleId == 'executive_navy_bar' ||
+            config.styleId == 'royal_minimal_split')
+        ? (overridePrimary ?? _parsePdfHex(config.primaryColorHex, 0xFF1E3A8A))
+        : (config.styleId == 'emerald_corporate'
+            ? const PdfColor.fromInt(0xFF047857)
+            : config.styleId == 'tech_gradient_wave'
+                ? const PdfColor.fromInt(0xFF4F46E5)
+                : config.styleId == 'luxury_gold_crest'
+                    ? const PdfColor.fromInt(0xFFD97706)
+                    : config.styleId == 'industrial_blueprint'
+                        ? const PdfColor.fromInt(0xFF0284C7)
+                        : config.styleId == 'crimson_chevron'
+                            ? const PdfColor.fromInt(0xFFDC2626)
+                            : config.styleId == 'nordic_sidebar_accent'
+                                ? const PdfColor.fromInt(0xFF0F766E)
+                                : config.styleId == 'botanical_sage_eco'
+                                    ? const PdfColor.fromInt(0xFF16A34A)
+                                    : config.styleId == 'monochrome_bauhaus'
+                                        ? const PdfColor.fromInt(0xFF18181B)
+                                        : (overridePrimary ??
+                                            _parsePdfHex(config.primaryColorHex, 0xFF1E3A8A)));
+    PdfColor secondary = const PdfColor.fromInt(0xFF06B6D4);
+    if (config.styleId == 'emerald_corporate') {
+      secondary = const PdfColor.fromInt(0xFF10B981);
+    } else if (config.styleId == 'tech_gradient_wave') {
+      secondary = const PdfColor.fromInt(0xFF8B5CF6);
+    } else if (config.styleId == 'luxury_gold_crest') {
+      secondary = const PdfColor.fromInt(0xFFF59E0B);
+    } else if (config.styleId == 'industrial_blueprint') {
+      secondary = const PdfColor.fromInt(0xFFF97316);
+    } else if (config.styleId == 'crimson_chevron') {
+      secondary = const PdfColor.fromInt(0xFFEF4444);
+    } else if (config.styleId == 'botanical_sage_eco') {
+      secondary = const PdfColor.fromInt(0xFF22C55E);
+    } else if (config.styleId == 'monochrome_bauhaus') {
+      secondary = const PdfColor.fromInt(0xFF71717A);
+    }
+
+    PdfColor bgColor = PdfColors.white;
+    if (config.styleId == 'executive_navy_bar') {
+      bgColor = primary;
+    } else if (config.styleId == 'tech_gradient_wave') {
+      bgColor = const PdfColor.fromInt(0xFF1E1B4B);
+    } else if (config.styleId == 'luxury_gold_crest') {
+      bgColor = const PdfColor.fromInt(0xFF18181B);
+    } else if (config.styleId == 'industrial_blueprint') {
+      bgColor = const PdfColor.fromInt(0xFFF0F9FF);
+    } else if (config.styleId == 'botanical_sage_eco') {
+      bgColor = const PdfColor.fromInt(0xFFF0FDF4);
+    }
+
+    PdfColor titleColor = isDarkBanner ? PdfColors.white : const PdfColor.fromInt(0xFF0F2942);
+    PdfColor subColor = isDarkBanner
         ? const PdfColor.fromInt(0xFFCBD5E1)
         : const PdfColor.fromInt(0xFF475569);
+    if (config.styleId == 'monochrome_bauhaus') {
+      titleColor = PdfColors.black;
+      subColor = const PdfColor.fromInt(0xFF333333);
+    } else if (config.styleId == 'luxury_gold_crest') {
+      titleColor = const PdfColor.fromInt(0xFFFEF3C7);
+      subColor = const PdfColor.fromInt(0xFFFDE68A);
+    } else if (config.styleId == 'botanical_sage_eco') {
+      titleColor = const PdfColor.fromInt(0xFF14532D);
+      subColor = const PdfColor.fromInt(0xFF166534);
+    } else if (config.styleId == 'industrial_blueprint') {
+      titleColor = const PdfColor.fromInt(0xFF0C4A6E);
+      subColor = const PdfColor.fromInt(0xFF0369A1);
+    }
+
     final dividerColor = isDarkBanner
         ? const PdfColor.fromInt(0xFF334155)
         : const PdfColor.fromInt(0xFFCBD5E1);
@@ -924,8 +1272,14 @@ class CompanyLetterheadPdf {
         color: bgColor,
         borderRadius: const pw.BorderRadius.all(pw.Radius.circular(6)),
         border: pw.Border.all(
-          color: isDarkBanner ? primary : const PdfColor.fromInt(0xFFCBD5E1),
-          width: 0.8,
+          color: isDarkBanner
+              ? (config.styleId == 'luxury_gold_crest'
+                  ? const PdfColor.fromInt(0xFFF59E0B)
+                  : primary)
+              : const PdfColor.fromInt(0xFFCBD5E1),
+          width: config.styleId == 'luxury_gold_crest' || config.styleId == 'monochrome_bauhaus'
+              ? 1.5
+              : 0.8,
         ),
       ),
       child: pw.Column(
@@ -1128,13 +1482,71 @@ class CompanyLetterheadPdf {
     double scale = 1.0,
     String pageLabel = 'Page 1 of 1',
   }) {
-    final isDarkBanner = config.styleId == 'executive_navy_bar';
-    final primary = overridePrimary ?? _parsePdfHex(config.primaryColorHex, 0xFF1E3A8A);
-    final secondary = config.styleId == 'emerald_corporate'
-        ? const PdfColor.fromInt(0xFF10B981)
-        : const PdfColor.fromInt(0xFF06B6D4);
-    final bgColor = isDarkBanner ? primary : PdfColors.white;
-    final textColor = isDarkBanner ? PdfColors.white : const PdfColor.fromInt(0xFF1E293B);
+    final isDarkBanner = config.styleId == 'executive_navy_bar' ||
+        config.styleId == 'tech_gradient_wave' ||
+        config.styleId == 'luxury_gold_crest' ||
+        config.styleId == 'monochrome_bauhaus';
+    final primary = (config.styleId == 'modern_ribbon' ||
+            config.styleId == 'executive_navy_bar' ||
+            config.styleId == 'royal_minimal_split')
+        ? (overridePrimary ?? _parsePdfHex(config.primaryColorHex, 0xFF1E3A8A))
+        : (config.styleId == 'emerald_corporate'
+            ? const PdfColor.fromInt(0xFF047857)
+            : config.styleId == 'tech_gradient_wave'
+                ? const PdfColor.fromInt(0xFF4F46E5)
+                : config.styleId == 'luxury_gold_crest'
+                    ? const PdfColor.fromInt(0xFFD97706)
+                    : config.styleId == 'industrial_blueprint'
+                        ? const PdfColor.fromInt(0xFF0284C7)
+                        : config.styleId == 'crimson_chevron'
+                            ? const PdfColor.fromInt(0xFFDC2626)
+                            : config.styleId == 'nordic_sidebar_accent'
+                                ? const PdfColor.fromInt(0xFF0F766E)
+                                : config.styleId == 'botanical_sage_eco'
+                                    ? const PdfColor.fromInt(0xFF16A34A)
+                                    : config.styleId == 'monochrome_bauhaus'
+                                        ? const PdfColor.fromInt(0xFF18181B)
+                                        : (overridePrimary ??
+                                            _parsePdfHex(config.primaryColorHex, 0xFF1E3A8A)));
+    PdfColor secondary = const PdfColor.fromInt(0xFF06B6D4);
+    if (config.styleId == 'emerald_corporate') {
+      secondary = const PdfColor.fromInt(0xFF10B981);
+    } else if (config.styleId == 'tech_gradient_wave') {
+      secondary = const PdfColor.fromInt(0xFF8B5CF6);
+    } else if (config.styleId == 'luxury_gold_crest') {
+      secondary = const PdfColor.fromInt(0xFFF59E0B);
+    } else if (config.styleId == 'industrial_blueprint') {
+      secondary = const PdfColor.fromInt(0xFFF97316);
+    } else if (config.styleId == 'crimson_chevron') {
+      secondary = const PdfColor.fromInt(0xFFEF4444);
+    } else if (config.styleId == 'botanical_sage_eco') {
+      secondary = const PdfColor.fromInt(0xFF22C55E);
+    } else if (config.styleId == 'monochrome_bauhaus') {
+      secondary = const PdfColor.fromInt(0xFF71717A);
+    }
+
+    PdfColor bgColor = PdfColors.white;
+    if (config.styleId == 'executive_navy_bar') {
+      bgColor = primary;
+    } else if (config.styleId == 'tech_gradient_wave') {
+      bgColor = const PdfColor.fromInt(0xFF1E1B4B);
+    } else if (config.styleId == 'luxury_gold_crest') {
+      bgColor = const PdfColor.fromInt(0xFF18181B);
+    } else if (config.styleId == 'industrial_blueprint') {
+      bgColor = const PdfColor.fromInt(0xFFF0F9FF);
+    } else if (config.styleId == 'botanical_sage_eco') {
+      bgColor = const PdfColor.fromInt(0xFFF0FDF4);
+    }
+
+    PdfColor textColor = isDarkBanner ? PdfColors.white : const PdfColor.fromInt(0xFF1E293B);
+    if (config.styleId == 'monochrome_bauhaus') {
+      textColor = PdfColors.black;
+    } else if (config.styleId == 'luxury_gold_crest') {
+      textColor = const PdfColor.fromInt(0xFFFEF3C7);
+    } else if (config.styleId == 'botanical_sage_eco') {
+      textColor = const PdfColor.fromInt(0xFF14532D);
+    }
+
     final dividerColor = isDarkBanner
         ? const PdfColor.fromInt(0xFF334155)
         : const PdfColor.fromInt(0xFFCBD5E1);
@@ -1145,7 +1557,11 @@ class CompanyLetterheadPdf {
         color: bgColor,
         borderRadius: const pw.BorderRadius.all(pw.Radius.circular(5)),
         border: pw.Border.all(
-          color: isDarkBanner ? primary : const PdfColor.fromInt(0xFFCBD5E1),
+          color: isDarkBanner
+              ? (config.styleId == 'luxury_gold_crest'
+                  ? const PdfColor.fromInt(0xFFF59E0B)
+                  : primary)
+              : const PdfColor.fromInt(0xFFCBD5E1),
           width: 0.8,
         ),
       ),

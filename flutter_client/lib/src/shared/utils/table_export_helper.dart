@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
-import 'package:share_plus/share_plus.dart';
 
 import '../../features/reports/data/report_export.dart';
+import 'file_download_helper.dart';
 
 class TableExportHelper {
   TableExportHelper._();
@@ -32,7 +32,7 @@ class TableExportHelper {
                     const Icon(Icons.file_download_outlined, color: Color(0xFF0284C7)),
                     const SizedBox(width: 8),
                     Text(
-                      'Download $title Report',
+                      'Download & Save $title',
                       style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 16),
                     ),
                   ],
@@ -42,19 +42,19 @@ class TableExportHelper {
               ListTile(
                 leading: const Icon(Icons.description_outlined, color: Color(0xFF0284C7)),
                 title: const Text('Download CSV (.csv)'),
-                subtitle: Text('${rows.length} records'),
+                subtitle: Text('Save ${rows.length} records as CSV spreadsheet'),
                 onTap: () => Navigator.pop(ctx, 'csv'),
               ),
               ListTile(
                 leading: const Icon(Icons.table_view_rounded, color: Color(0xFF107C41)),
                 title: const Text('Download Excel Workbook (.xlsx)'),
-                subtitle: Text('${rows.length} records with styled spreadsheet'),
+                subtitle: Text('Save ${rows.length} records as styled Excel file'),
                 onTap: () => Navigator.pop(ctx, 'xlsx'),
               ),
               ListTile(
                 leading: const Icon(Icons.picture_as_pdf_rounded, color: Color(0xFFDC2626)),
                 title: const Text('Download PDF Document (.pdf)'),
-                subtitle: Text('${rows.length} records formatted for print'),
+                subtitle: Text('Save ${rows.length} records as printable PDF file'),
                 onTap: () => Navigator.pop(ctx, 'pdf'),
               ),
             ],
@@ -73,7 +73,10 @@ class TableExportHelper {
       );
 
       final date = DateTime.now().toIso8601String().substring(0, 10);
-      final sanitizedTitle = title.toLowerCase().replaceAll(RegExp(r'\s+'), '-');
+      final sanitizedTitle = title
+          .toLowerCase()
+          .replaceAll(RegExp(r'[^a-z0-9]+'), '-')
+          .replaceAll(RegExp(r'^-|-$'), '');
       final filename = '$sanitizedTitle-$date.$format';
 
       final bytes = switch (format) {
@@ -88,23 +91,16 @@ class TableExportHelper {
         _ => 'text/csv',
       };
 
-      final file = XFile.fromData(
-        bytes,
+      await FileDownloadHelper.downloadFile(
+        bytes: bytes,
+        filename: filename,
         mimeType: mimeType,
-        name: filename,
-      );
-
-      await SharePlus.instance.share(
-        ShareParams(
-          files: [file],
-          subject: '$title Export ($date)',
-        ),
       );
 
       if (context.mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
-            content: Text('✓ $title downloaded as $format'),
+            content: Text('✓ Saved $filename to Downloads'),
             backgroundColor: const Color(0xFF047857),
           ),
         );
@@ -113,7 +109,7 @@ class TableExportHelper {
       if (context.mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
-            content: Text('Could not export report: $e'),
+            content: Text('Could not download file: $e'),
             backgroundColor: Colors.red,
           ),
         );

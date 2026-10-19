@@ -510,7 +510,7 @@ class _PayrollScreenState extends State<PayrollScreen> {
                   metrics: _buildMetrics(),
                   dateRange: _dateRange,
                   onDateRangeChanged: (range) => setState(() => _dateRange = range),
-                  onDownloadReport: () => _downloadPayrollReport(filtered),
+                  onDownloadReport: () => _handleDownloadPayroll(filtered),
                   onRowTap: (entry) => _openDynamicSalaryAdjustment(entry),
                   searchController: _searchController,
                   onSearchChanged: _onSearchChanged,
@@ -649,10 +649,28 @@ class _PayrollScreenState extends State<PayrollScreen> {
     ];
   }
 
+  void _handleDownloadPayroll(List<PayrollEntry> currentList) {
+    if (_selectedIds.isNotEmpty) {
+      final selectedList = <PayrollEntry>[];
+      for (final p in currentList) {
+        if (_selectedIds.contains(p.id.toString()) || _selectedIds.contains(p.employeeId.toString())) {
+          selectedList.add(p);
+        }
+      }
+      _downloadPayrollReport(selectedList);
+    } else {
+      _downloadPayrollReport(currentList);
+    }
+  }
+
   void _downloadPayrollReport(List<PayrollEntry> list) {
+    final isSubset = _selectedIds.isNotEmpty && list.length == _selectedIds.length;
+    final title = isSubset
+        ? 'Payroll Disbursal Register (${list.length} Selected)'
+        : 'Payroll Disbursal Register';
     TableExportHelper.showExportMenu(
       context: context,
-      title: 'Payroll Disbursal Register',
+      title: title,
       headers: [
         'Employee Name',
         'Code',

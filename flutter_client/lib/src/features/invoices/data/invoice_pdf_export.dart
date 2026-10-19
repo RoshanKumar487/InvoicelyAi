@@ -92,6 +92,13 @@ class InvoicePdfExport {
         ? presetStr
         : () {
             final cat = (template?.category ?? '').toLowerCase();
+            final id = (template?.id ?? '').toLowerCase();
+            if (id.contains('creative') || cat.contains('creative')) return 'creative_vibrant';
+            if (id.contains('construction') || cat.contains('construction')) return 'construction_contractor';
+            if (id.contains('healthcare') || cat.contains('healthcare')) return 'healthcare_clinic';
+            if (id.contains('logistics') || cat.contains('logistics')) return 'logistics_freight';
+            if (id.contains('legal') || cat.contains('legal')) return 'legal_counsel';
+            if (id.contains('hospitality') || cat.contains('hospitality')) return 'hospitality_catering';
             if (cat.contains('gst')) return 'gst_service';
             if (cat.contains('consult')) return 'consulting';
             if (cat.contains('retail')) return 'retail';
@@ -230,6 +237,14 @@ class InvoicePdfExport {
         return _cleanText(tplTitle);
       }
       return 'TAX INVOICE';
+    }();
+
+    final layoutStyle = () {
+      final s = localSettings['studio_layout_style']?.toString().trim();
+      if (s != null && s.isNotEmpty) return s;
+      final tplLayout = template?.layoutStyle.trim();
+      if (tplLayout != null && tplLayout.isNotEmpty) return tplLayout;
+      return 'modern_split';
     }();
 
     // Font family selection
@@ -697,6 +712,56 @@ class InvoicePdfExport {
       );
     }
 
+    pw.Widget pdfHeroPill(String text) {
+      return pw.Container(
+        padding: const pw.EdgeInsets.symmetric(horizontal: 7, vertical: 3),
+        decoration: pw.BoxDecoration(
+          color: const PdfColor(1, 1, 1, 0.2),
+          borderRadius: pw.BorderRadius.circular(10),
+          border: pw.Border.all(color: const PdfColor(1, 1, 1, 0.35)),
+        ),
+        child: pw.Text(
+          _cleanText(text),
+          style: pw.TextStyle(
+            font: boldFont,
+            fontSize: 8.5 * fontScale,
+            color: PdfColors.white,
+          ),
+        ),
+      );
+    }
+
+    pw.Widget pdfLedgerRow(String label, String value) {
+      return pw.Padding(
+        padding: const pw.EdgeInsets.only(bottom: 2),
+        child: pw.Row(
+          children: [
+            pw.SizedBox(
+              width: 70,
+              child: pw.Text(
+                '${_cleanText(label)}:',
+                style: docStyle(
+                  fontSize: 8.5,
+                  bold: true,
+                  color: const PdfColor.fromInt(0xFF64748B),
+                ),
+              ),
+            ),
+            pw.Expanded(
+              child: pw.Text(
+                _cleanText(value),
+                style: docStyle(
+                  fontSize: 8.5,
+                  bold: true,
+                  color: const PdfColor.fromInt(0xFF0F172A),
+                ),
+              ),
+            ),
+          ],
+        ),
+      );
+    }
+
     pw.Widget summaryRow(String label, String value, {bool isBold = false}) {
       return pw.Padding(
         padding: const pw.EdgeInsets.symmetric(vertical: 2),
@@ -997,274 +1062,781 @@ class InvoicePdfExport {
             ],
           ],
 
-          // B. Document Title & Details
-          if (identitySection.enabled) ...[
-            pw.Row(
-              crossAxisAlignment: pw.CrossAxisAlignment.start,
-              mainAxisAlignment: pw.MainAxisAlignment.spaceBetween,
-              children: [
-                pw.Expanded(
-                  child: pw.Text(
-                    uppercaseHeadings
-                        ? documentTitle.toUpperCase()
-                        : documentTitle,
-                    style: docStyle(
-                      fontSize: 19,
-                      bold: true,
-                      color: const PdfColor.fromInt(0xFF0F172A),
-                    ),
-                  ),
-                ),
-                pw.SizedBox(width: 14),
-                pw.Table(
-                  defaultColumnWidth: const pw.IntrinsicColumnWidth(),
-                  children: [
-                    if (isFieldVisible(identitySection, 'f_doc_number'))
-                      metaRow(
-                        'Invoice No.',
-                        invoice.invoiceNumber.isNotEmpty
-                            ? invoice.invoiceNumber
-                            : 'INV-2025-0148',
-                      ),
-                    if (isFieldVisible(identitySection, 'f_doc_issue'))
-                      metaRow(
-                        'Issue Date',
-                        invoice.issueDate.isNotEmpty
-                            ? invoice.issueDate
-                            : '15 Apr 2025',
-                      ),
-                    if (isFieldVisible(identitySection, 'f_doc_due'))
-                      metaRow(
-                        'Due Date',
-                        invoice.dueDate.isNotEmpty
-                            ? invoice.dueDate
-                            : '30 Apr 2025',
-                      ),
-                    if (isFieldVisible(identitySection, 'f_doc_po') &&
-                        (invoice.poNumber.trim().isNotEmpty ||
-                            findField(identitySection, 'f_doc_po')
-                                    ?.defaultValue
-                                    .trim()
-                                    .isNotEmpty ==
-                                true))
-                      metaRow(
-                        'PO No.',
-                        invoice.poNumber.trim().isNotEmpty
-                            ? invoice.poNumber.trim()
-                            : findField(identitySection, 'f_doc_po')!
-                                .defaultValue
-                                .trim(),
-                      ),
-                    for (final cf in customVisibleFields(
-                      identitySection,
-                      const {
-                        'f_doc_number',
-                        'f_doc_issue',
-                        'f_doc_due',
-                        'f_doc_po',
-                      },
-                    ))
-                      metaRow(
-                        cf.label,
-                        cf.defaultValue.isNotEmpty ? cf.defaultValue : '-',
-                      ),
-                  ],
-                ),
-              ],
-            ),
-            pw.SizedBox(height: 14),
-          ],
+          // B & C. Identity, Document Details & Client Sections by Selected Layout Structure
+          ...() {
+            final invNum = invoice.invoiceNumber.isNotEmpty ? invoice.invoiceNumber : 'INV-2025-0148';
+            final issueDate = invoice.issueDate.isNotEmpty ? invoice.issueDate : '15 Apr 2025';
+            final dueDate = invoice.dueDate.isNotEmpty ? invoice.dueDate : '30 Apr 2025';
+            final poNum = invoice.poNumber.trim().isNotEmpty ? invoice.poNumber.trim() : 'PO-4587/2025';
 
-          // C. Bill To & Service Location Boxes
-          if (clientSection.enabled) ...[
-            pw.Row(
-              crossAxisAlignment: pw.CrossAxisAlignment.start,
-              children: [
-                pw.Expanded(
-                  flex: 5,
-                  child: pw.Container(
-                    padding: const pw.EdgeInsets.all(10),
+            if (layoutStyle == 'executive_banner') {
+              return [
+                if (identitySection.enabled) ...[
+                  pw.Container(
+                    margin: const pw.EdgeInsets.only(bottom: 14),
+                    padding: const pw.EdgeInsets.fromLTRB(16, 12, 16, 12),
                     decoration: pw.BoxDecoration(
-                      color: const PdfColor.fromInt(0xFFF8FAFC),
-                      borderRadius: pw.BorderRadius.circular(5),
-                      border: pw.Border.all(
-                        color: const PdfColor.fromInt(0xFFE2E8F0),
-                      ),
+                      color: primaryColor,
+                      borderRadius: pw.BorderRadius.circular(6),
                     ),
                     child: pw.Column(
-                      crossAxisAlignment: pw.CrossAxisAlignment.start,
+                      crossAxisAlignment: pw.CrossAxisAlignment.stretch,
                       children: [
-                        pw.Text(
-                          uppercaseHeadings ? 'BILL TO' : 'Bill To',
-                          style: docStyle(
-                            fontSize: 9.5,
-                            bold: true,
-                            color: const PdfColor.fromInt(0xFF475569),
-                          ),
-                        ),
-                        pw.SizedBox(height: 3),
-                        if (isFieldVisible(clientSection, 'f_cli_name'))
-                          pw.Text(
-                            clientDisplayName,
-                            style: docStyle(
-                              fontSize: 10.5,
-                              bold: true,
-                              color: const PdfColor.fromInt(0xFF0F172A),
+                        pw.Row(
+                          mainAxisAlignment: pw.MainAxisAlignment.spaceBetween,
+                          children: [
+                            pw.Text(
+                              uppercaseHeadings ? documentTitle.toUpperCase() : documentTitle,
+                              style: pw.TextStyle(
+                                font: boldFont,
+                                fontSize: 18 * fontScale,
+                                color: PdfColors.white,
+                              ),
                             ),
-                          ),
-                        pw.SizedBox(height: 2),
-                        if (isFieldVisible(clientSection, 'f_cli_addr'))
-                          for (final line in clientAddr.split('\n'))
-                            if (line.trim().isNotEmpty)
-                              pw.Text(
-                                line.trim(),
-                                style: docStyle(
-                                  fontSize: 9,
-                                  color: const PdfColor.fromInt(0xFF475569),
+                            pw.Container(
+                              padding: const pw.EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                              decoration: pw.BoxDecoration(
+                                color: const PdfColor(1, 1, 1, 0.25),
+                                borderRadius: pw.BorderRadius.circular(10),
+                                border: pw.Border.all(color: const PdfColor(1, 1, 1, 0.4)),
+                              ),
+                              child: pw.Text(
+                                'ORIGINAL BILL',
+                                style: pw.TextStyle(
+                                  font: boldFont,
+                                  fontSize: 8 * fontScale,
+                                  color: PdfColors.white,
                                 ),
                               ),
-                        pw.SizedBox(height: 2),
-                        if (isFieldVisible(clientSection, 'f_cli_gstin') &&
-                            clientGstin.isNotEmpty)
-                          pw.Text(
-                            'GSTIN: $clientGstin',
-                            style: docStyle(
-                              fontSize: 9,
-                              color: const PdfColor.fromInt(0xFF475569),
                             ),
-                          ),
-                        if (isFieldVisible(clientSection, 'f_cli_contact') &&
-                            clientContactPerson.isNotEmpty)
-                          pw.Text(
-                            'Contact: $clientContactPerson',
-                            style: docStyle(
-                              fontSize: 9,
-                              color: const PdfColor.fromInt(0xFF475569),
-                            ),
-                          ),
-                        if (isFieldVisible(clientSection, 'f_cli_phone') &&
-                            clientPhone.isNotEmpty)
-                          pw.Text(
-                            'Phone: $clientPhone',
-                            style: docStyle(
-                              fontSize: 9,
-                              color: const PdfColor.fromInt(0xFF475569),
-                            ),
-                          ),
-                        for (final cf in customVisibleFields(
-                          clientSection,
-                          const {
-                            'f_cli_name',
-                            'f_cli_addr',
-                            'f_cli_gstin',
-                            'f_cli_contact',
-                            'f_cli_phone',
-                          },
-                        ))
-                          pw.Text(
-                            '${_cleanText(cf.label)}: ${_cleanText(cf.defaultValue.isNotEmpty ? cf.defaultValue : '-')}',
-                            style: docStyle(
-                              fontSize: 9,
-                              color: const PdfColor.fromInt(0xFF475569),
-                            ),
-                          ),
+                          ],
+                        ),
+                        pw.SizedBox(height: 8),
+                        pw.Row(
+                          children: [
+                            pdfHeroPill('Inv: $invNum'),
+                            pw.SizedBox(width: 6),
+                            pdfHeroPill('Issued: $issueDate'),
+                            pw.SizedBox(width: 6),
+                            pdfHeroPill('Due: $dueDate'),
+                            pw.SizedBox(width: 6),
+                            pdfHeroPill('PO: $poNum'),
+                          ],
+                        ),
                       ],
                     ),
                   ),
-                ),
-                if (isFieldVisible(servicesSection, 'f_srv_loc') ||
-                    isFieldVisible(servicesSection, 'f_srv_period')) ...[
-                  pw.SizedBox(width: 12),
-                  pw.Expanded(
-                    flex: 5,
-                    child: pw.Container(
-                      padding: const pw.EdgeInsets.all(10),
-                      decoration: pw.BoxDecoration(
-                        color: const PdfColor.fromInt(0xFFF8FAFC),
-                        borderRadius: pw.BorderRadius.circular(5),
-                        border: pw.Border.all(
-                          color: const PdfColor.fromInt(0xFFE2E8F0),
+                ],
+                if (clientSection.enabled) ...[
+                  pw.Row(
+                    crossAxisAlignment: pw.CrossAxisAlignment.start,
+                    children: [
+                      pw.Expanded(
+                        child: pw.Container(
+                          decoration: pw.BoxDecoration(
+                            color: PdfColors.white,
+                            borderRadius: pw.BorderRadius.circular(5),
+                            border: pw.Border.all(color: const PdfColor.fromInt(0xFFCBD5E1)),
+                          ),
+                          child: pw.Column(
+                            crossAxisAlignment: pw.CrossAxisAlignment.start,
+                            children: [
+                              pw.Container(
+                                height: 3.5,
+                                decoration: pw.BoxDecoration(
+                                  color: primaryColor,
+                                  borderRadius: const pw.BorderRadius.vertical(top: pw.Radius.circular(4)),
+                                ),
+                              ),
+                              pw.Padding(
+                                padding: const pw.EdgeInsets.all(10),
+                                child: pw.Column(
+                                  crossAxisAlignment: pw.CrossAxisAlignment.start,
+                                  children: [
+                                    pw.Text(
+                                      uppercaseHeadings ? 'BILLED TO (CLIENT)' : 'Billed To (Client)',
+                                      style: docStyle(fontSize: 8.8, bold: true, color: primaryColor),
+                                    ),
+                                    pw.SizedBox(height: 4),
+                                    pw.Text(clientDisplayName, style: docStyle(fontSize: 10.5, bold: true, color: const PdfColor.fromInt(0xFF0F172A))),
+                                    pw.SizedBox(height: 2),
+                                    for (final line in clientAddr.split('\n'))
+                                      if (line.trim().isNotEmpty)
+                                        pw.Text(line.trim(), style: docStyle(fontSize: 8.8, color: const PdfColor.fromInt(0xFF475569))),
+                                    if (clientGstin.isNotEmpty)
+                                      pw.Text('GSTIN: $clientGstin', style: docStyle(fontSize: 8.5, color: const PdfColor.fromInt(0xFF475569))),
+                                    if (clientPhone.isNotEmpty)
+                                      pw.Text('Phone: $clientPhone', style: docStyle(fontSize: 8.5, color: const PdfColor.fromInt(0xFF475569))),
+                                  ],
+                                ),
+                              ),
+                            ],
+                          ),
                         ),
                       ),
+                      pw.SizedBox(width: 12),
+                      pw.Expanded(
+                        child: pw.Container(
+                          decoration: pw.BoxDecoration(
+                            color: PdfColors.white,
+                            borderRadius: pw.BorderRadius.circular(5),
+                            border: pw.Border.all(color: const PdfColor.fromInt(0xFFCBD5E1)),
+                          ),
+                          child: pw.Column(
+                            crossAxisAlignment: pw.CrossAxisAlignment.start,
+                            children: [
+                              pw.Container(
+                                height: 3.5,
+                                decoration: const pw.BoxDecoration(
+                                  color: PdfColor.fromInt(0xFF0D9488),
+                                  borderRadius: pw.BorderRadius.vertical(top: pw.Radius.circular(4)),
+                                ),
+                              ),
+                              pw.Padding(
+                                padding: const pw.EdgeInsets.all(10),
+                                child: pw.Column(
+                                  crossAxisAlignment: pw.CrossAxisAlignment.start,
+                                  children: [
+                                    pw.Text(
+                                      uppercaseHeadings ? 'SERVICE LOCATION & PERIOD' : 'Service Location & Period',
+                                      style: docStyle(fontSize: 8.8, bold: true, color: const PdfColor.fromInt(0xFF0D9488)),
+                                    ),
+                                    pw.SizedBox(height: 4),
+                                    for (final line in serviceLocation.split('\n'))
+                                      if (line.trim().isNotEmpty)
+                                        pw.Text(line.trim(), style: docStyle(fontSize: 9.5, bold: true, color: const PdfColor.fromInt(0xFF0F172A))),
+                                    pw.SizedBox(height: 2),
+                                    pw.Text('Billing Period: $billingPeriod', style: docStyle(fontSize: 8.8, color: const PdfColor.fromInt(0xFF475569))),
+                                    pw.Text('Terms: ${_cleanText(invoice.paymentTerms.isNotEmpty ? invoice.paymentTerms : 'Net 15 Days')}', style: docStyle(fontSize: 8.5, color: const PdfColor.fromInt(0xFF64748B))),
+                                  ],
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                  pw.SizedBox(height: 14),
+                ],
+              ];
+            }
+
+            if (layoutStyle == 'compact_grid') {
+              return [
+                pw.Container(
+                  margin: const pw.EdgeInsets.only(bottom: 12),
+                  decoration: pw.BoxDecoration(
+                    border: pw.Border.all(color: const PdfColor.fromInt(0xFF0F172A), width: 1),
+                    borderRadius: pw.BorderRadius.circular(3),
+                  ),
+                  child: pw.Column(
+                    children: [
+                      pw.Row(
+                        crossAxisAlignment: pw.CrossAxisAlignment.start,
+                        children: [
+                          pw.Expanded(
+                            flex: 6,
+                            child: pw.Container(
+                              padding: const pw.EdgeInsets.all(8),
+                              decoration: const pw.BoxDecoration(
+                                border: pw.Border(
+                                  right: pw.BorderSide(color: PdfColor.fromInt(0xFF0F172A), width: 1),
+                                  bottom: pw.BorderSide(color: PdfColor.fromInt(0xFF0F172A), width: 1),
+                                ),
+                              ),
+                              child: pw.Column(
+                                crossAxisAlignment: pw.CrossAxisAlignment.start,
+                                children: [
+                                  pw.Text('1. SUPPLIER / CONSIGNOR DETAILS', style: docStyle(fontSize: 8, bold: true, color: const PdfColor.fromInt(0xFF475569))),
+                                  pw.SizedBox(height: 2),
+                                  pw.Text(companyLegalName, style: docStyle(fontSize: 10, bold: true, color: const PdfColor.fromInt(0xFF0F172A))),
+                                  for (final line in companyAddress.split('\n'))
+                                    if (line.trim().isNotEmpty)
+                                      pw.Text(line.trim(), style: docStyle(fontSize: 8.2, color: const PdfColor.fromInt(0xFF475569))),
+                                  pw.Text('GSTIN: $companyGstin · PAN: $companyPan', style: docStyle(fontSize: 8.2, bold: true, color: const PdfColor.fromInt(0xFF1E293B))),
+                                ],
+                              ),
+                            ),
+                          ),
+                          pw.Expanded(
+                            flex: 4,
+                            child: pw.Container(
+                              padding: const pw.EdgeInsets.all(8),
+                              decoration: const pw.BoxDecoration(
+                                border: pw.Border(bottom: pw.BorderSide(color: PdfColor.fromInt(0xFF0F172A), width: 1)),
+                              ),
+                              child: pw.Column(
+                                crossAxisAlignment: pw.CrossAxisAlignment.start,
+                                children: [
+                                  pw.Text('TAX INVOICE & DISPATCH REF', style: docStyle(fontSize: 8, bold: true, color: const PdfColor.fromInt(0xFF475569))),
+                                  pw.SizedBox(height: 2),
+                                  pdfLedgerRow('Invoice No.', invNum),
+                                  pdfLedgerRow('Date', issueDate),
+                                  pdfLedgerRow('Due Date', dueDate),
+                                  pdfLedgerRow('PO Ref', poNum),
+                                ],
+                              ),
+                            ),
+                          ),
+                        ],
+                      ),
+                      pw.Row(
+                        crossAxisAlignment: pw.CrossAxisAlignment.start,
+                        children: [
+                          pw.Expanded(
+                            flex: 6,
+                            child: pw.Container(
+                              padding: const pw.EdgeInsets.all(8),
+                              decoration: const pw.BoxDecoration(
+                                border: pw.Border(right: pw.BorderSide(color: PdfColor.fromInt(0xFF0F172A), width: 1)),
+                              ),
+                              child: pw.Column(
+                                crossAxisAlignment: pw.CrossAxisAlignment.start,
+                                children: [
+                                  pw.Text('2. BUYER / BILLED TO', style: docStyle(fontSize: 8, bold: true, color: const PdfColor.fromInt(0xFF475569))),
+                                  pw.SizedBox(height: 2),
+                                  pw.Text(clientDisplayName, style: docStyle(fontSize: 10, bold: true, color: const PdfColor.fromInt(0xFF0F172A))),
+                                  for (final line in clientAddr.split('\n'))
+                                    if (line.trim().isNotEmpty)
+                                      pw.Text(line.trim(), style: docStyle(fontSize: 8.2, color: const PdfColor.fromInt(0xFF475569))),
+                                  if (clientGstin.isNotEmpty)
+                                    pw.Text('GSTIN: $clientGstin', style: docStyle(fontSize: 8.2, bold: true, color: const PdfColor.fromInt(0xFF1E293B))),
+                                ],
+                              ),
+                            ),
+                          ),
+                          pw.Expanded(
+                            flex: 4,
+                            child: pw.Container(
+                              padding: const pw.EdgeInsets.all(8),
+                              child: pw.Column(
+                                crossAxisAlignment: pw.CrossAxisAlignment.start,
+                                children: [
+                                  pw.Text('3. CONSIGNEE / SHIPPED TO', style: docStyle(fontSize: 8, bold: true, color: const PdfColor.fromInt(0xFF475569))),
+                                  pw.SizedBox(height: 2),
+                                  for (final line in serviceLocation.split('\n'))
+                                    if (line.trim().isNotEmpty)
+                                      pw.Text(line.trim(), style: docStyle(fontSize: 8.8, bold: true, color: const PdfColor.fromInt(0xFF0F172A))),
+                                  pw.Text('Period: $billingPeriod', style: docStyle(fontSize: 8.2, color: const PdfColor.fromInt(0xFF475569))),
+                                ],
+                              ),
+                            ),
+                          ),
+                        ],
+                      ),
+                    ],
+                  ),
+                ),
+                pw.SizedBox(height: 6),
+              ];
+            }
+
+            if (layoutStyle == 'minimal_asymmetric') {
+              return [
+                pw.Row(
+                  crossAxisAlignment: pw.CrossAxisAlignment.center,
+                  children: [
+                    pw.Text(
+                      uppercaseHeadings ? 'INVOICE' : 'Invoice',
+                      style: docStyle(fontSize: 24, bold: true, color: const PdfColor.fromInt(0xFF0F172A)),
+                    ),
+                    pw.SizedBox(width: 8),
+                    pw.Container(
+                      width: 7,
+                      height: 7,
+                      decoration: pw.BoxDecoration(color: primaryColor, shape: pw.BoxShape.circle),
+                    ),
+                    pw.SizedBox(width: 12),
+                    pw.Text(
+                      '//  $invNum',
+                      style: docStyle(fontSize: 14, color: const PdfColor.fromInt(0xFF64748B)),
+                    ),
+                    pw.Spacer(),
+                    pw.Container(
+                      padding: const pw.EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                      decoration: pw.BoxDecoration(
+                        color: const PdfColor.fromInt(0xFFEFF6FF),
+                        borderRadius: pw.BorderRadius.circular(12),
+                        border: pw.Border.all(color: const PdfColor.fromInt(0xFFBFDBFE)),
+                      ),
+                      child: pw.Text('ISSUED: ${issueDate.toUpperCase()}', style: docStyle(fontSize: 8.5, bold: true, color: const PdfColor.fromInt(0xFF1E40AF))),
+                    ),
+                  ],
+                ),
+                pw.SizedBox(height: 8),
+                pw.Divider(height: 1, color: const PdfColor.fromInt(0xFFE2E8F0)),
+                pw.SizedBox(height: 10),
+                pw.Row(
+                  crossAxisAlignment: pw.CrossAxisAlignment.start,
+                  children: [
+                    pw.Expanded(
                       child: pw.Column(
                         crossAxisAlignment: pw.CrossAxisAlignment.start,
                         children: [
-                          if (isFieldVisible(servicesSection, 'f_srv_loc')) ...[
+                          pw.Text('BILLED TO', style: docStyle(fontSize: 8, bold: true, color: const PdfColor.fromInt(0xFF94A3B8))),
+                          pw.SizedBox(height: 3),
+                          pw.Text(clientDisplayName, style: docStyle(fontSize: 10, bold: true, color: const PdfColor.fromInt(0xFF0F172A))),
+                          for (final line in clientAddr.split('\n'))
+                            if (line.trim().isNotEmpty)
+                              pw.Text(line.trim(), style: docStyle(fontSize: 8.5, color: const PdfColor.fromInt(0xFF64748B))),
+                          if (clientGstin.isNotEmpty)
+                            pw.Text('GST: $clientGstin', style: docStyle(fontSize: 8.2, color: const PdfColor.fromInt(0xFF64748B))),
+                        ],
+                      ),
+                    ),
+                    pw.Container(width: 1, height: 50, color: const PdfColor.fromInt(0xFFE2E8F0), margin: const pw.EdgeInsets.symmetric(horizontal: 10)),
+                    pw.Expanded(
+                      child: pw.Column(
+                        crossAxisAlignment: pw.CrossAxisAlignment.start,
+                        children: [
+                          pw.Text('SERVICE SCOPE', style: docStyle(fontSize: 8, bold: true, color: const PdfColor.fromInt(0xFF94A3B8))),
+                          pw.SizedBox(height: 3),
+                          for (final line in serviceLocation.split('\n'))
+                            if (line.trim().isNotEmpty)
+                              pw.Text(line.trim(), style: docStyle(fontSize: 9.2, bold: true, color: const PdfColor.fromInt(0xFF0F172A))),
+                          pw.Text('Period: $billingPeriod', style: docStyle(fontSize: 8.5, color: const PdfColor.fromInt(0xFF64748B))),
+                        ],
+                      ),
+                    ),
+                    pw.Container(width: 1, height: 50, color: const PdfColor.fromInt(0xFFE2E8F0), margin: const pw.EdgeInsets.symmetric(horizontal: 10)),
+                    pw.Expanded(
+                      child: pw.Column(
+                        crossAxisAlignment: pw.CrossAxisAlignment.start,
+                        children: [
+                          pw.Text('PAYMENT TERMS', style: docStyle(fontSize: 8, bold: true, color: const PdfColor.fromInt(0xFF94A3B8))),
+                          pw.SizedBox(height: 3),
+                          pw.Text(_cleanText(invoice.paymentTerms.isNotEmpty ? invoice.paymentTerms : 'Net 15 Days'), style: docStyle(fontSize: 9.5, bold: true, color: const PdfColor.fromInt(0xFF0F172A))),
+                          pw.Text('Due: $dueDate\nPO: $poNum', style: docStyle(fontSize: 8.5, color: const PdfColor.fromInt(0xFF64748B))),
+                        ],
+                      ),
+                    ),
+                  ],
+                ),
+                pw.SizedBox(height: 14),
+              ];
+            }
+
+            if (layoutStyle == 'sidebar_accent') {
+              return [
+                pw.Row(
+                  mainAxisAlignment: pw.MainAxisAlignment.spaceBetween,
+                  children: [
+                    pw.Row(
+                      children: [
+                        pw.Container(width: 4, height: 20, color: primaryColor),
+                        pw.SizedBox(width: 8),
+                        pw.Text(
+                          uppercaseHeadings ? documentTitle.toUpperCase() : documentTitle,
+                          style: docStyle(fontSize: 18, bold: true, color: const PdfColor.fromInt(0xFF0F172A)),
+                        ),
+                      ],
+                    ),
+                    pw.Row(
+                      children: [
+                        pdfHeroPill(invNum),
+                        pw.SizedBox(width: 6),
+                        pdfHeroPill(issueDate),
+                      ],
+                    ),
+                  ],
+                ),
+                pw.SizedBox(height: 10),
+                pw.Row(
+                  crossAxisAlignment: pw.CrossAxisAlignment.start,
+                  children: [
+                    pw.Expanded(
+                      flex: 5,
+                      child: pw.Container(
+                        padding: const pw.EdgeInsets.all(10),
+                        decoration: pw.BoxDecoration(
+                          color: PdfColors.white,
+                          borderRadius: pw.BorderRadius.circular(5),
+                          border: pw.Border(
+                            left: pw.BorderSide(color: primaryColor, width: 3.5),
+                            top: const pw.BorderSide(color: PdfColor.fromInt(0xFFE2E8F0)),
+                            right: const pw.BorderSide(color: PdfColor.fromInt(0xFFE2E8F0)),
+                            bottom: const pw.BorderSide(color: PdfColor.fromInt(0xFFE2E8F0)),
+                          ),
+                        ),
+                        child: pw.Column(
+                          crossAxisAlignment: pw.CrossAxisAlignment.start,
+                          children: [
+                            pw.Text('CLIENT & BILLING ADDRESS', style: docStyle(fontSize: 8.8, bold: true, color: primaryColor)),
+                            pw.SizedBox(height: 3),
+                            pw.Text(clientDisplayName, style: docStyle(fontSize: 10, bold: true, color: const PdfColor.fromInt(0xFF0F172A))),
+                            for (final line in clientAddr.split('\n'))
+                              if (line.trim().isNotEmpty)
+                                pw.Text(line.trim(), style: docStyle(fontSize: 8.5, color: const PdfColor.fromInt(0xFF475569))),
+                            if (clientGstin.isNotEmpty)
+                              pw.Text('GSTIN: $clientGstin', style: docStyle(fontSize: 8.2, color: const PdfColor.fromInt(0xFF475569))),
+                          ],
+                        ),
+                      ),
+                    ),
+                    pw.SizedBox(width: 12),
+                    pw.Expanded(
+                      flex: 5,
+                      child: pw.Container(
+                        padding: const pw.EdgeInsets.all(10),
+                        decoration: pw.BoxDecoration(
+                          color: const PdfColor.fromInt(0xFFF8FAFC),
+                          borderRadius: pw.BorderRadius.circular(5),
+                          border: pw.Border.all(color: const PdfColor.fromInt(0xFFE2E8F0)),
+                        ),
+                        child: pw.Column(
+                          crossAxisAlignment: pw.CrossAxisAlignment.start,
+                          children: [
+                            pw.Text('SERVICE DEPLOYMENT & PERIOD', style: docStyle(fontSize: 8.8, bold: true, color: const PdfColor.fromInt(0xFF475569))),
+                            pw.SizedBox(height: 3),
+                            for (final line in serviceLocation.split('\n'))
+                              if (line.trim().isNotEmpty)
+                                pw.Text(line.trim(), style: docStyle(fontSize: 9.5, bold: true, color: const PdfColor.fromInt(0xFF0F172A))),
+                            pw.Text('Period: $billingPeriod', style: docStyle(fontSize: 8.5, color: const PdfColor.fromInt(0xFF475569))),
+                            pw.Text('PO: $poNum · Due: $dueDate', style: docStyle(fontSize: 8.2, color: const PdfColor.fromInt(0xFF64748B))),
+                          ],
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+                pw.SizedBox(height: 14),
+              ];
+            }
+
+            if (layoutStyle == 'classic_bordered') {
+              return [
+                pw.Center(
+                  child: pw.Column(
+                    children: [
+                      pw.Text(
+                        '- ✦ ${uppercaseHeadings ? documentTitle.toUpperCase() : documentTitle} ✦ -',
+                        style: docStyle(fontSize: 16, bold: true, color: const PdfColor.fromInt(0xFF0F172A)),
+                      ),
+                      pw.SizedBox(height: 2),
+                      pw.Text(
+                        'Issued under Goods & Services Tax Act · Duplicate for Transporter',
+                        style: docStyle(fontSize: 7.5, italic: true, color: const PdfColor.fromInt(0xFF64748B)),
+                      ),
+                      pw.SizedBox(height: 8),
+                    ],
+                  ),
+                ),
+                pw.Container(
+                  padding: const pw.EdgeInsets.all(9),
+                  decoration: pw.BoxDecoration(
+                    border: pw.Border.all(color: const PdfColor.fromInt(0xFF334155), width: 1),
+                    borderRadius: pw.BorderRadius.circular(3),
+                  ),
+                  child: pw.Row(
+                    crossAxisAlignment: pw.CrossAxisAlignment.start,
+                    children: [
+                      pw.Expanded(
+                        flex: 5,
+                        child: pw.Column(
+                          crossAxisAlignment: pw.CrossAxisAlignment.start,
+                          children: [
+                            pw.Text('BILLED TO (RECIPIENT):', style: docStyle(fontSize: 8.8, bold: true, color: const PdfColor.fromInt(0xFF1E293B))),
+                            pw.SizedBox(height: 2),
+                            pw.Text(clientDisplayName, style: docStyle(fontSize: 10, bold: true, color: const PdfColor.fromInt(0xFF0F172A))),
+                            for (final line in clientAddr.split('\n'))
+                              if (line.trim().isNotEmpty)
+                                pw.Text(line.trim(), style: docStyle(fontSize: 8.2, color: const PdfColor.fromInt(0xFF475569))),
+                            if (clientGstin.isNotEmpty)
+                              pw.Text('GSTIN: $clientGstin', style: docStyle(fontSize: 8.2, color: const PdfColor.fromInt(0xFF475569))),
+                          ],
+                        ),
+                      ),
+                      pw.Container(width: 1, height: 48, color: const PdfColor.fromInt(0xFFCBD5E1), margin: const pw.EdgeInsets.symmetric(horizontal: 8)),
+                      pw.Expanded(
+                        flex: 5,
+                        child: pw.Column(
+                          crossAxisAlignment: pw.CrossAxisAlignment.start,
+                          children: [
+                            pdfLedgerRow('Invoice No.', invNum),
+                            pdfLedgerRow('Dated', issueDate),
+                            pdfLedgerRow('Payment Due', dueDate),
+                            pdfLedgerRow('Site / Place', serviceLocation.split('\n').first),
+                          ],
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+                pw.SizedBox(height: 14),
+              ];
+            }
+
+            // Default modern_split layout
+            return [
+              if (identitySection.enabled) ...[
+                pw.Row(
+                  crossAxisAlignment: pw.CrossAxisAlignment.start,
+                  mainAxisAlignment: pw.MainAxisAlignment.spaceBetween,
+                  children: [
+                    pw.Expanded(
+                      child: pw.Text(
+                        uppercaseHeadings
+                            ? documentTitle.toUpperCase()
+                            : documentTitle,
+                        style: docStyle(
+                          fontSize: 19,
+                          bold: true,
+                          color: const PdfColor.fromInt(0xFF0F172A),
+                        ),
+                      ),
+                    ),
+                    pw.SizedBox(width: 14),
+                    pw.Table(
+                      defaultColumnWidth: const pw.IntrinsicColumnWidth(),
+                      children: [
+                        if (isFieldVisible(identitySection, 'f_doc_number'))
+                          metaRow(
+                            'Invoice No.',
+                            invoice.invoiceNumber.isNotEmpty
+                                ? invoice.invoiceNumber
+                                : 'INV-2025-0148',
+                          ),
+                        if (isFieldVisible(identitySection, 'f_doc_issue'))
+                          metaRow(
+                            'Issue Date',
+                            invoice.issueDate.isNotEmpty
+                                ? invoice.issueDate
+                                : '15 Apr 2025',
+                          ),
+                        if (isFieldVisible(identitySection, 'f_doc_due'))
+                          metaRow(
+                            'Due Date',
+                            invoice.dueDate.isNotEmpty
+                                ? invoice.dueDate
+                                : '30 Apr 2025',
+                          ),
+                        if (isFieldVisible(identitySection, 'f_doc_po') &&
+                            (invoice.poNumber.trim().isNotEmpty ||
+                                findField(identitySection, 'f_doc_po')
+                                        ?.defaultValue
+                                        .trim()
+                                        .isNotEmpty ==
+                                    true))
+                          metaRow(
+                            'PO No.',
+                            invoice.poNumber.trim().isNotEmpty
+                                ? invoice.poNumber.trim()
+                                : findField(identitySection, 'f_doc_po')!
+                                    .defaultValue
+                                    .trim(),
+                          ),
+                        for (final cf in customVisibleFields(
+                          identitySection,
+                          const {
+                            'f_doc_number',
+                            'f_doc_issue',
+                            'f_doc_due',
+                            'f_doc_po',
+                          },
+                        ))
+                          metaRow(
+                            cf.label,
+                            cf.defaultValue.isNotEmpty ? cf.defaultValue : '-',
+                          ),
+                      ],
+                    ),
+                  ],
+                ),
+                pw.SizedBox(height: 14),
+              ],
+
+              if (clientSection.enabled) ...[
+                pw.Row(
+                  crossAxisAlignment: pw.CrossAxisAlignment.start,
+                  children: [
+                    pw.Expanded(
+                      flex: 5,
+                      child: pw.Container(
+                        padding: const pw.EdgeInsets.all(10),
+                        decoration: pw.BoxDecoration(
+                          color: const PdfColor.fromInt(0xFFF8FAFC),
+                          borderRadius: pw.BorderRadius.circular(5),
+                          border: pw.Border.all(
+                            color: const PdfColor.fromInt(0xFFE2E8F0),
+                          ),
+                        ),
+                        child: pw.Column(
+                          crossAxisAlignment: pw.CrossAxisAlignment.start,
+                          children: [
                             pw.Text(
-                              uppercaseHeadings
-                                  ? 'SERVICE LOCATION'
-                                  : 'Service Location',
+                              uppercaseHeadings ? 'BILL TO' : 'Bill To',
                               style: docStyle(
-                                fontSize: 9,
-                                color: const PdfColor.fromInt(0xFF64748B),
+                                fontSize: 9.5,
+                                bold: true,
+                                color: const PdfColor.fromInt(0xFF475569),
                               ),
                             ),
+                            pw.SizedBox(height: 3),
+                            if (isFieldVisible(clientSection, 'f_cli_name'))
+                              pw.Text(
+                                clientDisplayName,
+                                style: docStyle(
+                                  fontSize: 10.5,
+                                  bold: true,
+                                  color: const PdfColor.fromInt(0xFF0F172A),
+                                ),
+                              ),
                             pw.SizedBox(height: 2),
-                            ...() {
-                              final locLines = serviceLocation
-                                  .split('\n')
-                                  .map((e) => e.trim())
-                                  .where((e) => e.isNotEmpty)
-                                  .toList();
-                              return [
-                                if (locLines.isNotEmpty)
+                            if (isFieldVisible(clientSection, 'f_cli_addr'))
+                              for (final line in clientAddr.split('\n'))
+                                if (line.trim().isNotEmpty)
                                   pw.Text(
-                                    locLines.first,
-                                    style: docStyle(
-                                      fontSize: 9.5,
-                                      bold: true,
-                                      color: const PdfColor.fromInt(0xFF1E293B),
-                                    ),
-                                  ),
-                                for (final sub in locLines.skip(1))
-                                  pw.Text(
-                                    sub,
+                                    line.trim(),
                                     style: docStyle(
                                       fontSize: 9,
                                       color: const PdfColor.fromInt(0xFF475569),
                                     ),
                                   ),
-                              ];
-                            }(),
-                            if (isFieldVisible(servicesSection, 'f_srv_period'))
-                              pw.SizedBox(height: 6),
-                          ],
-                          if (isFieldVisible(servicesSection, 'f_srv_period')) ...[
-                            pw.Text(
-                              uppercaseHeadings
-                                  ? 'BILLING PERIOD'
-                                  : 'Billing Period',
-                              style: docStyle(
-                                fontSize: 9,
-                                color: const PdfColor.fromInt(0xFF64748B),
-                              ),
-                            ),
                             pw.SizedBox(height: 2),
-                            pw.Text(
-                              billingPeriod,
-                              style: docStyle(
-                                fontSize: 9.5,
-                                bold: true,
-                                color: const PdfColor.fromInt(0xFF1E293B),
+                            if (isFieldVisible(clientSection, 'f_cli_gstin') &&
+                                clientGstin.isNotEmpty)
+                              pw.Text(
+                                'GSTIN: $clientGstin',
+                                style: docStyle(
+                                  fontSize: 9,
+                                  color: const PdfColor.fromInt(0xFF475569),
+                                ),
                               ),
-                            ),
-                            pw.Text(
-                              '(${_cleanText(invoice.paymentTerms.isNotEmpty ? invoice.paymentTerms : 'Monthly Billing')})',
-                              style: docStyle(
-                                fontSize: 8.5,
-                                color: const PdfColor.fromInt(0xFF64748B),
+                            if (isFieldVisible(clientSection, 'f_cli_contact') &&
+                                clientContactPerson.isNotEmpty)
+                              pw.Text(
+                                'Contact: $clientContactPerson',
+                                style: docStyle(
+                                  fontSize: 9,
+                                  color: const PdfColor.fromInt(0xFF475569),
+                                ),
                               ),
-                            ),
+                            if (isFieldVisible(clientSection, 'f_cli_phone') &&
+                                clientPhone.isNotEmpty)
+                              pw.Text(
+                                'Phone: $clientPhone',
+                                style: docStyle(
+                                  fontSize: 9,
+                                  color: const PdfColor.fromInt(0xFF475569),
+                                ),
+                              ),
+                            for (final cf in customVisibleFields(
+                              clientSection,
+                              const {
+                                'f_cli_name',
+                                'f_cli_addr',
+                                'f_cli_gstin',
+                                'f_cli_contact',
+                                'f_cli_phone',
+                              },
+                            ))
+                              pw.Text(
+                                '${_cleanText(cf.label)}: ${_cleanText(cf.defaultValue.isNotEmpty ? cf.defaultValue : '-')}',
+                                style: docStyle(
+                                  fontSize: 9,
+                                  color: const PdfColor.fromInt(0xFF475569),
+                                ),
+                              ),
                           ],
-                        ],
+                        ),
                       ),
                     ),
-                  ),
-                ],
+                    if (isFieldVisible(servicesSection, 'f_srv_loc') ||
+                        isFieldVisible(servicesSection, 'f_srv_period')) ...[
+                      pw.SizedBox(width: 12),
+                      pw.Expanded(
+                        flex: 5,
+                        child: pw.Container(
+                          padding: const pw.EdgeInsets.all(10),
+                          decoration: pw.BoxDecoration(
+                            color: const PdfColor.fromInt(0xFFF8FAFC),
+                            borderRadius: pw.BorderRadius.circular(5),
+                            border: pw.Border.all(
+                              color: const PdfColor.fromInt(0xFFE2E8F0),
+                            ),
+                          ),
+                          child: pw.Column(
+                            crossAxisAlignment: pw.CrossAxisAlignment.start,
+                            children: [
+                              if (isFieldVisible(servicesSection, 'f_srv_loc')) ...[
+                                pw.Text(
+                                  uppercaseHeadings
+                                      ? 'SERVICE LOCATION'
+                                      : 'Service Location',
+                                  style: docStyle(
+                                    fontSize: 9,
+                                    color: const PdfColor.fromInt(0xFF64748B),
+                                  ),
+                                ),
+                                pw.SizedBox(height: 2),
+                                ...() {
+                                  final locLines = serviceLocation
+                                      .split('\n')
+                                      .map((e) => e.trim())
+                                      .where((e) => e.isNotEmpty)
+                                      .toList();
+                                  return [
+                                    if (locLines.isNotEmpty)
+                                      pw.Text(
+                                        locLines.first,
+                                        style: docStyle(
+                                          fontSize: 9.5,
+                                          bold: true,
+                                          color: const PdfColor.fromInt(0xFF1E293B),
+                                        ),
+                                      ),
+                                    for (final sub in locLines.skip(1))
+                                      pw.Text(
+                                        sub,
+                                        style: docStyle(
+                                          fontSize: 9,
+                                          color: const PdfColor.fromInt(0xFF475569),
+                                        ),
+                                      ),
+                                  ];
+                                }(),
+                                if (isFieldVisible(servicesSection, 'f_srv_period'))
+                                  pw.SizedBox(height: 6),
+                              ],
+                              if (isFieldVisible(servicesSection, 'f_srv_period')) ...[
+                                pw.Text(
+                                  uppercaseHeadings
+                                      ? 'BILLING PERIOD'
+                                      : 'Billing Period',
+                                  style: docStyle(
+                                    fontSize: 9,
+                                    color: const PdfColor.fromInt(0xFF64748B),
+                                  ),
+                                ),
+                                pw.SizedBox(height: 2),
+                                pw.Text(
+                                  billingPeriod,
+                                  style: docStyle(
+                                    fontSize: 9.5,
+                                    bold: true,
+                                    color: const PdfColor.fromInt(0xFF1E293B),
+                                  ),
+                                ),
+                                pw.Text(
+                                  '(${_cleanText(invoice.paymentTerms.isNotEmpty ? invoice.paymentTerms : 'Monthly Billing')})',
+                                  style: docStyle(
+                                    fontSize: 8.5,
+                                    color: const PdfColor.fromInt(0xFF64748B),
+                                  ),
+                                ),
+                              ],
+                            ],
+                          ),
+                        ),
+                      ),
+                    ],
+                  ],
+                ),
+                pw.SizedBox(height: 14),
               ],
-            ),
-            pw.SizedBox(height: 14),
-          ],
+            ];
+          }(),
 
           // D. Line Items & Duty Table
           if (servicesSection.enabled) ...[

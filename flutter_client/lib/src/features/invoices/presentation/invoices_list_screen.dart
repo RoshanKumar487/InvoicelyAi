@@ -187,9 +187,13 @@ class _InvoicesListScreenState extends State<InvoicesListScreen> {
   }
 
   void _downloadInvoicesReport(List<Invoice> currentInvoices) {
+    final isSubset = _selectedIds.isNotEmpty && currentInvoices.length == _selectedIds.length;
+    final title = isSubset
+        ? 'Invoices Ledger (${currentInvoices.length} Selected)'
+        : 'Invoices Ledger';
     TableExportHelper.showExportMenu(
       context: context,
-      title: 'Invoices Ledger',
+      title: title,
       headers: ['Invoice #', 'Client', 'Company', 'Issue Date', 'Due Date', 'Total', 'Balance Due', 'Status'],
       rows: currentInvoices.map((inv) => [
         inv.invoiceNumber.isEmpty ? 'INV-${inv.id ?? ""}' : inv.invoiceNumber,
@@ -202,6 +206,21 @@ class _InvoicesListScreenState extends State<InvoicesListScreen> {
         inv.status,
       ]).toList(),
     );
+  }
+
+  void _handleDownloadInvoices(List<Invoice> currentInvoices) {
+    if (_selectedIds.isNotEmpty) {
+      final selectedList = <Invoice>[];
+      for (final inv in currentInvoices) {
+        final idStr = inv.id?.toString() ?? inv.invoiceNumber;
+        if (_selectedIds.contains(idStr) || _selectedIds.contains(inv.invoiceNumber)) {
+          selectedList.add(inv);
+        }
+      }
+      _downloadInvoicesReport(selectedList);
+    } else {
+      _downloadInvoicesReport(currentInvoices);
+    }
   }
 
   Future<void> _batchMarkStatus(String status) async {
@@ -562,7 +581,7 @@ class _InvoicesListScreenState extends State<InvoicesListScreen> {
                     metrics: _buildMetrics(_invoices),
                     dateRange: _dateRange,
                     onDateRangeChanged: (range) => setState(() => _dateRange = range),
-                    onDownloadReport: () => _downloadInvoicesReport(filtered),
+                    onDownloadReport: () => _handleDownloadInvoices(filtered),
                     searchController: _searchController,
                     searchHint: 'Search invoice #, client or email...',
                     filterChips: _filters,
@@ -627,8 +646,10 @@ class _InvoicesListScreenState extends State<InvoicesListScreen> {
                         ),
                       ],
                     ],
-                    expandedFilterExtra: Row(
-                      mainAxisSize: MainAxisSize.min,
+                    expandedFilterExtra: Wrap(
+                      crossAxisAlignment: WrapCrossAlignment.center,
+                      spacing: 8,
+                      runSpacing: 8,
                       children: [
                         const Icon(Icons.person_pin_rounded, size: 12, color: Color(0xFF0284C7)),
                         const SizedBox(width: 6),

@@ -256,10 +256,29 @@ class _ClientsScreenState extends State<ClientsScreen> {
     ];
   }
 
+  void _handleDownloadClients(List<Client> currentList) {
+    if (_selectedIds.isNotEmpty) {
+      final selectedList = <Client>[];
+      for (final c in currentList) {
+        final idStr = c.id?.toString() ?? c.name;
+        if (_selectedIds.contains(idStr) || _selectedIds.contains(c.name)) {
+          selectedList.add(c);
+        }
+      }
+      _downloadClientsReport(selectedList);
+    } else {
+      _downloadClientsReport(currentList);
+    }
+  }
+
   void _downloadClientsReport(List<Client> list) {
+    final isSubset = _selectedIds.isNotEmpty && list.length == _selectedIds.length;
+    final title = isSubset
+        ? 'Clients Directory (${list.length} Selected)'
+        : 'Clients Directory';
     TableExportHelper.showExportMenu(
       context: context,
-      title: 'Clients Directory',
+      title: title,
       headers: [
         'ID',
         'Name',
@@ -383,7 +402,7 @@ class _ClientsScreenState extends State<ClientsScreen> {
                     metrics: _buildMetrics(_clients),
                     dateRange: _dateRange,
                     onDateRangeChanged: (range) => setState(() => _dateRange = range),
-                    onDownloadReport: () => _downloadClientsReport(_visibleClients),
+                    onDownloadReport: () => _handleDownloadClients(_visibleClients),
                     directoryActions: [
                       if (isDesktop) ...[
                         FilledButton.icon(

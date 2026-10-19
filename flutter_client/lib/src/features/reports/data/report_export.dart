@@ -129,6 +129,26 @@ class ReportExport {
     return val;
   }
 
+  static final _emojiRegex = RegExp(
+    r'[\u{1F300}-\u{1FAFF}\u{2600}-\u{27BF}\u{2300}-\u{23FF}\u{2B50}-\u{2B55}\u{200D}\u{FE0F}]',
+    unicode: true,
+  );
+
+  static String cleanPdfText(String? input) {
+    if (input == null || input.isEmpty) return '';
+    var text = input.replaceAll(_emojiRegex, '');
+    text = text
+        .replaceAll('₹', 'Rs. ')
+        .replaceAll('•', '-')
+        .replaceAll('—', '-')
+        .replaceAll('–', '-')
+        .replaceAll('“', '"')
+        .replaceAll('”', '"')
+        .replaceAll('‘', "'")
+        .replaceAll('’', "'");
+    return text.replaceAll(RegExp(r'Rs\.\s+Rs\.'), 'Rs.').trim();
+  }
+
   static Future<Uint8List> buildPdf(
     List<ExportReportTable> reports,
   ) async {
@@ -145,7 +165,7 @@ class ReportExport {
             pw.Header(
               level: 0,
               child: pw.Text(
-                report.name,
+                cleanPdfText(report.name),
                 style: pw.TextStyle(
                   fontSize: 20,
                   fontWeight: pw.FontWeight.bold,
@@ -159,8 +179,10 @@ class ReportExport {
               )
             else
               pw.TableHelper.fromTextArray(
-                headers: report.headers,
-                data: report.rows,
+                headers: report.headers.map(cleanPdfText).toList(),
+                data: report.rows
+                    .map((row) => row.map(cleanPdfText).toList())
+                    .toList(),
                 headerStyle: pw.TextStyle(
                   color: PdfColor.fromInt(0xFFFFFFFF),
                   fontWeight: pw.FontWeight.bold,

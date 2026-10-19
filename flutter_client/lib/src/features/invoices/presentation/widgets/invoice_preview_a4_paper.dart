@@ -90,6 +90,14 @@ class InvoicePreviewA4Paper extends StatelessWidget {
     return 'boxed';
   }
 
+  String get _layoutStyle {
+    final saved = localSettings['studio_layout_style']?.toString().trim();
+    if (saved != null && saved.isNotEmpty) return saved;
+    final tplLayout = template?.layoutStyle.trim();
+    if (tplLayout != null && tplLayout.isNotEmpty) return tplLayout;
+    return 'modern_split';
+  }
+
   String get _watermark {
     final saved = localSettings['studio_watermark']?.toString().trim();
     if (saved != null && saved.isNotEmpty) return saved;
@@ -681,274 +689,23 @@ class InvoicePreviewA4Paper extends StatelessWidget {
                 ],
               ],
 
-              // B. Document Title & Details
-              if (identitySection.enabled) ...[
-                Row(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                  children: [
-                    Expanded(
-                      child: Text(
-                        _uppercaseHeadings
-                            ? _documentTitle.toUpperCase()
-                            : _documentTitle,
-                        style: _docStyle(
-                          fontSize: 22,
-                          fontWeight: FontWeight.w900,
-                          letterSpacing: 0.5,
-                          color: const Color(0xFF0F172A),
-                        ),
-                      ),
-                    ),
-                    const SizedBox(width: 16),
-                    Table(
-                      defaultColumnWidth: const IntrinsicColumnWidth(),
-                      children: [
-                        if (_isFieldVisible(identitySection, 'f_doc_number'))
-                          _metaRow(
-                            'Invoice No.',
-                            invoice.invoiceNumber.isNotEmpty
-                                ? invoice.invoiceNumber
-                                : 'INV-2025-0148',
-                          ),
-                        if (_isFieldVisible(identitySection, 'f_doc_issue'))
-                          _metaRow(
-                            'Issue Date',
-                            invoice.issueDate.isNotEmpty
-                                ? invoice.issueDate
-                                : '15 Apr 2025',
-                          ),
-                        if (_isFieldVisible(identitySection, 'f_doc_due'))
-                          _metaRow(
-                            'Due Date',
-                            invoice.dueDate.isNotEmpty
-                                ? invoice.dueDate
-                                : '30 Apr 2025',
-                          ),
-                        if (_isFieldVisible(identitySection, 'f_doc_po'))
-                          _metaRow(
-                            'PO No.',
-                            invoice.poNumber.trim().isNotEmpty
-                                ? invoice.poNumber.trim()
-                                : (_findField(identitySection, 'f_doc_po')
-                                            ?.defaultValue
-                                            .trim()
-                                            .isNotEmpty ==
-                                        true
-                                    ? _findField(identitySection, 'f_doc_po')!
-                                        .defaultValue
-                                        .trim()
-                                    : 'PO-4587/2025'),
-                          ),
-                        for (final cf in _customVisibleFields(
-                          identitySection,
-                          const {
-                            'f_doc_number',
-                            'f_doc_issue',
-                            'f_doc_due',
-                            'f_doc_po',
-                          },
-                        ))
-                          _metaRow(
-                            cf.label,
-                            cf.defaultValue.isNotEmpty ? cf.defaultValue : '—',
-                          ),
-                      ],
-                    ),
-                  ],
-                ),
-                const SizedBox(height: 16),
-              ],
-
-              // C. Bill To & Service Location Boxes
-              if (clientSection.enabled) ...[
-                Row(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    // Bill To Box
-                    Expanded(
-                      flex: 5,
-                      child: Container(
-                        padding: const EdgeInsets.all(12),
-                        decoration: BoxDecoration(
-                          color: const Color(0xFFF8FAFC),
-                          borderRadius: BorderRadius.circular(6),
-                          border: Border.all(color: const Color(0xFFE2E8F0)),
-                        ),
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            Text(
-                              _uppercaseHeadings ? 'BILL TO' : 'Bill To',
-                              style: _docStyle(
-                                fontSize: 10.5,
-                                fontWeight: FontWeight.bold,
-                                color: const Color(0xFF475569),
-                              ),
-                            ),
-                            const SizedBox(height: 4),
-                            if (_isFieldVisible(clientSection, 'f_cli_name'))
-                              Text(
-                                clientDisplayName,
-                                style: _docStyle(
-                                  fontSize: 11.5,
-                                  fontWeight: FontWeight.bold,
-                                  color: const Color(0xFF0F172A),
-                                ),
-                              ),
-                            const SizedBox(height: 2),
-                            if (_isFieldVisible(clientSection, 'f_cli_addr'))
-                              for (final line in clientAddr.split('\n'))
-                                if (line.trim().isNotEmpty)
-                                  Text(
-                                    line.trim(),
-                                    style: _docStyle(
-                                      fontSize: 10,
-                                      color: const Color(0xFF475569),
-                                    ),
-                                  ),
-                            const SizedBox(height: 2),
-                            if (_isFieldVisible(clientSection, 'f_cli_gstin') &&
-                                clientGstin.isNotEmpty)
-                              Text(
-                                'GSTIN: $clientGstin',
-                                style: _docStyle(
-                                  fontSize: 10,
-                                  color: const Color(0xFF475569),
-                                ),
-                              ),
-                            if (_isFieldVisible(clientSection, 'f_cli_contact') &&
-                                clientContactPerson.isNotEmpty)
-                              Text(
-                                'Contact: $clientContactPerson',
-                                style: _docStyle(
-                                  fontSize: 10,
-                                  color: const Color(0xFF475569),
-                                ),
-                              ),
-                            if (_isFieldVisible(clientSection, 'f_cli_phone') &&
-                                clientPhone.isNotEmpty)
-                              Text(
-                                'Phone: $clientPhone',
-                                style: _docStyle(
-                                  fontSize: 10,
-                                  color: const Color(0xFF475569),
-                                ),
-                              ),
-                            for (final cf in _customVisibleFields(
-                              clientSection,
-                              const {
-                                'f_cli_name',
-                                'f_cli_addr',
-                                'f_cli_gstin',
-                                'f_cli_contact',
-                                'f_cli_phone',
-                              },
-                            ))
-                              Text(
-                                '${cf.label}: ${cf.defaultValue.isNotEmpty ? cf.defaultValue : '—'}',
-                                style: _docStyle(
-                                  fontSize: 10,
-                                  color: const Color(0xFF475569),
-                                ),
-                              ),
-                          ],
-                        ),
-                      ),
-                    ),
-
-                    // Service Location & Billing Period Box
-                    if (_isFieldVisible(servicesSection, 'f_srv_loc') ||
-                        _isFieldVisible(servicesSection, 'f_srv_period')) ...[
-                      const SizedBox(width: 14),
-                      Expanded(
-                        flex: 5,
-                        child: Container(
-                          padding: const EdgeInsets.all(12),
-                          decoration: BoxDecoration(
-                            color: const Color(0xFFF8FAFC),
-                            borderRadius: BorderRadius.circular(6),
-                            border: Border.all(color: const Color(0xFFE2E8F0)),
-                          ),
-                          child: Column(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: [
-                              if (_isFieldVisible(servicesSection, 'f_srv_loc')) ...[
-                                Text(
-                                  _uppercaseHeadings
-                                      ? 'SERVICE LOCATION'
-                                      : 'Service Location',
-                                  style: _docStyle(
-                                    fontSize: 10,
-                                    color: const Color(0xFF64748B),
-                                  ),
-                                ),
-                                const SizedBox(height: 2),
-                                ...() {
-                                  final locLines = serviceLocation
-                                      .split('\n')
-                                      .map((e) => e.trim())
-                                      .where((e) => e.isNotEmpty)
-                                      .toList();
-                                  return [
-                                    if (locLines.isNotEmpty)
-                                      Text(
-                                        locLines.first,
-                                        style: _docStyle(
-                                          fontSize: 10.5,
-                                          fontWeight: FontWeight.w600,
-                                          color: const Color(0xFF1E293B),
-                                        ),
-                                      ),
-                                    for (final sub in locLines.skip(1))
-                                      Text(
-                                        sub,
-                                        style: _docStyle(
-                                          fontSize: 10,
-                                          color: const Color(0xFF475569),
-                                        ),
-                                      ),
-                                  ];
-                                }(),
-                                if (_isFieldVisible(servicesSection, 'f_srv_period'))
-                                  const SizedBox(height: 8),
-                              ],
-                              if (_isFieldVisible(servicesSection, 'f_srv_period')) ...[
-                                Text(
-                                  _uppercaseHeadings
-                                      ? 'BILLING PERIOD'
-                                      : 'Billing Period',
-                                  style: _docStyle(
-                                    fontSize: 10,
-                                    color: const Color(0xFF64748B),
-                                  ),
-                                ),
-                                const SizedBox(height: 2),
-                                Text(
-                                  billingPeriod,
-                                  style: _docStyle(
-                                    fontSize: 10.5,
-                                    fontWeight: FontWeight.w600,
-                                    color: const Color(0xFF1E293B),
-                                  ),
-                                ),
-                                Text(
-                                  '(${invoice.paymentTerms.isNotEmpty ? invoice.paymentTerms : 'Monthly Billing'})',
-                                  style: _docStyle(
-                                    fontSize: 9.5,
-                                    color: const Color(0xFF64748B),
-                                  ),
-                                ),
-                              ],
-                            ],
-                          ),
-                        ),
-                      ),
-                    ],
-                  ],
-                ),
-                const SizedBox(height: 16),
-              ],
+              // B & C. Identity, Document Details & Client Sections by Selected Layout Structure
+              _buildIdentityAndClientByLayout(
+                identitySection: identitySection,
+                clientSection: clientSection,
+                servicesSection: servicesSection,
+                clientDisplayName: clientDisplayName,
+                clientContactPerson: clientContactPerson,
+                clientAddr: clientAddr,
+                clientGstin: clientGstin,
+                clientPhone: clientPhone,
+                serviceLocation: serviceLocation,
+                billingPeriod: billingPeriod,
+                companyLegalName: companyLegalName,
+                companyAddress: companyAddress,
+                companyGstin: companyGstin,
+                companyPan: companyPan,
+              ),
 
               // D. Duty & Line Items Table
               if (servicesSection.enabled) ...[
@@ -1729,6 +1486,1027 @@ class InvoicePreviewA4Paper extends StatelessWidget {
           ],
         ],
       ),
+    );
+  }
+
+  Widget _heroPill(IconData icon, String text) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3.5),
+      decoration: BoxDecoration(
+        color: Colors.white.withValues(alpha: 0.18),
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: Colors.white.withValues(alpha: 0.25)),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(icon, size: 11, color: Colors.white),
+          const SizedBox(width: 4),
+          Text(text, style: const TextStyle(fontSize: 10, fontWeight: FontWeight.bold, color: Colors.white)),
+        ],
+      ),
+    );
+  }
+
+  Widget _ledgerRow(String label, String value) {
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 2),
+      child: Row(
+        children: [
+          SizedBox(
+            width: 72,
+            child: Text(
+              '$label:',
+              style: _docStyle(fontSize: 8.8, fontWeight: FontWeight.bold, color: const Color(0xFF64748B)),
+            ),
+          ),
+          Expanded(
+            child: Text(
+              value,
+              style: _docStyle(fontSize: 9, fontWeight: FontWeight.bold, color: const Color(0xFF0F172A)),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildIdentityAndClientByLayout({
+    required StudioSection identitySection,
+    required StudioSection clientSection,
+    required StudioSection servicesSection,
+    required String clientDisplayName,
+    required String clientContactPerson,
+    required String clientAddr,
+    required String clientGstin,
+    required String clientPhone,
+    required String serviceLocation,
+    required String billingPeriod,
+    required String companyLegalName,
+    required String companyAddress,
+    required String companyGstin,
+    required String companyPan,
+  }) {
+    switch (_layoutStyle) {
+      case 'executive_banner':
+        return _buildExecutiveBannerLayout(
+          identitySection: identitySection,
+          clientSection: clientSection,
+          servicesSection: servicesSection,
+          clientDisplayName: clientDisplayName,
+          clientContactPerson: clientContactPerson,
+          clientAddr: clientAddr,
+          clientGstin: clientGstin,
+          clientPhone: clientPhone,
+          serviceLocation: serviceLocation,
+          billingPeriod: billingPeriod,
+        );
+      case 'compact_grid':
+        return _buildCompactGridLayout(
+          identitySection: identitySection,
+          clientSection: clientSection,
+          servicesSection: servicesSection,
+          clientDisplayName: clientDisplayName,
+          clientAddr: clientAddr,
+          clientGstin: clientGstin,
+          serviceLocation: serviceLocation,
+          billingPeriod: billingPeriod,
+          companyLegalName: companyLegalName,
+          companyAddress: companyAddress,
+          companyGstin: companyGstin,
+          companyPan: companyPan,
+        );
+      case 'minimal_asymmetric':
+        return _buildMinimalAsymmetricLayout(
+          identitySection: identitySection,
+          clientSection: clientSection,
+          servicesSection: servicesSection,
+          clientDisplayName: clientDisplayName,
+          clientAddr: clientAddr,
+          clientGstin: clientGstin,
+          serviceLocation: serviceLocation,
+          billingPeriod: billingPeriod,
+        );
+      case 'sidebar_accent':
+        return _buildSidebarAccentLayout(
+          identitySection: identitySection,
+          clientSection: clientSection,
+          servicesSection: servicesSection,
+          clientDisplayName: clientDisplayName,
+          clientAddr: clientAddr,
+          clientGstin: clientGstin,
+          serviceLocation: serviceLocation,
+          billingPeriod: billingPeriod,
+        );
+      case 'classic_bordered':
+        return _buildClassicBorderedLayout(
+          identitySection: identitySection,
+          clientSection: clientSection,
+          servicesSection: servicesSection,
+          clientDisplayName: clientDisplayName,
+          clientAddr: clientAddr,
+          clientGstin: clientGstin,
+          serviceLocation: serviceLocation,
+          billingPeriod: billingPeriod,
+        );
+      case 'modern_split':
+      default:
+        return _buildModernSplitLayout(
+          identitySection: identitySection,
+          clientSection: clientSection,
+          servicesSection: servicesSection,
+          clientDisplayName: clientDisplayName,
+          clientContactPerson: clientContactPerson,
+          clientAddr: clientAddr,
+          clientGstin: clientGstin,
+          clientPhone: clientPhone,
+          serviceLocation: serviceLocation,
+          billingPeriod: billingPeriod,
+        );
+    }
+  }
+
+  Widget _buildModernSplitLayout({
+    required StudioSection identitySection,
+    required StudioSection clientSection,
+    required StudioSection servicesSection,
+    required String clientDisplayName,
+    required String clientContactPerson,
+    required String clientAddr,
+    required String clientGstin,
+    required String clientPhone,
+    required String serviceLocation,
+    required String billingPeriod,
+  }) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        if (identitySection.enabled) ...[
+          Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            children: [
+              Expanded(
+                child: Text(
+                  _uppercaseHeadings
+                      ? _documentTitle.toUpperCase()
+                      : _documentTitle,
+                  style: _docStyle(
+                    fontSize: 22,
+                    fontWeight: FontWeight.w900,
+                    letterSpacing: 0.5,
+                    color: const Color(0xFF0F172A),
+                  ),
+                ),
+              ),
+              const SizedBox(width: 16),
+              Table(
+                defaultColumnWidth: const IntrinsicColumnWidth(),
+                children: [
+                  if (_isFieldVisible(identitySection, 'f_doc_number'))
+                    _metaRow(
+                      'Invoice No.',
+                      invoice.invoiceNumber.isNotEmpty
+                          ? invoice.invoiceNumber
+                          : 'INV-2025-0148',
+                    ),
+                  if (_isFieldVisible(identitySection, 'f_doc_issue'))
+                    _metaRow(
+                      'Issue Date',
+                      invoice.issueDate.isNotEmpty
+                          ? invoice.issueDate
+                          : '15 Apr 2025',
+                    ),
+                  if (_isFieldVisible(identitySection, 'f_doc_due'))
+                    _metaRow(
+                      'Due Date',
+                      invoice.dueDate.isNotEmpty
+                          ? invoice.dueDate
+                          : '30 Apr 2025',
+                    ),
+                  if (_isFieldVisible(identitySection, 'f_doc_po'))
+                    _metaRow(
+                      'PO No.',
+                      invoice.poNumber.trim().isNotEmpty
+                          ? invoice.poNumber.trim()
+                          : (_findField(identitySection, 'f_doc_po')
+                                      ?.defaultValue
+                                      .trim()
+                                      .isNotEmpty ==
+                                  true
+                              ? _findField(identitySection, 'f_doc_po')!
+                                  .defaultValue
+                                  .trim()
+                              : 'PO-4587/2025'),
+                    ),
+                  for (final cf in _customVisibleFields(
+                    identitySection,
+                    const {
+                      'f_doc_number',
+                      'f_doc_issue',
+                      'f_doc_due',
+                      'f_doc_po',
+                    },
+                  ))
+                    _metaRow(
+                      cf.label,
+                      cf.defaultValue.isNotEmpty ? cf.defaultValue : '—',
+                    ),
+                ],
+              ),
+            ],
+          ),
+          const SizedBox(height: 16),
+        ],
+        if (clientSection.enabled) ...[
+          Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Expanded(
+                flex: 5,
+                child: Container(
+                  padding: const EdgeInsets.all(12),
+                  decoration: BoxDecoration(
+                    color: const Color(0xFFF8FAFC),
+                    borderRadius: BorderRadius.circular(6),
+                    border: Border.all(color: const Color(0xFFE2E8F0)),
+                  ),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        _uppercaseHeadings ? 'BILL TO' : 'Bill To',
+                        style: _docStyle(
+                          fontSize: 10.5,
+                          fontWeight: FontWeight.bold,
+                          color: const Color(0xFF475569),
+                        ),
+                      ),
+                      const SizedBox(height: 4),
+                      if (_isFieldVisible(clientSection, 'f_cli_name'))
+                        Text(
+                          clientDisplayName,
+                          style: _docStyle(
+                            fontSize: 11.5,
+                            fontWeight: FontWeight.bold,
+                            color: const Color(0xFF0F172A),
+                          ),
+                        ),
+                      const SizedBox(height: 2),
+                      if (_isFieldVisible(clientSection, 'f_cli_addr'))
+                        for (final line in clientAddr.split('\n'))
+                          if (line.trim().isNotEmpty)
+                            Text(
+                              line.trim(),
+                              style: _docStyle(
+                                fontSize: 10,
+                                color: const Color(0xFF475569),
+                              ),
+                            ),
+                      const SizedBox(height: 2),
+                      if (_isFieldVisible(clientSection, 'f_cli_gstin') &&
+                          clientGstin.isNotEmpty)
+                        Text(
+                          'GSTIN: $clientGstin',
+                          style: _docStyle(
+                            fontSize: 10,
+                            color: const Color(0xFF475569),
+                          ),
+                        ),
+                      if (_isFieldVisible(clientSection, 'f_cli_contact') &&
+                          clientContactPerson.isNotEmpty)
+                        Text(
+                          'Contact: $clientContactPerson',
+                          style: _docStyle(
+                            fontSize: 10,
+                            color: const Color(0xFF475569),
+                          ),
+                        ),
+                      if (_isFieldVisible(clientSection, 'f_cli_phone') &&
+                          clientPhone.isNotEmpty)
+                        Text(
+                          'Phone: $clientPhone',
+                          style: _docStyle(
+                            fontSize: 10,
+                            color: const Color(0xFF475569),
+                          ),
+                        ),
+                      for (final cf in _customVisibleFields(
+                        clientSection,
+                        const {
+                          'f_cli_name',
+                          'f_cli_addr',
+                          'f_cli_gstin',
+                          'f_cli_contact',
+                          'f_cli_phone',
+                        },
+                      ))
+                        Text(
+                          '${cf.label}: ${cf.defaultValue.isNotEmpty ? cf.defaultValue : '—'}',
+                          style: _docStyle(
+                            fontSize: 10,
+                            color: const Color(0xFF475569),
+                          ),
+                        ),
+                    ],
+                  ),
+                ),
+              ),
+              if (_isFieldVisible(servicesSection, 'f_srv_loc') ||
+                  _isFieldVisible(servicesSection, 'f_srv_period')) ...[
+                const SizedBox(width: 14),
+                Expanded(
+                  flex: 5,
+                  child: Container(
+                    padding: const EdgeInsets.all(12),
+                    decoration: BoxDecoration(
+                      color: const Color(0xFFF8FAFC),
+                      borderRadius: BorderRadius.circular(6),
+                      border: Border.all(color: const Color(0xFFE2E8F0)),
+                    ),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        if (_isFieldVisible(servicesSection, 'f_srv_loc')) ...[
+                          Text(
+                            _uppercaseHeadings
+                                ? 'SERVICE LOCATION'
+                                : 'Service Location',
+                            style: _docStyle(
+                              fontSize: 10,
+                              color: const Color(0xFF64748B),
+                            ),
+                          ),
+                          const SizedBox(height: 2),
+                          ...() {
+                            final locLines = serviceLocation
+                                .split('\n')
+                                .map((e) => e.trim())
+                                .where((e) => e.isNotEmpty)
+                                .toList();
+                            return [
+                              if (locLines.isNotEmpty)
+                                Text(
+                                  locLines.first,
+                                  style: _docStyle(
+                                    fontSize: 10.5,
+                                    fontWeight: FontWeight.w600,
+                                    color: const Color(0xFF1E293B),
+                                  ),
+                                ),
+                              for (final sub in locLines.skip(1))
+                                Text(
+                                  sub,
+                                  style: _docStyle(
+                                    fontSize: 10,
+                                    color: const Color(0xFF475569),
+                                  ),
+                                ),
+                            ];
+                          }(),
+                          if (_isFieldVisible(servicesSection, 'f_srv_period'))
+                            const SizedBox(height: 8),
+                        ],
+                        if (_isFieldVisible(servicesSection, 'f_srv_period')) ...[
+                          Text(
+                            _uppercaseHeadings
+                                ? 'BILLING PERIOD'
+                                : 'Billing Period',
+                            style: _docStyle(
+                              fontSize: 10,
+                              color: const Color(0xFF64748B),
+                            ),
+                          ),
+                          const SizedBox(height: 2),
+                          Text(
+                            billingPeriod,
+                            style: _docStyle(
+                              fontSize: 10.5,
+                              fontWeight: FontWeight.w600,
+                              color: const Color(0xFF1E293B),
+                            ),
+                          ),
+                          Text(
+                            '(${invoice.paymentTerms.isNotEmpty ? invoice.paymentTerms : 'Monthly Billing'})',
+                            style: _docStyle(
+                              fontSize: 9.5,
+                              color: const Color(0xFF64748B),
+                            ),
+                          ),
+                        ],
+                      ],
+                    ),
+                  ),
+                ),
+              ],
+            ],
+          ),
+          const SizedBox(height: 16),
+        ],
+      ],
+    );
+  }
+
+  Widget _buildExecutiveBannerLayout({
+    required StudioSection identitySection,
+    required StudioSection clientSection,
+    required StudioSection servicesSection,
+    required String clientDisplayName,
+    required String clientContactPerson,
+    required String clientAddr,
+    required String clientGstin,
+    required String clientPhone,
+    required String serviceLocation,
+    required String billingPeriod,
+  }) {
+    final invNum = invoice.invoiceNumber.isNotEmpty ? invoice.invoiceNumber : 'INV-2025-0148';
+    final issueDate = invoice.issueDate.isNotEmpty ? invoice.issueDate : '15 Apr 2025';
+    final dueDate = invoice.dueDate.isNotEmpty ? invoice.dueDate : '30 Apr 2025';
+    final poNum = invoice.poNumber.trim().isNotEmpty ? invoice.poNumber.trim() : 'PO-4587/2025';
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        if (identitySection.enabled) ...[
+          Container(
+            margin: const EdgeInsets.only(bottom: 16),
+            padding: const EdgeInsets.fromLTRB(18, 14, 18, 14),
+            decoration: BoxDecoration(
+              gradient: LinearGradient(
+                colors: [_primaryColor, _primaryColor.withValues(alpha: 0.85)],
+                begin: Alignment.topLeft,
+                end: Alignment.bottomRight,
+              ),
+              borderRadius: BorderRadius.circular(8),
+              boxShadow: const [
+                BoxShadow(color: Color(0x14000000), blurRadius: 10, offset: Offset(0, 3)),
+              ],
+            ),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                  children: [
+                    Text(
+                      _uppercaseHeadings ? _documentTitle.toUpperCase() : _documentTitle,
+                      style: const TextStyle(
+                        fontSize: 22,
+                        fontWeight: FontWeight.w900,
+                        color: Colors.white,
+                        letterSpacing: 1.2,
+                      ),
+                    ),
+                    Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                      decoration: BoxDecoration(
+                        color: Colors.white.withValues(alpha: 0.2),
+                        borderRadius: BorderRadius.circular(12),
+                        border: Border.all(color: Colors.white.withValues(alpha: 0.3)),
+                      ),
+                      child: const Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Icon(Icons.verified_rounded, size: 12, color: Colors.white),
+                          SizedBox(width: 4),
+                          Text('ORIGINAL BILL', style: TextStyle(fontSize: 9.5, fontWeight: FontWeight.w800, color: Colors.white)),
+                        ],
+                      ),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 10),
+                Wrap(
+                  spacing: 8,
+                  runSpacing: 6,
+                  children: [
+                    _heroPill(Icons.tag_rounded, 'Inv: $invNum'),
+                    _heroPill(Icons.calendar_today_rounded, 'Issued: $issueDate'),
+                    _heroPill(Icons.event_available_rounded, 'Due: $dueDate'),
+                    _heroPill(Icons.receipt_long_rounded, 'PO Ref: $poNum'),
+                  ],
+                ),
+              ],
+            ),
+          ),
+        ],
+        if (clientSection.enabled) ...[
+          Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Expanded(
+                child: Container(
+                  decoration: BoxDecoration(
+                    color: Colors.white,
+                    borderRadius: BorderRadius.circular(6),
+                    border: Border.all(color: const Color(0xFFCBD5E1)),
+                    boxShadow: const [BoxShadow(color: Color(0x08000000), blurRadius: 6, offset: Offset(0, 2))],
+                  ),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Container(
+                        height: 3.5,
+                        decoration: BoxDecoration(
+                          color: _primaryColor,
+                          borderRadius: const BorderRadius.vertical(top: Radius.circular(5)),
+                        ),
+                      ),
+                      Padding(
+                        padding: const EdgeInsets.all(12),
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text(
+                              _uppercaseHeadings ? 'BILLED TO (CLIENT)' : 'Billed To (Client)',
+                              style: _docStyle(fontSize: 9.5, fontWeight: FontWeight.w800, color: _primaryColor, letterSpacing: 0.5),
+                            ),
+                            const SizedBox(height: 5),
+                            Text(clientDisplayName, style: _docStyle(fontSize: 11.5, fontWeight: FontWeight.bold, color: const Color(0xFF0F172A))),
+                            const SizedBox(height: 2),
+                            for (final line in clientAddr.split('\n'))
+                              if (line.trim().isNotEmpty)
+                                Text(line.trim(), style: _docStyle(fontSize: 9.5, color: const Color(0xFF475569))),
+                            if (clientGstin.isNotEmpty)
+                              Text('GSTIN: $clientGstin', style: _docStyle(fontSize: 9, color: const Color(0xFF475569))),
+                            if (clientPhone.isNotEmpty)
+                              Text('Phone: $clientPhone', style: _docStyle(fontSize: 9, color: const Color(0xFF475569))),
+                          ],
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+              const SizedBox(width: 14),
+              Expanded(
+                child: Container(
+                  decoration: BoxDecoration(
+                    color: Colors.white,
+                    borderRadius: BorderRadius.circular(6),
+                    border: Border.all(color: const Color(0xFFCBD5E1)),
+                    boxShadow: const [BoxShadow(color: Color(0x08000000), blurRadius: 6, offset: Offset(0, 2))],
+                  ),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Container(
+                        height: 3.5,
+                        decoration: const BoxDecoration(
+                          color: Color(0xFF0D9488),
+                          borderRadius: BorderRadius.vertical(top: Radius.circular(5)),
+                        ),
+                      ),
+                      Padding(
+                        padding: const EdgeInsets.all(12),
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text(
+                              _uppercaseHeadings ? 'SERVICE LOCATION & PERIOD' : 'Service Location & Period',
+                              style: _docStyle(fontSize: 9.5, fontWeight: FontWeight.w800, color: const Color(0xFF0D9488), letterSpacing: 0.5),
+                            ),
+                            const SizedBox(height: 5),
+                            for (final line in serviceLocation.split('\n'))
+                              if (line.trim().isNotEmpty)
+                                Text(line.trim(), style: _docStyle(fontSize: 10, fontWeight: FontWeight.w600, color: const Color(0xFF0F172A))),
+                            const SizedBox(height: 2),
+                            Text('Billing Period: $billingPeriod', style: _docStyle(fontSize: 9.5, color: const Color(0xFF475569))),
+                            Text('Terms: ${invoice.paymentTerms.isNotEmpty ? invoice.paymentTerms : 'Standard Net 15'}', style: _docStyle(fontSize: 9, color: const Color(0xFF64748B))),
+                          ],
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 16),
+        ],
+      ],
+    );
+  }
+
+  Widget _buildCompactGridLayout({
+    required StudioSection identitySection,
+    required StudioSection clientSection,
+    required StudioSection servicesSection,
+    required String clientDisplayName,
+    required String clientAddr,
+    required String clientGstin,
+    required String serviceLocation,
+    required String billingPeriod,
+    required String companyLegalName,
+    required String companyAddress,
+    required String companyGstin,
+    required String companyPan,
+  }) {
+    final invNum = invoice.invoiceNumber.isNotEmpty ? invoice.invoiceNumber : 'INV-2025-0148';
+    final issueDate = invoice.issueDate.isNotEmpty ? invoice.issueDate : '15 Apr 2025';
+    final dueDate = invoice.dueDate.isNotEmpty ? invoice.dueDate : '30 Apr 2025';
+    final poNum = invoice.poNumber.trim().isNotEmpty ? invoice.poNumber.trim() : 'PO-4587/2025';
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        Container(
+          margin: const EdgeInsets.only(bottom: 14),
+          decoration: BoxDecoration(
+            border: Border.all(color: const Color(0xFF0F172A), width: 1.2),
+            borderRadius: BorderRadius.circular(3),
+          ),
+          child: Column(
+            children: [
+              Row(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Expanded(
+                    flex: 6,
+                    child: Container(
+                      padding: const EdgeInsets.all(10),
+                      decoration: const BoxDecoration(
+                        border: Border(
+                          right: BorderSide(color: Color(0xFF0F172A), width: 1),
+                          bottom: BorderSide(color: Color(0xFF0F172A), width: 1),
+                        ),
+                      ),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text('1. SUPPLIER / CONSIGNOR DETAILS', style: _docStyle(fontSize: 8.8, fontWeight: FontWeight.bold, color: const Color(0xFF475569))),
+                          const SizedBox(height: 3),
+                          Text(companyLegalName, style: _docStyle(fontSize: 11, fontWeight: FontWeight.bold, color: const Color(0xFF0F172A))),
+                          for (final line in companyAddress.split('\n'))
+                            if (line.trim().isNotEmpty)
+                              Text(line.trim(), style: _docStyle(fontSize: 9, color: const Color(0xFF475569))),
+                          Text('GSTIN: $companyGstin · PAN: $companyPan', style: _docStyle(fontSize: 9, fontWeight: FontWeight.bold, color: const Color(0xFF1E293B))),
+                        ],
+                      ),
+                    ),
+                  ),
+                  Expanded(
+                    flex: 4,
+                    child: Container(
+                      padding: const EdgeInsets.all(10),
+                      decoration: const BoxDecoration(
+                        border: Border(bottom: BorderSide(color: Color(0xFF0F172A), width: 1)),
+                      ),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text('TAX INVOICE & DISPATCH REF', style: _docStyle(fontSize: 8.8, fontWeight: FontWeight.bold, color: const Color(0xFF475569))),
+                          const SizedBox(height: 3),
+                          _ledgerRow('Invoice No.', invNum),
+                          _ledgerRow('Date', issueDate),
+                          _ledgerRow('Due Date', dueDate),
+                          _ledgerRow('PO Ref', poNum),
+                          _ledgerRow('Terms', invoice.paymentTerms.isNotEmpty ? invoice.paymentTerms : 'Net 15 Days'),
+                        ],
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+              Row(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Expanded(
+                    flex: 6,
+                    child: Container(
+                      padding: const EdgeInsets.all(10),
+                      decoration: const BoxDecoration(
+                        border: Border(right: BorderSide(color: Color(0xFF0F172A), width: 1)),
+                      ),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text('2. BUYER / BILLED TO', style: _docStyle(fontSize: 8.8, fontWeight: FontWeight.bold, color: const Color(0xFF475569))),
+                          const SizedBox(height: 3),
+                          Text(clientDisplayName, style: _docStyle(fontSize: 11, fontWeight: FontWeight.bold, color: const Color(0xFF0F172A))),
+                          for (final line in clientAddr.split('\n'))
+                            if (line.trim().isNotEmpty)
+                              Text(line.trim(), style: _docStyle(fontSize: 9, color: const Color(0xFF475569))),
+                          if (clientGstin.isNotEmpty)
+                            Text('GSTIN: $clientGstin', style: _docStyle(fontSize: 9, fontWeight: FontWeight.w600, color: const Color(0xFF1E293B))),
+                        ],
+                      ),
+                    ),
+                  ),
+                  Expanded(
+                    flex: 4,
+                    child: Container(
+                      padding: const EdgeInsets.all(10),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text('3. CONSIGNEE / SHIPPED TO', style: _docStyle(fontSize: 8.8, fontWeight: FontWeight.bold, color: const Color(0xFF475569))),
+                          const SizedBox(height: 3),
+                          for (final line in serviceLocation.split('\n'))
+                            if (line.trim().isNotEmpty)
+                              Text(line.trim(), style: _docStyle(fontSize: 9.5, fontWeight: FontWeight.bold, color: const Color(0xFF0F172A))),
+                          Text('Period: $billingPeriod', style: _docStyle(fontSize: 9, color: const Color(0xFF475569))),
+                        ],
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ],
+          ),
+        ),
+      ],
+    );
+  }
+
+  Widget _buildMinimalAsymmetricLayout({
+    required StudioSection identitySection,
+    required StudioSection clientSection,
+    required StudioSection servicesSection,
+    required String clientDisplayName,
+    required String clientAddr,
+    required String clientGstin,
+    required String serviceLocation,
+    required String billingPeriod,
+  }) {
+    final invNum = invoice.invoiceNumber.isNotEmpty ? invoice.invoiceNumber : 'INV-2025-0148';
+    final issueDate = invoice.issueDate.isNotEmpty ? invoice.issueDate : '15 Apr 2025';
+    final dueDate = invoice.dueDate.isNotEmpty ? invoice.dueDate : '30 Apr 2025';
+    final poNum = invoice.poNumber.trim().isNotEmpty ? invoice.poNumber.trim() : 'PO-4587/2025';
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Row(
+          crossAxisAlignment: CrossAxisAlignment.baseline,
+          textBaseline: TextBaseline.alphabetic,
+          children: [
+            Text(
+              _uppercaseHeadings ? 'INVOICE' : 'Invoice',
+              style: _docStyle(fontSize: 28, fontWeight: FontWeight.w900, color: const Color(0xFF0F172A), letterSpacing: -0.5),
+            ),
+            const SizedBox(width: 8),
+            Container(
+              width: 8,
+              height: 8,
+              decoration: BoxDecoration(color: _primaryColor, shape: BoxShape.circle),
+            ),
+            const SizedBox(width: 14),
+            Text(
+              '//  $invNum',
+              style: _docStyle(fontSize: 16, fontWeight: FontWeight.w300, color: const Color(0xFF64748B)),
+            ),
+            const Spacer(),
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+              decoration: BoxDecoration(
+                color: const Color(0xFFEFF6FF),
+                borderRadius: BorderRadius.circular(14),
+                border: Border.all(color: const Color(0xFFBFDBFE)),
+              ),
+              child: Text('ISSUED: ${issueDate.toUpperCase()}', style: _docStyle(fontSize: 9.5, fontWeight: FontWeight.bold, color: const Color(0xFF1E40AF))),
+            ),
+          ],
+        ),
+        const SizedBox(height: 10),
+        const Divider(height: 1, color: Color(0xFFE2E8F0)),
+        const SizedBox(height: 12),
+        Row(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text('BILLED TO', style: _docStyle(fontSize: 8.8, fontWeight: FontWeight.bold, color: const Color(0xFF94A3B8), letterSpacing: 0.8)),
+                  const SizedBox(height: 4),
+                  Text(clientDisplayName, style: _docStyle(fontSize: 11, fontWeight: FontWeight.bold, color: const Color(0xFF0F172A))),
+                  for (final line in clientAddr.split('\n'))
+                    if (line.trim().isNotEmpty)
+                      Text(line.trim(), style: _docStyle(fontSize: 9.5, color: const Color(0xFF64748B), height: 1.3)),
+                  if (clientGstin.isNotEmpty)
+                    Text('GST: $clientGstin', style: _docStyle(fontSize: 9, color: const Color(0xFF64748B))),
+                ],
+              ),
+            ),
+            Container(width: 1, height: 60, color: const Color(0xFFE2E8F0), margin: const EdgeInsets.symmetric(horizontal: 14)),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text('SERVICE SCOPE', style: _docStyle(fontSize: 8.8, fontWeight: FontWeight.bold, color: const Color(0xFF94A3B8), letterSpacing: 0.8)),
+                  const SizedBox(height: 4),
+                  for (final line in serviceLocation.split('\n'))
+                    if (line.trim().isNotEmpty)
+                      Text(line.trim(), style: _docStyle(fontSize: 10, fontWeight: FontWeight.w700, color: const Color(0xFF0F172A))),
+                  Text('Period: $billingPeriod', style: _docStyle(fontSize: 9.5, color: const Color(0xFF64748B), height: 1.3)),
+                ],
+              ),
+            ),
+            Container(width: 1, height: 60, color: const Color(0xFFE2E8F0), margin: const EdgeInsets.symmetric(horizontal: 14)),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text('PAYMENT TERMS', style: _docStyle(fontSize: 8.8, fontWeight: FontWeight.bold, color: const Color(0xFF94A3B8), letterSpacing: 0.8)),
+                  const SizedBox(height: 4),
+                  Text(invoice.paymentTerms.isNotEmpty ? invoice.paymentTerms : 'Net 15 Days', style: _docStyle(fontSize: 10.5, fontWeight: FontWeight.w700, color: const Color(0xFF0F172A))),
+                  Text('Due: $dueDate\nPO: $poNum', style: _docStyle(fontSize: 9.5, color: const Color(0xFF64748B), height: 1.3)),
+                ],
+              ),
+            ),
+          ],
+        ),
+        const SizedBox(height: 16),
+      ],
+    );
+  }
+
+  Widget _buildSidebarAccentLayout({
+    required StudioSection identitySection,
+    required StudioSection clientSection,
+    required StudioSection servicesSection,
+    required String clientDisplayName,
+    required String clientAddr,
+    required String clientGstin,
+    required String serviceLocation,
+    required String billingPeriod,
+  }) {
+    final invNum = invoice.invoiceNumber.isNotEmpty ? invoice.invoiceNumber : 'INV-2025-0148';
+    final issueDate = invoice.issueDate.isNotEmpty ? invoice.issueDate : '15 Apr 2025';
+    final dueDate = invoice.dueDate.isNotEmpty ? invoice.dueDate : '30 Apr 2025';
+    final poNum = invoice.poNumber.trim().isNotEmpty ? invoice.poNumber.trim() : 'PO-4587/2025';
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        Row(
+          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+          children: [
+            Row(
+              children: [
+                Container(width: 4, height: 24, color: _primaryColor),
+                const SizedBox(width: 8),
+                Text(
+                  _uppercaseHeadings ? _documentTitle.toUpperCase() : _documentTitle,
+                  style: _docStyle(fontSize: 20, fontWeight: FontWeight.w900, color: const Color(0xFF0F172A)),
+                ),
+              ],
+            ),
+            Row(
+              children: [
+                _heroPill(Icons.confirmation_number_outlined, invNum),
+                const SizedBox(width: 6),
+                _heroPill(Icons.event_outlined, issueDate),
+              ],
+            ),
+          ],
+        ),
+        const SizedBox(height: 12),
+        Row(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Expanded(
+              flex: 5,
+              child: Container(
+                padding: const EdgeInsets.all(12),
+                decoration: BoxDecoration(
+                  color: Colors.white,
+                  borderRadius: BorderRadius.circular(6),
+                  border: Border(
+                    left: BorderSide(color: _primaryColor, width: 4),
+                    top: const BorderSide(color: Color(0xFFE2E8F0)),
+                    right: const BorderSide(color: Color(0xFFE2E8F0)),
+                    bottom: const BorderSide(color: Color(0xFFE2E8F0)),
+                  ),
+                ),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text('CLIENT & BILLING ADDRESS', style: _docStyle(fontSize: 9.5, fontWeight: FontWeight.w800, color: _primaryColor)),
+                    const SizedBox(height: 4),
+                    Text(clientDisplayName, style: _docStyle(fontSize: 11, fontWeight: FontWeight.bold, color: const Color(0xFF0F172A))),
+                    for (final line in clientAddr.split('\n'))
+                      if (line.trim().isNotEmpty)
+                        Text(line.trim(), style: _docStyle(fontSize: 9.5, color: const Color(0xFF475569))),
+                    if (clientGstin.isNotEmpty)
+                      Text('GSTIN: $clientGstin', style: _docStyle(fontSize: 9, color: const Color(0xFF475569))),
+                  ],
+                ),
+              ),
+            ),
+            const SizedBox(width: 14),
+            Expanded(
+              flex: 5,
+              child: Container(
+                padding: const EdgeInsets.all(12),
+                decoration: BoxDecoration(
+                  color: const Color(0xFFF8FAFC),
+                  borderRadius: BorderRadius.circular(6),
+                  border: Border.all(color: const Color(0xFFE2E8F0)),
+                ),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text('SERVICE DEPLOYMENT & PERIOD', style: _docStyle(fontSize: 9.5, fontWeight: FontWeight.w800, color: const Color(0xFF475569))),
+                    const SizedBox(height: 4),
+                    for (final line in serviceLocation.split('\n'))
+                      if (line.trim().isNotEmpty)
+                        Text(line.trim(), style: _docStyle(fontSize: 10.5, fontWeight: FontWeight.bold, color: const Color(0xFF0F172A))),
+                    Text('Period: $billingPeriod', style: _docStyle(fontSize: 9.5, color: const Color(0xFF475569))),
+                    Text('PO: $poNum · Due: $dueDate', style: _docStyle(fontSize: 9, color: const Color(0xFF64748B))),
+                  ],
+                ),
+              ),
+            ),
+          ],
+        ),
+        const SizedBox(height: 16),
+      ],
+    );
+  }
+
+  Widget _buildClassicBorderedLayout({
+    required StudioSection identitySection,
+    required StudioSection clientSection,
+    required StudioSection servicesSection,
+    required String clientDisplayName,
+    required String clientAddr,
+    required String clientGstin,
+    required String serviceLocation,
+    required String billingPeriod,
+  }) {
+    final invNum = invoice.invoiceNumber.isNotEmpty ? invoice.invoiceNumber : 'INV-2025-0148';
+    final issueDate = invoice.issueDate.isNotEmpty ? invoice.issueDate : '15 Apr 2025';
+    final dueDate = invoice.dueDate.isNotEmpty ? invoice.dueDate : '30 Apr 2025';
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        Center(
+          child: Column(
+            children: [
+              Text(
+                '—  ✦  ${_uppercaseHeadings ? _documentTitle.toUpperCase() : _documentTitle}  ✦  —',
+                style: _docStyle(
+                  fontSize: 18,
+                  fontWeight: FontWeight.bold,
+                  letterSpacing: 2.0,
+                  color: const Color(0xFF0F172A),
+                ),
+              ),
+              const SizedBox(height: 4),
+              Text(
+                'Issued under Goods & Services Tax Act · Duplicate for Transporter',
+                style: _docStyle(fontSize: 8.5, color: const Color(0xFF64748B), fontStyle: FontStyle.italic),
+              ),
+              const SizedBox(height: 10),
+            ],
+          ),
+        ),
+        Container(
+          padding: const EdgeInsets.all(10),
+          decoration: BoxDecoration(
+            border: Border.all(color: const Color(0xFF334155), width: 1),
+            borderRadius: BorderRadius.circular(4),
+          ),
+          child: Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Expanded(
+                flex: 5,
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text('BILLED TO (RECIPIENT):', style: _docStyle(fontSize: 9.5, fontWeight: FontWeight.bold, color: const Color(0xFF1E293B))),
+                    const SizedBox(height: 3),
+                    Text(clientDisplayName, style: _docStyle(fontSize: 11, fontWeight: FontWeight.bold, color: const Color(0xFF0F172A))),
+                    for (final line in clientAddr.split('\n'))
+                      if (line.trim().isNotEmpty)
+                        Text(line.trim(), style: _docStyle(fontSize: 9, color: const Color(0xFF475569))),
+                    if (clientGstin.isNotEmpty)
+                      Text('GSTIN: $clientGstin', style: _docStyle(fontSize: 9, color: const Color(0xFF475569))),
+                  ],
+                ),
+              ),
+              Container(width: 1, height: 56, color: const Color(0xFFCBD5E1), margin: const EdgeInsets.symmetric(horizontal: 10)),
+              Expanded(
+                flex: 5,
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    _ledgerRow('Invoice No.', invNum),
+                    _ledgerRow('Dated', issueDate),
+                    _ledgerRow('Payment Due', dueDate),
+                    _ledgerRow('Site / Place', serviceLocation.split('\n').first),
+                  ],
+                ),
+              ),
+            ],
+          ),
+        ),
+        const SizedBox(height: 16),
+      ],
     );
   }
 
