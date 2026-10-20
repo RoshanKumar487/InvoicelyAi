@@ -210,6 +210,10 @@ class _InvoiceTemplateStudioScreenState
   Color _primaryColor = const Color(0xFF1E3A8A);
   Color _tableHeaderTextColor = Colors.white;
   String _tableBorderStyle = 'boxed'; // 'boxed', 'lines', 'striped'
+  bool _isColorless = false;
+  String _tableHeaderStyle = 'solid'; // 'solid', 'tint', 'outline'
+  String _tableDensity = 'standard'; // 'compact', 'standard', 'spacious'
+  String _cornerRadius = 'subtle'; // 'sharp', 'subtle', 'rounded'
   String _layoutStyle = 'modern_split'; // 'modern_split', 'executive_banner', 'compact_grid', 'minimal_asymmetric', 'sidebar_accent', 'classic_bordered'
   bool _showQrCode = true;
   String _watermark = 'None';
@@ -342,6 +346,22 @@ class _InvoiceTemplateStudioScreenState
       final savedBorder = await _localPreferences.readString('studio_table_border');
       if (savedBorder != null && savedBorder.isNotEmpty && mounted) {
         setState(() => _tableBorderStyle = savedBorder);
+      }
+      final savedColorless = await _localPreferences.readString('studio_is_colorless');
+      if (savedColorless != null && mounted) {
+        setState(() => _isColorless = savedColorless == 'true');
+      }
+      final savedHeaderStyle = await _localPreferences.readString('studio_table_header_style');
+      if (savedHeaderStyle != null && savedHeaderStyle.isNotEmpty && mounted) {
+        setState(() => _tableHeaderStyle = savedHeaderStyle);
+      }
+      final savedDensity = await _localPreferences.readString('studio_table_density');
+      if (savedDensity != null && savedDensity.isNotEmpty && mounted) {
+        setState(() => _tableDensity = savedDensity);
+      }
+      final savedCorner = await _localPreferences.readString('studio_corner_radius');
+      if (savedCorner != null && savedCorner.isNotEmpty && mounted) {
+        setState(() => _cornerRadius = savedCorner);
       }
       final savedLayout = await _localPreferences.readString('studio_layout_style');
       if (savedLayout != null && savedLayout.isNotEmpty && mounted) {
@@ -552,6 +572,19 @@ class _InvoiceTemplateStudioScreenState
     if (scale != null && scale > 0) _fontScale = scale;
     final border = map['studio_table_border']?.toString();
     if (border != null && border.isNotEmpty) _tableBorderStyle = border;
+    if (map['studio_is_colorless'] != null) {
+      _isColorless = map['studio_is_colorless'] == true || map['studio_is_colorless'] == 'true';
+    } else if (map['is_colorless'] != null) {
+      _isColorless = map['is_colorless'] == true || map['is_colorless'] == 'true';
+    } else if (map['studio_color_mode'] == 'monochrome') {
+      _isColorless = true;
+    }
+    final thStyle = map['studio_table_header_style']?.toString();
+    if (thStyle != null && thStyle.isNotEmpty) _tableHeaderStyle = thStyle;
+    final tDensity = map['studio_table_density']?.toString();
+    if (tDensity != null && tDensity.isNotEmpty) _tableDensity = tDensity;
+    final cRadius = map['studio_corner_radius']?.toString();
+    if (cRadius != null && cRadius.isNotEmpty) _cornerRadius = cRadius;
     final docTitle = map['customTitle']?.toString() ?? map['studio_doc_title']?.toString();
     if (docTitle != null && docTitle.isNotEmpty) _documentTitle = docTitle;
     if (map['studio_uppercase_headings'] is bool) {
@@ -1067,6 +1100,10 @@ class _InvoiceTemplateStudioScreenState
       'studio_font_family': _fontFamily,
       'studio_font_scale': _fontScale.toString(),
       'studio_table_border': _tableBorderStyle,
+      'studio_is_colorless': _isColorless,
+      'studio_table_header_style': _tableHeaderStyle,
+      'studio_table_density': _tableDensity,
+      'studio_corner_radius': _cornerRadius,
       'studio_layout_style': _layoutStyle,
       'studio_uppercase_headings': _uppercaseHeadings,
       'studio_watermark': _watermark,
@@ -1112,6 +1149,10 @@ class _InvoiceTemplateStudioScreenState
     await _localPreferences.writeString('studio_font_family', _fontFamily);
     await _localPreferences.writeString('studio_font_scale', _fontScale.toString());
     await _localPreferences.writeString('studio_table_border', _tableBorderStyle);
+    await _localPreferences.writeString('studio_is_colorless', _isColorless.toString());
+    await _localPreferences.writeString('studio_table_header_style', _tableHeaderStyle);
+    await _localPreferences.writeString('studio_table_density', _tableDensity);
+    await _localPreferences.writeString('studio_corner_radius', _cornerRadius);
     await _localPreferences.writeString('studio_layout_style', _layoutStyle);
     await _localPreferences.writeString('studio_doc_title', _documentTitle);
     await _localPreferences.writeString('studio_uppercase_headings', _uppercaseHeadings.toString());
@@ -1391,6 +1432,11 @@ class _InvoiceTemplateStudioScreenState
         primaryColor: _primaryColor,
         tableHeaderTextColor: _tableHeaderTextColor,
         tableBorderStyle: _tableBorderStyle,
+        isColorless: _isColorless,
+        tableHeaderStyle: _tableHeaderStyle,
+        tableDensity: _tableDensity,
+        cornerRadius: _cornerRadius,
+        watermark: _watermark,
       ),
       onApplyStyle: (updated) {
         setState(() {
@@ -1401,15 +1447,30 @@ class _InvoiceTemplateStudioScreenState
           _primaryColor = updated.primaryColor;
           _tableHeaderTextColor = updated.tableHeaderTextColor;
           _tableBorderStyle = updated.tableBorderStyle;
+          _isColorless = updated.isColorless;
+          _tableHeaderStyle = updated.tableHeaderStyle;
+          _tableDensity = updated.tableDensity;
+          _cornerRadius = updated.cornerRadius;
+          _watermark = updated.watermark;
           _markSaved();
         });
         _localPreferences.writeString('studio_font_family', _fontFamily);
         _localPreferences.writeString('studio_font_scale', _fontScale.toString());
         _localPreferences.writeString('studio_table_border', _tableBorderStyle);
         _localPreferences.writeString('studio_doc_title', _documentTitle);
+        _localPreferences.writeString('studio_is_colorless', _isColorless.toString());
+        _localPreferences.writeString('studio_table_header_style', _tableHeaderStyle);
+        _localPreferences.writeString('studio_table_density', _tableDensity);
+        _localPreferences.writeString('studio_corner_radius', _cornerRadius);
+        _localPreferences.writeString('studio_watermark', _watermark);
+        _autoSaveLocal();
         ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text('âœ“ Style applied to invoice template!'),
+          SnackBar(
+            content: Text(
+              _isColorless
+                  ? '✓ No Color (Monochrome) style applied to invoice & letterheads!'
+                  : '✓ Style applied to invoice template!',
+            ),
             behavior: SnackBarBehavior.floating,
           ),
         );
@@ -1546,6 +1607,10 @@ class _InvoiceTemplateStudioScreenState
       'studio_font_family': _fontFamily,
       'studio_font_scale': _fontScale.toString(),
       'studio_table_border': _tableBorderStyle,
+      'studio_is_colorless': _isColorless,
+      'studio_table_header_style': _tableHeaderStyle,
+      'studio_table_density': _tableDensity,
+      'studio_corner_radius': _cornerRadius,
       'studio_uppercase_headings': _uppercaseHeadings,
       'studio_watermark': _watermark,
       'studio_page_margin': _pageMargin,
@@ -2980,6 +3045,7 @@ class _InvoiceTemplateStudioScreenState
       cinOrLicense: _letterheadCin,
       logoBase64: _logoBase64,
       primaryColorHex: primaryHex,
+      isColorless: _isColorless,
     );
   }
 
@@ -3610,9 +3676,10 @@ class _InvoiceTemplateStudioScreenState
           if (lhConfig.isLetterheadActive)
             CompanyLetterheadWidgets.buildHeaderBanner(
               config: lhConfig,
-              overridePrimaryColor: _primaryColor,
+              overridePrimaryColor: _isColorless ? const Color(0xFF0F172A) : _primaryColor,
               fontScale: _fontScale,
               fontFamily: _fontFamily,
+              isColorless: _isColorless,
               showGstBadges: _isFieldVisible(brandingSection, 'f_biz_gstin') ||
                   _isFieldVisible(brandingSection, 'f_biz_pan'),
             )
@@ -3695,20 +3762,39 @@ class _InvoiceTemplateStudioScreenState
                       Container(
                         padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 7),
                         decoration: BoxDecoration(
-                          color: _primaryColor.withValues(alpha: 0.1),
-                          borderRadius: BorderRadius.circular(4),
-                          border: Border.all(color: _primaryColor.withValues(alpha: 0.3)),
+                          color: _isColorless
+                              ? const Color(0xFFF8FAFC)
+                              : _primaryColor.withValues(alpha: 0.1),
+                          borderRadius: BorderRadius.circular(
+                            _cornerRadius == 'sharp'
+                                ? 0
+                                : (_cornerRadius == 'rounded' ? 8 : 4),
+                          ),
+                          border: Border.all(
+                            color: _isColorless
+                                ? const Color(0xFF0F172A)
+                                : _primaryColor.withValues(alpha: 0.3),
+                            width: _isColorless ? 1.5 : 1.0,
+                          ),
                         ),
                         child: Row(
                           mainAxisAlignment: MainAxisAlignment.spaceBetween,
                           children: [
                             Text(
                               _uppercaseHeadings ? 'GRAND TOTAL' : 'Grand Total',
-                              style: _docStyle(fontSize: 12, fontWeight: FontWeight.w800, color: _primaryColor),
+                              style: _docStyle(
+                                fontSize: 12,
+                                fontWeight: FontWeight.w800,
+                                color: _isColorless ? const Color(0xFF0F172A) : _primaryColor,
+                              ),
                             ),
                             Text(
                               _isRcmApplicable ? '₹ 3,66,800.00' : '₹ 4,32,824.00',
-                              style: _docStyle(fontSize: 12, fontWeight: FontWeight.w800, color: _primaryColor),
+                              style: _docStyle(
+                                fontSize: 12,
+                                fontWeight: FontWeight.w800,
+                                color: _isColorless ? const Color(0xFF0F172A) : _primaryColor,
+                              ),
                             ),
                           ],
                         ),
@@ -3911,9 +3997,10 @@ class _InvoiceTemplateStudioScreenState
         if (lhConfig.isLetterheadActive)
           CompanyLetterheadWidgets.buildFooterBanner(
             config: lhConfig,
-            overridePrimaryColor: _primaryColor,
+            overridePrimaryColor: _isColorless ? const Color(0xFF0F172A) : _primaryColor,
             fontScale: _fontScale,
             fontFamily: _fontFamily,
+            isColorless: _isColorless,
             pageLabel: 'Page 1 of 1',
           )
         else
@@ -4711,36 +4798,77 @@ class _InvoiceTemplateStudioScreenState
         [for (final idx in visibleIndices) row[idx]],
     ];
 
+    final double radiusVal = _cornerRadius == 'sharp'
+        ? 0
+        : (_cornerRadius == 'rounded' ? 8 : 4);
+    final double headerVertPad = _tableDensity == 'compact'
+        ? 5
+        : (_tableDensity == 'spacious' ? 11 : 8);
+    final double rowVertPad = _tableDensity == 'compact'
+        ? 4.5
+        : (_tableDensity == 'spacious' ? 10 : 7);
+
+    final Color headerBg;
+    final Color headerText;
+    final Border? headerBorder;
+    if (_isColorless) {
+      headerBg = const Color(0xFFF1F5F9);
+      headerText = const Color(0xFF0F172A);
+      headerBorder = const Border(bottom: BorderSide(color: Color(0xFF0F172A), width: 1.5));
+    } else if (_tableHeaderStyle == 'outline') {
+      headerBg = Colors.white;
+      headerText = _primaryColor;
+      headerBorder = Border(bottom: BorderSide(color: _primaryColor, width: 2));
+    } else if (_tableHeaderStyle == 'tint') {
+      headerBg = _primaryColor.withValues(alpha: 0.12);
+      headerText = _primaryColor;
+      headerBorder = Border(bottom: BorderSide(color: _primaryColor.withValues(alpha: 0.3), width: 1.5));
+    } else {
+      headerBg = _primaryColor;
+      headerText = _tableHeaderTextColor;
+      headerBorder = null;
+    }
+
     return Container(
       decoration: BoxDecoration(
-        borderRadius: BorderRadius.circular(4),
-        border: Border.all(color: const Color(0xFFCBD5E1)),
+        borderRadius: BorderRadius.circular(radiusVal),
+        border: Border.all(color: _isColorless ? const Color(0xFF0F172A) : const Color(0xFFCBD5E1)),
       ),
       clipBehavior: Clip.antiAlias,
       child: Column(
         children: [
           // Header Row
           Container(
-            color: _primaryColor,
+            decoration: BoxDecoration(
+              color: headerBg,
+              border: headerBorder,
+            ),
             child: Row(
               children: [
                 for (int c = 0; c < columns.length; c++)
                   Expanded(
                     flex: columns[c].flex,
                     child: Container(
-                      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+                      padding: EdgeInsets.symmetric(horizontal: 10, vertical: headerVertPad),
                       decoration: BoxDecoration(
                         border: isBoxed && c < columns.length - 1
-                            ? const Border(right: BorderSide(color: Color(0x33FFFFFF), width: 1))
+                            ? Border(
+                                right: BorderSide(
+                                  color: (_isColorless || _tableHeaderStyle != 'solid')
+                                      ? const Color(0xFFCBD5E1)
+                                      : const Color(0x33FFFFFF),
+                                  width: 1,
+                                ),
+                              )
                             : null,
                       ),
                       child: Text(
                         _uppercaseHeadings ? columns[c].label.toUpperCase() : columns[c].label,
                         textAlign: columns[c].align,
                         style: _docStyle(
-                          fontSize: 10,
+                          fontSize: _tableDensity == 'compact' ? 9 : 10,
                           fontWeight: FontWeight.bold,
-                          color: _tableHeaderTextColor,
+                          color: headerText,
                         ),
                       ),
                     ),
@@ -4766,7 +4894,7 @@ class _InvoiceTemplateStudioScreenState
                     Expanded(
                       flex: columns[c].flex,
                       child: Container(
-                        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 7),
+                        padding: EdgeInsets.symmetric(horizontal: 10, vertical: rowVertPad),
                         decoration: BoxDecoration(
                           border: isBoxed && c < rows[r].length - 1
                               ? const Border(right: BorderSide(color: Color(0xFFCBD5E1)))

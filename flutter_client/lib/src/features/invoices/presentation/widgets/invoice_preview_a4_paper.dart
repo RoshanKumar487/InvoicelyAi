@@ -90,6 +90,40 @@ class InvoicePreviewA4Paper extends StatelessWidget {
     return 'boxed';
   }
 
+  bool get _isColorless {
+    final s = localSettings['studio_is_colorless'];
+    if (s is bool) return s;
+    if (s is String) return s.toLowerCase() == 'true';
+    final alt = localSettings['is_colorless'];
+    if (alt is bool) return alt;
+    if (alt is String) return alt.toLowerCase() == 'true';
+    return localSettings['studio_color_mode'] == 'monochrome';
+  }
+
+  String get _tableHeaderStyle {
+    final saved = localSettings['studio_table_header_style']?.toString().trim();
+    if (saved != null && saved.isNotEmpty) return saved;
+    return 'solid';
+  }
+
+  String get _tableDensity {
+    final saved = localSettings['studio_table_density']?.toString().trim();
+    if (saved != null && saved.isNotEmpty) return saved;
+    return 'standard';
+  }
+
+  String get _cornerRadius {
+    final saved = localSettings['studio_corner_radius']?.toString().trim();
+    if (saved != null && saved.isNotEmpty) return saved;
+    return 'subtle';
+  }
+
+  double get _cornerCardRadius => switch (_cornerRadius) {
+    'sharp' => 0.0,
+    'rounded' => 8.0,
+    _ => 4.0,
+  };
+
   String get _layoutStyle {
     final saved = localSettings['studio_layout_style']?.toString().trim();
     if (saved != null && saved.isNotEmpty) return saved;
@@ -270,22 +304,6 @@ class InvoicePreviewA4Paper extends StatelessWidget {
                 ? _findField(brandingSection, 'f_biz_name')!.defaultValue.trim()
                 : 'Northstar Security Services Ltd.'));
 
-    // Derive Brand Headline & Subtitle from company name or preset
-    final words = companyLegalName.split(RegExp(r'\s+'));
-    final brandHeadline = words.isNotEmpty
-        ? words.first
-        : (_activePreset == 'security_agency' ? 'NORTHSTAR' : 'ENTERPRISE');
-    final brandSubtitle = words.length > 1
-        ? words.sublist(1).join(' ').replaceAll(RegExp(r'\b(Pvt\.?|Ltd\.?|LLP|Inc\.?)\b', caseSensitive: false), '').trim()
-        : (_activePreset == 'security_agency' ? 'SECURITY SERVICES' : 'SOLUTIONS & SERVICES');
-
-    final companyTagline = (profile['tagline']?.toString().trim().isNotEmpty == true)
-        ? profile['tagline']!.toString().trim()
-        : (localSettings['companyTagline']?.toString().trim().isNotEmpty == true
-            ? localSettings['companyTagline']!.toString().trim()
-            : (_findField(brandingSection, 'f_biz_tagline')?.defaultValue.trim().isNotEmpty == true
-                ? _findField(brandingSection, 'f_biz_tagline')!.defaultValue.trim()
-                : 'Safe People  |  Secure Tomorrow'));
 
     final companyAddress = (profile['companyAddress']?.toString().trim().isNotEmpty == true)
         ? profile['companyAddress']!.toString().trim()
@@ -500,9 +518,10 @@ class InvoicePreviewA4Paper extends StatelessWidget {
                 if (letterheadConfig.isLetterheadActive)
                   CompanyLetterheadWidgets.buildHeaderBanner(
                     config: letterheadConfig,
-                    overridePrimaryColor: _primaryColor,
+                    overridePrimaryColor: _isColorless ? const Color(0xFF0F172A) : _primaryColor,
                     fontScale: _fontScale,
                     fontFamily: _fontFamily,
+                    isColorless: _isColorless,
                     showGstBadges: _isFieldVisible(brandingSection, 'f_biz_gstin') ||
                         _isFieldVisible(brandingSection, 'f_biz_pan'),
                   )
@@ -651,10 +670,15 @@ class InvoicePreviewA4Paper extends StatelessWidget {
                                 vertical: 7,
                               ),
                               decoration: BoxDecoration(
-                                color: _primaryColor.withValues(alpha: 0.1),
-                                borderRadius: BorderRadius.circular(4),
+                                color: _isColorless
+                                    ? const Color(0xFFF8FAFC)
+                                    : _primaryColor.withValues(alpha: 0.1),
+                                borderRadius: BorderRadius.circular(_cornerCardRadius),
                                 border: Border.all(
-                                  color: _primaryColor.withValues(alpha: 0.3),
+                                  color: _isColorless
+                                      ? const Color(0xFF0F172A)
+                                      : _primaryColor.withValues(alpha: 0.3),
+                                  width: _isColorless ? 1.5 : 1.0,
                                 ),
                               ),
                               child: Row(
@@ -667,7 +691,7 @@ class InvoicePreviewA4Paper extends StatelessWidget {
                                     style: _docStyle(
                                       fontSize: 12,
                                       fontWeight: FontWeight.w800,
-                                      color: _primaryColor,
+                                      color: _isColorless ? const Color(0xFF0F172A) : _primaryColor,
                                     ),
                                   ),
                                   Flexible(
@@ -677,7 +701,7 @@ class InvoicePreviewA4Paper extends StatelessWidget {
                                       style: _docStyle(
                                         fontSize: 12,
                                         fontWeight: FontWeight.w800,
-                                        color: _primaryColor,
+                                        color: _isColorless ? const Color(0xFF0F172A) : _primaryColor,
                                       ),
                                     ),
                                   ),
@@ -1052,9 +1076,10 @@ class InvoicePreviewA4Paper extends StatelessWidget {
               if (letterheadConfig.isLetterheadActive)
                 CompanyLetterheadWidgets.buildFooterBanner(
                   config: letterheadConfig,
-                  overridePrimaryColor: _primaryColor,
+                  overridePrimaryColor: _isColorless ? const Color(0xFF0F172A) : _primaryColor,
                   fontScale: _fontScale,
                   fontFamily: _fontFamily,
+                  isColorless: _isColorless,
                   pageLabel: 'Page 1 of 1',
                 )
               else
@@ -1183,32 +1208,66 @@ class InvoicePreviewA4Paper extends StatelessWidget {
         [for (final idx in visibleIndices) row[idx]],
     ];
 
+    final double radiusVal = _cornerCardRadius;
+    final double headerVertPad = _tableDensity == 'compact'
+        ? 5
+        : (_tableDensity == 'spacious' ? 11 : 8);
+    final double rowVertPad = _tableDensity == 'compact'
+        ? 4.5
+        : (_tableDensity == 'spacious' ? 10 : 7);
+
+    final Color headerBg;
+    final Color headerText;
+    final Border? headerBorder;
+    if (_isColorless) {
+      headerBg = const Color(0xFFF1F5F9);
+      headerText = const Color(0xFF0F172A);
+      headerBorder = const Border(bottom: BorderSide(color: Color(0xFF0F172A), width: 1.5));
+    } else if (_tableHeaderStyle == 'outline') {
+      headerBg = Colors.white;
+      headerText = _primaryColor;
+      headerBorder = Border(bottom: BorderSide(color: _primaryColor, width: 2));
+    } else if (_tableHeaderStyle == 'tint') {
+      headerBg = _primaryColor.withValues(alpha: 0.12);
+      headerText = _primaryColor;
+      headerBorder = Border(bottom: BorderSide(color: _primaryColor.withValues(alpha: 0.3), width: 1.5));
+    } else {
+      headerBg = _primaryColor;
+      headerText = _tableHeaderTextColor;
+      headerBorder = null;
+    }
+
     return Container(
       decoration: BoxDecoration(
-        borderRadius: BorderRadius.circular(4),
-        border: Border.all(color: const Color(0xFFCBD5E1)),
+        borderRadius: BorderRadius.circular(radiusVal),
+        border: Border.all(color: _isColorless ? const Color(0xFF0F172A) : const Color(0xFFCBD5E1)),
       ),
       clipBehavior: Clip.antiAlias,
       child: Column(
         children: [
           // Header Row
           Container(
-            color: _primaryColor,
+            decoration: BoxDecoration(
+              color: headerBg,
+              border: headerBorder,
+            ),
             child: Row(
               children: [
                 for (int c = 0; c < columns.length; c++)
                   Expanded(
                     flex: columns[c].flex,
                     child: Container(
-                      padding: const EdgeInsets.symmetric(
+                      padding: EdgeInsets.symmetric(
                         horizontal: 10,
-                        vertical: 8,
+                        vertical: headerVertPad,
                       ),
                       decoration: BoxDecoration(
                         border: isBoxed && c < columns.length - 1
-                            ? const Border(
+                            ? Border(
                                 right: BorderSide(
-                                  color: Color(0x33FFFFFF),
+                                  color: (_isColorless || _tableHeaderStyle != 'solid')
+                                      ? const Color(0xFFCBD5E1)
+                                      : const Color(0x33FFFFFF),
                                   width: 1,
                                 ),
                               )
@@ -1220,9 +1279,9 @@ class InvoicePreviewA4Paper extends StatelessWidget {
                             : columns[c].label,
                         textAlign: columns[c].align,
                         style: _docStyle(
-                          fontSize: 10,
+                          fontSize: _tableDensity == 'compact' ? 9 : 10,
                           fontWeight: FontWeight.bold,
-                          color: _tableHeaderTextColor,
+                          color: headerText,
                         ),
                       ),
                     ),
@@ -1253,9 +1312,9 @@ class InvoicePreviewA4Paper extends StatelessWidget {
                     Expanded(
                       flex: columns[c].flex,
                       child: Container(
-                        padding: const EdgeInsets.symmetric(
+                        padding: EdgeInsets.symmetric(
                           horizontal: 10,
-                          vertical: 7,
+                          vertical: rowVertPad,
                         ),
                         decoration: BoxDecoration(
                           border: isBoxed && c < rows[r].length - 1

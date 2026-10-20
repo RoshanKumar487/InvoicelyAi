@@ -210,6 +210,28 @@ class InvoicePdfExport {
     final isBoxed = tableBorderStyle == 'boxed';
     final isStriped = tableBorderStyle == 'striped';
 
+    final isColorless = () {
+      final s = localSettings['studio_is_colorless'];
+      if (s is bool) return s;
+      if (s is String) return s.toLowerCase() == 'true';
+      final alt = localSettings['is_colorless'];
+      if (alt is bool) return alt;
+      if (alt is String) return alt.toLowerCase() == 'true';
+      return localSettings['studio_color_mode'] == 'monochrome';
+    }();
+
+    final tableHeaderStyle =
+        localSettings['studio_table_header_style']?.toString().trim() ?? 'solid';
+    final tableDensity =
+        localSettings['studio_table_density']?.toString().trim() ?? 'standard';
+    final cornerRadius =
+        localSettings['studio_corner_radius']?.toString().trim() ?? 'subtle';
+    final cornerCardRadius = switch (cornerRadius) {
+      'sharp' => 0.0,
+      'rounded' => 8.0,
+      _ => 4.0,
+    };
+
     final watermark =
         localSettings['studio_watermark']?.toString().trim() ?? 'None';
 
@@ -818,8 +840,9 @@ class InvoicePdfExport {
         footer: (pw.Context ctx) => letterheadConfig.isLetterheadActive
             ? CompanyLetterheadPdf.buildPdfFooter(
                 config: letterheadConfig,
-                overridePrimary: primaryColor,
+                overridePrimary: isColorless ? const PdfColor.fromInt(0xFF0F172A) : primaryColor,
                 scale: fontScale,
+                isColorless: isColorless,
                 pageLabel: 'Page ${ctx.pageNumber} of ${ctx.pagesCount}',
               )
             : pw.SizedBox(height: 30 * fontScale),
@@ -829,8 +852,9 @@ class InvoicePdfExport {
             if (letterheadConfig.isLetterheadActive)
               CompanyLetterheadPdf.buildPdfHeader(
                 config: letterheadConfig,
-                overridePrimary: primaryColor,
+                overridePrimary: isColorless ? const PdfColor.fromInt(0xFF0F172A) : primaryColor,
                 scale: fontScale,
+                isColorless: isColorless,
                 showGstBadges: isFieldVisible(brandingSection, 'f_biz_gstin') ||
                     isFieldVisible(brandingSection, 'f_biz_pan'),
               )
@@ -1619,109 +1643,89 @@ class InvoicePdfExport {
 
           // D. Line Items & Duty Table
           if (servicesSection.enabled) ...[
-            pw.Container(
-              decoration: pw.BoxDecoration(
-                borderRadius: pw.BorderRadius.circular(4),
-                border: pw.Border.all(
-                  color: const PdfColor.fromInt(0xFFCBD5E1),
-                ),
-              ),
-              child: pw.Column(
-                children: [
-                  // Header Row
-                  pw.Container(
-                    color: primaryColor,
-                    child: pw.Row(
-                      children: [
-                        for (int c = 0; c < columns.length; c++)
-                          pw.Expanded(
-                            flex: columns[c].flex,
-                            child: pw.Container(
-                              padding: const pw.EdgeInsets.symmetric(
-                                horizontal: 8,
-                                vertical: 7,
-                              ),
-                              decoration: pw.BoxDecoration(
-                                border: isBoxed && c < columns.length - 1
-                                    ? const pw.Border(
-                                        right: pw.BorderSide(
-                                          color: PdfColor(1, 1, 1, 0.25),
-                                          width: 0.8,
-                                        ),
-                                      )
-                                    : null,
-                              ),
-                              child: pw.Text(
-                                uppercaseHeadings
-                                    ? columns[c].label.toUpperCase()
-                                    : columns[c].label,
-                                textAlign: columns[c].align,
-                                style: docStyle(
-                                  fontSize: 9,
-                                  bold: true,
-                                  color: tableHeaderTextColor,
-                                ),
-                              ),
-                            ),
-                          ),
-                      ],
-                    ),
-                  ),
+            () {
+              final double headerVertPad = tableDensity == 'compact'
+                  ? 4.5
+                  : (tableDensity == 'spacious' ? 9.5 : 7.0);
+              final double rowVertPad = tableDensity == 'compact'
+                  ? 4.0
+                  : (tableDensity == 'spacious' ? 9.0 : 6.0);
 
-                  // Body Rows
-                  for (int r = 0; r < rows.length; r++) ...[
-                    if (r > 0 && !isBoxed)
-                      pw.Divider(
-                        height: 1,
-                        thickness: 0.7,
-                        color: const PdfColor.fromInt(0xFFE2E8F0),
-                      ),
+              final PdfColor headerBg;
+              final PdfColor headerTextColor;
+              final pw.Border? headerBorder;
+              if (isColorless) {
+                headerBg = const PdfColor.fromInt(0xFFF1F5F9);
+                headerTextColor = const PdfColor.fromInt(0xFF0F172A);
+                headerBorder = const pw.Border(
+                  bottom: pw.BorderSide(color: PdfColor.fromInt(0xFF0F172A), width: 1.2),
+                );
+              } else if (tableHeaderStyle == 'outline') {
+                headerBg = PdfColors.white;
+                headerTextColor = primaryColor;
+                headerBorder = pw.Border(
+                  bottom: pw.BorderSide(color: primaryColor, width: 1.5),
+                );
+              } else if (tableHeaderStyle == 'tint') {
+                headerBg = _tintColor(primaryColor, 0.12);
+                headerTextColor = primaryColor;
+                headerBorder = pw.Border(
+                  bottom: pw.BorderSide(color: _tintColor(primaryColor, 0.35), width: 1.2),
+                );
+              } else {
+                headerBg = primaryColor;
+                headerTextColor = tableHeaderTextColor;
+                headerBorder = null;
+              }
+
+              return pw.Container(
+                decoration: pw.BoxDecoration(
+                  borderRadius: pw.BorderRadius.circular(cornerCardRadius),
+                  border: pw.Border.all(
+                    color: isColorless
+                        ? const PdfColor.fromInt(0xFF0F172A)
+                        : const PdfColor.fromInt(0xFFCBD5E1),
+                  ),
+                ),
+                child: pw.Column(
+                  children: [
+                    // Header Row
                     pw.Container(
-                      color: isStriped && r.isOdd
-                          ? const PdfColor.fromInt(0xFFF8FAFC)
-                          : PdfColors.white,
-                      decoration: isBoxed && r < rows.length - 1
-                          ? const pw.BoxDecoration(
-                              border: pw.Border(
-                                bottom: pw.BorderSide(
-                                  color: PdfColor.fromInt(0xFFCBD5E1),
-                                  width: 0.8,
-                                ),
-                              ),
-                            )
-                          : null,
+                      decoration: pw.BoxDecoration(
+                        color: headerBg,
+                        border: headerBorder,
+                      ),
                       child: pw.Row(
-                        crossAxisAlignment: pw.CrossAxisAlignment.start,
                         children: [
-                          for (int c = 0; c < rows[r].length; c++)
+                          for (int c = 0; c < columns.length; c++)
                             pw.Expanded(
                               flex: columns[c].flex,
                               child: pw.Container(
-                                padding: const pw.EdgeInsets.symmetric(
+                                padding: pw.EdgeInsets.symmetric(
                                   horizontal: 8,
-                                  vertical: 6,
+                                  vertical: headerVertPad,
                                 ),
                                 decoration: pw.BoxDecoration(
-                                  border: isBoxed && c < rows[r].length - 1
-                                      ? const pw.Border(
+                                  border: isBoxed && c < columns.length - 1
+                                      ? pw.Border(
                                           right: pw.BorderSide(
-                                            color: PdfColor.fromInt(0xFFCBD5E1),
+                                            color: (isColorless || tableHeaderStyle != 'solid')
+                                                ? const PdfColor.fromInt(0xFFCBD5E1)
+                                                : const PdfColor(1, 1, 1, 0.25),
                                             width: 0.8,
                                           ),
                                         )
                                       : null,
                                 ),
                                 child: pw.Text(
-                                  rows[r][c],
+                                  uppercaseHeadings
+                                      ? columns[c].label.toUpperCase()
+                                      : columns[c].label,
                                   textAlign: columns[c].align,
                                   style: docStyle(
-                                    fontSize: 9,
-                                    bold: c == 0 || c == rows[r].length - 1,
-                                    color: c == rows[r].length - 1
-                                        ? const PdfColor.fromInt(0xFF0F172A)
-                                        : (c == 0
-                                            ? const PdfColor.fromInt(0xFF1E293B)
-                                            : const PdfColor.fromInt(0xFF475569)),
+                                    fontSize: tableDensity == 'compact' ? 8.5 : 9,
+                                    bold: true,
+                                    color: headerTextColor,
                                   ),
                                 ),
                               ),
@@ -1729,11 +1733,74 @@ class InvoicePdfExport {
                         ],
                       ),
                     ),
+
+                    // Body Rows
+                    for (int r = 0; r < rows.length; r++) ...[
+                      if (r > 0 && !isBoxed)
+                        pw.Divider(
+                          height: 1,
+                          thickness: 0.7,
+                          color: const PdfColor.fromInt(0xFFE2E8F0),
+                        ),
+                      pw.Container(
+                        color: isStriped && r.isOdd
+                            ? const PdfColor.fromInt(0xFFF8FAFC)
+                            : PdfColors.white,
+                        decoration: isBoxed && r < rows.length - 1
+                            ? const pw.BoxDecoration(
+                                border: pw.Border(
+                                  bottom: pw.BorderSide(
+                                    color: PdfColor.fromInt(0xFFCBD5E1),
+                                    width: 0.8,
+                                  ),
+                                ),
+                              )
+                            : null,
+                        child: pw.Row(
+                          crossAxisAlignment: pw.CrossAxisAlignment.start,
+                          children: [
+                            for (int c = 0; c < rows[r].length; c++)
+                              pw.Expanded(
+                                flex: columns[c].flex,
+                                child: pw.Container(
+                                  padding: pw.EdgeInsets.symmetric(
+                                    horizontal: 8,
+                                    vertical: rowVertPad,
+                                  ),
+                                  decoration: pw.BoxDecoration(
+                                    border: isBoxed && c < rows[r].length - 1
+                                        ? const pw.Border(
+                                            right: pw.BorderSide(
+                                              color: PdfColor.fromInt(0xFFCBD5E1),
+                                              width: 0.8,
+                                            ),
+                                          )
+                                        : null,
+                                  ),
+                                  child: pw.Text(
+                                    rows[r][c],
+                                    textAlign: columns[c].align,
+                                    style: docStyle(
+                                      fontSize: 9,
+                                      bold: c == 0 || c == rows[r].length - 1,
+                                      color: c == rows[r].length - 1
+                                          ? const PdfColor.fromInt(0xFF0F172A)
+                                          : (c == 0
+                                              ? const PdfColor.fromInt(0xFF1E293B)
+                                              : const PdfColor.fromInt(0xFF475569)),
+                                    ),
+                                  ),
+                                ),
+                              ),
+                          ],
+                        ),
+                      ),
+                    ],
                   ],
-                ],
-              ),
-            ),
-            pw.SizedBox(height: 14),
+                ),
+              );
+            }(),
+            pw.SizedBox(height: 12),
           ],
 
           // E. Financial Summary & Totals Box
@@ -1840,10 +1907,15 @@ class InvoicePdfExport {
                             vertical: 6,
                           ),
                           decoration: pw.BoxDecoration(
-                            color: _tintColor(primaryColor, 0.12),
-                            borderRadius: pw.BorderRadius.circular(4),
+                            color: isColorless
+                                ? const PdfColor.fromInt(0xFFF8FAFC)
+                                : _tintColor(primaryColor, 0.12),
+                            borderRadius: pw.BorderRadius.circular(cornerCardRadius),
                             border: pw.Border.all(
-                              color: _tintColor(primaryColor, 0.35),
+                              color: isColorless
+                                  ? const PdfColor.fromInt(0xFF0F172A)
+                                  : _tintColor(primaryColor, 0.35),
+                              width: isColorless ? 1.2 : 1.0,
                             ),
                           ),
                           child: pw.Row(
@@ -1857,7 +1929,9 @@ class InvoicePdfExport {
                                 style: docStyle(
                                   fontSize: 10.5,
                                   bold: true,
-                                  color: primaryColor,
+                                  color: isColorless
+                                      ? const PdfColor.fromInt(0xFF0F172A)
+                                      : primaryColor,
                                 ),
                               ),
                               pw.Text(
@@ -1865,7 +1939,9 @@ class InvoicePdfExport {
                                 style: docStyle(
                                   fontSize: 10.5,
                                   bold: true,
-                                  color: primaryColor,
+                                  color: isColorless
+                                      ? const PdfColor.fromInt(0xFF0F172A)
+                                      : primaryColor,
                                 ),
                               ),
                             ],
