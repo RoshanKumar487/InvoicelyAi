@@ -55,6 +55,9 @@ public class PayrollRun {
     @Column(name = "total_net_payable", precision = 14, scale = 2)
     private BigDecimal totalNetPayable = BigDecimal.ZERO;
 
+    @Column(name = "total_advances", precision = 14, scale = 2)
+    private BigDecimal totalAdvances = BigDecimal.ZERO;
+
     @Column(name = "employee_count")
     private Integer employeeCount = 0;
 
@@ -105,6 +108,9 @@ public class PayrollRun {
 
     public BigDecimal getTotalNetPayable() { return totalNetPayable; }
     public void setTotalNetPayable(BigDecimal totalNetPayable) { this.totalNetPayable = totalNetPayable; }
+
+    public BigDecimal getTotalAdvances() { return totalAdvances != null ? totalAdvances : BigDecimal.ZERO; }
+    public void setTotalAdvances(BigDecimal totalAdvances) { this.totalAdvances = totalAdvances; }
 
     public Integer getEmployeeCount() { return employeeCount; }
     public void setEmployeeCount(Integer employeeCount) { this.employeeCount = employeeCount; }

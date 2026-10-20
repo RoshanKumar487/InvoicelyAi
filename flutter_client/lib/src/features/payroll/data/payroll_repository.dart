@@ -2,12 +2,18 @@ import 'package:flutter/foundation.dart';
 
 import '../../../core/api/api_client.dart';
 import '../../../core/api/api_exception.dart';
+import '../../employees/data/employee.dart';
+import '../../employees/data/employee_repository.dart';
+import '../../expenses/data/expense.dart';
+import '../../expenses/data/expenses_repository.dart';
 import 'payroll_models.dart';
 
 class PayrollRepository {
   PayrollRepository({required ApiClient client}) : _client = client;
 
   final ApiClient _client;
+  ApiClient get apiClient => _client;
+
   bool _lastLoadUsedCache = false;
   bool get lastLoadUsedCache => _lastLoadUsedCache || _client.lastGetUsedCache;
 
@@ -19,13 +25,23 @@ class PayrollRepository {
   Future<List<PayrollRun>> listRuns() async {
     try {
       final list = await _client.getListJson('/api/v1/payroll/runs');
-      _cachedRuns = list.map((json) => PayrollRun.fromJson(json)).toList();
+      var runs = list.map((json) => PayrollRun.fromJson(json)).toList();
+
+      if (runs.isEmpty) {
+        // Build run from real employees if available
+        runs = await _buildRunsFromRealEmployees();
+      }
+
+      _cachedRuns = runs;
       _lastLoadUsedCache = false;
       return _cachedRuns;
     } catch (e) {
       debugPrint('PayrollRepository.listRuns network fallback: $e');
       if (_cachedRuns.isEmpty) {
-        _cachedRuns = _generateDemoRuns();
+        _cachedRuns = await _buildRunsFromRealEmployees();
+        if (_cachedRuns.isEmpty) {
+          _cachedRuns = _generateDemoRuns();
+        }
       }
       _lastLoadUsedCache = true;
       return _cachedRuns;
@@ -56,7 +72,12 @@ class PayrollRepository {
       return run;
     } catch (e) {
       debugPrint('PayrollRepository.generateRun fallback: $e');
-      // Create local run
+      // Create local run based on real employees
+      final emps = await _fetchRealEmployees();
+      double grossSum = 0;
+      for (final emp in emps) {
+        grossSum += emp.monthlySalary > 0 ? emp.monthlySalary : 25000.0;
+      }
       final newRun = PayrollRun(
         id: DateTime.now().millisecondsSinceEpoch % 100000,
         companyId: 1,
@@ -65,16 +86,24 @@ class PayrollRepository {
         runTitle: title ?? 'Monthly Payroll - $month/$year',
         status: 'REVIEWED',
         scheduledPayDate: scheduledPayDate ?? '2026-${month.toString().padLeft(2, '0')}-30',
-        totalGross: 485000.0,
+        totalGross: grossSum > 0 ? grossSum : 485000.0,
         totalPaid: 0.0,
-        totalPending: 485000.0,
+        totalPending: grossSum > 0 ? grossSum : 485000.0,
         totalOverdue: 0.0,
-        totalDeductions: 58200.0,
-        totalNetPayable: 426800.0,
-        employeeCount: 6,
+        totalDeductions: grossSum * 0.12,
+        totalNetPayable: grossSum * 0.88,
+        employeeCount: emps.isNotEmpty ? emps.length : 6,
       );
       _cachedRuns.insert(0, newRun);
       return newRun;
+    }
+  }
+
+  Future<void> syncEmployees(int runId) async {
+    try {
+      await _client.postJson('/api/v1/payroll/runs/$runId/sync-employees', {});
+    } catch (e) {
+      debugPrint('PayrollRepository.syncEmployees network fallback: $e');
     }
   }
 
@@ -90,35 +119,80 @@ class PayrollRepository {
     }
     if (search != null && search.isNotEmpty) params['search'] = search;
 
+    List<PayrollEntry> fetched = [];
     try {
       final list = await _client.getListJson(
         '/api/v1/payroll/entries',
         queryParameters: params.isEmpty ? null : params,
       );
-      _cachedEntries = list.map((json) => PayrollEntry.fromJson(json)).toList();
-      _lastLoadUsedCache = false;
-      return _cachedEntries;
+      fetched = list.map((json) => PayrollEntry.fromJson(json)).toList();
     } catch (e) {
-      debugPrint('PayrollRepository.listEntries fallback: $e');
-      if (_cachedEntries.isEmpty) {
-        _cachedEntries = _generateDemoEntries(runId ?? 1);
-      }
+      debugPrint('PayrollRepository.listEntries network fallback: $e');
+    }
 
-      var filtered = List<PayrollEntry>.from(_cachedEntries);
-      if (status != null && status.isNotEmpty && status.toUpperCase() != 'ALL') {
-        filtered = filtered.where((e) => e.paymentStatus.toUpperCase() == status.toUpperCase()).toList();
+    // CRITICAL: Fetch real employees and ensure all already-added employees are in payroll!
+    final realEmployees = await _fetchRealEmployees();
+    final realAdvances = await _fetchRealAdvances();
+
+    if (fetched.isEmpty) {
+      // Build entries directly from real employees
+      if (realEmployees.isNotEmpty) {
+        fetched = _buildEntriesFromEmployees(realEmployees, realAdvances, runId ?? 1);
+      } else {
+        fetched = _generateDemoEntries(runId ?? 1);
       }
-      if (search != null && search.trim().isNotEmpty) {
-        final q = search.trim().toLowerCase();
-        filtered = filtered.where((e) =>
-          e.employeeName.toLowerCase().contains(q) ||
-          e.employeeCode.toLowerCase().contains(q) ||
-          e.designation.toLowerCase().contains(q) ||
-          e.department.toLowerCase().contains(q)
-        ).toList();
+    } else if (realEmployees.isNotEmpty) {
+      // Merge any missing real employees that aren't yet in fetched
+      final existingEmpNames = fetched.map((e) => e.employeeName.trim().toLowerCase()).toSet();
+      final existingEmpIds = fetched.map((e) => e.employeeId).whereType<int>().toSet();
+
+      for (final emp in realEmployees) {
+        final matchesId = emp.id != null && existingEmpIds.contains(emp.id!);
+        final matchesName = existingEmpNames.contains(emp.fullName.trim().toLowerCase());
+        if (!matchesId && !matchesName) {
+          final newEntry = _buildSingleEntryFromEmployee(emp, realAdvances, runId ?? 1, 1000 + (emp.id ?? 1));
+          fetched.add(newEntry);
+        }
       }
-      _lastLoadUsedCache = true;
-      return filtered;
+    }
+
+    _cachedEntries = fetched;
+    _lastLoadUsedCache = false;
+
+    var filtered = List<PayrollEntry>.from(_cachedEntries);
+    if (status != null && status.isNotEmpty && status.toUpperCase() != 'ALL') {
+      filtered = filtered.where((e) => e.paymentStatus.toUpperCase() == status.toUpperCase()).toList();
+    }
+    if (search != null && search.trim().isNotEmpty) {
+      final q = search.trim().toLowerCase();
+      filtered = filtered.where((e) =>
+        e.employeeName.toLowerCase().contains(q) ||
+        e.employeeCode.toLowerCase().contains(q) ||
+        e.designation.toLowerCase().contains(q) ||
+        e.department.toLowerCase().contains(q)
+      ).toList();
+    }
+    return filtered;
+  }
+
+  Future<PayrollEntry> updateEntry(PayrollEntry entry) async {
+    final id = entry.id;
+    try {
+      final res = await _client.putJson(
+        '/api/v1/payroll/entries/$id',
+        entry.toJson(),
+      );
+      final updated = PayrollEntry.fromJson(res);
+      final idx = _cachedEntries.indexWhere((e) => e.id == id);
+      if (idx != -1) _cachedEntries[idx] = updated;
+      return updated;
+    } catch (e) {
+      debugPrint('PayrollRepository.updateEntry fallback: $e');
+      final idx = _cachedEntries.indexWhere((e) => e.id == id);
+      if (idx != -1) {
+        _cachedEntries[idx] = entry;
+      }
+      return entry;
     }
   }
 
@@ -239,6 +313,70 @@ class PayrollRepository {
     }
   }
 
+  Future<List<Expense>> getEmployeeAdvanceHistory({
+    required int employeeId,
+    String? employeeName,
+  }) async {
+    final params = <String, String>{};
+    if (employeeName != null && employeeName.isNotEmpty) {
+      params['employeeName'] = employeeName;
+    }
+    try {
+      final list = await _client.getListJson(
+        '/api/v1/payroll/employees/$employeeId/advances',
+        queryParameters: params.isEmpty ? null : params,
+      );
+      return list.map((j) => Expense.fromJson(j)).toList();
+    } catch (e) {
+      debugPrint('PayrollRepository.getEmployeeAdvanceHistory fallback: $e');
+      return _generateDemoAdvanceHistory(employeeId, employeeName);
+    }
+  }
+
+  List<Expense> _generateDemoAdvanceHistory(int employeeId, String? employeeName) {
+    final name = employeeName ?? 'Employee #$employeeId';
+    return [
+      Expense(
+        id: 901,
+        companyId: 1,
+        title: 'Mid-Month Festival Advance • $name',
+        category: 'Salary Advance',
+        amount: 15000.0,
+        currency: 'INR',
+        currencySymbol: '₹',
+        date: '2026-10-12',
+        vendor: 'Finance Department',
+        createdByUserName: 'Finance Accountant',
+        paymentMethod: 'Bank Transfer',
+        status: 'Paid',
+        employeeId: employeeId,
+        employeeName: name,
+        isSalaryAdvance: true,
+        advanceSettled: false,
+        notes: 'Festival salary advance approved by HR Manager. Recoverable from October payroll.',
+      ),
+      Expense(
+        id: 902,
+        companyId: 1,
+        title: 'Emergency Medical Advance • $name',
+        category: 'Salary Advance',
+        amount: 10000.0,
+        currency: 'INR',
+        currencySymbol: '₹',
+        date: '2026-09-08',
+        vendor: 'Corporate Petty Cash',
+        createdByUserName: 'Operations Head',
+        paymentMethod: 'Cash',
+        status: 'Paid',
+        employeeId: employeeId,
+        employeeName: name,
+        isSalaryAdvance: true,
+        advanceSettled: true,
+        notes: 'Emergency medical advance. Successfully recovered in September salary.',
+      ),
+    ];
+  }
+
   List<PayrollRun> _generateDemoRuns() {
     return [
       const PayrollRun(
@@ -250,11 +388,12 @@ class PayrollRepository {
         status: 'REVIEWED',
         scheduledPayDate: '2026-10-31',
         totalGross: 640000.0,
-        totalPaid: 320000.0,
-        totalPending: 240000.0,
-        totalOverdue: 80000.0,
-        totalDeductions: 76800.0,
-        totalNetPayable: 563200.0,
+        totalPaid: 298200.0,
+        totalPending: 245000.0,
+        totalOverdue: 74900.0,
+        totalDeductions: 96800.0,
+        totalNetPayable: 543200.0,
+        totalAdvances: 35000.0,
         employeeCount: 6,
       ),
       const PayrollRun(
@@ -266,11 +405,12 @@ class PayrollRepository {
         status: 'DISBURSED',
         scheduledPayDate: '2026-09-30',
         totalGross: 620000.0,
-        totalPaid: 620000.0,
+        totalPaid: 545600.0,
         totalPending: 0.0,
         totalOverdue: 0.0,
         totalDeductions: 74400.0,
         totalNetPayable: 545600.0,
+        totalAdvances: 10000.0,
         employeeCount: 6,
       ),
     ];
@@ -303,6 +443,11 @@ class PayrollRepository {
         scheduledPayDate: '2026-10-31',
         disbursedAt: '2026-10-28T10:15:00Z',
         bankAccountMask: 'HDFC •••• 4129',
+        advanceAmount: 0.0,
+        advanceDeduction: 0.0,
+        pendingMonthsCount: 1,
+        pendingMonthsDetails: 'Current Month (10/2026)',
+        cumulativePayable: 125900.0,
       ),
       const PayrollEntry(
         id: 102,
@@ -329,6 +474,11 @@ class PayrollRepository {
         scheduledPayDate: '2026-10-31',
         disbursedAt: '2026-10-28T10:15:00Z',
         bankAccountMask: 'ICICI •••• 9811',
+        advanceAmount: 0.0,
+        advanceDeduction: 0.0,
+        pendingMonthsCount: 1,
+        pendingMonthsDetails: 'Current Month (10/2026)',
+        cumulativePayable: 102300.0,
       ),
       const PayrollEntry(
         id: 103,
@@ -349,11 +499,16 @@ class PayrollRepository {
         professionalTax: 200.0,
         tdsTax: 6500.0,
         otherDeductions: 0.0,
-        totalDeductions: 14500.0,
-        netSalary: 90500.0,
+        advanceAmount: 15000.0,
+        advanceDeduction: 15000.0,
+        totalDeductions: 29500.0,
+        netSalary: 75500.0,
         paymentStatus: 'PENDING',
         scheduledPayDate: '2026-10-31',
         bankAccountMask: 'SBI •••• 6304',
+        pendingMonthsCount: 1,
+        pendingMonthsDetails: 'Current Month (10/2026)',
+        cumulativePayable: 75500.0,
       ),
       const PayrollEntry(
         id: 104,
@@ -374,11 +529,16 @@ class PayrollRepository {
         professionalTax: 200.0,
         tdsTax: 4500.0,
         otherDeductions: 0.0,
-        totalDeductions: 11300.0,
-        netSalary: 78700.0,
+        advanceAmount: 5000.0,
+        advanceDeduction: 5000.0,
+        totalDeductions: 16300.0,
+        netSalary: 73700.0,
         paymentStatus: 'PENDING',
         scheduledPayDate: '2026-10-31',
         bankAccountMask: 'AXIS •••• 2190',
+        pendingMonthsCount: 2,
+        pendingMonthsDetails: '2 Months Pending (09/2026, 10/2026)',
+        cumulativePayable: 152400.0,
       ),
       const PayrollEntry(
         id: 105,
@@ -399,11 +559,16 @@ class PayrollRepository {
         professionalTax: 200.0,
         tdsTax: 5200.0,
         otherDeductions: 2500.0,
-        totalDeductions: 15100.0,
-        netSalary: 79900.0,
+        advanceAmount: 15000.0,
+        advanceDeduction: 15000.0,
+        totalDeductions: 30100.0,
+        netSalary: 64900.0,
         paymentStatus: 'OVERDUE',
         scheduledPayDate: '2026-10-15',
         bankAccountMask: 'KOTAK •••• 7731',
+        pendingMonthsCount: 3,
+        pendingMonthsDetails: '3 Months Pending (08/2026, 09/2026, 10/2026)',
+        cumulativePayable: 224700.0,
       ),
       const PayrollEntry(
         id: 106,
@@ -430,7 +595,154 @@ class PayrollRepository {
         scheduledPayDate: '2026-10-31',
         disbursedAt: '2026-10-28T10:15:00Z',
         bankAccountMask: 'YES •••• 5510',
+        advanceAmount: 0.0,
+        advanceDeduction: 0.0,
+        pendingMonthsCount: 1,
+        pendingMonthsDetails: 'Current Month (10/2026)',
+        cumulativePayable: 70000.0,
       ),
     ];
+  }
+
+  Future<List<Employee>> _fetchRealEmployees() async {
+    try {
+      final repo = EmployeeRepository(apiClient: _client);
+      final list = await repo.list();
+      return list;
+    } catch (e) {
+      debugPrint('PayrollRepository._fetchRealEmployees error: $e');
+      return [];
+    }
+  }
+
+  Future<List<Expense>> _fetchRealAdvances() async {
+    try {
+      final repo = ExpensesRepository(apiClient: _client);
+      final list = await repo.list();
+      return list.where((e) => e.isAdvance && !e.advanceSettled).toList();
+    } catch (e) {
+      debugPrint('PayrollRepository._fetchRealAdvances error: $e');
+      return [];
+    }
+  }
+
+  Future<List<PayrollRun>> _buildRunsFromRealEmployees() async {
+    final emps = await _fetchRealEmployees();
+    final now = DateTime.now();
+    final curMonth = now.month;
+    final curYear = now.year;
+
+    double grossSum = 0;
+    for (final emp in emps) {
+      grossSum += emp.monthlySalary > 0 ? emp.monthlySalary : 25000.0;
+    }
+
+    if (grossSum <= 0 && emps.isEmpty) {
+      return _generateDemoRuns();
+    }
+
+    final deductions = grossSum * 0.12;
+    final netPayable = grossSum - deductions;
+
+    return [
+      PayrollRun(
+        id: 1,
+        companyId: 1,
+        periodMonth: curMonth,
+        periodYear: curYear,
+        runTitle: 'Monthly Payroll Run - $curMonth/$curYear',
+        status: 'REVIEWED',
+        scheduledPayDate: '$curYear-${curMonth.toString().padLeft(2, '0')}-30',
+        totalGross: grossSum,
+        totalPaid: 0.0,
+        totalPending: netPayable,
+        totalOverdue: 0.0,
+        totalDeductions: deductions,
+        totalNetPayable: netPayable,
+        employeeCount: emps.length,
+      ),
+    ];
+  }
+
+  List<PayrollEntry> _buildEntriesFromEmployees(
+    List<Employee> employees,
+    List<Expense> advances,
+    int runId,
+  ) {
+    final entries = <PayrollEntry>[];
+    for (int i = 0; i < employees.length; i++) {
+      entries.add(_buildSingleEntryFromEmployee(employees[i], advances, runId, 101 + i));
+    }
+    return entries;
+  }
+
+  PayrollEntry _buildSingleEntryFromEmployee(
+    Employee emp,
+    List<Expense> advances,
+    int runId,
+    int generatedId,
+  ) {
+    final gross = emp.monthlySalary > 0 ? emp.monthlySalary : 25000.0;
+    final basic = (gross * 0.50).roundToDouble();
+    final hra = (gross * 0.30).roundToDouble();
+    final allowances = gross - basic - hra;
+
+    // Statutory PF, PT
+    final pf = (basic.clamp(0, 15000) * 0.12).roundToDouble();
+    final pt = 200.0;
+    final statutory = pf + pt;
+
+    // Sum unrecovered advances from Expenses for this employee
+    double empAdvance = 0.0;
+    for (final adv in advances) {
+      final matchesId = adv.employeeId != null && adv.employeeId == emp.id;
+      final matchesName = adv.employeeName != null &&
+          adv.employeeName!.trim().toLowerCase() == emp.fullName.trim().toLowerCase();
+      if (matchesId || matchesName) {
+        empAdvance += adv.amount;
+      }
+    }
+
+    final netBeforeAdvance = (gross - statutory).clamp(0.0, double.infinity);
+    final advanceDeduction = empAdvance.clamp(0.0, netBeforeAdvance);
+    final totalDeductions = statutory + advanceDeduction;
+    final netSalary = (gross - totalDeductions).clamp(0.0, double.infinity);
+
+    final bankMask = emp.bankAccountNumber.length > 4
+        ? '${emp.bankName.isNotEmpty ? emp.bankName : "Bank"} •••• ${emp.bankAccountNumber.substring(emp.bankAccountNumber.length - 4)}'
+        : 'Direct Bank NEFT';
+
+    final now = DateTime.now();
+
+    return PayrollEntry(
+      id: emp.id != null ? (emp.id! + 100) : generatedId,
+      companyId: emp.companyId ?? 1,
+      employeeId: emp.id ?? generatedId,
+      employeeName: emp.fullName,
+      employeeCode: emp.employeeCode.isNotEmpty ? emp.employeeCode : 'EMP-${generatedId.toString().padLeft(3, '0')}',
+      designation: emp.designation.isNotEmpty ? emp.designation : 'Staff Member',
+      department: emp.department.isNotEmpty ? emp.department : 'Operations',
+      workingDays: 30,
+      paidDays: 30,
+      basicPay: basic,
+      hra: hra,
+      allowances: allowances,
+      grossEarnings: gross,
+      pfEmployee: pf,
+      esiEmployee: 0.0,
+      professionalTax: pt,
+      tdsTax: 0.0,
+      otherDeductions: 0.0,
+      advanceAmount: empAdvance,
+      advanceDeduction: advanceDeduction,
+      totalDeductions: totalDeductions,
+      netSalary: netSalary,
+      paymentStatus: 'PENDING',
+      scheduledPayDate: '${now.year}-${now.month.toString().padLeft(2, '0')}-30',
+      bankAccountMask: bankMask,
+      pendingMonthsCount: 1,
+      pendingMonthsDetails: 'Current Month (${now.month}/${now.year})',
+      cumulativePayable: netSalary,
+    );
   }
 }

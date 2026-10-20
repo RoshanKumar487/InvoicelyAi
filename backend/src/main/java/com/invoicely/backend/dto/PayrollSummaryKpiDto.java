@@ -7,12 +7,16 @@ public class PayrollSummaryKpiDto {
     private BigDecimal totalPaid = BigDecimal.ZERO;
     private BigDecimal totalPending = BigDecimal.ZERO;
     private BigDecimal totalOverdue = BigDecimal.ZERO;
+    private BigDecimal totalAdvances = BigDecimal.ZERO;
     private Integer totalEmployees = 0;
     private Integer pendingCount = 0;
     private Integer paidCount = 0;
     private Integer overdueCount = 0;
 
     public PayrollSummaryKpiDto() {}
+
+    public BigDecimal getTotalAdvances() { return totalAdvances != null ? totalAdvances : BigDecimal.ZERO; }
+    public void setTotalAdvances(BigDecimal totalAdvances) { this.totalAdvances = totalAdvances; }
 
     public BigDecimal getTotalGross() { return totalGross; }
     public void setTotalGross(BigDecimal totalGross) { this.totalGross = totalGross; }

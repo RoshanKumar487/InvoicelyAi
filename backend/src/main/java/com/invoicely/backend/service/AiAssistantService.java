@@ -1022,3 +1022,4 @@ public class AiAssistantService {
         return value.isBlank() ? "(none)" : value;
     }
 }
+

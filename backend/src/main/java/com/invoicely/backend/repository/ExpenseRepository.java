@@ -59,4 +59,20 @@ public interface ExpenseRepository extends JpaRepository<Expense, Long> {
     @Query("SELECT e.currency AS currency, COALESCE(SUM(e.amount), 0) AS total FROM Expense e WHERE e.companyId = :companyId AND e.createdByUserId = :createdByUserId GROUP BY e.currency")
     List<CurrencyAmount> sumExpensesByCurrencyByCompanyIdAndCreatedByUserId(@org.springframework.data.repository.query.Param("companyId") Long companyId,
                                                                             @org.springframework.data.repository.query.Param("createdByUserId") Long createdByUserId);
+
+    // Employee Salary Advances
+    @Query("SELECT COALESCE(SUM(e.amount), 0) FROM Expense e WHERE e.companyId = :companyId AND (e.employeeId = :employeeId OR (e.employeeId IS NULL AND LOWER(TRIM(e.employeeName)) = LOWER(TRIM(:employeeName)))) AND (e.isSalaryAdvance = true OR LOWER(e.category) LIKE '%advance%') AND (e.advanceSettled IS NULL OR e.advanceSettled = false)")
+    BigDecimal sumUnsettledAdvances(@org.springframework.data.repository.query.Param("companyId") Long companyId,
+                                    @org.springframework.data.repository.query.Param("employeeId") Long employeeId,
+                                    @org.springframework.data.repository.query.Param("employeeName") String employeeName);
+
+    @Query("SELECT e FROM Expense e WHERE e.companyId = :companyId AND (e.employeeId = :employeeId OR (e.employeeId IS NULL AND LOWER(TRIM(e.employeeName)) = LOWER(TRIM(:employeeName)))) AND (e.isSalaryAdvance = true OR LOWER(e.category) LIKE '%advance%') ORDER BY e.createdAt DESC")
+    List<Expense> findAdvanceHistoryByEmployee(@org.springframework.data.repository.query.Param("companyId") Long companyId,
+                                              @org.springframework.data.repository.query.Param("employeeId") Long employeeId,
+                                              @org.springframework.data.repository.query.Param("employeeName") String employeeName);
+
+    @Query("SELECT e FROM Expense e WHERE e.companyId = :companyId AND (e.employeeId = :employeeId OR (e.employeeId IS NULL AND LOWER(TRIM(e.employeeName)) = LOWER(TRIM(:employeeName)))) AND (e.isSalaryAdvance = true OR LOWER(e.category) LIKE '%advance%') AND (e.advanceSettled IS NULL OR e.advanceSettled = false) ORDER BY e.createdAt ASC")
+    List<Expense> findUnsettledAdvancesByEmployee(@org.springframework.data.repository.query.Param("companyId") Long companyId,
+                                                 @org.springframework.data.repository.query.Param("employeeId") Long employeeId,
+                                                 @org.springframework.data.repository.query.Param("employeeName") String employeeName);
 }

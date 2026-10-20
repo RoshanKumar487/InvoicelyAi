@@ -4,6 +4,9 @@ import 'dart:typed_data';
 import 'package:flutter/material.dart';
 import 'package:image_picker/image_picker.dart';
 
+import '../../../../core/api/api_client.dart';
+import '../../../employees/data/employee.dart';
+import '../../../employees/data/employee_repository.dart';
 import '../../data/expense.dart';
 
 class ExpenseEditorDialog extends StatefulWidget {
@@ -13,6 +16,9 @@ class ExpenseEditorDialog extends StatefulWidget {
     this.receiptImageBytes,
     this.defaultCurrency = 'INR',
     this.defaultCurrencySymbol = '₹',
+    this.apiClient,
+    this.initialEmployees,
+    this.existingVendors,
     super.key,
   });
 
@@ -21,6 +27,9 @@ class ExpenseEditorDialog extends StatefulWidget {
   final Uint8List? receiptImageBytes;
   final String defaultCurrency;
   final String defaultCurrencySymbol;
+  final ApiClient? apiClient;
+  final List<Employee>? initialEmployees;
+  final List<String>? existingVendors;
 
   @override
   State<ExpenseEditorDialog> createState() => _ExpenseEditorDialogState();
@@ -28,6 +37,7 @@ class ExpenseEditorDialog extends StatefulWidget {
 
 class _ExpenseEditorDialogState extends State<ExpenseEditorDialog> {
   static const List<String> _categories = [
+    'Salary Advance',
     'Software & IT',
     'Office & Rent',
     'Travel & Transport',
@@ -72,12 +82,57 @@ class _ExpenseEditorDialogState extends State<ExpenseEditorDialog> {
   late final TextEditingController _notes;
   late final TextEditingController _currency;
   late final TextEditingController _dueDate;
+  late final TextEditingController _authorizedBy;
   late String _category;
   late String _paymentMethod;
   late String _status;
   late bool _taxDeductible;
   Uint8List? _attachedBillBytes;
   String? _receiptDataUri;
+
+  List<Employee> _employees = [];
+  bool _loadingEmployees = false;
+  int? _selectedEmployeeId;
+  String? _selectedEmployeeName;
+  bool _showVendorSuggestions = false;
+
+  List<Employee> get _matchingEmployees {
+    final query = _vendor.text.trim().toLowerCase();
+    if (query.isEmpty) return _employees.take(5).toList();
+    return _employees.where((e) =>
+      e.fullName.toLowerCase().contains(query) ||
+      e.employeeCode.toLowerCase().contains(query) ||
+      e.department.toLowerCase().contains(query) ||
+      e.designation.toLowerCase().contains(query)
+    ).take(5).toList();
+  }
+
+  List<String> get _matchingVendors {
+    final query = _vendor.text.trim().toLowerCase();
+    final vendors = widget.existingVendors ?? const <String>[];
+    if (query.isEmpty) return vendors.take(5).toList();
+    return vendors.where((v) => v.toLowerCase().contains(query) && v.toLowerCase() != query).take(5).toList();
+  }
+
+  void _applyEmployeeAdvance(Employee emp) {
+    setState(() {
+      _selectedEmployeeId = emp.id;
+      _selectedEmployeeName = emp.fullName;
+      _vendor.text = emp.fullName;
+      _category = 'Salary Advance';
+      if (_title.text.trim().isEmpty) {
+        _title.text = 'Salary Advance - ${emp.fullName}';
+      }
+      _showVendorSuggestions = false;
+    });
+  }
+
+  void _applyVendor(String vendorName) {
+    setState(() {
+      _vendor.text = vendorName;
+      _showVendorSuggestions = false;
+    });
+  }
 
   @override
   void initState() {
@@ -100,6 +155,9 @@ class _ExpenseEditorDialogState extends State<ExpenseEditorDialog> {
       text: expense?.dueDate ?? '',
     );
     _notes = TextEditingController(text: expense?.notes ?? '');
+    _authorizedBy = TextEditingController(
+      text: expense?.createdByUserName ?? 'Finance / Accounts Head',
+    );
     final initialCur = (expense != null && expense.currency.isNotEmpty && expense.currency != 'USD')
         ? expense.currency
         : widget.defaultCurrency;
@@ -110,9 +168,14 @@ class _ExpenseEditorDialogState extends State<ExpenseEditorDialog> {
         expense?.category.isNotEmpty == true ? expense!.category : 'General Business';
     _paymentMethod = expense?.paymentMethod.isNotEmpty == true
         ? expense!.paymentMethod
-        : 'Credit Card';
+        : 'Bank Transfer';
     _status = expense?.status.isNotEmpty == true ? expense!.status : 'Paid';
     _taxDeductible = expense?.taxDeductible ?? true;
+
+    _selectedEmployeeId = expense?.employeeId;
+    _selectedEmployeeName = expense?.employeeName;
+
+    _loadEmployees();
 
     _attachedBillBytes = widget.receiptImageBytes;
     _receiptDataUri = expense?.receiptImageUri;
@@ -128,6 +191,26 @@ class _ExpenseEditorDialogState extends State<ExpenseEditorDialog> {
           _attachedBillBytes = base64Decode(_receiptDataUri!.substring(commaIdx + 1));
         } catch (_) {}
       }
+    }
+  }
+
+  Future<void> _loadEmployees() async {
+    if (widget.initialEmployees != null && widget.initialEmployees!.isNotEmpty) {
+      setState(() => _employees = widget.initialEmployees!);
+      return;
+    }
+    if (widget.apiClient == null) return;
+    setState(() => _loadingEmployees = true);
+    try {
+      final repo = EmployeeRepository(apiClient: widget.apiClient!);
+      final list = await repo.list();
+      if (!mounted) return;
+      setState(() {
+        _employees = list;
+        _loadingEmployees = false;
+      });
+    } catch (_) {
+      if (mounted) setState(() => _loadingEmployees = false);
     }
   }
 
@@ -214,6 +297,7 @@ class _ExpenseEditorDialogState extends State<ExpenseEditorDialog> {
     _dueDate.dispose();
     _notes.dispose();
     _currency.dispose();
+    _authorizedBy.dispose();
     super.dispose();
   }
 
@@ -243,13 +327,17 @@ class _ExpenseEditorDialogState extends State<ExpenseEditorDialog> {
     if (!_formKey.currentState!.validate()) return;
     final previous = widget.expense ?? widget.initialValues;
     final symbol = _currencySymbol(_currency.text.trim());
+    final isSalaryAdv = _category == 'Salary Advance' || _selectedEmployeeId != null;
+
     Navigator.pop(
       context,
       Expense(
         id: previous?.id,
         companyId: previous?.companyId,
         createdByUserId: previous?.createdByUserId,
-        createdByUserName: previous?.createdByUserName,
+        createdByUserName: _authorizedBy.text.trim().isNotEmpty
+            ? _authorizedBy.text.trim()
+            : previous?.createdByUserName,
         title: _title.text.trim(),
         category: _category,
         amount: double.parse(_amount.text.trim()),
@@ -258,12 +346,17 @@ class _ExpenseEditorDialogState extends State<ExpenseEditorDialog> {
         date: _date.text.trim(),
         vendor: _vendor.text.trim(),
         paymentMethod: _paymentMethod,
-        taxDeductible: _taxDeductible,
+        taxDeductible: isSalaryAdv ? false : _taxDeductible,
         taxAmount: double.tryParse(_taxAmount.text.trim()) ?? 0,
         receiptImageUri: _receiptDataUri,
         notes: _notes.text.trim(),
         status: _status,
         dueDate: _dueDate.text.trim(),
+        employeeId: _selectedEmployeeId,
+        employeeName: _selectedEmployeeName,
+        isSalaryAdvance: isSalaryAdv,
+        advanceSettled: previous?.advanceSettled ?? false,
+        settledPayrollRunId: previous?.settledPayrollRunId,
       ),
     );
   }
@@ -440,13 +533,161 @@ class _ExpenseEditorDialogState extends State<ExpenseEditorDialog> {
                   validator: _required,
                 ),
                 const SizedBox(height: 12),
-                TextFormField(
-                  controller: _vendor,
-                  decoration: const InputDecoration(
-                    labelText: 'Vendor / Merchant / Store',
-                    hintText: 'e.g. AWS, Uber, Staples, D-Mart',
-                    prefixIcon: Icon(Icons.storefront_rounded, size: 18),
-                  ),
+                Column(
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: [
+                    TextFormField(
+                      controller: _vendor,
+                      decoration: InputDecoration(
+                        labelText: 'Vendor / Merchant / Store / Employee Advance',
+                        hintText: 'Type store name or employee name to add advance...',
+                        prefixIcon: const Icon(Icons.storefront_rounded, size: 18),
+                        suffixIcon: _vendor.text.isNotEmpty
+                            ? IconButton(
+                                tooltip: 'Clear',
+                                icon: const Icon(Icons.close, size: 16),
+                                onPressed: () => setState(() {
+                                  _vendor.clear();
+                                  _selectedEmployeeId = null;
+                                  _selectedEmployeeName = null;
+                                  _showVendorSuggestions = false;
+                                }),
+                              )
+                            : null,
+                      ),
+                      onChanged: (val) {
+                        setState(() {
+                          _showVendorSuggestions = true;
+                          if (_selectedEmployeeName != null &&
+                              val.trim().toLowerCase() != _selectedEmployeeName!.trim().toLowerCase()) {
+                            _selectedEmployeeId = null;
+                            _selectedEmployeeName = null;
+                          }
+                        });
+                      },
+                      onTap: () => setState(() => _showVendorSuggestions = true),
+                    ),
+                    if (_selectedEmployeeName != null) ...[
+                      const SizedBox(height: 6),
+                      Container(
+                        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                        decoration: BoxDecoration(
+                          color: const Color(0xFFFEF3C7),
+                          borderRadius: BorderRadius.circular(8),
+                          border: Border.all(color: const Color(0xFFFDE68A)),
+                        ),
+                        child: Row(
+                          children: [
+                            const Icon(Icons.person_pin_rounded, size: 16, color: Color(0xFFD97706)),
+                            const SizedBox(width: 6),
+                            Expanded(
+                              child: Text(
+                                'Advance linked to: $_selectedEmployeeName • Will auto-deduct in Payroll',
+                                style: const TextStyle(fontSize: 11.5, fontWeight: FontWeight.bold, color: Color(0xFF92400E)),
+                              ),
+                            ),
+                            InkWell(
+                              onTap: () => setState(() {
+                                _selectedEmployeeId = null;
+                                _selectedEmployeeName = null;
+                              }),
+                              child: const Icon(Icons.close, size: 16, color: Color(0xFFB45309)),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ],
+                    if (_showVendorSuggestions && _vendor.text.trim().isNotEmpty) ...[
+                      const SizedBox(height: 4),
+                      Material(
+                        elevation: 3,
+                        borderRadius: BorderRadius.circular(10),
+                        clipBehavior: Clip.antiAlias,
+                        child: Container(
+                          constraints: const BoxConstraints(maxHeight: 220),
+                          color: Colors.white,
+                          child: ListView(
+                            shrinkWrap: true,
+                            padding: EdgeInsets.zero,
+                            children: [
+                              if (_matchingEmployees.isNotEmpty) ...[
+                                Container(
+                                  padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
+                                  color: const Color(0xFFFFFBEB),
+                                  child: const Row(
+                                    children: [
+                                      Icon(Icons.badge_outlined, size: 14, color: Color(0xFFD97706)),
+                                      SizedBox(width: 4),
+                                      Text(
+                                        'STAFF / EMPLOYEES (ADD SALARY ADVANCE)',
+                                        style: TextStyle(fontSize: 10, fontWeight: FontWeight.bold, color: Color(0xFF92400E)),
+                                      ),
+                                    ],
+                                  ),
+                                ),
+                                for (final emp in _matchingEmployees)
+                                  ListTile(
+                                    dense: true,
+                                    leading: CircleAvatar(
+                                      radius: 14,
+                                      backgroundColor: const Color(0xFFFEF3C7),
+                                      child: Text(
+                                        emp.fullName.isNotEmpty ? emp.fullName[0].toUpperCase() : 'E',
+                                        style: const TextStyle(fontSize: 11, fontWeight: FontWeight.bold, color: Color(0xFFD97706)),
+                                      ),
+                                    ),
+                                    title: Text(emp.fullName, style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 13)),
+                                    subtitle: Text('${emp.employeeCode} · ${emp.designation} · ${emp.department}', style: const TextStyle(fontSize: 11)),
+                                    trailing: Container(
+                                      padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                                      decoration: BoxDecoration(
+                                        color: const Color(0xFFEFF6FF),
+                                        borderRadius: BorderRadius.circular(4),
+                                        border: Border.all(color: const Color(0xFFBFDBFE)),
+                                      ),
+                                      child: const Text('Salary Advance', style: TextStyle(fontSize: 10, fontWeight: FontWeight.bold, color: Color(0xFF1D4ED8))),
+                                    ),
+                                    onTap: () => _applyEmployeeAdvance(emp),
+                                  ),
+                              ],
+                              if (_matchingVendors.isNotEmpty) ...[
+                                Container(
+                                  padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
+                                  color: const Color(0xFFF1F5F9),
+                                  child: const Row(
+                                    children: [
+                                      Icon(Icons.storefront_outlined, size: 14, color: Color(0xFF475569)),
+                                      SizedBox(width: 4),
+                                      Text(
+                                        'PREVIOUS STORES & MERCHANTS',
+                                        style: TextStyle(fontSize: 10, fontWeight: FontWeight.bold, color: Color(0xFF475569)),
+                                      ),
+                                    ],
+                                  ),
+                                ),
+                                for (final v in _matchingVendors)
+                                  ListTile(
+                                    dense: true,
+                                    leading: const Icon(Icons.history_rounded, size: 16, color: Color(0xFF64748B)),
+                                    title: Text(v, style: const TextStyle(fontSize: 12.5)),
+                                    onTap: () => _applyVendor(v),
+                                  ),
+                              ],
+                              ListTile(
+                                dense: true,
+                                leading: const Icon(Icons.add_business_outlined, size: 16, color: Color(0xFF2563EB)),
+                                title: Text(
+                                  'Use "${_vendor.text.trim()}" as Store / Vendor',
+                                  style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w600, color: Color(0xFF2563EB)),
+                                ),
+                                onTap: () => setState(() => _showVendorSuggestions = false),
+                              ),
+                            ],
+                          ),
+                        ),
+                      ),
+                    ],
+                  ],
                 ),
                 const SizedBox(height: 16),
 
@@ -546,6 +787,141 @@ class _ExpenseEditorDialogState extends State<ExpenseEditorDialog> {
                   ],
                 ),
                 const SizedBox(height: 12),
+
+                // 3B. EMPLOYEE SALARY ADVANCE SECTION (AUTO-FETCH & LINK)
+                if (_category == 'Salary Advance' || _selectedEmployeeId != null || (_selectedEmployeeName != null && _selectedEmployeeName!.isNotEmpty)) ...[
+                  Container(
+                    margin: const EdgeInsets.only(bottom: 14),
+                    padding: const EdgeInsets.all(12),
+                    decoration: BoxDecoration(
+                      color: const Color(0xFFFFFBEB),
+                      borderRadius: BorderRadius.circular(12),
+                      border: Border.all(color: const Color(0xFFFDE68A)),
+                    ),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Row(
+                          children: [
+                            Container(
+                              padding: const EdgeInsets.all(6),
+                              decoration: BoxDecoration(
+                                color: const Color(0xFFFEF3C7),
+                                borderRadius: BorderRadius.circular(8),
+                              ),
+                              child: const Icon(Icons.badge_rounded, size: 18, color: Color(0xFFD97706)),
+                            ),
+                            const SizedBox(width: 8),
+                            const Expanded(
+                              child: Text(
+                                'Employee Advance Linking & Payroll Recovery',
+                                style: TextStyle(fontWeight: FontWeight.bold, fontSize: 13, color: Color(0xFF92400E)),
+                              ),
+                            ),
+                            if (_loadingEmployees)
+                              const SizedBox(
+                                width: 14,
+                                height: 14,
+                                child: CircularProgressIndicator(strokeWidth: 2),
+                              ),
+                          ],
+                        ),
+                        const SizedBox(height: 10),
+                        if (_employees.isNotEmpty)
+                          DropdownButtonFormField<int>(
+                            value: _employees.any((e) => e.id == _selectedEmployeeId) ? _selectedEmployeeId : null,
+                            isExpanded: true,
+                            decoration: const InputDecoration(
+                              labelText: 'Employee Name (Auto-fetched) *',
+                              hintText: 'Select employee taking advance',
+                              prefixIcon: Icon(Icons.person_outline, size: 18),
+                              filled: true,
+                              fillColor: Colors.white,
+                            ),
+                            items: _employees.map((emp) {
+                              return DropdownMenuItem<int>(
+                                value: emp.id,
+                                child: Text(
+                                  '${emp.fullName} (${emp.employeeCode.isNotEmpty ? emp.employeeCode : "ID #${emp.id}"} · ${emp.department})',
+                                  style: const TextStyle(fontSize: 13),
+                                ),
+                              );
+                            }).toList(),
+                            onChanged: (val) {
+                              if (val != null) {
+                                final chosen = _employees.firstWhere((e) => e.id == val);
+                                setState(() {
+                                  _selectedEmployeeId = chosen.id;
+                                  _selectedEmployeeName = chosen.fullName;
+                                  if (_title.text.isEmpty || _title.text.startsWith('Salary Advance')) {
+                                    _title.text = 'Salary Advance • ${chosen.fullName}';
+                                  }
+                                  if (_vendor.text.isEmpty) {
+                                    _vendor.text = 'Company Payroll Advance';
+                                  }
+                                });
+                              }
+                            },
+                            validator: (v) {
+                              if (_category == 'Salary Advance' &&
+                                  (v == null && (_selectedEmployeeName == null || _selectedEmployeeName!.isEmpty))) {
+                                return 'Please select employee';
+                              }
+                              return null;
+                            },
+                          )
+                        else
+                          TextFormField(
+                            initialValue: _selectedEmployeeName,
+                            decoration: const InputDecoration(
+                              labelText: 'Employee Name (Auto-calculate in Payroll) *',
+                              hintText: 'Enter employee full name',
+                              prefixIcon: Icon(Icons.person_outline, size: 18),
+                              filled: true,
+                              fillColor: Colors.white,
+                            ),
+                            onChanged: (val) {
+                              setState(() => _selectedEmployeeName = val.trim());
+                              if (_title.text.isEmpty || _title.text.startsWith('Salary Advance')) {
+                                _title.text = 'Salary Advance • ${val.trim()}';
+                              }
+                            },
+                            validator: (v) {
+                              if (_category == 'Salary Advance' && (v == null || v.trim().isEmpty)) {
+                                return 'Employee name is required for salary advance';
+                              }
+                              return null;
+                            },
+                          ),
+                        const SizedBox(height: 10),
+                        TextFormField(
+                          controller: _authorizedBy,
+                          decoration: const InputDecoration(
+                            labelText: 'From Whom Taken / Authorized By',
+                            hintText: 'e.g. Finance Accountant, Operations Head',
+                            prefixIcon: Icon(Icons.verified_user_outlined, size: 18),
+                            filled: true,
+                            fillColor: Colors.white,
+                          ),
+                        ),
+                        const SizedBox(height: 8),
+                        Row(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            const Icon(Icons.info_outline_rounded, size: 14, color: Color(0xFFB45309)),
+                            const SizedBox(width: 6),
+                            Expanded(
+                              child: Text(
+                                'This advance will automatically adjust and be recovered via ${_selectedEmployeeName != null && _selectedEmployeeName!.isNotEmpty ? _selectedEmployeeName : "employee"}\'s monthly salary in the Payroll & Disbursal screen.',
+                                style: const TextStyle(fontSize: 11, color: Color(0xFF92400E)),
+                              ),
+                            ),
+                          ],
+                        ),
+                      ],
+                    ),
+                  ),
+                ],
 
                 // 4. DATE & STATUS ROW
                 Row(

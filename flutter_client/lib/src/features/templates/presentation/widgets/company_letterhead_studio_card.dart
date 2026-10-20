@@ -14,6 +14,7 @@ class CompanyLetterheadStudioCard extends StatelessWidget {
     required this.letterheadEmail,
     required this.letterheadWebsite,
     required this.letterheadAddress,
+    this.letterheadSpecialistServices,
     required this.onEnabledChanged,
     required this.onStyleChanged,
     required this.onCompanyNameChanged,
@@ -22,6 +23,7 @@ class CompanyLetterheadStudioCard extends StatelessWidget {
     required this.onEmailChanged,
     required this.onWebsiteChanged,
     required this.onAddressChanged,
+    this.onSpecialistServicesChanged,
     super.key,
   });
 
@@ -31,6 +33,7 @@ class CompanyLetterheadStudioCard extends StatelessWidget {
   final Color primaryColor;
   final String letterheadCompanyName;
   final String letterheadTagline;
+  final String? letterheadSpecialistServices;
   final String letterheadPhone;
   final String letterheadEmail;
   final String letterheadWebsite;
@@ -40,6 +43,7 @@ class CompanyLetterheadStudioCard extends StatelessWidget {
   final void Function(String styleId, bool enabled) onStyleChanged;
   final ValueChanged<String> onCompanyNameChanged;
   final ValueChanged<String> onTaglineChanged;
+  final ValueChanged<String>? onSpecialistServicesChanged;
   final ValueChanged<String> onPhoneChanged;
   final ValueChanged<String> onEmailChanged;
   final ValueChanged<String> onWebsiteChanged;
@@ -99,32 +103,38 @@ class CompanyLetterheadStudioCard extends StatelessWidget {
                   borderRadius: BorderRadius.circular(10),
                 ),
                 child: Text(
-                  letterheadEnabled ? 'DEFAULT FOR ALL DOCS' : 'OFF',
+                  letterheadEnabled ? 'DIGITAL BANNER' : 'PRE-PRINTED PAPER',
                   style: TextStyle(
                     fontSize: 9.5,
                     fontWeight: FontWeight.w800,
-                    color: letterheadEnabled ? const Color(0xFF15803D) : const Color(0xFF64748B),
+                    color: letterheadEnabled ? const Color(0xFF15803D) : const Color(0xFFD97706),
                   ),
                 ),
               ),
             ],
           ),
-          subtitle: const Text(
-            'Auto-applies header & footer to Invoices, Biodata, Quotations & PDFs',
-            style: TextStyle(fontSize: 11, color: Color(0xFF64748B)),
+          subtitle: Text(
+            letterheadEnabled
+                ? 'Auto-applies header banner & footer to Invoices, Biodata, & PDFs'
+                : 'Leaves blank margins for companies printing directly onto pre-printed letterhead paper',
+            style: const TextStyle(fontSize: 11, color: Color(0xFF64748B)),
           ),
           children: [
             // Master Toggle: Default for All Documents
             SwitchListTile(
               dense: true,
               contentPadding: EdgeInsets.zero,
-              title: const Text(
-                'Use as Default Letterhead for All Documents (Invoice / Biodata)',
-                style: TextStyle(fontSize: 12, fontWeight: FontWeight.w700, color: Color(0xFF1E293B)),
+              title: Text(
+                letterheadEnabled
+                    ? 'Digital Company Letterhead Banner Active'
+                    : 'Pre-Printed Stationery Paper Mode (Letterhead Unselected)',
+                style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w700, color: Color(0xFF1E293B)),
               ),
-              subtitle: const Text(
-                'Replaces standard header & footer with your branded letterhead banner',
-                style: TextStyle(fontSize: 10.5, color: Color(0xFF64748B)),
+              subtitle: Text(
+                letterheadEnabled
+                    ? 'Prints digital company banner, GSTIN, and footer directly onto plain paper.'
+                    : 'Unselected: Hides all Billed-From company details and reserves blank top/bottom margins so you can print directly into your own pre-printed letterhead paper.',
+                style: const TextStyle(fontSize: 10.5, color: Color(0xFF64748B)),
               ),
               value: letterheadEnabled,
               activeColor: const Color(0xFF2563EB),
@@ -314,6 +324,21 @@ class CompanyLetterheadStudioCard extends StatelessWidget {
                         ),
                         onChanged: onAddressChanged,
                       ),
+                      if (letterheadSpecialistServices != null || onSpecialistServicesChanged != null) ...[
+                        const SizedBox(height: 8),
+                        TextFormField(
+                          initialValue: letterheadSpecialistServices ?? '',
+                          decoration: InputDecoration(
+                            labelText: 'Specialist Services (Navy Blue Banner)',
+                            hintText: 'SPECIALIST IN : Industrial Protective, Detective...',
+                            isDense: true,
+                            contentPadding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+                            border: OutlineInputBorder(borderRadius: BorderRadius.circular(8)),
+                          ),
+                          maxLines: 2,
+                          onChanged: onSpecialistServicesChanged,
+                        ),
+                      ],
                     ],
                   );
                 }
@@ -403,6 +428,21 @@ class CompanyLetterheadStudioCard extends StatelessWidget {
                       ),
                       onChanged: onAddressChanged,
                     ),
+                    if (letterheadSpecialistServices != null || onSpecialistServicesChanged != null) ...[
+                      const SizedBox(height: 8),
+                      TextFormField(
+                        initialValue: letterheadSpecialistServices ?? '',
+                        decoration: InputDecoration(
+                          labelText: 'Specialist Services (Navy Blue Banner)',
+                          hintText: 'SPECIALIST IN : Industrial Protective, Detective...',
+                          isDense: true,
+                          contentPadding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+                          border: OutlineInputBorder(borderRadius: BorderRadius.circular(8)),
+                        ),
+                        maxLines: 2,
+                        onChanged: onSpecialistServicesChanged,
+                      ),
+                    ],
                   ],
                 );
               },

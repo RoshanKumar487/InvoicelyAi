@@ -75,8 +75,19 @@ class EmployeeBiodataExport {
 
     pdf.addPage(
       pw.Page(
-        pageFormat: PdfPageFormat.a4,
-        margin: const pw.EdgeInsets.all(28),
+        pageTheme: pw.PageTheme(
+          pageFormat: PdfPageFormat.a4,
+          margin: const pw.EdgeInsets.all(28),
+          buildBackground: (letterheadConfig.isLetterheadActive &&
+                  letterheadConfig.styleId == 'royal_security_crest')
+              ? (pw.Context ctx) => pw.FullPage(
+                    ignoreMargins: true,
+                    child: pw.Center(
+                      child: CompanyLetterheadPdf.buildPdfWatermark(config: letterheadConfig),
+                    ),
+                  )
+              : null,
+        ),
         build: (context) {
           return pw.Column(
             crossAxisAlignment: pw.CrossAxisAlignment.start,

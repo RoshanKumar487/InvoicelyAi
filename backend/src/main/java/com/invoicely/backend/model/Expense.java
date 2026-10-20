@@ -63,6 +63,21 @@ public class Expense {
     @Column(columnDefinition = "TEXT")
     private String notes = "";
 
+    @Column(name = "employee_id")
+    private Long employeeId;
+
+    @Column(name = "employee_name")
+    private String employeeName;
+
+    @Column(name = "is_salary_advance")
+    private Boolean isSalaryAdvance = false;
+
+    @Column(name = "advance_settled")
+    private Boolean advanceSettled = false;
+
+    @Column(name = "settled_payroll_run_id")
+    private Long settledPayrollRunId;
+
     @Column(name = "created_at")
     private OffsetDateTime createdAt = OffsetDateTime.now();
 
@@ -125,4 +140,19 @@ public class Expense {
 
     public String getDueDate() { return dueDate; }
     public void setDueDate(String dueDate) { this.dueDate = dueDate; }
+
+    public Long getEmployeeId() { return employeeId; }
+    public void setEmployeeId(Long employeeId) { this.employeeId = employeeId; }
+
+    public String getEmployeeName() { return employeeName; }
+    public void setEmployeeName(String employeeName) { this.employeeName = employeeName; }
+
+    public Boolean getIsSalaryAdvance() { return isSalaryAdvance != null ? isSalaryAdvance : false; }
+    public void setIsSalaryAdvance(Boolean isSalaryAdvance) { this.isSalaryAdvance = isSalaryAdvance; }
+
+    public Boolean getAdvanceSettled() { return advanceSettled != null ? advanceSettled : false; }
+    public void setAdvanceSettled(Boolean advanceSettled) { this.advanceSettled = advanceSettled; }
+
+    public Long getSettledPayrollRunId() { return settledPayrollRunId; }
+    public void setSettledPayrollRunId(Long settledPayrollRunId) { this.settledPayrollRunId = settledPayrollRunId; }
 }

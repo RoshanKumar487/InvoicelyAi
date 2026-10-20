@@ -5,6 +5,7 @@ import 'package:image_picker/image_picker.dart';
 import 'package:url_launcher/url_launcher.dart';
 
 import '../../../core/api/api_exception.dart';
+import '../../../data/models/auth_models.dart';
 import '../../../shared/utils/table_export_helper.dart';
 import '../../../shared/widgets/app_card.dart';
 import '../../../shared/widgets/enterprise_data_view.dart';
@@ -20,11 +21,13 @@ class ExpensesScreen extends StatefulWidget {
   const ExpensesScreen({
     required this.repository,
     this.initialLocalSettings = const <String, Object?>{},
+    this.session,
     super.key,
   });
 
   final ExpensesRepository repository;
   final Map<String, Object?> initialLocalSettings;
+  final AuthSession? session;
 
   @override
   State<ExpensesScreen> createState() => _ExpensesScreenState();
@@ -43,6 +46,7 @@ class _ExpensesScreenState extends State<ExpensesScreen> {
 
   static const List<String> _categories = [
     'All',
+    'Salary Advance',
     'Software & IT',
     'Office & Rent',
     'Travel & Transport',
@@ -58,6 +62,8 @@ class _ExpensesScreenState extends State<ExpensesScreen> {
   List<Expense> _expenses = const [];
   String _selectedCategory = 'All';
   String _statusFilter = 'All';
+  bool _filterCreatedByMe = false;
+  bool _filterEmployeeAdvances = false;
   bool _isLoading = true;
   bool _usingCachedData = false;
   bool _isScanningReceipt = false;
@@ -115,6 +121,25 @@ class _ExpensesScreenState extends State<ExpensesScreen> {
       if (_statusFilter == 'Paid' && expense.isDue) return false;
       if (_statusFilter == 'Due' && !expense.isDue) return false;
       if (_statusFilter == 'TaxDeductible' && !expense.taxDeductible) return false;
+
+      if (_filterCreatedByMe) {
+        final myId = widget.session?.user.id;
+        final myName = widget.session?.user.fullName.trim().toLowerCase();
+        final createdId = expense.createdByUserId;
+        final createdName = expense.createdByUserName?.trim().toLowerCase();
+        final matchesId = myId != null && createdId != null && myId == createdId;
+        final matchesName = myName != null &&
+            myName.isNotEmpty &&
+            createdName != null &&
+            createdName.contains(myName);
+        if (!matchesId && !matchesName) return false;
+      }
+
+      if (_filterEmployeeAdvances) {
+        if (!expense.isAdvance && expense.category.toLowerCase() != 'salary advance') {
+          return false;
+        }
+      }
 
       if (_dateRange != null) {
         final d = DateTime.tryParse(expense.date);
@@ -200,6 +225,8 @@ class _ExpensesScreenState extends State<ExpensesScreen> {
       builder: (context) => ExpenseEditorDialog(
         defaultCurrency: _companyCurrency,
         defaultCurrencySymbol: _companyCurrencySymbol,
+        apiClient: widget.repository.apiClient,
+        existingVendors: _expenses.map((e) => e.vendor.trim()).where((v) => v.isNotEmpty).toSet().toList(),
       ),
     );
     if (expense == null || !mounted) return;
@@ -327,6 +354,7 @@ class _ExpensesScreenState extends State<ExpensesScreen> {
           receiptImageBytes: bytes,
           defaultCurrency: _companyCurrency,
           defaultCurrencySymbol: _companyCurrencySymbol,
+          apiClient: widget.repository.apiClient,
         ),
       );
       if (confirmedDraft == null || !mounted) return;
@@ -364,6 +392,8 @@ class _ExpensesScreenState extends State<ExpensesScreen> {
         expense: expense,
         defaultCurrency: _companyCurrency,
         defaultCurrencySymbol: _companyCurrencySymbol,
+        apiClient: widget.repository.apiClient,
+        existingVendors: _expenses.map((e) => e.vendor.trim()).where((v) => v.isNotEmpty).toSet().toList(),
       ),
     );
     if (updated == null || !mounted) return;
@@ -488,6 +518,46 @@ class _ExpensesScreenState extends State<ExpensesScreen> {
                     onDateRangeChanged: (range) => setState(() => _dateRange = range),
                     onDownloadReport: () => _handleDownloadExpenses(visibleExpenses),
                     directoryActions: [
+                      FilterChip(
+                        avatar: Icon(
+                          _filterCreatedByMe ? Icons.check_circle : Icons.person_outline,
+                          size: 15,
+                          color: _filterCreatedByMe ? Colors.white : const Color(0xFF2563EB),
+                        ),
+                        label: Text(
+                          _filterCreatedByMe ? 'Created by Me (Active)' : 'Created by Me',
+                          style: TextStyle(
+                            fontSize: 12,
+                            fontWeight: FontWeight.w700,
+                            color: _filterCreatedByMe ? Colors.white : const Color(0xFF1E293B),
+                          ),
+                        ),
+                        selected: _filterCreatedByMe,
+                        selectedColor: const Color(0xFF2563EB),
+                        backgroundColor: const Color(0xFFEFF6FF),
+                        onSelected: (val) => setState(() => _filterCreatedByMe = val),
+                      ),
+                      const SizedBox(width: 8),
+                      FilterChip(
+                        avatar: Icon(
+                          _filterEmployeeAdvances ? Icons.check_circle : Icons.payments_outlined,
+                          size: 15,
+                          color: _filterEmployeeAdvances ? Colors.white : const Color(0xFFD97706),
+                        ),
+                        label: Text(
+                          _filterEmployeeAdvances ? 'Employee Advances (Active)' : 'Employee Advances',
+                          style: TextStyle(
+                            fontSize: 12,
+                            fontWeight: FontWeight.w700,
+                            color: _filterEmployeeAdvances ? Colors.white : const Color(0xFF1E293B),
+                          ),
+                        ),
+                        selected: _filterEmployeeAdvances,
+                        selectedColor: const Color(0xFFD97706),
+                        backgroundColor: const Color(0xFFFFFBEB),
+                        onSelected: (val) => setState(() => _filterEmployeeAdvances = val),
+                      ),
+                      const SizedBox(width: 8),
                       if (isDesktop) ...[
                         OutlinedButton.icon(
                           style: OutlinedButton.styleFrom(
@@ -608,8 +678,25 @@ class _ExpensesScreenState extends State<ExpensesScreen> {
     final paidAmount = paidExpenses.fold<double>(0.0, (acc, e) => acc + e.amount);
     final dueExpenses = allExpenses.where((e) => e.isDue).toList();
     final dueAmount = dueExpenses.fold<double>(0.0, (acc, e) => acc + e.amount);
-    final taxDeductibleExpenses = allExpenses.where((e) => e.taxDeductible).toList();
-    final taxAmount = taxDeductibleExpenses.fold<double>(0.0, (acc, e) => acc + e.amount);
+
+    final advanceExpenses = allExpenses
+        .where((e) => e.isAdvance || e.category.toLowerCase() == 'salary advance')
+        .toList();
+    final advanceAmount = advanceExpenses.fold<double>(0.0, (acc, e) => acc + e.amount);
+
+    final myExpenses = allExpenses.where((e) {
+      final myId = widget.session?.user.id;
+      final myName = widget.session?.user.fullName.trim().toLowerCase();
+      final createdId = e.createdByUserId;
+      final createdName = e.createdByUserName?.trim().toLowerCase();
+      final matchesId = myId != null && createdId != null && myId == createdId;
+      final matchesName = myName != null &&
+          myName.isNotEmpty &&
+          createdName != null &&
+          createdName.contains(myName);
+      return matchesId || matchesName;
+    }).toList();
+    final myAmount = myExpenses.fold<double>(0.0, (acc, e) => acc + e.amount);
 
     return [
       EnterpriseMetricCardItem(
@@ -619,9 +706,38 @@ class _ExpensesScreenState extends State<ExpensesScreen> {
         icon: Icons.account_balance_wallet_rounded,
         color: const Color(0xFF1E3A8A),
         filterKey: 'All',
-        isSelected: _statusFilter == 'All',
-        onTap: () => setState(() => _statusFilter = 'All'),
+        isSelected: _statusFilter == 'All' && !_filterEmployeeAdvances && !_filterCreatedByMe,
+        onTap: () => setState(() {
+          _statusFilter = 'All';
+          _filterEmployeeAdvances = false;
+          _filterCreatedByMe = false;
+        }),
       ),
+      EnterpriseMetricCardItem(
+        label: 'Employee Advances',
+        value: '$_companyCurrencySymbol${advanceAmount.toStringAsFixed(0)}',
+        count: '${advanceExpenses.length} advances given',
+        icon: Icons.payments_outlined,
+        color: const Color(0xFFD97706),
+        filterKey: 'Advances',
+        isSelected: _filterEmployeeAdvances,
+        onTap: () => setState(() {
+          _filterEmployeeAdvances = !_filterEmployeeAdvances;
+        }),
+      ),
+      if (widget.session?.user != null)
+        EnterpriseMetricCardItem(
+          label: 'Created by Me',
+          value: '$_companyCurrencySymbol${myAmount.toStringAsFixed(0)}',
+          count: '${myExpenses.length} logged by me',
+          icon: Icons.person_pin_circle_outlined,
+          color: const Color(0xFF2563EB),
+          filterKey: 'CreatedByMe',
+          isSelected: _filterCreatedByMe,
+          onTap: () => setState(() {
+            _filterCreatedByMe = !_filterCreatedByMe;
+          }),
+        ),
       EnterpriseMetricCardItem(
         label: 'Paid / Settled',
         value: '$_companyCurrencySymbol${paidAmount.toStringAsFixed(0)}',
@@ -637,20 +753,10 @@ class _ExpensesScreenState extends State<ExpensesScreen> {
         value: '$_companyCurrencySymbol${dueAmount.toStringAsFixed(0)}',
         count: '${dueExpenses.length} unpaid',
         icon: Icons.pending_actions_rounded,
-        color: const Color(0xFFD97706),
+        color: const Color(0xFFDC2626),
         filterKey: 'Due',
         isSelected: _statusFilter == 'Due',
         onTap: () => setState(() => _statusFilter = _statusFilter == 'Due' ? 'All' : 'Due'),
-      ),
-      EnterpriseMetricCardItem(
-        label: 'Tax Deductible',
-        value: '$_companyCurrencySymbol${taxAmount.toStringAsFixed(0)}',
-        count: '${taxDeductibleExpenses.length} eligible',
-        icon: Icons.receipt_long_rounded,
-        color: const Color(0xFF7C3AED),
-        filterKey: 'TaxDeductible',
-        isSelected: _statusFilter == 'TaxDeductible',
-        onTap: () => setState(() => _statusFilter = _statusFilter == 'TaxDeductible' ? 'All' : 'TaxDeductible'),
       ),
     ];
   }
@@ -678,7 +784,7 @@ class _ExpensesScreenState extends State<ExpensesScreen> {
     TableExportHelper.showExportMenu(
       context: context,
       title: title,
-      headers: ['Title', 'Vendor', 'Category', 'Date', 'Amount', 'Payment Method', 'Tax Deductible', 'Status'],
+      headers: ['Title', 'Vendor', 'Category', 'Date', 'Amount', 'Payment Method', 'Created By', 'Status'],
       rows: list.map((e) => [
         e.title,
         e.vendor,
@@ -686,7 +792,7 @@ class _ExpensesScreenState extends State<ExpensesScreen> {
         e.date,
         '${e.currencySymbol}${e.amount.toStringAsFixed(2)}',
         e.paymentMethod,
-        e.taxDeductible ? 'Yes' : 'No',
+        e.createdByUserName != null && e.createdByUserName!.isNotEmpty ? e.createdByUserName! : 'System / Staff',
         e.isDue ? 'Due' : 'Paid',
       ]).toList(),
     );
@@ -743,15 +849,61 @@ class _ExpensesScreenState extends State<ExpensesScreen> {
       ),
       EnterpriseTableColumn<Expense>(
         title: 'Title / Vendor',
-        width: 190,
+        width: 210,
         sortKey: (exp) => exp.title.toLowerCase(),
         cellBuilder: (ctx, exp) => Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           mainAxisAlignment: MainAxisAlignment.center,
           children: [
             Text(exp.title, style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 13)),
-            if (exp.vendor.isNotEmpty)
+            if (exp.isAdvance && exp.employeeName != null && exp.employeeName!.isNotEmpty)
+              Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  const Icon(Icons.person_pin_rounded, size: 12, color: Color(0xFFD97706)),
+                  const SizedBox(width: 4),
+                  Text(
+                    'Emp: ${exp.employeeName}',
+                    style: const TextStyle(fontSize: 11, fontWeight: FontWeight.bold, color: Color(0xFFB45309)),
+                  ),
+                  const SizedBox(width: 4),
+                  Text(
+                    exp.advanceSettled ? '• Recovered in Payroll' : '• Pending Recovery',
+                    style: TextStyle(
+                      fontSize: 10,
+                      fontWeight: FontWeight.w600,
+                      color: exp.advanceSettled ? const Color(0xFF16A34A) : const Color(0xFFD97706),
+                    ),
+                  ),
+                ],
+              )
+            else if (exp.vendor.isNotEmpty)
               Text(exp.vendor, style: const TextStyle(fontSize: 11, color: AppColors.muted)),
+          ],
+        ),
+      ),
+      EnterpriseTableColumn<Expense>(
+        title: 'Created By',
+        width: 135,
+        sortKey: (exp) => exp.createdByUserName ?? '',
+        cellBuilder: (ctx, exp) => Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            const CircleAvatar(
+              radius: 11,
+              backgroundColor: Color(0xFFEFF6FF),
+              child: Icon(Icons.person_outline, size: 13, color: Color(0xFF2563EB)),
+            ),
+            const SizedBox(width: 6),
+            Flexible(
+              child: Text(
+                exp.createdByUserName != null && exp.createdByUserName!.isNotEmpty
+                    ? exp.createdByUserName!
+                    : 'System / Staff',
+                style: const TextStyle(fontSize: 11.5, fontWeight: FontWeight.w600, color: Color(0xFF334155)),
+                overflow: TextOverflow.ellipsis,
+              ),
+            ),
           ],
         ),
       ),
@@ -762,10 +914,18 @@ class _ExpensesScreenState extends State<ExpensesScreen> {
         cellBuilder: (ctx, exp) => Container(
           padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
           decoration: BoxDecoration(
-            color: const Color(0xFFF1F5F9),
+            color: exp.isAdvance ? const Color(0xFFFEF3C7) : const Color(0xFFF1F5F9),
             borderRadius: BorderRadius.circular(6),
+            border: exp.isAdvance ? Border.all(color: const Color(0xFFFDE68A)) : null,
           ),
-          child: Text(exp.category, style: const TextStyle(fontSize: 11, fontWeight: FontWeight.w600)),
+          child: Text(
+            exp.category,
+            style: TextStyle(
+              fontSize: 11,
+              fontWeight: FontWeight.w600,
+              color: exp.isAdvance ? const Color(0xFF92400E) : const Color(0xFF1E293B),
+            ),
+          ),
         ),
       ),
       EnterpriseTableColumn<Expense>(

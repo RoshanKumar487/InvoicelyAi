@@ -18,6 +18,11 @@ class Expense {
     this.notes = '',
     this.status = 'Paid',
     this.dueDate = '',
+    this.employeeId,
+    this.employeeName,
+    this.isSalaryAdvance = false,
+    this.advanceSettled = false,
+    this.settledPayrollRunId,
   });
 
   final int? id;
@@ -38,32 +43,47 @@ class Expense {
   final String notes;
   final String status;
   final String dueDate;
+  final int? employeeId;
+  final String? employeeName;
+  final bool isSalaryAdvance;
+  final bool advanceSettled;
+  final int? settledPayrollRunId;
 
   bool get isDue => status.trim().toUpperCase() == 'DUE' || status.trim().toUpperCase() == 'PENDING';
+  bool get isAdvance => isSalaryAdvance || category.toLowerCase().contains('advance') || (employeeName != null && employeeName!.isNotEmpty);
 
   factory Expense.fromJson(Map<String, dynamic> json) {
+    final cat = _asString(json['category'], fallback: 'General');
+    final isAdv = json['isSalaryAdvance'] == true ||
+        json['is_salary_advance'] == true ||
+        cat.toLowerCase().contains('advance');
     return Expense(
       id: _asInt(json['id']),
-      companyId: _asInt(json['companyId']),
-      createdByUserId: _asInt(json['createdByUserId']),
-      createdByUserName: json['createdByUserName'] as String?,
+      companyId: _asInt(json['companyId'] ?? json['company_id']),
+      createdByUserId: _asInt(json['createdByUserId'] ?? json['created_by_user_id']),
+      createdByUserName: (json['createdByUserName'] ?? json['created_by_user_name']) as String?,
       title: _asString(json['title']),
-      category: _asString(json['category'], fallback: 'General'),
+      category: cat,
       amount: _asDouble(json['amount']),
       currency: _asString(json['currency'], fallback: 'INR'),
-      currencySymbol: _asString(json['currencySymbol'], fallback: '₹'),
+      currencySymbol: _asString(json['currencySymbol'] ?? json['currency_symbol'], fallback: '₹'),
       date: _asString(json['date']),
       vendor: _asString(json['vendor']),
       paymentMethod:
-          _asString(json['paymentMethod'], fallback: 'Credit Card'),
+          _asString(json['paymentMethod'] ?? json['payment_method'], fallback: 'Credit Card'),
       taxDeductible: json['taxDeductible'] is bool
           ? json['taxDeductible'] as bool
-          : true,
-      taxAmount: _asDouble(json['taxAmount']),
-      receiptImageUri: json['receiptImageUri'] as String?,
+          : (json['tax_deductible'] is bool ? json['tax_deductible'] as bool : true),
+      taxAmount: _asDouble(json['taxAmount'] ?? json['tax_amount']),
+      receiptImageUri: (json['receiptImageUri'] ?? json['receipt_image_uri']) as String?,
       notes: _asString(json['notes']),
       status: _asString(json['status'], fallback: 'Paid'),
       dueDate: _asString(json['dueDate'] ?? json['due_date']),
+      employeeId: _asInt(json['employeeId'] ?? json['employee_id']),
+      employeeName: (json['employeeName'] ?? json['employee_name']) as String?,
+      isSalaryAdvance: isAdv,
+      advanceSettled: json['advanceSettled'] == true || json['advance_settled'] == true,
+      settledPayrollRunId: _asInt(json['settledPayrollRunId'] ?? json['settled_payroll_run_id']),
     );
   }
 
@@ -86,6 +106,11 @@ class Expense {
         'notes': notes,
         'status': status,
         'dueDate': dueDate,
+        'employeeId': employeeId,
+        'employeeName': employeeName,
+        'isSalaryAdvance': isSalaryAdvance,
+        'advanceSettled': advanceSettled,
+        'settledPayrollRunId': settledPayrollRunId,
       };
 }
 

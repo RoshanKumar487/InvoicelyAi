@@ -55,8 +55,14 @@ analytics. Reports provides searchable invoice, expense, and client grids with
 date-range, invoice-status, and creator filters, plus multi-sheet Excel and PDF
 exports of the filtered data.
 
-Receipt scanning uses the platform image picker and the existing backend scan
-endpoint. Speech recognition requires microphone/speech permissions, and iOS
-builds and web speech behavior still need verification on their respective
-platforms. Run `flutter analyze`, `flutter test`, and an Android build before
-shipping; iOS builds must be validated on macOS with Xcode.
+## Roles and Access Matrix
+
+| Role | Scope | Invoices | Expenses & Advances | Payroll | Settings |
+|---|---|---|---|---|---|
+| `SUPER_ADMIN` / `DEVELOPER` | Global multi-tenant database & server | Full Global | Full Global | Full Global | Full Global |
+| `ADMIN` | Organization owner / director | Full Company | Full Company & Team Advances | Full Run & Disbursal | Company Settings & Team |
+| `STAFF` / `EMPLOYEE` | Personal logged activity | Create & View assigned | View own logged expenses only | View payslip | Restricted |
+
+## Physical Letterhead Paper Mode
+When digital letterhead is unselected (`isLetterheadActive = false`), all Billed-From company details (logo, company name, address, GSTIN banner) and digital footers are hidden, and blank margins (90-95pt top, 30-35pt bottom) are reserved so documents print cleanly directly onto pre-printed corporate stationery paper.
+

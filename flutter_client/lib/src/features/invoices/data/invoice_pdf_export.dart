@@ -334,33 +334,7 @@ class InvoicePdfExport {
           : 'Northstar Security Services Ltd.',
     );
 
-    final words = companyLegalName.split(RegExp(r'\s+'));
-    final brandHeadline = words.isNotEmpty
-        ? words.first
-        : (activePreset == 'security_agency' ? 'NORTHSTAR' : 'ENTERPRISE');
-    final brandSubtitle = words.length > 1
-        ? words
-            .sublist(1)
-            .join(' ')
-            .replaceAll(
-              RegExp(r'\b(Pvt\.?|Ltd\.?|LLP|Inc\.?)\b', caseSensitive: false),
-              '',
-            )
-            .trim()
-        : (activePreset == 'security_agency'
-            ? 'SECURITY SERVICES'
-            : 'SOLUTIONS & SERVICES');
 
-    final companyTagline = pickSetting(
-      ['tagline', 'companyTagline', 'businessTagline'],
-      findField(brandingSection, 'f_biz_tagline')
-                  ?.defaultValue
-                  .trim()
-                  .isNotEmpty ==
-              true
-          ? findField(brandingSection, 'f_biz_tagline')!.defaultValue.trim()
-          : 'Safe People  |  Secure Tomorrow',
-    );
 
     final companyAddress = pickSetting(
       ['companyAddress', 'address', 'businessAddress'],
@@ -555,7 +529,6 @@ class InvoicePdfExport {
           : 'Authorized Signatory',
     );
 
-    final logoImage = _memoryImage(localSettings['invoiceLogo']);
     final stampImage = _memoryImage(localSettings['invoiceStamp']);
     final signatureImage = _memoryImage(localSettings['invoiceSignature']);
 
@@ -828,7 +801,15 @@ class InvoicePdfExport {
                   ),
                 ),
               )
-          : null,
+          : (letterheadConfig.isLetterheadActive &&
+                  letterheadConfig.styleId == 'royal_security_crest')
+              ? (pw.Context ctx) => pw.FullPage(
+                    ignoreMargins: true,
+                    child: pw.Center(
+                      child: CompanyLetterheadPdf.buildPdfWatermark(config: letterheadConfig),
+                    ),
+                  )
+              : null,
     );
 
     document.addPage(
@@ -841,36 +822,7 @@ class InvoicePdfExport {
                 scale: fontScale,
                 pageLabel: 'Page ${ctx.pageNumber} of ${ctx.pagesCount}',
               )
-            : pw.Column(
-                children: [
-                  pw.Divider(
-                    height: 1,
-                    thickness: 0.7,
-                    color: const PdfColor.fromInt(0xFFE2E8F0),
-                  ),
-                  pw.SizedBox(height: 6),
-                  pw.Row(
-                    mainAxisAlignment: pw.MainAxisAlignment.spaceBetween,
-                    children: [
-                      pw.Text(
-                        'Thank you for your business!',
-                        style: docStyle(
-                          fontSize: 8.5,
-                          italic: true,
-                          color: const PdfColor.fromInt(0xFF64748B),
-                        ),
-                      ),
-                      pw.Text(
-                        'Page ${ctx.pageNumber} of ${ctx.pagesCount}',
-                        style: docStyle(
-                          fontSize: 8,
-                          color: const PdfColor.fromInt(0xFF94A3B8),
-                        ),
-                      ),
-                    ],
-                  ),
-                ],
-              ),
+            : pw.SizedBox(height: 30 * fontScale),
         build: (pw.Context context) => [
           // A. Header (Company Letterhead Banner or Classic Business Branding)
           if (brandingSection.enabled) ...[
@@ -882,184 +834,11 @@ class InvoicePdfExport {
                 showGstBadges: isFieldVisible(brandingSection, 'f_biz_gstin') ||
                     isFieldVisible(brandingSection, 'f_biz_pan'),
               )
-            else ...[
-              pw.Row(
-                crossAxisAlignment: pw.CrossAxisAlignment.start,
-                mainAxisAlignment: pw.MainAxisAlignment.spaceBetween,
-                children: [
-                  pw.Expanded(
-                    flex: 6,
-                    child: pw.Row(
-                      crossAxisAlignment: pw.CrossAxisAlignment.center,
-                      children: [
-                        if (isFieldVisible(brandingSection, 'f_biz_logo')) ...[
-                          if (logoImage != null)
-                            pw.Container(
-                              width: 44 * fontScale,
-                              height: 48 * fontScale,
-                              child: pw.Image(logoImage, fit: pw.BoxFit.contain),
-                            )
-                          else
-                            pw.Container(
-                              width: 40 * fontScale,
-                              height: 44 * fontScale,
-                              decoration: pw.BoxDecoration(
-                                color: primaryColor,
-                                borderRadius: pw.BorderRadius.circular(5),
-                              ),
-                              alignment: pw.Alignment.center,
-                              child: pw.Text(
-                                brandHeadline.isNotEmpty
-                                    ? brandHeadline.substring(0, 1).toUpperCase()
-                                    : 'N',
-                                style: docStyle(
-                                  fontSize: 18,
-                                  bold: true,
-                                  color: PdfColors.white,
-                                ),
-                              ),
-                            ),
-                          pw.SizedBox(width: 10),
-                        ],
-                        pw.Expanded(
-                          child: pw.Column(
-                            crossAxisAlignment: pw.CrossAxisAlignment.start,
-                            children: [
-                              if (isFieldVisible(brandingSection, 'f_biz_name'))
-                                pw.Text(
-                                  uppercaseHeadings
-                                      ? brandHeadline.toUpperCase()
-                                      : brandHeadline,
-                                  style: docStyle(
-                                    fontSize: 17,
-                                    bold: true,
-                                    color: primaryColor,
-                                    letterSpacing: 0.6,
-                                  ),
-                                ),
-                              if (brandSubtitle.isNotEmpty)
-                                pw.Text(
-                                  uppercaseHeadings
-                                      ? brandSubtitle.toUpperCase()
-                                      : brandSubtitle,
-                                  style: docStyle(
-                                    fontSize: 10,
-                                    bold: true,
-                                    color: primaryColor,
-                                    letterSpacing: 1.2,
-                                  ),
-                                ),
-                              if (isFieldVisible(brandingSection, 'f_biz_tagline')) ...[
-                                pw.SizedBox(height: 2),
-                                pw.Text(
-                                  companyTagline,
-                                  style: docStyle(
-                                    fontSize: 8.5,
-                                    italic: true,
-                                    color: const PdfColor.fromInt(0xFF64748B),
-                                  ),
-                                ),
-                              ],
-                            ],
-                          ),
-                        ),
-                      ],
-                    ),
-                  ),
-                  pw.SizedBox(width: 14),
-                  pw.Expanded(
-                    flex: 5,
-                    child: pw.Column(
-                      crossAxisAlignment: pw.CrossAxisAlignment.end,
-                      children: [
-                        if (isFieldVisible(brandingSection, 'f_biz_name'))
-                          pw.Text(
-                            companyLegalName,
-                            textAlign: pw.TextAlign.right,
-                            style: docStyle(
-                              fontSize: 10,
-                              bold: true,
-                              color: const PdfColor.fromInt(0xFF1E293B),
-                            ),
-                          ),
-                        pw.SizedBox(height: 1),
-                        if (isFieldVisible(brandingSection, 'f_biz_addr'))
-                          for (final line in companyAddress.split('\n'))
-                            if (line.trim().isNotEmpty)
-                              pw.Text(
-                                line.trim(),
-                                textAlign: pw.TextAlign.right,
-                                style: docStyle(
-                                  fontSize: 8.5,
-                                  color: const PdfColor.fromInt(0xFF64748B),
-                                ),
-                              ),
-                        if (isFieldVisible(brandingSection, 'f_biz_gstin') &&
-                            companyGstin.isNotEmpty)
-                          pw.Text(
-                            'GSTIN: $companyGstin',
-                            textAlign: pw.TextAlign.right,
-                            style: docStyle(
-                              fontSize: 8.5,
-                              color: const PdfColor.fromInt(0xFF64748B),
-                            ),
-                          ),
-                        if (isFieldVisible(brandingSection, 'f_biz_pan') &&
-                            companyPan.isNotEmpty)
-                          pw.Text(
-                            'PAN: $companyPan',
-                            textAlign: pw.TextAlign.right,
-                            style: docStyle(
-                              fontSize: 8.5,
-                              color: const PdfColor.fromInt(0xFF64748B),
-                            ),
-                          ),
-                        if (companyPhone.isNotEmpty)
-                          pw.Text(
-                            'Tel: $companyPhone',
-                            textAlign: pw.TextAlign.right,
-                            style: docStyle(
-                              fontSize: 8.5,
-                              color: const PdfColor.fromInt(0xFF64748B),
-                            ),
-                          ),
-                        if (companyEmail.isNotEmpty)
-                          pw.Text(
-                            companyEmail,
-                            textAlign: pw.TextAlign.right,
-                            style: docStyle(
-                              fontSize: 8.5,
-                              color: const PdfColor.fromInt(0xFF64748B),
-                            ),
-                          ),
-                        for (final cf in customVisibleFields(
-                          brandingSection,
-                          const {
-                            'f_biz_logo',
-                            'f_biz_name',
-                            'f_biz_tagline',
-                            'f_biz_addr',
-                            'f_biz_gstin',
-                            'f_biz_pan',
-                          },
-                        ))
-                          pw.Text(
-                            '${_cleanText(cf.label)}: ${_cleanText(cf.defaultValue.isNotEmpty ? cf.defaultValue : '-')}',
-                            textAlign: pw.TextAlign.right,
-                            style: docStyle(
-                              fontSize: 8.5,
-                              color: const PdfColor.fromInt(0xFF64748B),
-                            ),
-                          ),
-                      ],
-                    ),
-                  ),
-                ],
-              ),
-              pw.SizedBox(height: 12),
-              pw.Divider(height: 1, thickness: 1.5, color: primaryColor),
-              pw.SizedBox(height: 14),
-            ],
+            else
+              // Pre-printed stationery paper mode: letterhead is unselected,
+              // so leave blank top space for company's pre-printed physical letterhead paper
+              // and do NOT print "Billed From" company details.
+              pw.SizedBox(height: 90 * fontScale),
           ],
 
           // B & C. Identity, Document Details & Client Sections by Selected Layout Structure
@@ -2283,9 +2062,9 @@ class InvoicePdfExport {
                         children: [
                           if (stampImage != null)
                             pw.Container(
-                              width: 34 * fontScale,
-                              height: 34 * fontScale,
-                              margin: const pw.EdgeInsets.only(right: 6),
+                              width: 56 * fontScale,
+                              height: 56 * fontScale,
+                              margin: const pw.EdgeInsets.only(right: 8),
                               child: pw.Image(
                                 stampImage,
                                 fit: pw.BoxFit.contain,
@@ -2293,20 +2072,20 @@ class InvoicePdfExport {
                             ),
                           if (signatureImage != null)
                             pw.Container(
-                              height: 30 * fontScale,
-                              width: 90 * fontScale,
+                              height: 44 * fontScale,
+                              width: 130 * fontScale,
                               child: pw.Image(
                                 signatureImage,
                                 fit: pw.BoxFit.contain,
                               ),
                             )
                           else
-                            pw.SizedBox(height: 24 * fontScale),
+                            pw.SizedBox(height: 36 * fontScale),
                         ],
                       ),
                       pw.SizedBox(height: 2),
                       pw.Container(
-                        width: 105,
+                        width: 130,
                         height: 0.8,
                         color: const PdfColor.fromInt(0xFFCBD5E1),
                       ),

@@ -224,16 +224,19 @@ class _InvoiceTemplateStudioScreenState
 
   // Official Company Letterhead State (Default for All Documents: Invoice, Biodata, etc.)
   bool _letterheadEnabled = true;
-  String _letterheadStyleId = 'modern_ribbon';
-  String _letterheadCompanyName = 'Northstar Security Services Pvt. Ltd.';
-  String _letterheadTagline = 'Smart Solutions for a Better Tomorrow';
-  String _letterheadPhone = '+91 98765 43210';
-  String _letterheadEmail = 'info@northstarsecurity.in';
-  String _letterheadWebsite = 'www.northstarsecurity.in';
-  String _letterheadAddress = '#12, 3rd Floor, Green Park, Bengaluru, Karnataka - 560076';
-  String _letterheadGstin = '29ABCDE1234F1Z5';
-  String _letterheadPan = 'ABCDE1234F';
-  String _letterheadCin = 'PSARA/KA/2021/889';
+  String _letterheadStyleId = 'royal_security_crest';
+  String _letterheadCompanyName = 'ROYAL';
+  String _letterheadTagline = 'SECURITY FORCE';
+  String _letterheadSpecialistServices =
+      'SPECIALIST IN : Industrial Protective, Detective, Investigating in the Administration of all Essential Supervisors through Perfectly Trained Security Staff.';
+  String _letterheadPhone = '+91 8247369182, 6305422632';
+  String _letterheadEmail = 'royalsecuritiesforce@gmail.com';
+  String _letterheadWebsite = '';
+  String _letterheadAddress =
+      'Plot No. 43E, Sy. No. 50, Aditya Dental Hospital, Raghavendra Nagar Colony, Shivrampally, Hyderabad - 500 052. (T.S.)';
+  String _letterheadGstin = '';
+  String _letterheadPan = '';
+  String _letterheadCin = '';
 
   // Automatic Daily Wage & Formula Calculation State
   String _itemCalculationFormula = 'monthly_salary_30';
@@ -413,6 +416,10 @@ class _InvoiceTemplateStudioScreenState
       final savedLhTagline = await _localPreferences.readString('letterhead_tagline');
       if (savedLhTagline != null && savedLhTagline.isNotEmpty && mounted) {
         setState(() => _letterheadTagline = savedLhTagline);
+      }
+      final savedLhServices = await _localPreferences.readString('letterhead_specialist_services');
+      if (savedLhServices != null && savedLhServices.isNotEmpty && mounted) {
+        setState(() => _letterheadSpecialistServices = savedLhServices);
       }
       final savedLhPhone = await _localPreferences.readString('letterhead_phone');
       if (savedLhPhone != null && savedLhPhone.isNotEmpty && mounted) {
@@ -738,6 +745,11 @@ class _InvoiceTemplateStudioScreenState
       final orgEmail = widget.initialLocalSettings['businessEmail']?.toString().trim();
       if (orgEmail != null && orgEmail.isNotEmpty) {
         _letterheadEmail = orgEmail;
+      }
+      final savedLhServices =
+          widget.initialLocalSettings['letterhead_specialist_services']?.toString().trim();
+      if (savedLhServices != null && savedLhServices.isNotEmpty) {
+        _letterheadSpecialistServices = savedLhServices;
       }
 
       final savedSectionsJson =
@@ -1079,6 +1091,7 @@ class _InvoiceTemplateStudioScreenState
       'letterhead_style_id': _letterheadStyleId,
       'letterhead_company_name': _letterheadCompanyName,
       'letterhead_tagline': _letterheadTagline,
+      'letterhead_specialist_services': _letterheadSpecialistServices,
       'letterhead_phone': _letterheadPhone,
       'letterhead_email': _letterheadEmail,
       'letterhead_website': _letterheadWebsite,
@@ -1111,6 +1124,7 @@ class _InvoiceTemplateStudioScreenState
     await _localPreferences.writeString('letterhead_style_id', _letterheadStyleId);
     await _localPreferences.writeString('letterhead_company_name', _letterheadCompanyName);
     await _localPreferences.writeString('letterhead_tagline', _letterheadTagline);
+    await _localPreferences.writeString('letterhead_specialist_services', _letterheadSpecialistServices);
     await _localPreferences.writeString('letterhead_phone', _letterheadPhone);
     await _localPreferences.writeString('letterhead_email', _letterheadEmail);
     await _localPreferences.writeString('letterhead_website', _letterheadWebsite);
@@ -2956,6 +2970,7 @@ class _InvoiceTemplateStudioScreenState
       styleId: _letterheadStyleId,
       companyName: _letterheadCompanyName,
       tagline: _letterheadTagline,
+      specialistServices: _letterheadSpecialistServices,
       phone: _letterheadPhone,
       email: _letterheadEmail,
       website: _letterheadWebsite,
@@ -2976,6 +2991,7 @@ class _InvoiceTemplateStudioScreenState
       primaryColor: _primaryColor,
       letterheadCompanyName: _letterheadCompanyName,
       letterheadTagline: _letterheadTagline,
+      letterheadSpecialistServices: _letterheadSpecialistServices,
       letterheadPhone: _letterheadPhone,
       letterheadEmail: _letterheadEmail,
       letterheadWebsite: _letterheadWebsite,
@@ -3002,6 +3018,12 @@ class _InvoiceTemplateStudioScreenState
       onTaglineChanged: (v) {
         setState(() {
           _letterheadTagline = v;
+          _markSaved();
+        });
+      },
+      onSpecialistServicesChanged: (v) {
+        setState(() {
+          _letterheadSpecialistServices = v;
           _markSaved();
         });
       },
@@ -3341,6 +3363,16 @@ class _InvoiceTemplateStudioScreenState
                               ),
                             ),
                           ),
+                        )
+                      else if (_letterheadEnabled && _letterheadStyleId == 'royal_security_crest')
+                        Positioned.fill(
+                          child: IgnorePointer(
+                            child: Center(
+                              child: CompanyLetterheadWidgets.buildWatermark(
+                                config: _currentLetterheadConfig(),
+                              ),
+                            ),
+                          ),
                         ),
                       _buildA4DocumentContent(),
                     ],
@@ -3585,111 +3617,40 @@ class _InvoiceTemplateStudioScreenState
                   _isFieldVisible(brandingSection, 'f_biz_pan'),
             )
           else ...[
-            Row(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              mainAxisAlignment: MainAxisAlignment.spaceBetween,
-              children: [
-                // Logo & Brand Name
-                Row(
-                  crossAxisAlignment: CrossAxisAlignment.center,
+            // Pre-printed stationery paper mode: letterhead is unselected,
+            // so we leave blank top space for company's pre-printed physical stationery
+            // and do NOT print "Billed From" company details.
+            Container(
+              height: 95 * _fontScale,
+              width: double.infinity,
+              margin: const EdgeInsets.only(bottom: 12),
+              decoration: BoxDecoration(
+                border: Border.all(
+                  color: const Color(0xFFCBD5E1),
+                  style: BorderStyle.solid,
+                  width: 1,
+                ),
+                borderRadius: BorderRadius.circular(4),
+                color: const Color(0xFFF8FAFC),
+              ),
+              child: Center(
+                child: Row(
+                  mainAxisSize: MainAxisSize.min,
                   children: [
-                    if (_isFieldVisible(brandingSection, 'f_biz_logo')) ...[
-                      Container(
-                        width: 46 * _fontScale,
-                        height: 52 * _fontScale,
-                        decoration: BoxDecoration(
-                          color: _logoBase64 != null ? Colors.transparent : _primaryColor,
-                          borderRadius: BorderRadius.circular(6),
-                        ),
-                        child: Center(
-                          child: _logoBase64 != null
-                              ? Image.memory(
-                                  base64Decode(_logoBase64!),
-                                  width: 46 * _fontScale,
-                                  height: 52 * _fontScale,
-                                  fit: BoxFit.contain,
-                                )
-                              : Icon(
-                                  _activePreset == 'security_agency'
-                                      ? Icons.shield_rounded
-                                      : Icons.business_rounded,
-                                  size: 28 * _fontScale,
-                                  color: Colors.white,
-                                ),
-                        ),
+                    Icon(Icons.print_outlined, size: 14 * _fontScale, color: const Color(0xFF94A3B8)),
+                    const SizedBox(width: 8),
+                    Text(
+                      'Reserved for Pre-Printed Physical Letterhead Paper (Top Header Space)',
+                      style: _docStyle(
+                        fontSize: 9,
+                        color: const Color(0xFF94A3B8),
+                        fontStyle: FontStyle.italic,
                       ),
-                      const SizedBox(width: 12),
-                    ],
-                    Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        if (_isFieldVisible(brandingSection, 'f_biz_name'))
-                          Text(
-                            _activePreset == 'security_agency'
-                                ? (_uppercaseHeadings ? 'NORTHSTAR' : 'Northstar')
-                                : (_uppercaseHeadings ? 'ENTERPRISE TECH' : 'Enterprise Tech'),
-                            style: _docStyle(
-                              fontSize: 19,
-                              fontWeight: FontWeight.w900,
-                              letterSpacing: 0.8,
-                              color: _primaryColor,
-                            ),
-                          ),
-                        Text(
-                          _activePreset == 'security_agency'
-                              ? (_uppercaseHeadings ? 'SECURITY SERVICES' : 'Security Services')
-                              : (_uppercaseHeadings ? 'SOLUTIONS & SERVICES' : 'Solutions & Services'),
-                          style: _docStyle(
-                            fontSize: 11,
-                            fontWeight: FontWeight.w700,
-                            letterSpacing: 1.5,
-                            color: _primaryColor,
-                          ),
-                        ),
-                        if (_isFieldVisible(brandingSection, 'f_biz_tagline')) ...[
-                          const SizedBox(height: 2),
-                          Text(
-                            'Safe People  |  Secure Tomorrow',
-                            style: _docStyle(
-                              fontSize: 9.5,
-                              color: const Color(0xFF64748B),
-                              fontStyle: FontStyle.italic,
-                            ),
-                          ),
-                        ],
-                      ],
                     ),
                   ],
                 ),
-
-                // Company Metadata
-                Column(
-                  crossAxisAlignment: CrossAxisAlignment.end,
-                  children: [
-                    if (_isFieldVisible(brandingSection, 'f_biz_name'))
-                      Text(
-                        'Northstar Security Services Ltd.',
-                        style: _docStyle(fontSize: 10.5, fontWeight: FontWeight.bold, color: const Color(0xFF1E293B)),
-                      ),
-                    const SizedBox(height: 1),
-                    if (_isFieldVisible(brandingSection, 'f_biz_addr')) ...[
-                      Text('#12, 3rd Floor, Green Park, Bengaluru,', style: _docStyle(fontSize: 9.5, color: const Color(0xFF64748B))),
-                      Text('Karnataka - 560076', style: _docStyle(fontSize: 9.5, color: const Color(0xFF64748B))),
-                    ],
-                    if (_isFieldVisible(brandingSection, 'f_biz_gstin'))
-                      Text('GSTIN: 29ABCDE1234F1Z5', style: _docStyle(fontSize: 9.5, color: const Color(0xFF64748B))),
-                    if (_isFieldVisible(brandingSection, 'f_biz_pan'))
-                      Text('PAN: ABCDE1234F', style: _docStyle(fontSize: 9.5, color: const Color(0xFF64748B))),
-                    const SizedBox(height: 2),
-                    Text('📞 +91 98765 43210', style: _docStyle(fontSize: 9.5, color: const Color(0xFF64748B))),
-                    Text('✉ info@northstarsecurity.in', style: _docStyle(fontSize: 9.5, color: const Color(0xFF64748B))),
-                  ],
-                ),
-              ],
+              ),
             ),
-            const SizedBox(height: 14),
-            Divider(height: 1, color: _primaryColor, thickness: 1.5),
-            const SizedBox(height: 16),
           ],
         ],
 
@@ -3857,9 +3818,9 @@ class _InvoiceTemplateStudioScreenState
                       children: [
                         if (_stampBase64 != null) ...[
                           Container(
-                            width: 36 * _fontScale,
-                            height: 36 * _fontScale,
-                            margin: const EdgeInsets.only(right: 6),
+                            width: 62 * _fontScale,
+                            height: 62 * _fontScale,
+                            margin: const EdgeInsets.only(right: 8),
                             child: Image.memory(
                               base64Decode(_stampBase64!),
                               fit: BoxFit.contain,
@@ -3868,15 +3829,15 @@ class _InvoiceTemplateStudioScreenState
                         ],
                         if (_signatureBase64 != null) ...[
                           Container(
-                            height: 32 * _fontScale,
-                            constraints: const BoxConstraints(maxWidth: 120),
+                            height: 48 * _fontScale,
+                            constraints: const BoxConstraints(maxWidth: 160),
                             child: Image.memory(
                               base64Decode(_signatureBase64!),
                               fit: BoxFit.contain,
                             ),
                           ),
                         ] else ...[
-                          SizedBox(height: 26 * _fontScale),
+                          SizedBox(height: 38 * _fontScale),
                         ],
                       ],
                     ),
@@ -3946,7 +3907,7 @@ class _InvoiceTemplateStudioScreenState
             ),
           ],
 
-        // I. Document Footer (Company Letterhead Footer or Classic Footer)
+        // I. Document Footer (Company Letterhead Footer or Pre-Printed Letterhead Blank Space)
         if (lhConfig.isLetterheadActive)
           CompanyLetterheadWidgets.buildFooterBanner(
             config: lhConfig,
@@ -3955,17 +3916,9 @@ class _InvoiceTemplateStudioScreenState
             fontFamily: _fontFamily,
             pageLabel: 'Page 1 of 1',
           )
-        else ...[
-          const Divider(height: 1, color: Color(0xFFE2E8F0)),
-          const SizedBox(height: 8),
-          Row(
-            mainAxisAlignment: MainAxisAlignment.spaceBetween,
-            children: [
-              Text('Thank you for your business!', style: _docStyle(fontSize: 9, color: const Color(0xFF64748B), fontStyle: FontStyle.italic)),
-              Text('Page 1 of 1', style: _docStyle(fontSize: 8.5, color: const Color(0xFF94A3B8))),
-            ],
-          ),
-        ],
+        else
+          // Pre-printed stationery paper mode: blank space for physical letterhead bottom footer
+          SizedBox(height: 35 * _fontScale),
       ],
     );
   }

@@ -506,187 +506,10 @@ class InvoicePreviewA4Paper extends StatelessWidget {
                     showGstBadges: _isFieldVisible(brandingSection, 'f_biz_gstin') ||
                         _isFieldVisible(brandingSection, 'f_biz_pan'),
                   )
-                else ...[
-                  Row(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                    children: [
-                      // Left: Logo & Brand Name
-                      Expanded(
-                        flex: 6,
-                        child: Row(
-                          crossAxisAlignment: CrossAxisAlignment.center,
-                          children: [
-                            if (_isFieldVisible(brandingSection, 'f_biz_logo')) ...[
-                              Container(
-                                width: 46 * _fontScale,
-                                height: 52 * _fontScale,
-                                decoration: BoxDecoration(
-                                  color: (logoBase64 != null && logoBase64.isNotEmpty)
-                                      ? Colors.transparent
-                                      : _primaryColor,
-                                  borderRadius: BorderRadius.circular(6),
-                                ),
-                                child: Center(
-                                  child: (logoBase64 != null && logoBase64.isNotEmpty)
-                                      ? _safeBase64Image(
-                                          logoBase64,
-                                          width: 46 * _fontScale,
-                                          height: 52 * _fontScale,
-                                        )
-                                      : Icon(
-                                          _activePreset == 'security_agency'
-                                              ? Icons.shield_rounded
-                                              : Icons.business_rounded,
-                                          size: 28 * _fontScale,
-                                          color: Colors.white,
-                                        ),
-                                ),
-                              ),
-                              const SizedBox(width: 12),
-                            ],
-                            Expanded(
-                              child: Column(
-                                crossAxisAlignment: CrossAxisAlignment.start,
-                                children: [
-                                  if (_isFieldVisible(brandingSection, 'f_biz_name'))
-                                    Text(
-                                      _uppercaseHeadings
-                                          ? brandHeadline.toUpperCase()
-                                          : brandHeadline,
-                                      style: _docStyle(
-                                        fontSize: 19,
-                                        fontWeight: FontWeight.w900,
-                                        letterSpacing: 0.8,
-                                        color: _primaryColor,
-                                      ),
-                                    ),
-                                  if (brandSubtitle.isNotEmpty)
-                                    Text(
-                                      _uppercaseHeadings
-                                          ? brandSubtitle.toUpperCase()
-                                          : brandSubtitle,
-                                      style: _docStyle(
-                                        fontSize: 11,
-                                        fontWeight: FontWeight.w700,
-                                        letterSpacing: 1.5,
-                                        color: _primaryColor,
-                                      ),
-                                    ),
-                                  if (_isFieldVisible(brandingSection, 'f_biz_tagline')) ...[
-                                    const SizedBox(height: 2),
-                                    Text(
-                                      companyTagline,
-                                      style: _docStyle(
-                                        fontSize: 9.5,
-                                        color: const Color(0xFF64748B),
-                                        fontStyle: FontStyle.italic,
-                                      ),
-                                    ),
-                                  ],
-                                ],
-                              ),
-                            ),
-                          ],
-                        ),
-                      ),
-                      const SizedBox(width: 16),
-
-                      // Right: Company Metadata
-                      Expanded(
-                        flex: 5,
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.end,
-                          children: [
-                            if (_isFieldVisible(brandingSection, 'f_biz_name'))
-                              Text(
-                                companyLegalName,
-                                textAlign: TextAlign.right,
-                                style: _docStyle(
-                                  fontSize: 10.5,
-                                  fontWeight: FontWeight.bold,
-                                  color: const Color(0xFF1E293B),
-                                ),
-                              ),
-                            const SizedBox(height: 1),
-                            if (_isFieldVisible(brandingSection, 'f_biz_addr'))
-                              for (final line in companyAddress.split('\n'))
-                                if (line.trim().isNotEmpty)
-                                  Text(
-                                    line.trim(),
-                                    textAlign: TextAlign.right,
-                                    style: _docStyle(
-                                      fontSize: 9.5,
-                                      color: const Color(0xFF64748B),
-                                    ),
-                                  ),
-                            if (_isFieldVisible(brandingSection, 'f_biz_gstin') &&
-                                companyGstin.isNotEmpty)
-                              Text(
-                                'GSTIN: $companyGstin',
-                                textAlign: TextAlign.right,
-                                style: _docStyle(
-                                  fontSize: 9.5,
-                                  color: const Color(0xFF64748B),
-                                ),
-                              ),
-                            if (_isFieldVisible(brandingSection, 'f_biz_pan') &&
-                                companyPan.isNotEmpty)
-                              Text(
-                                'PAN: $companyPan',
-                                textAlign: TextAlign.right,
-                                style: _docStyle(
-                                  fontSize: 9.5,
-                                  color: const Color(0xFF64748B),
-                                ),
-                              ),
-                            const SizedBox(height: 2),
-                            if (companyPhone.isNotEmpty)
-                              Text(
-                                '📞 $companyPhone',
-                                textAlign: TextAlign.right,
-                                style: _docStyle(
-                                  fontSize: 9.5,
-                                  color: const Color(0xFF64748B),
-                                ),
-                              ),
-                            if (companyEmail.isNotEmpty)
-                              Text(
-                                '✉ $companyEmail',
-                                textAlign: TextAlign.right,
-                                style: _docStyle(
-                                  fontSize: 9.5,
-                                  color: const Color(0xFF64748B),
-                                ),
-                              ),
-                            for (final cf in _customVisibleFields(
-                              brandingSection,
-                              const {
-                                'f_biz_logo',
-                                'f_biz_name',
-                                'f_biz_tagline',
-                                'f_biz_addr',
-                                'f_biz_gstin',
-                                'f_biz_pan',
-                              },
-                            ))
-                              Text(
-                                '${cf.label}: ${cf.defaultValue.isNotEmpty ? cf.defaultValue : '—'}',
-                                textAlign: TextAlign.right,
-                                style: _docStyle(
-                                  fontSize: 9.5,
-                                  color: const Color(0xFF64748B),
-                                ),
-                              ),
-                          ],
-                        ),
-                      ),
-                    ],
-                  ),
-                  const SizedBox(height: 14),
-                  Divider(height: 1, color: _primaryColor, thickness: 1.5),
-                  const SizedBox(height: 16),
-                ],
+                else
+                  // Pre-printed Letterhead Paper Mode (Letterhead unselected):
+                  // Keep top space blank so physical stationery header doesn't overlap or double-print company details
+                  SizedBox(height: 95 * _fontScale),
               ],
 
               // B & C. Identity, Document Details & Client Sections by Selected Layout Structure
@@ -1053,23 +876,23 @@ class InvoicePreviewA4Paper extends StatelessWidget {
                               children: [
                                 if (stampBase64 != null && stampBase64.isNotEmpty)
                                   Container(
-                                    width: 38 * _fontScale,
-                                    height: 38 * _fontScale,
-                                    margin: const EdgeInsets.only(right: 6),
+                                    width: 62 * _fontScale,
+                                    height: 62 * _fontScale,
+                                    margin: const EdgeInsets.only(right: 8),
                                     child: _safeBase64Image(
                                       stampBase64,
-                                      width: 38 * _fontScale,
-                                      height: 38 * _fontScale,
+                                      width: 62 * _fontScale,
+                                      height: 62 * _fontScale,
                                     ),
                                   ),
                                 if (signatureBase64 != null &&
                                     signatureBase64.isNotEmpty)
                                   Container(
-                                    height: 34 * _fontScale,
-                                    constraints: const BoxConstraints(maxWidth: 120),
+                                    height: 48 * _fontScale,
+                                    constraints: const BoxConstraints(maxWidth: 160),
                                     child: _safeBase64Image(
                                       signatureBase64,
-                                      height: 34 * _fontScale,
+                                      height: 48 * _fontScale,
                                     ),
                                   )
                                 else if (onSignTap != null)
@@ -1234,30 +1057,10 @@ class InvoicePreviewA4Paper extends StatelessWidget {
                   fontFamily: _fontFamily,
                   pageLabel: 'Page 1 of 1',
                 )
-              else ...[
-                const Divider(height: 1, color: Color(0xFFE2E8F0)),
-                const SizedBox(height: 8),
-                Row(
-                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                  children: [
-                    Text(
-                      'Thank you for your business!',
-                      style: _docStyle(
-                        fontSize: 9,
-                        color: const Color(0xFF64748B),
-                        fontStyle: FontStyle.italic,
-                      ),
-                    ),
-                    Text(
-                      'Page 1 of 1',
-                      style: _docStyle(
-                        fontSize: 8.5,
-                        color: const Color(0xFF94A3B8),
-                      ),
-                    ),
-                  ],
-                ),
-              ],
+              else
+                // Pre-printed Letterhead Paper Mode (Letterhead unselected):
+                // Keep bottom space blank so physical stationery footer is left untouched
+                SizedBox(height: 35 * _fontScale),
             ],
           ),
         ],

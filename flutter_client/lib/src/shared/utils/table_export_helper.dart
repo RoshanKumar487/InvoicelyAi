@@ -88,7 +88,7 @@ class TableExportHelper {
       final mimeType = switch (format) {
         'xlsx' => 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
         'pdf' => 'application/pdf',
-        _ => 'text/csv',
+        _ => 'text/csv;charset=utf-8',
       };
 
       await FileDownloadHelper.downloadFile(
@@ -100,8 +100,20 @@ class TableExportHelper {
       if (context.mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
-            content: Text('✓ Saved $filename to Downloads'),
+            content: Row(
+              children: [
+                const Icon(Icons.check_circle_outline, color: Colors.white, size: 20),
+                const SizedBox(width: 8),
+                Expanded(
+                  child: Text(
+                    '✓ Downloaded $filename',
+                    style: const TextStyle(fontWeight: FontWeight.w600),
+                  ),
+                ),
+              ],
+            ),
             backgroundColor: const Color(0xFF047857),
+            behavior: SnackBarBehavior.floating,
           ),
         );
       }

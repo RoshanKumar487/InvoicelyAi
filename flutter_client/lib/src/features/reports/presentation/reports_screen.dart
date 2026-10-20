@@ -428,7 +428,7 @@ class _ReportsScreenState extends State<ReportsScreen> {
         ExportFormat.excel =>
           'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
         ExportFormat.pdf => 'application/pdf',
-        ExportFormat.csv => 'text/csv',
+        ExportFormat.csv => 'text/csv;charset=utf-8',
       };
 
       await FileDownloadHelper.downloadFile(

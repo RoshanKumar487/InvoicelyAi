@@ -80,13 +80,59 @@ class ExpenseCard extends StatelessWidget {
                             ),
                             const SizedBox(width: 8),
                             _buildStatusBadge(theme, isPaid, isDue),
+                            if (expense.isAdvance) ...[
+                              const SizedBox(width: 6),
+                              Container(
+                                padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 2),
+                                decoration: BoxDecoration(
+                                  color: expense.advanceSettled
+                                      ? const Color(0xFFF0FDF4)
+                                      : const Color(0xFFFFFBEB),
+                                  borderRadius: BorderRadius.circular(4),
+                                  border: Border.all(
+                                    color: expense.advanceSettled
+                                        ? const Color(0xFF86EFAC)
+                                        : const Color(0xFFFDE68A),
+                                  ),
+                                ),
+                                child: Row(
+                                  mainAxisSize: MainAxisSize.min,
+                                  children: [
+                                    Icon(
+                                      expense.advanceSettled
+                                          ? Icons.check_circle_outline
+                                          : Icons.account_balance_wallet_outlined,
+                                      size: 11,
+                                      color: expense.advanceSettled
+                                          ? const Color(0xFF16A34A)
+                                          : const Color(0xFFD97706),
+                                    ),
+                                    const SizedBox(width: 4),
+                                    Text(
+                                      expense.advanceSettled
+                                          ? 'Recovered in Payroll'
+                                          : 'Advance · Unsettled',
+                                      style: TextStyle(
+                                        color: expense.advanceSettled
+                                            ? const Color(0xFF16A34A)
+                                            : const Color(0xFFB45309),
+                                        fontSize: 10,
+                                        fontWeight: FontWeight.w700,
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                              ),
+                            ],
                           ],
                         ),
                         const SizedBox(height: 2),
                         Text(
-                          expense.vendor.isEmpty
-                              ? expense.category
-                              : '${expense.vendor} · ${expense.category}',
+                          expense.isAdvance && (expense.employeeName?.isNotEmpty ?? false)
+                              ? 'Employee Advance: ${expense.employeeName} · ${expense.vendor.isNotEmpty ? expense.vendor : expense.category}'
+                              : (expense.vendor.isEmpty
+                                  ? expense.category
+                                  : '${expense.vendor} · ${expense.category}'),
                           style: theme.textTheme.bodySmall
                               ?.copyWith(color: AppColors.muted),
                         ),

@@ -7,6 +7,8 @@ class ExpensesRepository {
 
   final ApiClient _apiClient;
 
+  ApiClient get apiClient => _apiClient;
+
   bool get lastLoadUsedCache => _apiClient.lastGetUsedCache;
 
   Future<List<Expense>> list({String? category}) async {

@@ -2,6 +2,7 @@ package com.invoicely.backend.controller;
 
 import com.invoicely.backend.dto.ApiResponse;
 import com.invoicely.backend.dto.PayrollSummaryKpiDto;
+import com.invoicely.backend.model.Expense;
 import com.invoicely.backend.model.PayrollEntry;
 import com.invoicely.backend.model.PayrollRun;
 import com.invoicely.backend.model.Role;
@@ -53,7 +54,7 @@ public class PayrollController {
     }
 
     @PostMapping("/runs/generate")
-    @PreAuthorize("hasAnyRole('ADMIN', 'DEVELOPER')")
+    @PreAuthorize("hasAnyRole('ADMIN', 'DEVELOPER', 'ACCOUNTANT', 'STAFF')")
     @Operation(summary = "Generate/recalculate a batch payroll run for a month/year")
     public ResponseEntity<ApiResponse<PayrollRun>> generateRun(
             @RequestParam int month,
@@ -65,6 +66,21 @@ public class PayrollController {
         Long resolvedCompanyId = resolveCompanyId(principal, companyId);
         PayrollRun run = payrollService.generatePayrollRun(resolvedCompanyId, month, year, scheduledPayDate, title);
         return new ResponseEntity<>(ApiResponse.ok("Payroll calculated successfully", run), HttpStatus.CREATED);
+    }
+
+    @PostMapping("/runs/{id}/sync-employees")
+    @PreAuthorize("hasAnyRole('ADMIN', 'DEVELOPER', 'ACCOUNTANT', 'STAFF')")
+    @Operation(summary = "Synchronize all active company employees into the specified payroll run")
+    public ResponseEntity<ApiResponse<PayrollRun>> syncEmployeesToRun(
+            @PathVariable Long id,
+            @RequestParam(required = false) Long companyId,
+            @AuthenticationPrincipal UserPrincipal principal) {
+        Long resolvedCompanyId = resolveCompanyId(principal, companyId);
+        PayrollRun run = payrollService.getRun(id, resolvedCompanyId);
+        List<com.invoicely.backend.model.Employee> emps = payrollService.getEmployeesForCompany(resolvedCompanyId);
+        payrollService.syncRunEmployees(run, emps, resolvedCompanyId);
+        PayrollRun updated = payrollService.getRun(id, resolvedCompanyId);
+        return ResponseEntity.ok(ApiResponse.ok("Employees synchronized with payroll run", updated));
     }
 
     @GetMapping("/entries")
@@ -91,8 +107,21 @@ public class PayrollController {
         return ResponseEntity.ok(ApiResponse.ok(kpi));
     }
 
+    @PutMapping("/entries/{id}")
+    @PreAuthorize("hasAnyRole('ADMIN', 'DEVELOPER', 'ACCOUNTANT', 'STAFF')")
+    @Operation(summary = "Direct inline update of employee payroll line amounts (Gross, Advance Cut, Net, Status)")
+    public ResponseEntity<ApiResponse<PayrollEntry>> updateEntry(
+            @PathVariable Long id,
+            @RequestBody PayrollEntry entry,
+            @RequestParam(required = false) Long companyId,
+            @AuthenticationPrincipal UserPrincipal principal) {
+        Long resolvedCompanyId = resolveCompanyId(principal, companyId);
+        PayrollEntry updated = payrollService.updateEntry(id, entry, resolvedCompanyId);
+        return ResponseEntity.ok(ApiResponse.ok("Payroll record updated successfully", updated));
+    }
+
     @PutMapping("/entries/{id}/status")
-    @PreAuthorize("hasAnyRole('ADMIN', 'DEVELOPER')")
+    @PreAuthorize("hasAnyRole('ADMIN', 'DEVELOPER', 'ACCOUNTANT', 'STAFF')")
     @Operation(summary = "Update employee payroll line status (PAID, PENDING, ON_HOLD)")
     public ResponseEntity<ApiResponse<PayrollEntry>> updateEntryStatus(
             @PathVariable Long id,
@@ -105,7 +134,7 @@ public class PayrollController {
     }
 
     @PostMapping("/entries/batch-status")
-    @PreAuthorize("hasAnyRole('ADMIN', 'DEVELOPER')")
+    @PreAuthorize("hasAnyRole('ADMIN', 'DEVELOPER', 'ACCOUNTANT', 'STAFF')")
     @Operation(summary = "Bulk update selected employee payroll entries via checkboxes")
     public ResponseEntity<ApiResponse<List<PayrollEntry>>> batchUpdateStatus(
             @RequestBody Map<String, Object> body,
@@ -121,6 +150,18 @@ public class PayrollController {
 
         List<PayrollEntry> updated = payrollService.batchUpdateStatus(ids, status, resolvedCompanyId);
         return ResponseEntity.ok(ApiResponse.ok("Updated " + updated.size() + " payroll records", updated));
+    }
+
+    @GetMapping("/employees/{employeeId}/advances")
+    @Operation(summary = "Get advance expense history for a specific employee")
+    public ResponseEntity<ApiResponse<List<Expense>>> getEmployeeAdvanceHistory(
+            @PathVariable Long employeeId,
+            @RequestParam(required = false) String employeeName,
+            @RequestParam(required = false) Long companyId,
+            @AuthenticationPrincipal UserPrincipal principal) {
+        Long resolvedCompanyId = resolveCompanyId(principal, companyId);
+        List<Expense> history = payrollService.getEmployeeAdvanceHistory(resolvedCompanyId, employeeId, employeeName);
+        return ResponseEntity.ok(ApiResponse.ok(history));
     }
 
     private Long resolveCompanyId(UserPrincipal principal, Long requestedCompanyId) {

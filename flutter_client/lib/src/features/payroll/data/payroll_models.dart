@@ -16,6 +16,7 @@ class PayrollRun {
     this.totalOverdue = 0.0,
     this.totalDeductions = 0.0,
     this.totalNetPayable = 0.0,
+    this.totalAdvances = 0.0,
     this.employeeCount = 0,
     this.entries = const [],
   });
@@ -33,6 +34,7 @@ class PayrollRun {
   final double totalOverdue;
   final double totalDeductions;
   final double totalNetPayable;
+  final double totalAdvances;
   final int employeeCount;
   final List<PayrollEntry> entries;
 
@@ -71,6 +73,7 @@ class PayrollRun {
       totalOverdue: _parseDouble(json['totalOverdue']),
       totalDeductions: _parseDouble(json['totalDeductions']),
       totalNetPayable: _parseDouble(json['totalNetPayable']),
+      totalAdvances: _parseDouble(json['totalAdvances'] ?? json['total_advances']),
       employeeCount: _parseInt(json['employeeCount']),
       entries: (json['entries'] as List<dynamic>?)
               ?.map((e) => PayrollEntry.fromJson(e as Map<String, dynamic>))
@@ -93,6 +96,7 @@ class PayrollRun {
         'totalOverdue': totalOverdue,
         'totalDeductions': totalDeductions,
         'totalNetPayable': totalNetPayable,
+        'totalAdvances': totalAdvances,
         'employeeCount': employeeCount,
         'entries': entries.map((e) => e.toJson()).toList(),
       };
@@ -125,6 +129,11 @@ class PayrollEntry {
     this.scheduledPayDate,
     this.disbursedAt,
     this.bankAccountMask = '',
+    this.advanceAmount = 0.0,
+    this.advanceDeduction = 0.0,
+    this.pendingMonthsCount = 1,
+    this.pendingMonthsDetails = '',
+    this.cumulativePayable = 0.0,
   });
 
   final int id;
@@ -151,11 +160,19 @@ class PayrollEntry {
   final String? scheduledPayDate;
   final String? disbursedAt;
   final String bankAccountMask;
+  final double advanceAmount;
+  final double advanceDeduction;
+  final int pendingMonthsCount;
+  final String pendingMonthsDetails;
+  final double cumulativePayable;
 
   bool get isPaid => paymentStatus.toUpperCase() == 'PAID';
   bool get isPending => paymentStatus.toUpperCase() == 'PENDING';
   bool get isOverdue => paymentStatus.toUpperCase() == 'OVERDUE';
   bool get isOnHold => paymentStatus.toUpperCase() == 'ON_HOLD';
+
+  bool get hasAdvance => advanceAmount > 0;
+  bool get hasBacklog => pendingMonthsCount > 1;
 
   Color get statusColor {
     switch (paymentStatus.toUpperCase()) {
@@ -186,31 +203,38 @@ class PayrollEntry {
   }
 
   factory PayrollEntry.fromJson(Map<String, dynamic> json) {
+    final net = _parseDouble(json['netSalary'] ?? json['net_salary']);
+    final cum = _parseDouble(json['cumulativePayable'] ?? json['cumulative_payable']);
     return PayrollEntry(
       id: _parseInt(json['id']),
-      companyId: _parseInt(json['companyId']),
-      employeeId: _parseInt(json['employeeId']),
+      companyId: _parseInt(json['companyId'] ?? json['company_id']),
+      employeeId: _parseInt(json['employeeId'] ?? json['employee_id']),
       employeeName: json['employeeName']?.toString() ?? 'Unnamed Employee',
       employeeCode: json['employeeCode']?.toString() ?? '',
       designation: json['designation']?.toString() ?? 'Staff',
       department: json['department']?.toString() ?? 'General',
       workingDays: _parseInt(json['workingDays'], fallback: 30),
       paidDays: _parseDouble(json['paidDays'], fallback: 30.0),
-      basicPay: _parseDouble(json['basicPay']),
+      basicPay: _parseDouble(json['basicPay'] ?? json['basic_pay']),
       hra: _parseDouble(json['hra']),
       allowances: _parseDouble(json['allowances']),
-      grossEarnings: _parseDouble(json['grossEarnings']),
-      pfEmployee: _parseDouble(json['pfEmployee']),
-      esiEmployee: _parseDouble(json['esiEmployee']),
-      professionalTax: _parseDouble(json['professionalTax']),
-      tdsTax: _parseDouble(json['tdsTax']),
-      otherDeductions: _parseDouble(json['otherDeductions']),
-      totalDeductions: _parseDouble(json['totalDeductions']),
-      netSalary: _parseDouble(json['netSalary']),
+      grossEarnings: _parseDouble(json['grossEarnings'] ?? json['gross_earnings']),
+      pfEmployee: _parseDouble(json['pfEmployee'] ?? json['pf_employee']),
+      esiEmployee: _parseDouble(json['esiEmployee'] ?? json['esi_employee']),
+      professionalTax: _parseDouble(json['professionalTax'] ?? json['professional_tax']),
+      tdsTax: _parseDouble(json['tdsTax'] ?? json['tds_tax']),
+      otherDeductions: _parseDouble(json['otherDeductions'] ?? json['other_deductions']),
+      totalDeductions: _parseDouble(json['totalDeductions'] ?? json['total_deductions']),
+      netSalary: net,
       paymentStatus: json['paymentStatus']?.toString() ?? 'PENDING',
       scheduledPayDate: json['scheduledPayDate']?.toString(),
       disbursedAt: json['disbursedAt']?.toString(),
       bankAccountMask: json['bankAccountMask']?.toString() ?? '',
+      advanceAmount: _parseDouble(json['advanceAmount'] ?? json['advance_amount']),
+      advanceDeduction: _parseDouble(json['advanceDeduction'] ?? json['advance_deduction']),
+      pendingMonthsCount: _parseInt(json['pendingMonthsCount'] ?? json['pending_months_count'], fallback: 1),
+      pendingMonthsDetails: json['pendingMonthsDetails']?.toString() ?? json['pending_months_details']?.toString() ?? '',
+      cumulativePayable: cum > 0 ? cum : net,
     );
   }
 
@@ -239,14 +263,30 @@ class PayrollEntry {
         'scheduledPayDate': scheduledPayDate,
         'disbursedAt': disbursedAt,
         'bankAccountMask': bankAccountMask,
+        'advanceAmount': advanceAmount,
+        'advanceDeduction': advanceDeduction,
+        'pendingMonthsCount': pendingMonthsCount,
+        'pendingMonthsDetails': pendingMonthsDetails,
+        'cumulativePayable': cumulativePayable,
       };
 
   PayrollEntry copyWith({
     String? paymentStatus,
     String? disbursedAt,
+    double? basicPay,
+    double? hra,
+    double? allowances,
     double? grossEarnings,
+    double? pfEmployee,
+    double? esiEmployee,
+    double? professionalTax,
     double? totalDeductions,
     double? netSalary,
+    double? advanceAmount,
+    double? advanceDeduction,
+    int? pendingMonthsCount,
+    String? pendingMonthsDetails,
+    double? cumulativePayable,
   }) {
     return PayrollEntry(
       id: id,
@@ -258,13 +298,13 @@ class PayrollEntry {
       department: department,
       workingDays: workingDays,
       paidDays: paidDays,
-      basicPay: basicPay,
-      hra: hra,
-      allowances: allowances,
+      basicPay: basicPay ?? this.basicPay,
+      hra: hra ?? this.hra,
+      allowances: allowances ?? this.allowances,
       grossEarnings: grossEarnings ?? this.grossEarnings,
-      pfEmployee: pfEmployee,
-      esiEmployee: esiEmployee,
-      professionalTax: professionalTax,
+      pfEmployee: pfEmployee ?? this.pfEmployee,
+      esiEmployee: esiEmployee ?? this.esiEmployee,
+      professionalTax: professionalTax ?? this.professionalTax,
       tdsTax: tdsTax,
       otherDeductions: otherDeductions,
       totalDeductions: totalDeductions ?? this.totalDeductions,
@@ -273,6 +313,11 @@ class PayrollEntry {
       scheduledPayDate: scheduledPayDate,
       disbursedAt: disbursedAt ?? this.disbursedAt,
       bankAccountMask: bankAccountMask,
+      advanceAmount: advanceAmount ?? this.advanceAmount,
+      advanceDeduction: advanceDeduction ?? this.advanceDeduction,
+      pendingMonthsCount: pendingMonthsCount ?? this.pendingMonthsCount,
+      pendingMonthsDetails: pendingMonthsDetails ?? this.pendingMonthsDetails,
+      cumulativePayable: cumulativePayable ?? this.cumulativePayable,
     );
   }
 }
@@ -284,6 +329,7 @@ class PayrollSummaryKpi {
     this.totalPaid = 0.0,
     this.totalPending = 0.0,
     this.totalOverdue = 0.0,
+    this.totalAdvances = 0.0,
     this.totalEmployees = 0,
     this.pendingCount = 0,
     this.paidCount = 0,
@@ -294,6 +340,7 @@ class PayrollSummaryKpi {
   final double totalPaid;
   final double totalPending;
   final double totalOverdue;
+  final double totalAdvances;
   final int totalEmployees;
   final int pendingCount;
   final int paidCount;
@@ -305,6 +352,7 @@ class PayrollSummaryKpi {
       totalPaid: _parseDouble(json['totalPaid']),
       totalPending: _parseDouble(json['totalPending']),
       totalOverdue: _parseDouble(json['totalOverdue']),
+      totalAdvances: _parseDouble(json['totalAdvances'] ?? json['total_advances']),
       totalEmployees: _parseInt(json['totalEmployees']),
       pendingCount: _parseInt(json['pendingCount']),
       paidCount: _parseInt(json['paidCount']),
@@ -317,6 +365,7 @@ class PayrollSummaryKpi {
         'totalPaid': totalPaid,
         'totalPending': totalPending,
         'totalOverdue': totalOverdue,
+        'totalAdvances': totalAdvances,
         'totalEmployees': totalEmployees,
         'pendingCount': pendingCount,
         'paidCount': paidCount,

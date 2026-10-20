@@ -91,6 +91,21 @@ public class PayrollEntry {
     @Column(name = "bank_account_mask", length = 30)
     private String bankAccountMask = "";
 
+    @Column(name = "advance_amount", precision = 12, scale = 2)
+    private BigDecimal advanceAmount = BigDecimal.ZERO;
+
+    @Column(name = "advance_deduction", precision = 12, scale = 2)
+    private BigDecimal advanceDeduction = BigDecimal.ZERO;
+
+    @Column(name = "pending_months_count")
+    private Integer pendingMonthsCount = 1;
+
+    @Column(name = "pending_months_details")
+    private String pendingMonthsDetails = "";
+
+    @Column(name = "cumulative_payable", precision = 12, scale = 2)
+    private BigDecimal cumulativePayable = BigDecimal.ZERO;
+
     public PayrollEntry() {}
 
     public Long getId() { return id; }
@@ -167,4 +182,19 @@ public class PayrollEntry {
 
     public String getBankAccountMask() { return bankAccountMask; }
     public void setBankAccountMask(String bankAccountMask) { this.bankAccountMask = bankAccountMask; }
+
+    public BigDecimal getAdvanceAmount() { return advanceAmount != null ? advanceAmount : BigDecimal.ZERO; }
+    public void setAdvanceAmount(BigDecimal advanceAmount) { this.advanceAmount = advanceAmount; }
+
+    public BigDecimal getAdvanceDeduction() { return advanceDeduction != null ? advanceDeduction : BigDecimal.ZERO; }
+    public void setAdvanceDeduction(BigDecimal advanceDeduction) { this.advanceDeduction = advanceDeduction; }
+
+    public Integer getPendingMonthsCount() { return pendingMonthsCount != null ? pendingMonthsCount : 1; }
+    public void setPendingMonthsCount(Integer pendingMonthsCount) { this.pendingMonthsCount = pendingMonthsCount; }
+
+    public String getPendingMonthsDetails() { return pendingMonthsDetails != null ? pendingMonthsDetails : ""; }
+    public void setPendingMonthsDetails(String pendingMonthsDetails) { this.pendingMonthsDetails = pendingMonthsDetails; }
+
+    public BigDecimal getCumulativePayable() { return cumulativePayable != null ? cumulativePayable : BigDecimal.ZERO; }
+    public void setCumulativePayable(BigDecimal cumulativePayable) { this.cumulativePayable = cumulativePayable; }
 }

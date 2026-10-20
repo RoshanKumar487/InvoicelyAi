@@ -30,7 +30,7 @@ Future<String> savePlatformFile(
     (() {
       web.URL.revokeObjectURL(url);
     }).toJS,
-    3000.toJS,
+    60000.toJS,
   );
   return filename;
 }

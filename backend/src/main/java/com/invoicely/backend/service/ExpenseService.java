@@ -103,6 +103,11 @@ public class ExpenseService {
         if (expense.getCreatedAt() == null) {
             expense.setCreatedAt(OffsetDateTime.now());
         }
+        if (expense.getCategory() != null && expense.getCategory().toLowerCase().contains("advance")) {
+            expense.setIsSalaryAdvance(true);
+        } else if (expense.getEmployeeId() != null || (expense.getEmployeeName() != null && !expense.getEmployeeName().isBlank())) {
+            expense.setIsSalaryAdvance(true);
+        }
         return expenseRepository.save(expense);
     }
 
@@ -134,6 +139,16 @@ public class ExpenseService {
         existing.setTaxAmount(updated.getTaxAmount());
         existing.setReceiptImageUri(updated.getReceiptImageUri());
         existing.setNotes(updated.getNotes());
+        existing.setEmployeeId(updated.getEmployeeId());
+        existing.setEmployeeName(updated.getEmployeeName());
+        if (updated.getIsSalaryAdvance() != null) {
+            existing.setIsSalaryAdvance(updated.getIsSalaryAdvance());
+        } else if (updated.getCategory() != null && updated.getCategory().toLowerCase().contains("advance")) {
+            existing.setIsSalaryAdvance(true);
+        }
+        if (updated.getAdvanceSettled() != null) {
+            existing.setAdvanceSettled(updated.getAdvanceSettled());
+        }
         if (updated.getStatus() != null && !updated.getStatus().isBlank()) {
             existing.setStatus(updated.getStatus());
         }

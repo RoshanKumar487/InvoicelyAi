@@ -174,6 +174,18 @@ class _AppShellState extends State<AppShell> {
               merged[assetKey] = val;
             }
           }
+          if (profile['logoUrl'] != null && profile['logoUrl'].toString().trim().isNotEmpty) {
+            merged['invoiceLogo'] = profile['logoUrl'].toString().trim();
+          }
+          if (profile['stampUrl'] != null && profile['stampUrl'].toString().trim().isNotEmpty) {
+            merged['invoiceStamp'] = profile['stampUrl'].toString().trim();
+          }
+          if (profile['signatureUrl'] != null && profile['signatureUrl'].toString().trim().isNotEmpty) {
+            merged['invoiceSignature'] = profile['signatureUrl'].toString().trim();
+          }
+          if (profile['qrCodeUrl'] != null && profile['qrCodeUrl'].toString().trim().isNotEmpty) {
+            merged['invoiceQrCode'] = profile['qrCodeUrl'].toString().trim();
+          }
         }
       } catch (_) {}
 
@@ -221,6 +233,26 @@ class _AppShellState extends State<AppShell> {
         }
       } catch (_) {}
 
+      // Restore cached brand assets from local preferences if present
+      for (final key in const ['invoiceLogo', 'invoiceStamp', 'invoiceSignature', 'invoiceQrCode']) {
+        final val = await _localPreferences.readString(key);
+        if (val != null && val.trim().isNotEmpty) {
+          merged[key] = val.trim();
+        }
+      }
+      if (merged['invoiceLogo'] == null && merged['logoUrl'] != null) {
+        merged['invoiceLogo'] = merged['logoUrl'];
+      }
+      if (merged['invoiceStamp'] == null && merged['stampUrl'] != null) {
+        merged['invoiceStamp'] = merged['stampUrl'];
+      }
+      if (merged['invoiceSignature'] == null && merged['signatureUrl'] != null) {
+        merged['invoiceSignature'] = merged['signatureUrl'];
+      }
+      if (merged['invoiceQrCode'] == null && merged['qrCodeUrl'] != null) {
+        merged['invoiceQrCode'] = merged['qrCodeUrl'];
+      }
+
       // Default currency to INR if still unset
       merged.putIfAbsent('defaultCurrency', () => 'INR');
       merged.putIfAbsent('defaultCurrencySymbol', () => '₹');
@@ -253,6 +285,12 @@ class _AppShellState extends State<AppShell> {
   Future<void> _saveInvoiceSettings(Map<String, Object?> settings) async {
     try {
       await _localPreferences.writeMap('invoice_settings', settings);
+      for (final key in const ['invoiceLogo', 'invoiceStamp', 'invoiceSignature', 'invoiceQrCode']) {
+        final val = settings[key]?.toString().trim();
+        if (val != null && val.isNotEmpty) {
+          await _localPreferences.writeString(key, val);
+        }
+      }
       if (mounted) {
         setState(() {
           _invoiceLocalSettings = Map<String, Object?>.from(settings);
@@ -918,6 +956,7 @@ class _AppShellState extends State<AppShell> {
   Widget _buildExpenses() => ExpensesScreen(
         repository: ExpensesRepository(apiClient: widget.apiClient),
         initialLocalSettings: _invoiceLocalSettings,
+        session: widget.session,
       );
 }
 
