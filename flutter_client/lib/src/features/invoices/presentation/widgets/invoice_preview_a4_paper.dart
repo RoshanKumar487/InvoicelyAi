@@ -7,6 +7,7 @@ import '../../../../core/utils/gst_tax_calculator.dart';
 import '../../../templates/data/company_letterhead.dart';
 import '../../../templates/data/studio_section_model.dart';
 import '../../../templates/data/template_config.dart';
+import '../../../templates/presentation/widgets/document_signature_block.dart';
 
 const double a4PaperWidth = 760.0;
 const double a4PaperMinHeight = 1075.0;
@@ -342,6 +343,11 @@ class InvoicePreviewA4Paper extends StatelessWidget {
     final logoBase64 = localSettings['invoiceLogo']?.toString().trim();
     final stampBase64 = localSettings['invoiceStamp']?.toString().trim();
     final signatureBase64 = localSettings['invoiceSignature']?.toString().trim();
+    final signeeName = (localSettings['signeeName']?.toString().trim().isNotEmpty == true)
+        ? localSettings['signeeName']!.toString().trim()
+        : (profile['signeeName']?.toString().trim().isNotEmpty == true
+            ? profile['signeeName']!.toString().trim()
+            : null);
     final signeeTitle = (localSettings['signeeTitle']?.toString().trim().isNotEmpty == true)
         ? localSettings['signeeTitle']!.toString().trim()
         : (_findField(termsSection, 'f_trm_title')?.defaultValue.trim().isNotEmpty == true
@@ -876,114 +882,19 @@ class InvoicePreviewA4Paper extends StatelessWidget {
                     const SizedBox(width: 14),
                     Expanded(
                       flex: 4,
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.end,
-                        children: [
-                          if (_isFieldVisible(termsSection, 'f_trm_company'))
-                            Text(
-                              'For $companyLegalName',
-                              textAlign: TextAlign.right,
-                              style: _docStyle(
-                                fontSize: 9.5,
-                                fontWeight: FontWeight.bold,
-                                color: const Color(0xFF1E293B),
-                              ),
-                            ),
-                          const SizedBox(height: 8),
-                          // Render Signature and Stamp (with tap-to-sign support)
-                          InkWell(
-                            onTap: onSignTap,
-                            borderRadius: BorderRadius.circular(4),
-                            child: Row(
-                              mainAxisSize: MainAxisSize.min,
-                              crossAxisAlignment: CrossAxisAlignment.end,
-                              children: [
-                                if (stampBase64 != null && stampBase64.isNotEmpty)
-                                  Container(
-                                    width: 62 * _fontScale,
-                                    height: 62 * _fontScale,
-                                    margin: const EdgeInsets.only(right: 8),
-                                    child: _safeBase64Image(
-                                      stampBase64,
-                                      width: 62 * _fontScale,
-                                      height: 62 * _fontScale,
-                                    ),
-                                  ),
-                                if (signatureBase64 != null &&
-                                    signatureBase64.isNotEmpty)
-                                  Container(
-                                    height: 48 * _fontScale,
-                                    constraints: const BoxConstraints(maxWidth: 160),
-                                    child: _safeBase64Image(
-                                      signatureBase64,
-                                      height: 48 * _fontScale,
-                                    ),
-                                  )
-                                else if (onSignTap != null)
-                                  Container(
-                                    height: 28 * _fontScale,
-                                    padding: const EdgeInsets.symmetric(
-                                      horizontal: 8,
-                                      vertical: 4,
-                                    ),
-                                    decoration: BoxDecoration(
-                                      color: const Color(0xFFF8FAFC),
-                                      borderRadius: BorderRadius.circular(4),
-                                      border: Border.all(
-                                        color: const Color(0xFFCBD5E1),
-                                      ),
-                                    ),
-                                    child: Row(
-                                      mainAxisSize: MainAxisSize.min,
-                                      children: [
-                                        Icon(
-                                          Icons.draw_rounded,
-                                          size: 11 * _fontScale,
-                                          color: _primaryColor,
-                                        ),
-                                        const SizedBox(width: 4),
-                                        Text(
-                                          'Tap to Sign',
-                                          style: _docStyle(
-                                            fontSize: 8,
-                                            fontWeight: FontWeight.w600,
-                                            color: _primaryColor,
-                                          ),
-                                        ),
-                                      ],
-                                    ),
-                                  )
-                                else
-                                  SizedBox(height: 26 * _fontScale),
-                              ],
-                            ),
-                          ),
-                          const SizedBox(height: 2),
-                          Container(
-                            width: 110,
-                            height: 1,
-                            color: const Color(0xFFCBD5E1),
-                          ),
-                          const SizedBox(height: 3),
-                          if (_isFieldVisible(termsSection, 'f_trm_title'))
-                            Text(
-                              signeeTitle,
-                              textAlign: TextAlign.right,
-                              style: _docStyle(
-                                fontSize: 9,
-                                color: const Color(0xFF64748B),
-                              ),
-                            ),
-                          if (_isFieldVisible(termsSection, 'f_trm_auto_stamp'))
-                            Text(
-                              '(This is a system generated invoice)',
-                              textAlign: TextAlign.right,
-                              style: _docStyle(
-                                fontSize: 7.5,
-                                color: const Color(0xFF94A3B8),
-                              ),
-                            ),
-                        ],
+                      child: DocumentSignatureBlock(
+                        companyLegalName: companyLegalName,
+                        stampBase64: stampBase64,
+                        signatureBase64: signatureBase64,
+                        signeeName: signeeName,
+                        signeeTitle: signeeTitle,
+                        isAutoStampDisclaimer: _isFieldVisible(termsSection, 'f_trm_auto_stamp'),
+                        showCompanyHeading: _isFieldVisible(termsSection, 'f_trm_company'),
+                        fontScale: _fontScale,
+                        fontFamily: _fontFamily,
+                        isColorless: _isColorless,
+                        onSignTap: onSignTap,
+                        alignment: CrossAxisAlignment.end,
                       ),
                     ),
                   ],
@@ -2434,21 +2345,4 @@ class InvoicePreviewA4Paper extends StatelessWidget {
     );
   }
 
-  Widget _safeBase64Image(
-    String encoded, {
-    double? width,
-    double? height,
-  }) {
-    try {
-      return Image.memory(
-        base64Decode(encoded),
-        width: width,
-        height: height,
-        fit: BoxFit.contain,
-        errorBuilder: (_, __, ___) => const SizedBox.shrink(),
-      );
-    } catch (_) {
-      return const SizedBox.shrink();
-    }
-  }
 }

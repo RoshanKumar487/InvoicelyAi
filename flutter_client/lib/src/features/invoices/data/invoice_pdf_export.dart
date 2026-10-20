@@ -551,6 +551,11 @@ class InvoicePdfExport {
           : 'Authorized Signatory',
     );
 
+    final signeeName = pickSetting(
+      ['signeeName', 'authorizedSignerName', 'signerName'],
+      '',
+    );
+
     final stampImage = _memoryImage(localSettings['invoiceStamp']);
     final signatureImage = _memoryImage(localSettings['invoiceSignature']);
 
@@ -2132,15 +2137,16 @@ class InvoicePdfExport {
                           ),
                         ),
                       pw.SizedBox(height: 6),
-                      pw.Row(
-                        mainAxisSize: pw.MainAxisSize.min,
-                        crossAxisAlignment: pw.CrossAxisAlignment.end,
+                      pw.Wrap(
+                        alignment: pw.WrapAlignment.end,
+                        crossAxisAlignment: pw.WrapCrossAlignment.end,
+                        spacing: 8 * fontScale,
+                        runSpacing: 4 * fontScale,
                         children: [
                           if (stampImage != null)
                             pw.Container(
                               width: 56 * fontScale,
                               height: 56 * fontScale,
-                              margin: const pw.EdgeInsets.only(right: 8),
                               child: pw.Image(
                                 stampImage,
                                 fit: pw.BoxFit.contain,
@@ -2156,22 +2162,38 @@ class InvoicePdfExport {
                               ),
                             )
                           else
-                            pw.SizedBox(height: 36 * fontScale),
+                            pw.SizedBox(height: 34 * fontScale, width: 90 * fontScale),
                         ],
                       ),
-                      pw.SizedBox(height: 2),
+                      pw.SizedBox(height: 3),
                       pw.Container(
-                        width: 130,
+                        width: 140 * fontScale,
                         height: 0.8,
-                        color: const PdfColor.fromInt(0xFFCBD5E1),
+                        color: isColorless
+                            ? const PdfColor.fromInt(0xFF0F172A)
+                            : const PdfColor.fromInt(0xFFCBD5E1),
                       ),
                       pw.SizedBox(height: 3),
+                      if (signeeName.trim().isNotEmpty) ...[
+                        pw.Text(
+                          signeeName.trim(),
+                          textAlign: pw.TextAlign.right,
+                          style: docStyle(
+                            fontSize: 9,
+                            bold: true,
+                            color: isColorless
+                                ? const PdfColor.fromInt(0xFF0F172A)
+                                : const PdfColor.fromInt(0xFF1E293B),
+                          ),
+                        ),
+                        pw.SizedBox(height: 1),
+                      ],
                       if (isFieldVisible(termsSection, 'f_trm_title'))
                         pw.Text(
                           signeeTitle,
                           textAlign: pw.TextAlign.right,
                           style: docStyle(
-                            fontSize: 8.5,
+                            fontSize: 8,
                             color: const PdfColor.fromInt(0xFF64748B),
                           ),
                         ),

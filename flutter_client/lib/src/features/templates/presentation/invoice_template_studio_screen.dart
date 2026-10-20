@@ -18,9 +18,11 @@ import '../data/company_letterhead.dart';
 import '../data/studio_section_model.dart';
 import '../data/template_config.dart';
 import 'widgets/company_letterhead_studio_card.dart';
+import 'widgets/document_signature_block.dart';
 import 'widgets/formula_builder_popup.dart';
 import 'widgets/invoice_section_accordion.dart';
 import 'widgets/studio_field_dialogs.dart';
+import 'widgets/studio_stamp_signature_card.dart';
 import 'widgets/studio_style_dialogs.dart';
 import 'widgets/studio_template_selector_dialog.dart';
 
@@ -590,14 +592,65 @@ class _InvoiceTemplateStudioScreenState
     if (map['studio_uppercase_headings'] is bool) {
       _uppercaseHeadings = map['studio_uppercase_headings'] as bool;
     }
+    final layout = map['studio_layout_style']?.toString();
+    if (layout != null && layout.isNotEmpty) _layoutStyle = layout;
+    final wmark = map['studio_watermark']?.toString();
+    if (wmark != null && wmark.isNotEmpty) _watermark = wmark;
+    final pMargin = map['studio_page_margin']?.toString();
+    if (pMargin != null && pMargin.isNotEmpty) _pageMargin = pMargin;
     if (map['showQrCode'] is bool) {
       _showQrCode = map['showQrCode'] as bool;
     }
+
+    // Branding & Legal Signatory assets
+    final logo = map['invoiceLogo']?.toString() ?? map['logoUrl']?.toString();
+    if (logo != null && logo.isNotEmpty) _logoBase64 = _stripDataPrefix(logo);
+    final stamp = map['invoiceStamp']?.toString() ?? map['stampUrl']?.toString();
+    if (stamp != null && stamp.isNotEmpty) _stampBase64 = _stripDataPrefix(stamp);
+    final sig = map['invoiceSignature']?.toString() ?? map['signatureUrl']?.toString();
+    if (sig != null && sig.isNotEmpty) _signatureBase64 = _stripDataPrefix(sig);
+    final sName = map['signeeName']?.toString();
+    if (sName != null && sName.isNotEmpty) _signeeName = sName;
+    final sTitle = map['signeeTitle']?.toString();
+    if (sTitle != null && sTitle.isNotEmpty) _signeeTitle = sTitle;
+
+    // Company & Default Template Identifiers
+    final defTpl = map['company_default_template_id']?.toString() ?? map['preferredTemplateId']?.toString();
+    if (defTpl != null && defTpl.isNotEmpty) _companyDefaultTemplateId = defTpl;
+    final selTpl = map['templateId']?.toString() ?? map['preferredTemplateId']?.toString();
+    if (selTpl != null && selTpl.isNotEmpty) _selectedTemplateId = selTpl;
+
+    // Letterhead fields
     if (map['letterhead_enabled'] is bool) {
       _letterheadEnabled = map['letterhead_enabled'] as bool;
+    } else if (map['letterheadEnabled'] is bool) {
+      _letterheadEnabled = map['letterheadEnabled'] as bool;
     }
     final lhStyle = map['letterhead_style_id']?.toString();
     if (lhStyle != null && lhStyle.isNotEmpty) _letterheadStyleId = lhStyle;
+    final lhName = map['letterhead_company_name']?.toString() ?? map['companyName']?.toString();
+    if (lhName != null && lhName.isNotEmpty && lhName != 'Northstar Security Services Pvt. Ltd.') {
+      _letterheadCompanyName = lhName;
+    }
+    final lhTagline = map['letterhead_tagline']?.toString();
+    if (lhTagline != null && lhTagline.isNotEmpty) _letterheadTagline = lhTagline;
+    final lhServices = map['letterhead_specialist_services']?.toString();
+    if (lhServices != null && lhServices.isNotEmpty) _letterheadSpecialistServices = lhServices;
+    final lhPhone = map['letterhead_phone']?.toString();
+    if (lhPhone != null && lhPhone.isNotEmpty) _letterheadPhone = lhPhone;
+    final lhEmail = map['letterhead_email']?.toString();
+    if (lhEmail != null && lhEmail.isNotEmpty) _letterheadEmail = lhEmail;
+    final lhWeb = map['letterhead_website']?.toString();
+    if (lhWeb != null && lhWeb.isNotEmpty) _letterheadWebsite = lhWeb;
+    final lhAddr = map['letterhead_address']?.toString();
+    if (lhAddr != null && lhAddr.isNotEmpty) _letterheadAddress = lhAddr;
+    final lhGstin = map['letterhead_gstin']?.toString();
+    if (lhGstin != null && lhGstin.isNotEmpty) _letterheadGstin = lhGstin;
+    final lhPan = map['letterhead_pan']?.toString();
+    if (lhPan != null && lhPan.isNotEmpty) _letterheadPan = lhPan;
+    final lhCin = map['letterhead_cin']?.toString();
+    if (lhCin != null && lhCin.isNotEmpty) _letterheadCin = lhCin;
+
     final formula = map['itemCalculationFormula']?.toString();
     if (formula != null && formula.isNotEmpty) _itemCalculationFormula = formula;
     final stdDays = double.tryParse(map['standardDutyDays']?.toString() ?? '');
@@ -2718,248 +2771,27 @@ class _InvoiceTemplateStudioScreenState
   }
 
   Widget _buildSignatureCustomContent() {
-    return LayoutBuilder(
-      builder: (context, constraints) {
-        final isNarrow = constraints.maxWidth < 460;
-        return Container(
-          padding: const EdgeInsets.all(12),
-          decoration: BoxDecoration(
-            color: const Color(0xFFF8FAFC),
-            borderRadius: BorderRadius.circular(10),
-            border: Border.all(color: const Color(0xFFE2E8F0)),
-          ),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Row(
-                children: [
-                  const Icon(Icons.draw_rounded, size: 16, color: Color(0xFF2563EB)),
-                  const SizedBox(width: 8),
-                  const Expanded(
-                    child: Text(
-                      'Authorized Digital Signature (DocuHub Signer)',
-                      style: TextStyle(
-                        fontSize: 12.5,
-                        fontWeight: FontWeight.w700,
-                        color: Color(0xFF0F172A),
-                      ),
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                    ),
-                  ),
-                  Container(
-                    padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
-                    decoration: BoxDecoration(
-                      color: const Color(0xFFECFDF5),
-                      borderRadius: BorderRadius.circular(6),
-                      border: Border.all(color: const Color(0xFFA7F3D0)),
-                    ),
-                    child: const Text(
-                      'Legal Signatory',
-                      style: TextStyle(fontSize: 10, fontWeight: FontWeight.bold, color: Color(0xFF059669)),
-                    ),
-                  ),
-                ],
-              ),
-              const SizedBox(height: 4),
-              const Text(
-                'Draw ink signature or create styled typography to sign generated invoices and PDF documents.',
-                style: TextStyle(fontSize: 11, color: Color(0xFF64748B)),
-              ),
-              const SizedBox(height: 12),
-              // Signature Preview & Capture Action (Responsive for narrow screens)
-              if (isNarrow) ...[
-                Center(
-                  child: Container(
-                    width: double.infinity,
-                    height: 58,
-                    decoration: BoxDecoration(
-                      color: Colors.white,
-                      borderRadius: BorderRadius.circular(8),
-                      border: Border.all(color: const Color(0xFFCBD5E1)),
-                    ),
-                    child: _signatureBase64 != null
-                        ? Padding(
-                            padding: const EdgeInsets.all(4),
-                            child: Image.memory(
-                              base64Decode(_signatureBase64!),
-                              fit: BoxFit.contain,
-                            ),
-                          )
-                        : const Center(
-                            child: Text(
-                              'No Signature Saved',
-                              style: TextStyle(fontSize: 10.5, color: Color(0xFF94A3B8), fontStyle: FontStyle.italic),
-                            ),
-                          ),
-                  ),
-                ),
-                const SizedBox(height: 8),
-                Row(
-                  children: [
-                    Expanded(
-                      child: FilledButton.icon(
-                        icon: const Icon(Icons.draw_outlined, size: 15),
-                        label: Text(
-                          _signatureBase64 != null ? 'Redraw Signature' : 'Capture Signature',
-                          style: const TextStyle(fontSize: 11.5, fontWeight: FontWeight.w600),
-                        ),
-                        style: FilledButton.styleFrom(
-                          backgroundColor: const Color(0xFF2563EB),
-                          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
-                          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
-                        ),
-                        onPressed: _captureSignatureInStudio,
-                      ),
-                    ),
-                    if (_signatureBase64 != null) ...[
-                      const SizedBox(width: 8),
-                      IconButton(
-                        icon: const Icon(Icons.delete_outline_rounded, size: 18, color: Color(0xFFEF4444)),
-                        tooltip: 'Clear Signature',
-                        onPressed: _removeSignature,
-                      ),
-                    ],
-                  ],
-                ),
-              ] else ...[
-                Row(
-                  children: [
-                    Container(
-                      width: 140,
-                      height: 52,
-                      decoration: BoxDecoration(
-                        color: Colors.white,
-                        borderRadius: BorderRadius.circular(8),
-                        border: Border.all(color: const Color(0xFFCBD5E1)),
-                      ),
-                      child: _signatureBase64 != null
-                          ? Padding(
-                              padding: const EdgeInsets.all(4),
-                              child: Image.memory(
-                                base64Decode(_signatureBase64!),
-                                fit: BoxFit.contain,
-                              ),
-                            )
-                          : const Center(
-                              child: Text(
-                                'No Signature Saved',
-                                style: TextStyle(fontSize: 10.5, color: Color(0xFF94A3B8), fontStyle: FontStyle.italic),
-                              ),
-                            ),
-                    ),
-                    const SizedBox(width: 12),
-                    Expanded(
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          FilledButton.icon(
-                            icon: const Icon(Icons.draw_outlined, size: 15),
-                            label: Text(
-                              _signatureBase64 != null ? 'Redraw / Edit Signature' : 'Capture / Draw Signature',
-                              style: const TextStyle(fontSize: 11.5, fontWeight: FontWeight.w600),
-                            ),
-                            style: FilledButton.styleFrom(
-                              backgroundColor: const Color(0xFF2563EB),
-                              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-                              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
-                            ),
-                            onPressed: _captureSignatureInStudio,
-                          ),
-                          if (_signatureBase64 != null) ...[
-                            const SizedBox(height: 4),
-                            TextButton.icon(
-                              icon: const Icon(Icons.delete_outline_rounded, size: 14, color: Color(0xFFEF4444)),
-                              label: const Text('Clear Signature', style: TextStyle(fontSize: 11, color: Color(0xFFEF4444))),
-                              style: TextButton.styleFrom(
-                                padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
-                                minimumSize: Size.zero,
-                                tapTargetSize: MaterialTapTargetSize.shrinkWrap,
-                              ),
-                              onPressed: _removeSignature,
-                            ),
-                          ],
-                        ],
-                      ),
-                    ),
-                  ],
-                ),
-              ],
-              const SizedBox(height: 12),
-              // Metadata Fields: Signatory Name & Title (Responsive for narrow screens)
-              if (isNarrow) ...[
-                TextFormField(
-                  initialValue: _signeeName ?? '',
-                  decoration: InputDecoration(
-                    labelText: 'Signatory Name',
-                    hintText: 'e.g. R. K. Sharma',
-                    isDense: true,
-                    contentPadding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
-                    border: OutlineInputBorder(borderRadius: BorderRadius.circular(8)),
-                  ),
-                  onChanged: (val) {
-                    _signeeName = val;
-                    _markSaved();
-                  },
-                ),
-                const SizedBox(height: 8),
-                TextFormField(
-                  initialValue: _signeeTitle ?? 'Authorized Signatory',
-                  decoration: InputDecoration(
-                    labelText: 'Signatory Title',
-                    hintText: 'e.g. Director / Partner',
-                    isDense: true,
-                    contentPadding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
-                    border: OutlineInputBorder(borderRadius: BorderRadius.circular(8)),
-                  ),
-                  onChanged: (val) {
-                    _signeeTitle = val;
-                    _markSaved();
-                  },
-                ),
-              ] else ...[
-                Row(
-                  children: [
-                    Expanded(
-                      child: TextFormField(
-                        initialValue: _signeeName ?? '',
-                        decoration: InputDecoration(
-                          labelText: 'Signatory Name',
-                          hintText: 'e.g. R. K. Sharma',
-                          isDense: true,
-                          contentPadding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
-                          border: OutlineInputBorder(borderRadius: BorderRadius.circular(8)),
-                        ),
-                        onChanged: (val) {
-                          _signeeName = val;
-                          _markSaved();
-                        },
-                      ),
-                    ),
-                    const SizedBox(width: 8),
-                    Expanded(
-                      child: TextFormField(
-                        initialValue: _signeeTitle ?? 'Authorized Signatory',
-                        decoration: InputDecoration(
-                          labelText: 'Signatory Title',
-                          hintText: 'e.g. Director / Partner',
-                          isDense: true,
-                          contentPadding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
-                          border: OutlineInputBorder(borderRadius: BorderRadius.circular(8)),
-                        ),
-                        onChanged: (val) {
-                          _signeeTitle = val;
-                          _markSaved();
-                        },
-                      ),
-                    ),
-                  ],
-                ),
-              ],
-            ],
-          ),
-        );
+    return StudioStampSignatureCard(
+      stampBase64: _stampBase64,
+      signatureBase64: _signatureBase64,
+      signeeName: _signeeName,
+      signeeTitle: _signeeTitle,
+      companyLegalName: _letterheadCompanyName.isNotEmpty
+          ? _letterheadCompanyName
+          : (widget.initialLocalSettings['companyName']?.toString() ?? 'Northstar Security Services Ltd.'),
+      onPickStamp: _pickStamp,
+      onRemoveStamp: _removeStamp,
+      onCaptureSignature: _captureSignatureInStudio,
+      onRemoveSignature: _removeSignature,
+      onSigneeNameChanged: (val) {
+        _signeeName = val;
+        _markSaved();
       },
+      onSigneeTitleChanged: (val) {
+        _signeeTitle = val;
+        _markSaved();
+      },
+      isColorless: _isColorless,
     );
   }
 
@@ -3891,50 +3723,21 @@ class _InvoiceTemplateStudioScreenState
               const SizedBox(width: 14),
               Expanded(
                 flex: 4,
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.end,
-                  children: [
-                    if (_isFieldVisible(termsSection, 'f_trm_company'))
-                      Text('For Northstar Security Services Ltd.', style: _docStyle(fontSize: 9.5, fontWeight: FontWeight.bold, color: const Color(0xFF1E293B))),
-                    const SizedBox(height: 8),
-                    // Render Signature and Stamp
-                    Row(
-                      mainAxisSize: MainAxisSize.min,
-                      crossAxisAlignment: CrossAxisAlignment.end,
-                      children: [
-                        if (_stampBase64 != null) ...[
-                          Container(
-                            width: 62 * _fontScale,
-                            height: 62 * _fontScale,
-                            margin: const EdgeInsets.only(right: 8),
-                            child: Image.memory(
-                              base64Decode(_stampBase64!),
-                              fit: BoxFit.contain,
-                            ),
-                          ),
-                        ],
-                        if (_signatureBase64 != null) ...[
-                          Container(
-                            height: 48 * _fontScale,
-                            constraints: const BoxConstraints(maxWidth: 160),
-                            child: Image.memory(
-                              base64Decode(_signatureBase64!),
-                              fit: BoxFit.contain,
-                            ),
-                          ),
-                        ] else ...[
-                          SizedBox(height: 38 * _fontScale),
-                        ],
-                      ],
-                    ),
-                    const SizedBox(height: 2),
-                    Container(width: 110, height: 1, color: const Color(0xFFCBD5E1)),
-                    const SizedBox(height: 3),
-                    if (_isFieldVisible(termsSection, 'f_trm_title'))
-                      Text(_signeeTitle ?? 'Authorized Signatory', style: _docStyle(fontSize: 9, color: const Color(0xFF64748B))),
-                    if (_isFieldVisible(termsSection, 'f_trm_auto_stamp'))
-                      Text('(This is a system generated invoice)', style: _docStyle(fontSize: 7.5, color: const Color(0xFF94A3B8))),
-                  ],
+                child: DocumentSignatureBlock(
+                  companyLegalName: _letterheadCompanyName.isNotEmpty
+                      ? _letterheadCompanyName
+                      : (widget.initialLocalSettings['companyName']?.toString() ?? 'Northstar Security Services Ltd.'),
+                  stampBase64: _stampBase64,
+                  signatureBase64: _signatureBase64,
+                  signeeName: _signeeName,
+                  signeeTitle: _signeeTitle ?? 'Authorized Signatory',
+                  isAutoStampDisclaimer: _isFieldVisible(termsSection, 'f_trm_auto_stamp'),
+                  showCompanyHeading: _isFieldVisible(termsSection, 'f_trm_company'),
+                  fontScale: _fontScale,
+                  fontFamily: _fontFamily,
+                  isColorless: _isColorless,
+                  onSignTap: _captureSignatureInStudio,
+                  alignment: CrossAxisAlignment.end,
                 ),
               ),
             ],
